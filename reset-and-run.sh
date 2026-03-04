@@ -364,6 +364,17 @@ LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 $LSREGISTER -u "$APP_PATH" 2>/dev/null || true
 $LSREGISTER -f "$APP_PATH" 2>/dev/null || true
 
+# Force Dock icon update via NSWorkspace.setIcon (writes resource fork onto .app bundle).
+# This breaks code signing but is fine for dev builds. Without this, macOS caches the old
+# Dock icon indefinitely even after lsregister reset + iconservicesagent kill.
+echo "Setting Dock icon..."
+python3 -c "
+import AppKit
+icon = AppKit.NSImage.alloc().initWithContentsOfFile_('$(pwd)/fazm_icon.icns')
+if icon:
+    AppKit.NSWorkspace.sharedWorkspace().setIcon_forFile_options_(icon, '$APP_PATH', 0)
+" 2>/dev/null || true
+
 # Remove quarantine and start app from /Applications
 echo "Starting app..."
 xattr -cr "$APP_PATH"
