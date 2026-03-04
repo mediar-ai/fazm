@@ -119,18 +119,11 @@ struct FloatingControlBarView: View {
                     .frame(height: 50)
                     .transition(.opacity)
             } else if isHovering || state.showingAIConversation {
-                VStack(spacing: 1) {
-                    compactButton(title: "Ask Fazm", keys: shortcutSettings.askFazmKey.hintKeys) {
-                        onAskAI()
-                    }
-
-                    HStack(spacing: 6) {
-                        compactLabel("Push to talk", keys: [shortcutSettings.pttKey.symbol])
-                    }
+                HStack(spacing: 6) {
+                    compactLabel("Push to talk", keys: [shortcutSettings.pttKey.symbol])
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .frame(height: 50)
                 .transition(.opacity)
             } else {
                 compactCircleView
