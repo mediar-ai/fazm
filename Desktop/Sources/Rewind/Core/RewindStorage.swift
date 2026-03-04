@@ -38,16 +38,16 @@ actor RewindStorage {
     func initialize() async throws {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let userId = RewindDatabase.currentUserId ?? "anonymous"
-        let omiDir = appSupport
-            .appendingPathComponent("Omi", isDirectory: true)
+        let fazmDir = appSupport
+            .appendingPathComponent("Fazm", isDirectory: true)
             .appendingPathComponent("users", isDirectory: true)
             .appendingPathComponent(userId, isDirectory: true)
 
         // Screenshots directory (legacy JPEG storage)
-        screenshotsDirectory = omiDir.appendingPathComponent("Screenshots", isDirectory: true)
+        screenshotsDirectory = fazmDir.appendingPathComponent("Screenshots", isDirectory: true)
 
         // Videos directory (new H.265 chunk storage)
-        videosDirectory = omiDir.appendingPathComponent("Videos", isDirectory: true)
+        videosDirectory = fazmDir.appendingPathComponent("Videos", isDirectory: true)
 
         guard let screenshotsDirectory = screenshotsDirectory,
               let videosDirectory = videosDirectory
@@ -61,7 +61,7 @@ actor RewindStorage {
         // Initialize video encoder with videos directory
         try await VideoChunkEncoder.shared.initialize(videosDirectory: videosDirectory)
 
-        log("RewindStorage: Initialized at \(omiDir.path)")
+        log("RewindStorage: Initialized at \(fazmDir.path)")
     }
 
     /// Get the videos directory URL for external use
