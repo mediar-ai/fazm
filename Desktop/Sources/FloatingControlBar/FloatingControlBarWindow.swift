@@ -814,11 +814,7 @@ class FloatingControlBarManager {
         ) { [weak self] _ in
             guard let self, let barState = self.barState else { return }
             log("FloatingControlBarManager: Replaying post-onboarding tutorial")
-            PostOnboardingTutorialManager.shared.dismiss()
-            UserDefaults.standard.set(false, forKey: "hasSeenPostOnboardingTutorial")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                PostOnboardingTutorialManager.shared.showIfNeeded(barState: barState)
-            }
+            PostOnboardingTutorialManager.shared.replay(barState: barState)
         }
     }
 
