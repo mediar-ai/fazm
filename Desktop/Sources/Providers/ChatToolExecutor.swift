@@ -758,14 +758,20 @@ class ChatToolExecutor {
 
     /// Save a knowledge graph extracted by the AI during file exploration
     private static func executeSaveKnowledgeGraph(_ args: [String: Any]) async -> String {
-        guard let nodesArray = args["nodes"] as? [[String: Any]] else {
-            return "Error: 'nodes' array is required"
-        }
+        let nodesArray = args["nodes"] as? [[String: Any]] ?? []
         let edgesArray = args["edges"] as? [[String: Any]] ?? []
+
+        guard !nodesArray.isEmpty || !edgesArray.isEmpty else {
+            return "Error: 'nodes' or 'edges' array is required"
+        }
 
         let now = Date()
         var nodeRecords: [LocalKGNodeRecord] = []
         var edgeRecords: [LocalKGEdgeRecord] = []
+
+        // Load existing node IDs from the database so edges can reference previously-saved nodes
+        let existingGraph = await KnowledgeGraphStorage.shared.loadGraph()
+        var knownNodeIds = Set(existingGraph.nodes.map { $0.id })
 
         // Deduplicate nodes by label (case-insensitive)
         var seenLabels: [String: String] = [:] // lowercase label → nodeId
@@ -786,6 +792,7 @@ class ChatToolExecutor {
 
             seenLabels[lowerLabel] = id
             idRemap[id] = id
+            knownNodeIds.insert(id)
 
             var aliasesJson: String?
             if !aliases.isEmpty, let data = try? JSONEncoder().encode(aliases) {
@@ -813,8 +820,8 @@ class ChatToolExecutor {
 
             // Skip self-referencing edges and edges to missing nodes
             guard remappedSource != remappedTarget,
-                  seenLabels.values.contains(remappedSource),
-                  seenLabels.values.contains(remappedTarget) else { continue }
+                  knownNodeIds.contains(remappedSource),
+                  knownNodeIds.contains(remappedTarget) else { continue }
 
             let edgeId = "\(remappedSource)_\(remappedTarget)_\(label.lowercased().replacingOccurrences(of: " ", with: "_"))"
             edgeRecords.append(LocalKGEdgeRecord(
