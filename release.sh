@@ -16,7 +16,7 @@ echo ""
 echo "=== Release started at $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
 echo "Log file: $RELEASE_LOG"
 
-# Load .env if present (for RELEASE_SECRET, SPARKLE_PRIVATE_KEY, etc.)
+# Load .env if present (for SPARKLE_PRIVATE_KEY, NOTARIZE_PASSWORD, etc.)
 # Using set -a/source instead of xargs to handle multiline values (APPLE_PRIVATE_KEY)
 if [ -f ".env" ]; then
     set -a
@@ -26,7 +26,7 @@ fi
 
 # =============================================================================
 # Fazm Release Script
-# Full pipeline: deploy backend → build app → sign → notarize → DMG → GitHub
+# Full pipeline: build app → sign → notarize → DMG → GitHub release → appcast
 # Usage: ./release.sh [version]
 # Example: ./release.sh 0.0.3
 # If no version specified, auto-increments patch version from latest release
@@ -51,15 +51,7 @@ SPARKLE_PRIVATE_KEY="${SPARKLE_PRIVATE_KEY:-}"  # Set via environment or Keychai
 SPARKLE_ZIP_PATH="$BUILD_DIR/Fazm.zip"
 
 # GitHub Release
-GITHUB_REPO="BasedHardware/omi"
-
-# Backend (for Firestore release registration)
-DESKTOP_BACKEND_URL="${DESKTOP_BACKEND_URL:-https://desktop-backend-hhibjajaja-uc.a.run.app}"
-RELEASE_SECRET="${RELEASE_SECRET:-}"
-
-# Release channel: staging (default), beta, or stable
-# New releases start on staging; use promote_release.sh to advance
-RELEASE_CHANNEL="${RELEASE_CHANNEL:-staging}"
+GITHUB_REPO="m13v/fazm"
 
 # Read changelog from CHANGELOG.json
 CHANGELOG_FILE="CHANGELOG.json"
@@ -75,26 +67,10 @@ if data.get('releases') and len(data['releases']) > 0:
 ")
     # Create markdown bullet list for GitHub notes
     CHANGELOG_MD=$(echo "$CHANGELOG_ITEMS" | sed 's/^/- /')
-    # Create JSON array for Firestore
-    CHANGELOG_JSON=$(cat "$CHANGELOG_FILE" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-if data.get('releases') and len(data['releases']) > 0:
-    print(json.dumps(data['releases'][0].get('changes', [])))
-else:
-    print('[]')
-")
 else
     echo "Warning: $CHANGELOG_FILE not found. Using empty changelog."
     CHANGELOG_MD="- No changelog available"
-    CHANGELOG_JSON='[]'
 fi
-
-# Google Cloud (Backend deployment)
-GCP_PROJECT="based-hardware"
-GCP_REGION="us-central1"
-BACKEND_IMAGE="gcr.io/$GCP_PROJECT/desktop-backend"
-CLOUD_RUN_SERVICE="desktop-backend"
 
 # -----------------------------------------------------------------------------
 # Version handling: auto-increment if not specified
@@ -132,47 +108,6 @@ echo "=============================================="
 echo "  Fazm Release Pipeline v$VERSION (build $BUILD_NUMBER)"
 echo "=============================================="
 echo ""
-
-# -----------------------------------------------------------------------------
-# Step 1: Deploy Backend to Cloud Run
-# -----------------------------------------------------------------------------
-echo "[1/12] Deploying Rust backend to Cloud Run..."
-
-# Check if Docker is running
-if ! docker info &>/dev/null; then
-    echo "  Error: Docker is not running. Please start Docker Desktop."
-    exit 1
-fi
-
-# Build for linux/amd64 (Cloud Run runs on x86_64)
-echo "  Building Docker image for linux/amd64..."
-docker build --platform linux/amd64 -t "$BACKEND_IMAGE:$VERSION" -t "$BACKEND_IMAGE:latest" Backend-Rust/
-
-# Push to GCR
-echo "  Pushing to Google Container Registry..."
-docker push "$BACKEND_IMAGE:$VERSION"
-docker push "$BACKEND_IMAGE:latest"
-
-# Deploy to Cloud Run with all backend env vars from .env
-echo "  Deploying to Cloud Run..."
-gcloud run deploy "$CLOUD_RUN_SERVICE" \
-    --image "$BACKEND_IMAGE:$VERSION" \
-    --project "$GCP_PROJECT" \
-    --region "$GCP_REGION" \
-    --platform managed \
-    --allow-unauthenticated \
-    --set-env-vars "FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,FIREBASE_API_KEY=$FIREBASE_API_KEY,GEMINI_API_KEY=$GEMINI_API_KEY,APPLE_CLIENT_ID=$APPLE_CLIENT_ID,APPLE_TEAM_ID=$APPLE_TEAM_ID,APPLE_KEY_ID=$APPLE_KEY_ID,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET,RUST_LOG=info,RELEASE_SECRET=$RELEASE_SECRET,RESEND_API_KEY=$RESEND_API_KEY,SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN,SENTRY_ADMIN_UID=$SENTRY_ADMIN_UID,SENTRY_WEBHOOK_SECRET=$SENTRY_WEBHOOK_SECRET,REDIS_DB_HOST=$REDIS_DB_HOST,REDIS_DB_PORT=$REDIS_DB_PORT,REDIS_DB_PASSWORD=$REDIS_DB_PASSWORD,PINECONE_API_KEY=$PINECONE_API_KEY,PINECONE_HOST=$PINECONE_HOST" \
-    --quiet
-
-# Add APPLE_PRIVATE_KEY separately (multiline value requires special handling)
-echo "  Adding Apple Sign-In private key..."
-gcloud run services update "$CLOUD_RUN_SERVICE" \
-    --project "$GCP_PROJECT" \
-    --region "$GCP_REGION" \
-    --update-env-vars "^@^APPLE_PRIVATE_KEY=$APPLE_PRIVATE_KEY" \
-    --quiet
-
-echo "  ✓ Backend deployed"
 
 # -----------------------------------------------------------------------------
 # Step 1.1: Check settings search coverage
@@ -794,64 +729,18 @@ else
     echo "  Install with: brew install gh"
 fi
 
-# Upload DMG to GCS for direct downloads (avoids GitHub redirect chain that triggers Chrome warnings)
-GCS_BUCKET="gs://fazm_macos_updates"
-echo "  Uploading DMG to GCS..."
-gcloud storage cp --content-disposition='attachment; filename="Fazm.dmg"' "$DMG_PATH" "$GCS_BUCKET/releases/v${VERSION}/Fazm.dmg" 2>/dev/null && {
-    echo "  ✓ Uploaded DMG to GCS (versioned)"
-} || {
-    echo "  Warning: Could not upload DMG to GCS"
-}
-# Only update the latest/ pointer for stable releases (fazm.ai/download serves this)
-if [ "$RELEASE_CHANNEL" = "stable" ]; then
-    gcloud storage cp "$GCS_BUCKET/releases/v${VERSION}/Fazm.dmg" "$GCS_BUCKET/latest/Fazm.dmg" 2>/dev/null && {
-        echo "  ✓ Updated latest/ pointer (direct download)"
+# -----------------------------------------------------------------------------
+# Deploy appcast.xml to GitHub Release for Sparkle auto-updates
+# -----------------------------------------------------------------------------
+echo "  Deploying appcast.xml..."
+if [ -f "scripts/deploy-appcast.sh" ]; then
+    ./scripts/deploy-appcast.sh && {
+        echo "  ✓ Appcast deployed to GitHub release"
     } || {
-        echo "  Warning: Could not update latest/ pointer"
+        echo "  Warning: Could not deploy appcast.xml"
     }
 else
-    echo "  ⏭ Skipping latest/ update (channel: $RELEASE_CHANNEL)"
-fi
-
-# Get the GitHub release download URL for Fazm.zip
-DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/Fazm.zip"
-
-# Register release in Firestore via backend API
-if [ -n "$RELEASE_SECRET" ]; then
-    # Create JSON payload
-    RELEASE_JSON=$(cat <<EOJSON
-{
-    "version": "$VERSION",
-    "build_number": $BUILD_NUMBER,
-    "download_url": "$DOWNLOAD_URL",
-    "ed_signature": "$ED_SIGNATURE",
-    "changelog": $CHANGELOG_JSON,
-    "is_live": true,
-    "is_critical": false,
-    "channel": "${RELEASE_CHANNEL:-staging}"
-}
-EOJSON
-)
-
-    # Register release via backend API
-    HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
-        -X POST \
-        -H "Content-Type: application/json" \
-        -H "X-Release-Secret: $RELEASE_SECRET" \
-        -d "$RELEASE_JSON" \
-        "$DESKTOP_BACKEND_URL/updates/releases" 2>/dev/null)
-
-    HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
-
-    if [ "$HTTP_CODE" = "201" ]; then
-        echo "  ✓ Release registered in Firestore"
-    else
-        echo "  Warning: Could not register release (HTTP $HTTP_CODE)"
-        echo "  You can manually add it using: local-scripts/add_release.py"
-    fi
-else
-    echo "  Warning: RELEASE_SECRET not set, skipping Firestore registration"
-    echo "  Set RELEASE_SECRET in .env or environment"
+    echo "  Warning: scripts/deploy-appcast.sh not found, skipping appcast deployment"
 fi
 
 # -----------------------------------------------------------------------------
@@ -860,29 +749,6 @@ fi
 echo ""
 echo "Creating local git tag..."
 git tag "v$VERSION" 2>/dev/null && echo "  ✓ Created tag v$VERSION" || echo "  Tag v$VERSION already exists"
-
-
-# -----------------------------------------------------------------------------
-# Step 12: Trigger Installation Test
-# -----------------------------------------------------------------------------
-echo ""
-echo "[12/12] Triggering installation test on GitHub Actions..."
-
-# Trigger the test workflow via repository_dispatch
-TEST_REPO="BasedHardware/omi"
-if command -v gh &> /dev/null; then
-    gh workflow run test-install.yml \
-        --repo "$TEST_REPO" \
-        -f release_tag="$RELEASE_TAG" 2>/dev/null && {
-        echo "  ✓ Installation test triggered"
-        echo "  View results: https://github.com/$TEST_REPO/actions/workflows/test-install.yml"
-    } || {
-        echo "  Warning: Could not trigger test workflow"
-        echo "  You can run it manually: gh workflow run test-install.yml --repo $TEST_REPO"
-    }
-else
-    echo "  Warning: GitHub CLI (gh) not found, skipping test trigger"
-fi
 
 # -----------------------------------------------------------------------------
 # Done
@@ -907,7 +773,7 @@ echo "Download URL:"
 echo "  https://github.com/$GITHUB_REPO/releases/tag/$RELEASE_TAG"
 echo ""
 echo "Auto-Update:"
-echo "  Appcast URL: $DESKTOP_BACKEND_URL/appcast.xml"
+echo "  Appcast URL: https://github.com/$GITHUB_REPO/releases/latest/download/appcast.xml"
 echo "  EdDSA Signature: ${ED_SIGNATURE:-'(not generated)'}"
 echo ""
 echo "Verify with:"

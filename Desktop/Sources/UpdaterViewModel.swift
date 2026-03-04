@@ -2,30 +2,13 @@ import Foundation
 import SwiftUI
 import Sparkle
 
-/// Update channel for staged releases
+/// Update channel (single channel for now; kept for Settings UI compatibility)
 enum UpdateChannel: String, CaseIterable {
     case stable = "stable"
-    case beta = "beta"
-    case staging = "staging"
 
-    var displayName: String {
-        switch self {
-        case .stable: return "Stable"
-        case .beta: return "Beta"
-        case .staging: return "Staging"
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .stable: return "Recommended for most users"
-        case .beta: return "Early access to new features"
-        case .staging: return "Internal testing builds"
-        }
-    }
+    var displayName: String { "Stable" }
+    var description: String { "Recommended for most users" }
 }
-
-private let kUpdateChannelKey = "update_channel"
 
 /// Delegate to track Sparkle update events for analytics
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
@@ -119,24 +102,10 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
             let isInstallationError = nsError.domain == SUSparkleErrorDomain && nsError.code == 4005
             if isInstallationError {
                 logSync("Sparkle: Installation failed, opening download page as fallback")
-                if let url = URL(string: "https://fazm.ai/download") {
+                if let url = URL(string: "https://github.com/m13v/fazm/releases") {
                     NSWorkspace.shared.open(url)
                 }
             }
-        }
-    }
-
-    /// Tells Sparkle which non-default channels this client wants to see.
-    /// Channels are additive: the default (stable) channel is always included.
-    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        let raw = UserDefaults.standard.string(forKey: kUpdateChannelKey) ?? "stable"
-        switch raw {
-        case "staging":
-            return Set(["staging", "beta"])
-        case "beta":
-            return Set(["beta"])
-        default:
-            return Set() // empty = default (stable) channel only
         }
     }
 
@@ -235,16 +204,11 @@ final class UpdaterViewModel: ObservableObject {
     /// Nonisolated snapshot for cross-actor reads
     private nonisolated(unsafe) static var _isUpdateInProgress: Bool = false
 
-    /// Selected update channel (persisted to UserDefaults)
-    @Published var updateChannel: UpdateChannel {
-        didSet {
-            UserDefaults.standard.set(updateChannel.rawValue, forKey: kUpdateChannelKey)
-            activeChannelLabel = updateChannel == .stable ? "" : updateChannel.displayName
-            if isInitialized {
-                AnalyticsManager.shared.settingToggled(setting: "update_channel", enabled: updateChannel != .stable)
-            }
-        }
-    }
+    /// Update channel (single channel; kept for Settings UI compatibility)
+    @Published var updateChannel: UpdateChannel = .stable
+
+    /// Channel label for display (empty when stable)
+    @Published var activeChannelLabel: String = ""
 
     /// Whether a new update is available (set by delegate callbacks)
     @Published var updateAvailable: Bool = false
@@ -268,10 +232,6 @@ final class UpdaterViewModel: ObservableObject {
         // Initialize published properties from updater state (must be before using `self`)
         automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
         automaticallyDownloadsUpdates = updaterController.updater.automaticallyDownloadsUpdates
-
-        // Initialize update channel from UserDefaults
-        let storedChannel = UserDefaults.standard.string(forKey: kUpdateChannelKey) ?? "stable"
-        updateChannel = UpdateChannel(rawValue: storedChannel) ?? .stable
 
         // Wire up delegate back-reference
         updaterDelegate.viewModel = self
@@ -316,13 +276,4 @@ final class UpdaterViewModel: ObservableObject {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
     }
 
-    /// The active channel label, including the hidden "staging" option
-    @Published var activeChannelLabel: String = {
-        let raw = UserDefaults.standard.string(forKey: kUpdateChannelKey) ?? "stable"
-        switch raw {
-        case "staging": return "Staging"
-        case "beta": return "Beta"
-        default: return ""
-        }
-    }()
 }
