@@ -849,6 +849,21 @@ actor RewindDatabase {
             }
         }
 
+        // V2: Add task_chat_messages for onboarding message persistence
+        migrator.registerMigration("fazmV2") { db in
+            try db.create(table: "task_chat_messages") { t in
+                t.column("taskId", .text).notNull()
+                t.column("messageId", .text).notNull().unique()
+                t.column("sender", .text).notNull()
+                t.column("messageText", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+            }
+            try db.create(index: "idx_task_chat_messages_task",
+                          on: "task_chat_messages", columns: ["taskId"])
+        }
+
         try migrator.migrate(queue)
     }
 
