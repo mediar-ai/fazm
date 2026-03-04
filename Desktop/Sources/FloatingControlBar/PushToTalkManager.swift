@@ -320,6 +320,11 @@ class PushToTalkManager: ObservableObject {
 
       barState?.voiceTranscript = "Transcribing..."
 
+      // Debug: save audio to file for inspection
+      let debugPath = "/tmp/ptt_debug_\(Int(Date().timeIntervalSince1970)).raw"
+      try? audioData.write(to: URL(fileURLWithPath: debugPath))
+      log("PushToTalkManager: saved \(audioData.count) bytes to \(debugPath)")
+
       Task {
         do {
           let language = AssistantSettings.shared.effectiveTranscriptionLanguage
