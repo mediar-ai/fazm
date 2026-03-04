@@ -40,6 +40,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// Used by savePreChatCenterIfNeeded() to snap to the correct pill position
     /// if a new PTT query fires while the restore animation is still running.
     private var pendingRestoreOrigin: NSPoint?
+    /// Global mouse monitor that detects clicks outside the app to dismiss the chat.
+    private var globalClickOutsideMonitor: Any?
 
     var onPlayPause: (() -> Void)?
     var onAskAI: (() -> Void)?
@@ -210,6 +212,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     func closeAIConversation() {
+        removeGlobalClickOutsideMonitor()
         AnalyticsManager.shared.floatingBarAskFazmClosed()
 
         // Cancel any in-flight chat streaming to prevent re-expansion
@@ -288,6 +291,47 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
     }
 
+    // MARK: - Click-Outside Monitor
+
+    /// Installs a global event monitor that fires when the user clicks outside the app.
+    /// `windowDidResignKey` only detects in-app focus changes reliably; when the user
+    /// clicks on another app or the desktop, `NSApp.currentEvent` doesn't contain a
+    /// mouse-down from our process, so the resign-key check misses it.
+    private func installGlobalClickOutsideMonitor() {
+        removeGlobalClickOutsideMonitor()
+        globalClickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, self.state.showingAIConversation else { return }
+            self.dismissConversationAnimated()
+        }
+    }
+
+    private func removeGlobalClickOutsideMonitor() {
+        if let monitor = globalClickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickOutsideMonitor = nil
+        }
+    }
+
+    /// Shared dismiss animation used by both windowDidResignKey (in-app) and global click monitor (cross-app).
+    private func dismissConversationAnimated() {
+        resignKeyAnimationToken += 1
+        let token = resignKeyAnimationToken
+
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            self.animator().alphaValue = 0
+        }) { [weak self] in
+            guard let self, self.resignKeyAnimationToken == token else { return }
+            self.closeAIConversation()
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                self.animator().alphaValue = 1
+            })
+        }
+    }
+
     private func hideBar() {
         self.orderOut(nil)
         AnalyticsManager.shared.floatingBarToggled(visible: false, source: state.showingAIConversation ? "escape_ai" : "bar_button")
@@ -322,6 +366,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             state.inputViewHeight = 120
         }
         setupInputHeightObserver()
+        installGlobalClickOutsideMonitor()
 
         // Make the window key so the FazmTextEditor's focusOnAppear can take effect.
         // The text editor itself handles focusing via updateNSView once it's in the window.
@@ -598,36 +643,20 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         guard state.showingAIConversation else { return }
 
-        // Only dismiss when the user physically clicks away.
+        // Only dismiss when the user physically clicks away within our app.
         // Programmatic focus changes — e.g. the AI agent activating a browser
         // window for automation — do NOT produce a mouse-down event, so we
         // leave the conversation open in those cases.
+        // Clicks outside the app are handled by the global click-outside monitor
+        // (installGlobalClickOutsideMonitor), since NSApp.currentEvent won't
+        // contain a mouse-down from another process.
         let eventType = NSApp.currentEvent?.type
         let isMouseClick = eventType == .leftMouseDown
             || eventType == .rightMouseDown
             || eventType == .otherMouseDown
         guard isMouseClick else { return }
 
-        // Stamp a token so a new PTT query can cancel this in-flight dismiss.
-        resignKeyAnimationToken += 1
-        let token = resignKeyAnimationToken
-
-        // Phase 1: fade out (easeIn — accelerates to gone, feels intentional).
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.2
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            self.animator().alphaValue = 0
-        }) { [weak self] in
-            guard let self, self.resignKeyAnimationToken == token else { return }
-            // Phase 2: collapse while invisible (no jarring resize flash).
-            self.closeAIConversation()
-            // Phase 3: fade the collapsed pill back in (easeOut — decelerates into place).
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.2
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                self.animator().alphaValue = 1
-            })
-        }
+        dismissConversationAnimated()
     }
 
     @objc func windowDidMove(_ notification: Notification) {
