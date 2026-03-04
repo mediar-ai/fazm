@@ -67,6 +67,90 @@ enum OnboardingChatPersistence {
         UserDefaults.standard.bool(forKey: toolCompletedKey)
     }
 
+    // MARK: - Message Persistence (SQLite)
+
+    private static let onboardingTaskId = "__onboarding__"
+
+    /// Save a chat message to the local database
+    static func saveMessage(_ message: ChatMessage) async {
+        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        let sender = message.sender == .user ? "user" : "ai"
+        let now = Date()
+        do {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                        INSERT OR REPLACE INTO task_chat_messages
+                        (taskId, messageId, sender, messageText, createdAt, updatedAt, backendSynced)
+                        VALUES (?, ?, ?, ?, ?, ?, 0)
+                    """,
+                    arguments: [onboardingTaskId, message.id, sender, message.text, message.createdAt, now]
+                )
+            }
+        } catch {
+            log("OnboardingChatPersistence: Failed to save message: \(error)")
+        }
+    }
+
+    /// Update a previously saved AI message with its final text
+    static func updateMessage(id: String, text: String) async {
+        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        do {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE task_chat_messages SET messageText = ?, updatedAt = ? WHERE messageId = ?",
+                    arguments: [text, Date(), id]
+                )
+            }
+        } catch {
+            log("OnboardingChatPersistence: Failed to update message: \(error)")
+        }
+    }
+
+    /// Load all onboarding messages from the local database
+    static func loadMessages() async -> [ChatMessage] {
+        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return [] }
+        do {
+            return try await dbQueue.read { db in
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT messageId, sender, messageText, createdAt
+                    FROM task_chat_messages
+                    WHERE taskId = ?
+                    ORDER BY createdAt ASC
+                """, arguments: [onboardingTaskId])
+
+                return rows.map { row in
+                    ChatMessage(
+                        id: row["messageId"],
+                        text: row["messageText"],
+                        createdAt: row["createdAt"],
+                        sender: (row["sender"] as String) == "user" ? .user : .ai,
+                        isStreaming: false,
+                        isSynced: true
+                    )
+                }
+            }
+        } catch {
+            log("OnboardingChatPersistence: Failed to load messages: \(error)")
+            return []
+        }
+    }
+
+    /// Delete all onboarding messages from the local database
+    static func clearMessages() async {
+        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        do {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: "DELETE FROM task_chat_messages WHERE taskId = ?",
+                    arguments: [onboardingTaskId]
+                )
+            }
+        } catch {
+            log("OnboardingChatPersistence: Failed to clear messages: \(error)")
+        }
+    }
+
     /// Clear all persisted onboarding data
     static func clear() {
         UserDefaults.standard.removeObject(forKey: sessionIdKey)
@@ -74,8 +158,8 @@ enum OnboardingChatPersistence {
         UserDefaults.standard.removeObject(forKey: explorationTextKey)
         UserDefaults.standard.removeObject(forKey: explorationCompletedKey)
         UserDefaults.standard.removeObject(forKey: toolCompletedKey)
-        // Clean up legacy messages key if present
         UserDefaults.standard.removeObject(forKey: "onboardingChatMessages")
+        Task { await clearMessages() }
     }
 }
 
@@ -94,14 +178,18 @@ struct OnboardingChatView: View {
     @State private var quickReplyOptions: [String] = []
     @State private var isGrantingPermission: Bool = false
     @State private var pendingPermissionType: String? = nil  // e.g. "microphone" — waiting for user to grant
+    @State private var inputPulseActive: Bool = false
+    @State private var inputPulsePhase: Bool = false
     @FocusState private var isInputFocused: Bool
 
     // Parallel exploration state
     @State private var explorationBridge: ACPBridge?
+    @State private var graphBridge: ACPBridge?
     @State private var explorationRunning = false
     @State private var explorationCompleted = false
     @State private var explorationText = ""
     @State private var explorationTask: Task<Void, Never>?
+    @State private var graphTask: Task<Void, Never>?
 
     // Timer to periodically check permission status
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
@@ -310,6 +398,19 @@ struct OnboardingChatView: View {
                     .frame(maxWidth: .infinity)
                     .background(FazmColors.backgroundSecondary)
                     .cornerRadius(20)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(FazmColors.purplePrimary.opacity(inputPulseActive ? (inputPulsePhase ? 1.0 : 0.2) : 0), lineWidth: 2)
+                            .animation(.easeInOut(duration: 1.0), value: inputPulsePhase)
+                    )
+                    .onChange(of: quickReplyOptions) { _, options in
+                        inputPulseActive = !options.isEmpty
+                        if options.isEmpty { inputPulsePhase = false }
+                    }
+                    .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+                        guard inputPulseActive else { return }
+                        inputPulsePhase.toggle()
+                    }
 
                 if chatProvider.isSending && inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     // Stop button when AI is responding and input is empty
@@ -366,9 +467,11 @@ struct OnboardingChatView: View {
         if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
            let logoImage = NSImage(contentsOf: logoURL) {
             Image(nsImage: logoImage)
+                .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 20, height: 20)
+                .frame(width: 24, height: 24)
+                .foregroundColor(.white)
                 .frame(width: 32, height: 32)
                 .background(FazmColors.backgroundTertiary)
                 .clipShape(Circle())
@@ -405,7 +508,7 @@ struct OnboardingChatView: View {
         if pendingPermissionType == type {
             pendingPermissionType = nil
             Task {
-                await chatProvider.sendMessage("Grant \(label) — done!")
+                await chatProvider.sendMessage("Grant \(label) — done!", model: "claude-sonnet-4-6")
             }
         }
     }
@@ -451,7 +554,7 @@ struct OnboardingChatView: View {
         }
 
         // Build onboarding system prompt
-        let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.displayName
+        let userName = AuthService.shared.displayName
         let givenName = AuthService.shared.givenName.isEmpty ? userName : AuthService.shared.givenName
         let email = AuthState.shared.userEmail ?? ""
 
@@ -479,8 +582,15 @@ struct OnboardingChatView: View {
                 // Start bridge eagerly so it's ready by the time we need to send
                 async let bridgeWarmup: () = chatProvider.warmupBridge()
 
-                // Load previous messages from backend (same default chat, sessionId=nil)
-                await chatProvider.loadDefaultChatMessages()
+                // Ensure DB is ready before loading messages
+                try? await RewindDatabase.shared.initialize()
+
+                // Load previous messages from local database
+                let savedMessages = await OnboardingChatPersistence.loadMessages()
+                log("OnboardingChatView: Loaded \(savedMessages.count) messages from local DB")
+                if !savedMessages.isEmpty {
+                    chatProvider.messages = savedMessages
+                }
 
                 // Restore the knowledge graph from local storage (saved before restart)
                 if let vm = graphViewModel {
@@ -505,6 +615,7 @@ struct OnboardingChatView: View {
                 // Resume the conversation — tell the AI the app was restarted
                 await chatProvider.sendMessage(
                     "I'm back — the app just restarted after granting a permission. Let's continue where we left off.",
+                    model: "claude-sonnet-4-6",
                     systemPromptPrefix: resumeSystemPrompt,
                     resume: savedSessionId
                 )
@@ -517,6 +628,7 @@ struct OnboardingChatView: View {
             Task {
                 await chatProvider.sendMessage(
                     "Hi, I just installed Fazm!",
+                    model: "claude-sonnet-4-6",
                     systemPromptPrefix: systemPrompt
                 )
             }
@@ -537,7 +649,7 @@ struct OnboardingChatView: View {
         quickReplyOptions = []
 
         Task {
-            await chatProvider.sendMessage(text)
+            await chatProvider.sendMessage(text, model: "claude-sonnet-4-6")
         }
     }
 
@@ -574,7 +686,7 @@ struct OnboardingChatView: View {
 
                 if result.contains("granted") {
                     // Granted immediately — tell the AI
-                    await chatProvider.sendMessage("\(option) — done!")
+                    await chatProvider.sendMessage("\(option) — done!", model: "claude-sonnet-4-6")
                 } else {
                     // Pending — wait silently for the permission check timer to detect it
                     // The onChange handlers for appState.has*Permission will send the message
@@ -584,7 +696,7 @@ struct OnboardingChatView: View {
         } else {
             // Regular quick reply — just send as message
             Task {
-                await chatProvider.sendMessage(option)
+                await chatProvider.sendMessage(option, model: "claude-sonnet-4-6")
             }
         }
     }
@@ -636,13 +748,19 @@ struct OnboardingChatView: View {
             )
         }
 
-        // Clean up parallel exploration
+        // Clean up parallel explorations
         explorationTask?.cancel()
         explorationTask = nil
+        graphTask?.cancel()
+        graphTask = nil
         if let bridge = explorationBridge {
             Task { await bridge.stop() }
         }
         explorationBridge = nil
+        if let bridge = graphBridge {
+            Task { await bridge.stop() }
+        }
+        graphBridge = nil
 
         // Clean up onboarding state and persisted chat data
         chatProvider.isOnboarding = false
@@ -705,18 +823,64 @@ struct OnboardingChatView: View {
     private func startExploration(fileCount: Int, graphViewModel: MemoryGraphViewModel?) {
         guard !explorationRunning else { return }
         explorationRunning = true
-        log("OnboardingChat: Starting parallel exploration (\(fileCount) files indexed)")
+        log("OnboardingChat: Starting parallel explorations (\(fileCount) files indexed)")
         AnalyticsManager.shared.onboardingChatToolUsed(tool: "exploration_started", properties: ["file_count": fileCount])
 
+        let userName = AuthService.shared.displayName
+
+        // Session 1: Knowledge graph builder (graph-focused, no text output needed)
+        graphTask = Task {
+            do {
+                let bridge = ACPBridge(passApiKey: true)
+                await MainActor.run { graphBridge = bridge }
+                try await bridge.start()
+
+                let schema = await Self.loadDatabaseSchema()
+                let systemPrompt = ChatPromptBuilder.buildOnboardingGraphExploration(userName: userName, databaseSchema: schema)
+
+                let result = try await bridge.query(
+                    prompt: "Begin exploration. \(fileCount) files have been indexed in the indexed_files table.",
+                    systemPrompt: systemPrompt,
+                    model: "claude-opus-4-6",
+                    onTextDelta: { @Sendable _ in },
+                    onToolCall: { @Sendable _, name, input in
+                        let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
+                        let result = await ChatToolExecutor.execute(toolCall)
+                        log("OnboardingChat: Graph exploration tool \(name) executed")
+                        return result
+                    },
+                    onToolActivity: { @Sendable name, status, _, _ in
+                        log("OnboardingChat: Graph exploration tool \(name) \(status)")
+                    }
+                )
+
+                log("OnboardingChat: Graph exploration completed (cost=$\(String(format: "%.4f", result.costUsd)), tokens=\(result.inputTokens)+\(result.outputTokens))")
+                AnalyticsManager.shared.onboardingChatToolUsed(tool: "graph_exploration_completed", properties: [
+                    "cost_usd": result.costUsd,
+                    "input_tokens": result.inputTokens,
+                    "output_tokens": result.outputTokens
+                ])
+
+                await bridge.stop()
+                await MainActor.run { graphBridge = nil }
+            } catch {
+                log("OnboardingChat: Graph exploration failed (non-fatal): \(error.localizedDescription)")
+                if let bridge = await MainActor.run(body: { graphBridge }) {
+                    await bridge.stop()
+                }
+                await MainActor.run { graphBridge = nil }
+            }
+        }
+
+        // Session 2: Profile text writer (text-focused, saves AI user profile)
         explorationTask = Task {
             do {
                 let bridge = ACPBridge(passApiKey: true)
                 await MainActor.run { explorationBridge = bridge }
                 try await bridge.start()
 
-                let userName = AuthService.shared.displayName.isEmpty ? "User" : AuthService.shared.displayName
                 let schema = await Self.loadDatabaseSchema()
-                let systemPrompt = ChatPromptBuilder.buildOnboardingExploration(userName: userName, databaseSchema: schema)
+                let systemPrompt = ChatPromptBuilder.buildOnboardingProfileExploration(userName: userName, databaseSchema: schema)
 
                 let result = try await bridge.query(
                     prompt: "Begin exploration. \(fileCount) files have been indexed in the indexed_files table.",
@@ -734,16 +898,16 @@ struct OnboardingChatView: View {
                     onToolCall: { @Sendable _, name, input in
                         let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
                         let result = await ChatToolExecutor.execute(toolCall)
-                        log("OnboardingChat: Exploration tool \(name) executed")
+                        log("OnboardingChat: Profile exploration tool \(name) executed")
                         return result
                     },
                     onToolActivity: { @Sendable name, status, _, _ in
-                        log("OnboardingChat: Exploration tool \(name) \(status)")
+                        log("OnboardingChat: Profile exploration tool \(name) \(status)")
                     }
                 )
 
-                log("OnboardingChat: Exploration completed (cost=$\(String(format: "%.4f", result.costUsd)), tokens=\(result.inputTokens)+\(result.outputTokens))")
-                AnalyticsManager.shared.onboardingChatToolUsed(tool: "exploration_completed", properties: [
+                log("OnboardingChat: Profile exploration completed (cost=$\(String(format: "%.4f", result.costUsd)), tokens=\(result.inputTokens)+\(result.outputTokens))")
+                AnalyticsManager.shared.onboardingChatToolUsed(tool: "profile_exploration_completed", properties: [
                     "cost_usd": result.costUsd,
                     "input_tokens": result.inputTokens,
                     "output_tokens": result.outputTokens
@@ -765,7 +929,7 @@ struct OnboardingChatView: View {
                 await bridge.stop()
                 await MainActor.run { explorationBridge = nil }
             } catch {
-                log("OnboardingChat: Exploration failed (non-fatal): \(error.localizedDescription)")
+                log("OnboardingChat: Profile exploration failed (non-fatal): \(error.localizedDescription)")
                 if let bridge = await MainActor.run(body: { explorationBridge }) {
                     await bridge.stop()
                 }
@@ -864,8 +1028,9 @@ struct OnboardingChatView: View {
             let success = await service.updateProfileText(id: profileId, newText: updated)
             log("OnboardingChat: Appended exploration to AI profile (success=\(success))")
         } else {
-            log("OnboardingChat: No existing AI profile, triggering generation")
-            _ = try? await service.generateProfile()
+            log("OnboardingChat: No existing AI profile, saving exploration as new profile")
+            let success = await service.saveExplorationAsProfile(text: text)
+            log("OnboardingChat: Saved exploration as profile (success=\(success))")
         }
     }
 
@@ -932,9 +1097,11 @@ struct OnboardingChatBubble: View {
                     if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
                        let logoImage = NSImage(contentsOf: logoURL) {
                         Image(nsImage: logoImage)
+                            .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 20, height: 20)
+                            .frame(width: 24, height: 24)
+                            .foregroundColor(.white)
                             .frame(width: 32, height: 32)
                             .background(FazmColors.backgroundTertiary)
                             .clipShape(Circle())
