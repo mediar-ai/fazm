@@ -5,7 +5,7 @@ struct DesktopHomeView: View {
     @StateObject private var viewModelContainer = ViewModelContainer()
 
     // Settings sidebar state
-    @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .aiChat
+    @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .general
     @State private var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection? = nil
     @State private var highlightedSettingId: String? = nil
 
