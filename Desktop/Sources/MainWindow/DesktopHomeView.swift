@@ -12,7 +12,6 @@ struct DesktopHomeView: View {
     // Sheet triggers (driven by ChatProvider @Published flags)
     @State private var showBrowserExtensionSetup = false
     @State private var showClaudeAuth = false
-    @State private var showFazmThresholdAlert = false
 
     var body: some View {
         Group {
@@ -78,19 +77,8 @@ struct DesktopHomeView: View {
                 },
                 onCancel: {
                     showClaudeAuth = false
-                    Task {
-                        await viewModelContainer.chatProvider.switchBridgeMode(to: ChatProvider.BridgeMode.fazmAI)
-                    }
                 }
             )
-        }
-        // Fazm usage threshold alert
-        .alert("Free Usage Limit Reached", isPresented: $showFazmThresholdAlert) {
-            Button("OK") {
-                showFazmThresholdAlert = false
-            }
-        } message: {
-            Text("You've reached the free Fazm AI usage limit. The app has switched to your Claude account.")
         }
         // Observe ChatProvider flags
         .onReceive(viewModelContainer.chatProvider.$needsBrowserExtensionSetup) { needs in
@@ -102,12 +90,6 @@ struct DesktopHomeView: View {
         .onReceive(viewModelContainer.chatProvider.$isClaudeAuthRequired) { needs in
             if needs {
                 showClaudeAuth = true
-            }
-        }
-        .onReceive(viewModelContainer.chatProvider.$showFazmThresholdAlert) { needs in
-            if needs {
-                showFazmThresholdAlert = true
-                viewModelContainer.chatProvider.showFazmThresholdAlert = false
             }
         }
         .onAppear {

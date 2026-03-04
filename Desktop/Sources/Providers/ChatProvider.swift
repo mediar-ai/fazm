@@ -341,20 +341,11 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
 
-    // MARK: - Bridge (ACP-only, passApiKey controls Fazm vs user's account)
-    // NOTE: initialized lazily so it reads the persisted bridgeMode from UserDefaults,
-    // not always defaulting to Fazm mode on cold start.
+    // MARK: - Bridge (ACP-only, always uses user's Claude account)
     private lazy var acpBridge: ACPBridge = {
-        let isFazm = (UserDefaults.standard.string(forKey: "chatBridgeMode") ?? BridgeMode.fazmAI.rawValue) != BridgeMode.userClaude.rawValue
-        return ACPBridge(passApiKey: isFazm)
+        return ACPBridge(passApiKey: false)
     }()
     private var acpBridgeStarted = false
-
-    enum BridgeMode: String {
-        case fazmAI = "agentSDK"
-        case userClaude = "claudeCode"
-    }
-    @AppStorage("chatBridgeMode") var bridgeMode: String = BridgeMode.fazmAI.rawValue
 
     /// Whether the ACP bridge requires authentication (shown as sheet in UI)
     @Published var isClaudeAuthRequired = false
@@ -364,13 +355,8 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     @Published var claudeAuthUrl: String?
     /// Whether the user has a cached Claude OAuth token
     @Published var isClaudeConnected = false
-    /// Cumulative tokens used in the current session via Fazm account
+    /// Cumulative tokens used in the current session
     @Published var sessionTokensUsed: Int = 0
-    /// Cumulative USD cost spent using the Fazm account, persisted across sessions.
-    /// Used to enforce the $50 threshold for auto-switching to the user's Claude account.
-    @AppStorage("fazmAICumulativeCostUsd") var fazmAICumulativeCostUsd: Double = 0.0
-    /// Set to true when the $50 Fazm account usage threshold is reached, triggering an alert.
-    @Published var showFazmThresholdAlert = false
 
     private let messagesPageSize = 50
     private let maxMessagesInMemory = 200
@@ -554,11 +540,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         return try await acpBridge.testPlaywrightConnection()
     }
 
-    /// Whether we're currently in user's Claude account mode
-    private var isUserClaudeMode: Bool {
-        bridgeMode == BridgeMode.userClaude.rawValue
-    }
-
     /// Ensure the ACP bridge is started (restarts if the process died)
     private func ensureBridgeStarted() async -> Bool {
         if acpBridgeStarted {
@@ -606,40 +587,11 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         }
     }
 
-    /// Switch between bridge modes (Fazm AI vs user's Claude account)
-    func switchBridgeMode(to mode: BridgeMode) async {
-        // Compare against the actual running bridge state, not bridgeMode (@AppStorage updates
-        // immediately when the Picker changes, so bridgeMode already equals `mode` by the time
-        // this function is called — the old string comparison always exits early).
-        guard (mode == .fazmAI) != acpBridge.passApiKey else { return }
-        let oldMode = bridgeMode
-        log("ChatProvider: Switching bridge mode from \(bridgeMode) to \(mode.rawValue)")
-
-        // Stop the current bridge
-        await acpBridge.stop()
-        acpBridgeStarted = false
-
-        // Switch mode and recreate bridge with appropriate passApiKey
-        bridgeMode = mode.rawValue
-        acpBridge = ACPBridge(passApiKey: mode == .fazmAI)
-        AnalyticsManager.shared.chatBridgeModeChanged(from: oldMode, to: mode.rawValue)
-
-        // Check Claude connection status when switching to user's Claude account
-        if mode == .userClaude {
-            checkClaudeConnectionStatus()
-        }
-
-        // Warm up the new bridge
-        _ = await ensureBridgeStarted()
-    }
-
-    /// Start Claude OAuth authentication (Mode B)
+    /// Start Claude OAuth authentication
     /// Opens the OAuth URL (provided by the bridge) in the default browser.
     /// The bridge handles the full OAuth flow: local callback server, token exchange,
     /// credential storage, and ACP subprocess restart.
     func startClaudeAuth() {
-        guard isUserClaudeMode else { return }
-
         if let urlString = claudeAuthUrl, let url = URL(string: urlString) {
             log("ChatProvider: Opening Claude OAuth URL in browser")
             NSWorkspace.shared.open(url)
@@ -716,10 +668,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
 
         // 4. Update state
         isClaudeConnected = false
-
-        // 5. Switch back to Fazm AI mode and recreate bridge with API key
-        bridgeMode = BridgeMode.fazmAI.rawValue
-        acpBridge = ACPBridge(passApiKey: true)
     }
 
     // MARK: - Session Management
@@ -1382,23 +1330,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
 
     /// Initialize chat: fetch sessions and load messages
     func initialize() async {
-        // Seed cumulative Fazm AI cost from backend now that auth is ready (background, no latency)
-        Task.detached(priority: .background) { [weak self] in
-            guard let serverCost = await APIClient.shared.fetchTotalOmiAICost() else { return }
-            guard let self else { return }
-            await MainActor.run {
-                // Always trust the server value — it's the authoritative total
-                self.fazmAICumulativeCostUsd = serverCost
-                log("ChatProvider: Seeded Fazm AI cumulative cost from backend: $\(String(format: "%.4f", serverCost))")
-                // Auto-switch if already over threshold on startup
-                if self.bridgeMode == BridgeMode.fazmAI.rawValue && serverCost >= 50.0 {
-                    log("ChatProvider: Fazm AI cost already at $\(String(format: "%.2f", serverCost)) on startup — switching to user Claude account")
-                    self.showFazmThresholdAlert = true
-                    Task { await self.switchBridgeMode(to: .userClaude) }
-                }
-            }
-        }
-
         if multiChatEnabled {
             // Multi-chat mode: load sessions, default to default chat
             await fetchSessions()
@@ -1833,13 +1764,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             return
         }
 
-        // Guard: Block query if Fazm account $50 usage threshold already reached
-        if bridgeMode == BridgeMode.fazmAI.rawValue && fazmAICumulativeCostUsd >= 50.0 {
-            showFazmThresholdAlert = true
-            Task { await self.switchBridgeMode(to: .userClaude) }
-            return
-        }
-
         // Determine session ID based on mode
         // In default chat mode (isInDefaultChat=true): no session ID (compatible with Flutter)
         // In session mode: require session ID
@@ -2122,8 +2046,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 messageLength: responseLength
             )
 
-            let isFazmMode = bridgeMode == BridgeMode.fazmAI.rawValue
-            let accountType = isFazmMode ? "fazm" : "personal"
             let r = queryResult
             Task.detached(priority: .background) {
                 await APIClient.shared.recordLlmUsage(
@@ -2133,18 +2055,10 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                     cacheWriteTokens: r.cacheWriteTokens,
                     totalTokens: r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens,
                     costUsd: r.costUsd,
-                    account: accountType
+                    account: "personal"
                 )
             }
-            if isFazmMode {
-                sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
-                fazmAICumulativeCostUsd += queryResult.costUsd
-                // Auto-switch to the user's Claude account when the $50 Fazm usage threshold is reached
-                if fazmAICumulativeCostUsd >= 50.0 {
-                    showFazmThresholdAlert = true
-                    Task { await self.switchBridgeMode(to: .userClaude) }
-                }
-            }
+            sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
 
             // Fire-and-forget: check if user's message mentions goal progress
             let chatText = trimmedText

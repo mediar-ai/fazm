@@ -26,40 +26,44 @@ func shouldSkipOnboarding() -> Bool {
     return CommandLine.arguments.contains("--skip-onboarding")
 }
 
-// Simple observable state without Firebase types
+// Local auth state — always signed in, no Firebase dependency
 @MainActor
 class AuthState: ObservableObject {
     static let shared = AuthState()
 
-    // UserDefaults keys (must match AuthService)
-    private static let kAuthIsSignedIn = "auth_isSignedIn"
+    // UserDefaults keys
     private static let kAuthUserEmail = "auth_userEmail"
     private static let kAuthUserId = "auth_userId"
 
-    @Published var isSignedIn: Bool
+    @Published var isSignedIn: Bool = true
     @Published var isLoading: Bool = false
-    @Published var isRestoringAuth: Bool = true
+    @Published var isRestoringAuth: Bool = false
     @Published var error: String?
     @Published var userEmail: String?
 
     private init() {
-        // Restore auth state from UserDefaults immediately on init (before UI renders)
-        let savedSignedIn = UserDefaults.standard.bool(forKey: Self.kAuthIsSignedIn)
-        let savedEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
-        self.isSignedIn = savedSignedIn
-        self.userEmail = savedEmail
-        // Show loading splash while Firebase restores session (only if user was previously signed in)
-        self.isRestoringAuth = savedSignedIn
-        NSLog("FazmApp AuthState: Initialized with savedSignedIn=%@, email=%@, isRestoringAuth=%@",
-              savedSignedIn ? "true" : "false", savedEmail ?? "nil", self.isRestoringAuth ? "true" : "false")
+        self.userEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
+
+        // Ensure a local userId exists (used by RewindDatabase)
+        if let existingId = UserDefaults.standard.string(forKey: Self.kAuthUserId), !existingId.isEmpty {
+            // Use existing userId
+        } else {
+            let localId = UUID().uuidString
+            UserDefaults.standard.set(localId, forKey: Self.kAuthUserId)
+            NSLog("FazmApp AuthState: Generated local userId: %@", localId)
+        }
+
+        NSLog("FazmApp AuthState: Initialized (always signed in), email=%@, userId=%@",
+              self.userEmail ?? "nil",
+              UserDefaults.standard.string(forKey: Self.kAuthUserId) ?? "nil")
     }
 
     func update(isSignedIn: Bool, userEmail: String? = nil) {
-        self.isSignedIn = isSignedIn
+        // Always stay signed in
         self.userEmail = userEmail
     }
 
-    /// Get the user's Firebase UID from UserDefaults (fallback when Firebase SDK auth fails)
+    /// Get the user's local UID from UserDefaults
     var userId: String? {
         UserDefaults.standard.string(forKey: Self.kAuthUserId)
     }
@@ -245,7 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             AnalyticsManager.shared.launchAtLoginStatusChecked(enabled: isEnabled)
         }
 
-        // Register for Apple Events to handle URL scheme
+        // Register for Apple Events to handle URL scheme (e.g. deep links)
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),

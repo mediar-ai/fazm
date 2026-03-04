@@ -37,25 +37,6 @@ APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
 SIGN_IDENTITY="${FAZM_SIGN_IDENTITY:-}"
 
-# Backend configuration (Rust)
-BACKEND_DIR="$(dirname "$0")/Backend-Rust"
-BACKEND_PID=""
-TUNNEL_PID=""
-TUNNEL_URL="https://fazm-dev.m13v.com"
-
-# Cleanup function to stop backend and tunnel on exit
-cleanup() {
-    if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-        echo "Stopping tunnel (PID: $TUNNEL_PID)..."
-        kill "$TUNNEL_PID" 2>/dev/null || true
-    fi
-    if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-        echo "Stopping backend (PID: $BACKEND_PID)..."
-        kill "$BACKEND_PID" 2>/dev/null || true
-    fi
-}
-trap cleanup EXIT
-
 AUTH_DEBUG_LOG=/private/tmp/auth-debug.log
 rm -f $AUTH_DEBUG_LOG
 auth_debug() { echo "[AUTH DEBUG][$(date +%H:%M:%S)] $1" >> $AUTH_DEBUG_LOG; }
@@ -66,13 +47,6 @@ auth_debug "BEFORE pkill: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSi
 auth_debug "BEFORE pkill: ALL_KEYS=$(defaults read "$BUNDLE_ID" 2>&1 | grep -E 'auth_|hasCompleted|hasLaunched|currentTier|userShow' || true)"
 # Only kill the dev app — never touch Fazm (production)
 pkill -f "$APP_NAME.app" 2>/dev/null || true
-pkill -f "cloudflared.*fazm-dev" 2>/dev/null || true
-# Kill only the Rust backend on port 8080 (not other apps that might use it)
-lsof -ti:8080 -sTCP:LISTEN 2>/dev/null | while read pid; do
-    if ps -p "$pid" -o command= 2>/dev/null | grep -q "omi-backend\|Backend-Rust\|target/"; then
-        kill -9 "$pid" 2>/dev/null || true
-    fi
-done
 sleep 0.5  # Let cfprefsd flush after process death
 auth_debug "AFTER pkill: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 auth_debug "AFTER pkill: ALL_KEYS=$(defaults read "$BUNDLE_ID" 2>&1 | grep -E 'auth_|hasCompleted|hasLaunched|currentTier|userShow' || true)"
@@ -104,47 +78,6 @@ done
 find "$HOME" -maxdepth 4 -name "Fazm Dev.app" -type d -not -path "$APP_BUNDLE" -not -path "$APP_PATH" 2>/dev/null | while read stale; do
     substep "Removing stale clone: $stale"
     rm -rf "$stale"
-done
-
-step "Starting Cloudflare tunnel..."
-cloudflared tunnel run fazm-dev &
-TUNNEL_PID=$!
-sleep 2
-
-step "Starting Rust backend..."
-cd "$BACKEND_DIR"
-
-# Copy .env if not present
-if [ ! -f ".env" ] && [ -f "../Backend/.env" ]; then
-    cp "../Backend/.env" ".env"
-fi
-
-# Symlink google-credentials.json if not present
-if [ ! -f "google-credentials.json" ] && [ -f "../Backend/google-credentials.json" ]; then
-    ln -sf "../Backend/google-credentials.json" "google-credentials.json"
-fi
-
-# Build if binary doesn't exist or source is newer
-if [ ! -f "target/release/omi-desktop-backend" ] || [ -n "$(find src -newer target/release/omi-desktop-backend 2>/dev/null)" ]; then
-    step "Building Rust backend (cargo build --release)..."
-    cargo build --release
-fi
-
-./target/release/omi-desktop-backend &
-BACKEND_PID=$!
-cd - > /dev/null
-
-step "Waiting for backend to start..."
-for i in {1..30}; do
-    if curl -s http://localhost:8080 > /dev/null 2>&1; then
-        substep "Backend is ready!"
-        break
-    fi
-    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-        echo "Backend failed to start"
-        exit 1
-    fi
-    sleep 0.5
 done
 
 # Check if another SwiftPM instance is running (will block our build)
@@ -209,13 +142,6 @@ cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
 auth_debug "AFTER plist edits: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
-substep "Copying GoogleService-Info.plist (dev version for com.fazm.desktop-dev)"
-if [ -f "Desktop/Sources/GoogleService-Info-Dev.plist" ]; then
-    cp -f Desktop/Sources/GoogleService-Info-Dev.plist "$APP_BUNDLE/Contents/Resources/GoogleService-Info.plist"
-else
-    cp -f Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
-fi
-
 # Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
 RESOURCE_BUNDLE="Desktop/.build/arm64-apple-macosx/debug/Fazm_Fazm.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
@@ -239,23 +165,12 @@ elif [ -f ".env.app" ]; then
 else
     touch "$APP_BUNDLE/Contents/Resources/.env"
 fi
-echo "FAZM_API_URL=$TUNNEL_URL" >> "$APP_BUNDLE/Contents/Resources/.env"
 
 substep "Copying app icon"
 cp -f fazm_icon.icns "$APP_BUNDLE/Contents/Resources/FazmIcon.icns" 2>/dev/null || true
 
 substep "Creating PkgInfo"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
-
-# Embed provisioning profile (required for Sign In with Apple entitlement)
-# Use dev profile for dev builds, production profile for release builds
-if [ -f "Desktop/embedded-dev.provisionprofile" ]; then
-    substep "Copying dev provisioning profile"
-    cp "Desktop/embedded-dev.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
-elif [ -f "Desktop/embedded.provisionprofile" ]; then
-    substep "Copying provisioning profile"
-    cp "Desktop/embedded.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
-fi
 
 auth_debug "BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
@@ -328,17 +243,14 @@ NOW=$(date +%s.%N)
 TOTAL_TIME=$(echo "$NOW - $SCRIPT_START_TIME" | bc)
 printf "  └─ done (%.2fs)\n" "$(echo "$NOW - $STEP_START_TIME" | bc)"
 echo ""
-echo "=== Services Running (total: ${TOTAL_TIME%.*}s) ==="
-echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
-echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
+echo "=== App Running (total: ${TOTAL_TIME%.*}s) ==="
 echo "App:      $APP_PATH (installed from $APP_BUNDLE)"
-echo "Using backend: $TUNNEL_URL"
 echo "========================================"
 echo ""
 
 auth_debug "BEFORE launch: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$BINARY_NAME" &
 
-# Wait for backend process (keeps script running and shows logs)
-echo "Press Ctrl+C to stop all services..."
-wait "$BACKEND_PID"
+# Keep script running so Ctrl+C can be used to stop
+echo "Press Ctrl+C to stop..."
+wait

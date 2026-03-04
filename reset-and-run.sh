@@ -118,30 +118,9 @@ if [ -z "$SIGN_IDENTITY" ]; then
     exit 1
 fi
 
-# Backend configuration (Rust)
-BACKEND_DIR="$(dirname "$0")/Backend-Rust"
-BACKEND_PID=""
-TUNNEL_PID=""
-TUNNEL_URL="https://fazm-dev.m13v.com"
-
-# Cleanup function to stop backend and tunnel on exit
-cleanup() {
-    if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-        echo "Stopping tunnel (PID: $TUNNEL_PID)..."
-        kill "$TUNNEL_PID" 2>/dev/null || true
-    fi
-    if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-        echo "Stopping backend (PID: $BACKEND_PID)..."
-        kill "$BACKEND_PID" 2>/dev/null || true
-    fi
-}
-trap cleanup EXIT
-
 # Kill existing instances
 echo "Killing existing instances..."
 pkill -f "$APP_NAME.app" 2>/dev/null || true
-pkill -f "cloudflared.*fazm-dev" 2>/dev/null || true
-lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 
 # Clear log file for fresh run (must be before backend starts)
 rm -f /tmp/fazm.log 2>/dev/null || true
@@ -254,50 +233,6 @@ done
 echo "Resetting Launch Services database..."
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user 2>/dev/null || true
 
-# Start Cloudflare tunnel
-echo "Starting Cloudflare tunnel..."
-cloudflared tunnel run fazm-dev &
-TUNNEL_PID=$!
-sleep 2
-
-# Start Rust backend
-echo "Starting Rust backend..."
-cd "$BACKEND_DIR"
-
-# Copy .env if not present
-if [ ! -f ".env" ] && [ -f "../Backend/.env" ]; then
-    cp "../Backend/.env" ".env"
-fi
-
-# Symlink google-credentials.json if not present
-if [ ! -f "google-credentials.json" ] && [ -f "../Backend/google-credentials.json" ]; then
-    ln -sf "../Backend/google-credentials.json" "google-credentials.json"
-fi
-
-# Build if binary doesn't exist or source is newer
-if [ ! -f "target/release/omi-desktop-backend" ] || [ -n "$(find src -newer target/release/omi-desktop-backend 2>/dev/null)" ]; then
-    echo "Building Rust backend..."
-    cargo build --release
-fi
-
-./target/release/omi-desktop-backend &
-BACKEND_PID=$!
-cd - > /dev/null
-
-# Wait for backend to be ready
-echo "Waiting for backend to start..."
-for i in {1..30}; do
-    if curl -s http://localhost:8080 > /dev/null 2>&1; then
-        echo "Backend is ready!"
-        break
-    fi
-    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-        echo "Backend failed to start"
-        exit 1
-    fi
-    sleep 0.5
-done
-
 # Build acp-bridge
 echo "Building acp-bridge..."
 ACP_BRIDGE_DIR="$(dirname "$0")/acp-bridge"
@@ -352,15 +287,6 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     echo "  Copied acp-bridge to bundle"
 fi
 
-# Embed provisioning profile (required for Apple Development signing + restricted entitlements)
-if [ -f "Desktop/embedded-dev.provisionprofile" ]; then
-    cp "Desktop/embedded-dev.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
-    echo "  Copied dev provisioning profile"
-elif [ -f "Desktop/embedded.provisionprofile" ]; then
-    cp "Desktop/embedded.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
-    echo "  Copied provisioning profile"
-fi
-
 # Copy and fix Info.plist
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
@@ -369,18 +295,12 @@ cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 fazm-dev" "$APP_BUNDLE/Contents/Info.plist"
 
-# Copy GoogleService-Info.plist for Firebase
-cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
-
-# Copy .env.app (app runtime secrets only) and add API URL
+# Copy .env.app (app runtime secrets only)
 if [ -f ".env.app" ]; then
     cp .env.app "$APP_BUNDLE/Contents/Resources/.env"
 else
     touch "$APP_BUNDLE/Contents/Resources/.env"
 fi
-# Set API URL to tunnel for development (overrides production default)
-echo "FAZM_API_URL=$TUNNEL_URL" >> "$APP_BUNDLE/Contents/Resources/.env"
-echo "Using backend: $TUNNEL_URL"
 
 # Copy app icon
 cp fazm_icon.icns "$APP_BUNDLE/Contents/Resources/FazmIcon.icns" 2>/dev/null || true
@@ -433,11 +353,9 @@ osascript -e "tell application \"System Events\" to tell process \"NotificationC
 echo "Note: Notification permissions can only be reset manually in System Settings"
 
 echo ""
-echo "=== Services Running ==="
-echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
-echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
+echo "=== App Running ==="
 echo "App:      $APP_PATH"
-echo "========================"
+echo "==================="
 echo ""
 
 # Re-register with LaunchServices (clear stale launch-disabled flags)
@@ -451,6 +369,6 @@ echo "Starting app..."
 xattr -cr "$APP_PATH"
 open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$BINARY_NAME" &
 
-# Wait for backend process (keeps script running and shows logs)
-echo "Press Ctrl+C to stop all services..."
-wait "$BACKEND_PID"
+# Keep script running so Ctrl+C can be used to stop
+echo "Press Ctrl+C to stop..."
+wait
