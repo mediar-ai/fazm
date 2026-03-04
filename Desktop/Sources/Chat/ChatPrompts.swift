@@ -949,7 +949,6 @@ struct ChatPrompts {
         "memories": "user facts, preferences, personal details (age, relationships, habits, interests) — PRIMARY source for personal questions",
         "ai_user_profiles": "AI-generated user profile summaries",
         "indexed_files": "file metadata index from ~/Downloads, ~/Documents, ~/Desktop — path, filename, extension, fileType (document/code/image/video/audio/spreadsheet/presentation/archive/data/other), sizeBytes, folder, depth, timestamps",
-        "goals": "user goals with progress tracking",
         "local_kg_nodes": "knowledge graph nodes — entities (people, orgs, places, things, concepts) extracted from user files",
         "local_kg_edges": "knowledge graph edges — relationships between entities",
     ]
@@ -969,7 +968,6 @@ struct ChatPrompts {
             "scoring": "Internal scoring metadata from extraction",
             "source": "desktop | fazm | screenshot | phone — how the memory was created",
             "conversationId": "Backend conversation ID if extracted from a voice session",
-            "screenshotId": "FK to screenshots if extracted from screen",
             "confidence": "Extraction confidence 0–1",
             "reasoning": "AI reasoning for why this was saved as a memory",
             "sourceApp": "App that was active when memory was extracted",
@@ -979,19 +977,6 @@ struct ChatPrompts {
             "inputDeviceName": "Audio device used if from a voice session",
             "isRead": "Whether the user has seen this memory in the UI",
             "isDismissed": "Whether the user dismissed this memory",
-            "deleted": "Soft-delete flag",
-        ],
-        "goals": [
-            "title": "Short goal name shown in UI",
-            "goalDescription": "Longer description of the goal",
-            "goalType": "boolean (done/not done) | scale (0–N) | numeric (measured value)",
-            "targetValue": "The value to reach for completion",
-            "currentValue": "Current progress value",
-            "minValue": "Minimum possible value",
-            "maxValue": "Maximum possible value",
-            "unit": "Unit label (e.g. km, hours, pages)",
-            "isActive": "Whether goal is currently being tracked",
-            "completedAt": "When the goal was completed (null if in progress)",
             "deleted": "Soft-delete flag",
         ],
         "ai_user_profiles": [
@@ -1018,23 +1003,15 @@ struct ChatPrompts {
     /// Any table whose name contains "_fts" is an FTS virtual or internal table — exclude all.
     /// Specific infra tables also excluded.
     static let excludedTables: Set<String> = [
-        "migration_status", "task_dedup_log",
-        // Legacy OMI tables no longer used in Fazm
-        "action_items", "screenshots", "focus_sessions",
-        "live_notes", "observations", "proactive_extractions",
-        "staged_tasks", "task_chat_messages",
-        "transcription_segments", "transcription_sessions",
+        "goals",
     ]
 
     /// Infrastructure columns to strip from schema — file paths, binary blobs, sync state, internal flags.
     /// New migrations are still picked up automatically; only these specific names are hidden.
     /// Claude can always query: SELECT sql FROM sqlite_master WHERE name='table_name'
     static let excludedColumns: Set<String> = [
-        "imagePath", "videoChunkPath", "frameOffset",
-        "ocrDataJson", "extractedTasksJson", "adviceJson",
-        "isIndexed", "backendId", "backendSynced", "backendSyncedAt",
-        "embeddingData", "embedding", "normalizedOcrTextId",
-        "fromStaged",
+        "backendId", "backendSynced", "backendSyncedAt",
+        "embeddingData", "embedding",
     ]
 
     /// Static suffix appended after the dynamic schema

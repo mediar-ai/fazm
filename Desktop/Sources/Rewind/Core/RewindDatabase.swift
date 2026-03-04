@@ -688,7 +688,7 @@ actor RewindDatabase {
                 // Count recovered memories as a proxy for recovery success
                 do {
                     let queue = try DatabaseQueue(path: recoveredPath)
-                    return try queue.read { db in
+                    return try await queue.read { db in
                         try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM memories") ?? 0
                     }
                 } catch {
