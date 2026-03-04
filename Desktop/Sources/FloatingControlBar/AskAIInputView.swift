@@ -37,28 +37,6 @@ struct AskAIInputView: View {
             .padding(.top, 8)
             .padding(.trailing, 16)
 
-            // Show listening indicator when PTT is active
-            if state.isVoiceListening && !state.isVoiceFollowUp {
-                HStack(spacing: 8) {
-                    AudioLevelBarsView(
-                        level: state.voiceAudioLevel,
-                        barCount: 5,
-                        barWidth: 3,
-                        spacing: 2,
-                        maxHeight: 16,
-                        minHeight: 3,
-                        color: .white
-                    )
-                    Text(state.isVoiceLocked
-                        ? "Tap \(ShortcutSettings.shared.pttKey.symbol) to send"
-                        : "Release \(ShortcutSettings.shared.pttKey.symbol) to send")
-                        .scaledFont(size: 11)
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-            }
-
             HStack(spacing: 6) {
                 ZStack(alignment: .topLeading) {
                     if localInput.isEmpty && !state.isVoiceListening {
