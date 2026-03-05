@@ -11,6 +11,8 @@ struct AskAIInputView: View {
     var onCancel: (() -> Void)?
     var onHeightChange: ((CGFloat) -> Void)?
 
+    @State private var sendPulse: Bool = false
+
     private let minHeight: CGFloat = 40
     private let maxHeight: CGFloat = 200
 
@@ -53,6 +55,7 @@ struct AskAIInputView: View {
                         onSubmit: {
                             let trimmed = localInput.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !trimmed.isEmpty else { return }
+                            state.showSendButtonHint = false
                             onSend?(trimmed)
                         },
                         focusOnAppear: true,
@@ -81,20 +84,7 @@ struct AskAIInputView: View {
                 .padding(.horizontal, 4)
                 .frame(height: textHeight)
 
-                Button(action: {
-                    let trimmed = localInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    onSend?(trimmed)
-                }) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .scaledFont(size: 24)
-                        .foregroundColor(
-                            localInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? .secondary : .white
-                        )
-                }
-                .disabled(localInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .buttonStyle(.plain)
+                sendButton
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -105,8 +95,48 @@ struct AskAIInputView: View {
         }
     }
 
-    // Model picker moved to Settings > Ask Fazm Floating Bar
-    // private var modelPicker: some View { ... }
-    // private func showModelMenu() { ... }
-    // private var currentModelLabel: String { ... }
+    private var hasInput: Bool {
+        !localInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sendButton: some View {
+        VStack(spacing: 2) {
+            Button(action: {
+                guard hasInput else { return }
+                state.showSendButtonHint = false
+                onSend?(localInput.trimmingCharacters(in: .whitespacesAndNewlines))
+            }) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .scaledFont(size: 24)
+                    .foregroundColor(hasInput ? .white : .secondary)
+                    .shadow(
+                        color: state.showSendButtonHint && hasInput
+                            ? FazmColors.purplePrimary.opacity(sendPulse ? 0.8 : 0.3)
+                            : .clear,
+                        radius: sendPulse ? 10 : 4
+                    )
+                    .scaleEffect(state.showSendButtonHint && hasInput && sendPulse ? 1.15 : 1.0)
+                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: sendPulse)
+            }
+            .disabled(!hasInput)
+            .buttonStyle(.plain)
+
+            if state.showSendButtonHint && hasInput {
+                Text("⏎")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.6))
+                    .frame(width: 20, height: 14)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(3)
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: state.showSendButtonHint) { _, show in
+            if show {
+                sendPulse = true
+            } else {
+                sendPulse = false
+            }
+        }
+    }
 }
