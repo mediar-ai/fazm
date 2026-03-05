@@ -85,7 +85,7 @@ class PostOnboardingTutorialManager {
         viewModel.$step
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self, let window = self.window else { return }
+                guard let self, self.window != nil else { return }
                 // Small delay to let SwiftUI layout update
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                     guard let self, let window = self.window else { return }
@@ -186,9 +186,11 @@ class PostOnboardingTutorialManager {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.3
             window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            self?.window?.orderOut(nil)
-            self?.window = nil
+        }, completionHandler: {
+            Task { @MainActor [weak self] in
+                self?.window?.orderOut(nil)
+                self?.window = nil
+            }
         })
     }
 

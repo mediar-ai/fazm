@@ -1761,18 +1761,10 @@ struct SettingsContentView: View {
         isLoadingSettings = true
 
         Task {
-            do {
-                // Sync assistant settings from server
-                try await SettingsSyncManager.shared.syncFromServer()
+            await SettingsSyncManager.shared.syncFromServer()
 
-                await MainActor.run {
-                    isLoadingSettings = false
-                }
-            } catch {
-                logError("Failed to load backend settings", error: error)
-                await MainActor.run {
-                    isLoadingSettings = false
-                }
+            await MainActor.run {
+                isLoadingSettings = false
             }
         }
     }
