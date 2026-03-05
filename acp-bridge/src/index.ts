@@ -587,7 +587,9 @@ interface WarmupSessionConfig {
 }
 
 async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[]): Promise<void> {
-  const warmCwd = cwd || process.env.HOME || "/";
+  // Use tmpdir() instead of $HOME to avoid triggering macOS TCC/FileProvider
+  // prompts (e.g. Dropbox) when ACP scans the cwd during session init.
+  const warmCwd = cwd || tmpdir();
 
   // Build the list of sessions to warm: new format (sessionConfigs) takes priority over legacy (models array)
   const toWarm: WarmupSessionConfig[] = sessionConfigs && sessionConfigs.length > 0
@@ -678,7 +680,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Look up a pre-warmed session by sessionKey (falls back to model name for backward compat)
     const requestedModel = msg.model || DEFAULT_MODEL;
     const sessionKey = msg.sessionKey ?? requestedModel;
-    const requestedCwd = msg.cwd || process.env.HOME || "/";
+    const requestedCwd = msg.cwd || tmpdir();
     let sessionId = "";
 
     const existing = sessions.get(sessionKey);
