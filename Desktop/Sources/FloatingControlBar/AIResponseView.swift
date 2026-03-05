@@ -81,7 +81,7 @@ struct AIResponseView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if !isLoading && !isVoiceFollowUp {
+            if !isVoiceFollowUp {
                 followUpInputView
             }
         }
