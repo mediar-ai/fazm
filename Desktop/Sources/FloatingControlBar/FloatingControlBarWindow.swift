@@ -102,6 +102,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             }
             return
         }
+        // ⌘P toggles pin while dialog is open
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "p",
+           state.showingAIConversation {
+            state.isPinned.toggle()
+            return
+        }
         super.keyDown(with: event)
     }
 
@@ -217,6 +223,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     func closeAIConversation() {
         removeGlobalClickOutsideMonitor()
         suppressClickOutsideDismiss = false
+        state.isPinned = false
         AnalyticsManager.shared.floatingBarAskFazmClosed()
 
         // Cancel any in-flight chat streaming to prevent re-expansion
@@ -320,7 +327,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private func installGlobalClickOutsideMonitor() {
         removeGlobalClickOutsideMonitor()
         globalClickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self, self.state.showingAIConversation, !self.suppressClickOutsideDismiss else { return }
+            guard let self, self.state.showingAIConversation, !self.suppressClickOutsideDismiss, !self.state.isPinned else { return }
             // Don't collapse while AI is generating a response
             if self.state.showingAIResponse, self.state.currentAIMessage?.isStreaming == true || self.state.isAILoading { return }
             self.dismissConversationAnimated()
@@ -684,6 +691,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         guard state.showingAIConversation else { return }
+
+        // Don't dismiss when pinned
+        guard !state.isPinned else { return }
 
         // Only dismiss when the user physically clicks away within our app.
         // Programmatic focus changes — e.g. the AI agent activating a browser

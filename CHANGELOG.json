@@ -1,6 +1,7 @@
 {
   "unreleased": [
     "Fixed Claude sign-in getting stuck when authorization step is missed \u2014 now shows a retry button",
-    "Added built-in Claude account option (Vertex AI) - no personal Claude sign-in needed"
+    "Added built-in Claude account option (Vertex AI) - no personal Claude sign-in needed",
+    "Added pin toggle (\u2318P) to keep the floating dialog open when clicking away"
   ]
 }
