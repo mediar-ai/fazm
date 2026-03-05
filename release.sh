@@ -564,35 +564,29 @@ if ! xcrun stapler validate "$STAGED_APP" 2>/dev/null; then
     xcrun stapler staple "$STAGED_APP"
 fi
 
-# Use create-dmg for a proper installer DMG with Applications shortcut
-if command -v create-dmg &> /dev/null; then
-    # Use background image if available
-    BG_ARGS=""
-    if [ -f "dmg-assets/background.png" ]; then
-        BG_ARGS="--background dmg-assets/background.png"
-    fi
+# Add Applications shortcut, background image, and pre-built .DS_Store
+ln -sf /Applications "$STAGING_DIR/Applications"
 
-    create-dmg \
-        --volname "$APP_NAME" \
-        --volicon "$STAGED_APP/Contents/Resources/FazmIcon.icns" \
-        --window-pos 200 120 \
-        --window-size 610 365 \
-        --icon-size 80 \
-        --icon "$DMG_APP_NAME.app" 155 175 \
-        --hide-extension "$DMG_APP_NAME.app" \
-        --app-drop-link 455 175 \
-        --no-internet-enable \
-        $BG_ARGS \
-        "$DMG_PATH" \
-        "$STAGED_APP"
-else
-    # Fallback to basic hdiutil if create-dmg not available
-    echo "  Warning: create-dmg not found, using basic DMG creation"
-    hdiutil create -volname "$APP_NAME" \
-        -srcfolder "$STAGED_APP" \
-        -ov -format UDZO \
-        "$DMG_PATH"
+if [ -f "dmg-assets/background.png" ]; then
+    mkdir -p "$STAGING_DIR/.background"
+    cp dmg-assets/background.png "$STAGING_DIR/.background/background.png"
 fi
+if [ -f "dmg-assets/DS_Store" ]; then
+    cp dmg-assets/DS_Store "$STAGING_DIR/.DS_Store"
+fi
+
+ICNS="$STAGED_APP/Contents/Resources/FazmIcon.icns"
+if [ -f "$ICNS" ]; then
+    cp "$ICNS" "$STAGING_DIR/.VolumeIcon.icns"
+    SetFile -c icnC "$STAGING_DIR/.VolumeIcon.icns" 2>/dev/null || true
+fi
+
+hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$STAGING_DIR" \
+    -ov -format UDZO \
+    -imagekey zlib-level=9 \
+    "$DMG_PATH"
 
 # Clean up staging directory and its stale LaunchServices registration
 # (macOS auto-registers apps it discovers; the staging copy creates a stale

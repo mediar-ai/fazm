@@ -349,39 +349,45 @@ workflows:
           xcrun stapler staple "$APP_BUNDLE"
           echo "App stapled"
 
-      - name: Install create-dmg
-        script: |
-          brew install create-dmg || true
-
       - name: Create DMG installer
         script: |
           set -e
+          # Stage app + DMG assets (background image, pre-built .DS_Store)
           STAGING_DIR="/tmp/fazm-dmg-staging-$$"
           mkdir -p "$STAGING_DIR"
           ditto "$APP_BUNDLE" "$STAGING_DIR/$APP_NAME.app"
           xcrun stapler validate "$STAGING_DIR/$APP_NAME.app" 2>/dev/null || \
             xcrun stapler staple "$STAGING_DIR/$APP_NAME.app"
+          ln -s /Applications "$STAGING_DIR/Applications"
 
-          BG_ARGS=""
-          [ -f "dmg-assets/background.png" ] && BG_ARGS="--background dmg-assets/background.png"
+          # Add background image and pre-built .DS_Store for Finder layout
+          # (create-dmg's AppleScript doesn't work on headless CI)
+          if [ -f "dmg-assets/background.png" ]; then
+            mkdir -p "$STAGING_DIR/.background"
+            cp dmg-assets/background.png "$STAGING_DIR/.background/background.png"
+          fi
+          if [ -f "dmg-assets/DS_Store" ]; then
+            cp dmg-assets/DS_Store "$STAGING_DIR/.DS_Store"
+          fi
 
-          create-dmg \
-            --volname "$APP_NAME" \
-            --volicon "$STAGING_DIR/$APP_NAME.app/Contents/Resources/FazmIcon.icns" \
-            --window-pos 200 120 \
-            --window-size 610 365 \
-            --icon-size 80 \
-            --icon "$APP_NAME.app" 155 175 \
-            --hide-extension "$APP_NAME.app" \
-            --app-drop-link 455 175 \
-            --no-internet-enable \
-            --skip-jenkins \
-            $BG_ARGS \
-            "$DMG_PATH" \
-            "$STAGING_DIR/$APP_NAME.app"
+          # Set volume icon
+          ICNS="$STAGING_DIR/$APP_NAME.app/Contents/Resources/FazmIcon.icns"
+          if [ -f "$ICNS" ]; then
+            cp "$ICNS" "$STAGING_DIR/.VolumeIcon.icns"
+            SetFile -c icnC "$STAGING_DIR/.VolumeIcon.icns" 2>/dev/null || true
+          fi
+
+          # Create DMG with hdiutil
+          rm -f "$DMG_PATH"
+          hdiutil create \
+            -volname "$APP_NAME" \
+            -srcfolder "$STAGING_DIR" \
+            -ov -format UDZO \
+            -imagekey zlib-level=9 \
+            "$DMG_PATH"
 
           rm -rf "$STAGING_DIR"
-          echo "DMG created"
+          echo "DMG created at $DMG_PATH"
 
       - name: Sign, notarize, and staple DMG
         script: |
