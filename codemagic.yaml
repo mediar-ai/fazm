@@ -480,6 +480,11 @@ workflows:
 
           echo "GitHub release created: $CM_TAG"
 
+      - name: Deploy appcast.xml
+        script: |
+          ./scripts/deploy-appcast.sh
+          echo "Appcast deployed to GitHub release"
+
     artifacts:
       - build/*.app
       - build/*.dmg
