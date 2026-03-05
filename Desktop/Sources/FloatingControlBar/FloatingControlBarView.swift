@@ -11,6 +11,8 @@ struct FloatingControlBarView: View {
     var onSendQuery: (String) -> Void
     var onCloseAI: () -> Void
     var onResumeLastChat: () -> Void
+    var onInterruptAndFollowUp: ((String) -> Void)?
+    var onStopAgent: (() -> Void)?
 
     @State private var isHovering = false
 
@@ -300,18 +302,23 @@ struct FloatingControlBarView: View {
             ),
             onClose: onCloseAI,
             onSendFollowUp: { message in
-                // Archive current exchange to chat history
-                let currentQuery = state.displayedQuery
-                if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
-                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
-                }
+                if state.isAILoading {
+                    // Interrupt current streaming and chain the follow-up
+                    onInterruptAndFollowUp?(message)
+                } else {
+                    // Archive current exchange to chat history
+                    let currentQuery = state.displayedQuery
+                    if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
+                        state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                    }
 
-                state.displayedQuery = message
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    state.isAILoading = true
-                    state.currentAIMessage = nil
+                    state.displayedQuery = message
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        state.isAILoading = true
+                        state.currentAIMessage = nil
+                    }
+                    onSendQuery(message)
                 }
-                onSendQuery(message)
             }
         )
         .transition(
