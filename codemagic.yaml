@@ -473,6 +473,13 @@ workflows:
           echo "CHANGELOG_JSON_B64=$CHANGELOG_JSON_B64" >> $CM_ENV
           echo "DOWNLOAD_URL=$DOWNLOAD_URL" >> $CM_ENV
 
+          # Build release notes — include EdDSA signature so appcast generator can extract it
+          SIG_SECTION=""
+          if [ -n "$ED_SIGNATURE" ]; then
+            SIG_SECTION="
+          <!-- edSignature=\"${ED_SIGNATURE}\" -->"
+          fi
+
           RELEASE_NOTES="## Fazm Desktop v${VERSION}
 
           ### What's New
@@ -480,7 +487,7 @@ workflows:
 
           ### Downloads
           - **DMG Installer**: For fresh installs, download the DMG below
-          - **Auto-Update**: Existing users will receive this update automatically via Sparkle"
+          - **Auto-Update**: Existing users will receive this update automatically via Sparkle${SIG_SECTION}"
 
           gh release view "$CM_TAG" --repo "$GITHUB_REPO" &>/dev/null && \
             gh release delete "$CM_TAG" --repo "$GITHUB_REPO" --yes 2>/dev/null || true
