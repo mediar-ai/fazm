@@ -335,6 +335,17 @@ class ChatProvider: ObservableObject {
 
     /// Set to true during onboarding so the ACP session ID is persisted for restart recovery.
     var isOnboarding = false
+
+    // MARK: - Floating Chat Session Persistence
+
+    private static let floatingSessionIdKey = "floatingACPSessionId"
+    /// Maximum number of messages to restore from local DB on startup
+    private static let floatingRestoreLimit = 50
+
+    /// Whether we've already restored floating chat messages this session
+    private var floatingChatRestored = false
+    /// Saved ACP session ID for resuming the floating chat after restart
+    private var pendingFloatingResume: String?
     @Published var sessionsLoadError: String?
     @Published var selectedAppId: String?
     @Published var hasMoreMessages = false
@@ -772,6 +783,11 @@ class ChatProvider: ObservableObject {
     /// Reset a named ACP session so the next query starts fresh (no history).
     func resetSession(key: String) async {
         await acpBridge.resetSession(key: key)
+        if key == "floating" {
+            UserDefaults.standard.removeObject(forKey: Self.floatingSessionIdKey)
+            pendingFloatingResume = nil
+            Task { await ChatMessageStore.clearMessages(context: "__floating__") }
+        }
     }
 
     /// Start Claude OAuth authentication
@@ -1528,6 +1544,31 @@ class ChatProvider: ObservableObject {
         }.joined(separator: "\n")
     }
 
+    /// Restore floating chat messages and session from local DB.
+    /// Called lazily on the first floating bar interaction.
+    func restoreFloatingChatIfNeeded() async {
+        guard !floatingChatRestored else { return }
+        floatingChatRestored = true
+
+        let savedMessages = await ChatMessageStore.loadMessages(
+            context: "__floating__",
+            limit: Self.floatingRestoreLimit
+        )
+        guard !savedMessages.isEmpty else {
+            log("ChatProvider: No floating chat messages to restore")
+            return
+        }
+
+        messages = savedMessages
+        log("ChatProvider: Restored \(savedMessages.count) floating chat messages from local DB")
+
+        // Load saved ACP session ID for resume
+        if let savedSessionId = UserDefaults.standard.string(forKey: Self.floatingSessionIdKey) {
+            pendingFloatingResume = savedSessionId
+            log("ChatProvider: Will resume floating ACP session \(savedSessionId)")
+        }
+    }
+
     /// Initialize chat: fetch sessions and load messages
     func initialize() async {
         if multiChatEnabled {
@@ -1973,6 +2014,14 @@ class ChatProvider: ObservableObject {
             return
         }
 
+        // Auto-resume floating chat session after app restart
+        var resume = resume
+        if sessionKey == "floating", resume == nil, let pendingResume = pendingFloatingResume {
+            resume = pendingResume
+            pendingFloatingResume = nil
+            log("ChatProvider: Using saved floating session ID for resume: \(pendingResume)")
+        }
+
         // Ensure bridge is running
         guard await ensureBridgeStarted() else {
             errorMessage = "AI not available"
@@ -2286,9 +2335,14 @@ class ChatProvider: ObservableObject {
 
             log("Chat response complete")
 
-            // Persist the ACP session ID during onboarding so we can resume after app restart
-            if isOnboarding && !queryResult.sessionId.isEmpty {
-                OnboardingChatPersistence.saveSessionId(queryResult.sessionId)
+            // Persist the ACP session ID so we can resume after app restart
+            if !queryResult.sessionId.isEmpty {
+                if isOnboarding {
+                    OnboardingChatPersistence.saveSessionId(queryResult.sessionId)
+                }
+                if sessionKey == "floating" {
+                    UserDefaults.standard.set(queryResult.sessionId, forKey: Self.floatingSessionIdKey)
+                }
             }
 
 
