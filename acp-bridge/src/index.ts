@@ -248,7 +248,7 @@ function startAcpProcess(): void {
   const acpEntry = join(__dirname, "patched-acp-entry.mjs");
   const nodeBin = process.execPath;
 
-  const mode = env.ANTHROPIC_API_KEY ? "Mode A (Omi API key)" : "Mode B (Your Claude Account / OAuth)";
+  const mode = env.CLAUDE_CODE_USE_VERTEX ? "Mode C (Vertex AI)" : env.ANTHROPIC_API_KEY ? "Mode A (Omi API key)" : "Mode B (Your Claude Account / OAuth)";
   logErr(`Starting ACP subprocess [${mode}]: ${nodeBin} ${acpEntry}`);
 
   acpProcess = spawn(nodeBin, [acpEntry], {
