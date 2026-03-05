@@ -120,21 +120,15 @@ struct AIResponseView: View {
             Button {
                 state.isPinned.toggle()
             } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: 4) {
                     Image(systemName: state.isPinned ? "pin.fill" : "pin")
-                        .font(.system(size: 10))
-                        .rotationEffect(.degrees(state.isPinned ? 0 : 45))
+                        .font(.system(size: 12))
                     Text("⌘P")
-                        .scaledFont(size: 9)
+                        .scaledFont(size: 11)
                 }
-                .foregroundColor(state.isPinned ? .white : .white.opacity(0.4))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(state.isPinned ? Color.white.opacity(0.15) : Color.clear)
-                .cornerRadius(4)
+                .foregroundColor(state.isPinned ? .white : .secondary)
             }
             .buttonStyle(.plain)
-            .help(state.isPinned ? "Unpin dialog (⌘P)" : "Pin dialog (⌘P)")
         }
     }
 
