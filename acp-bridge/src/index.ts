@@ -816,7 +816,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         }
         authRetryCount++;
         logErr(`session/prompt failed with auth error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
-        sessions.delete(requestedModel);
+        sessions.delete(sessionKey);
         activeSessionId = "";
         await startAuthFlow();
         return handleQuery(msg);
@@ -825,7 +825,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       // Do NOT retry if we already started fresh (isNewSession) — that would infinite-loop.
       if (!isNewSession && sessionId) {
         logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
-        sessions.delete(requestedModel);
+        sessions.delete(sessionKey);
         activeSessionId = "";
         return handleQuery(msg);
       }
