@@ -11,7 +11,8 @@
     "Chat messages from Ask Fazm floating bar are now persisted locally",
     "Fixed silence overlay being clipped inside the floating bar \u2014 now appears as a separate panel with live audio level meter",
     "Removed unnecessary System Audio and Bluetooth permission requests",
-    "Added Resume last chat button to restore dismissed conversations"
+    "Added Resume last chat button to restore dismissed conversations",
+    "Removed Mixpanel analytics, Rewind screenshot capture, and ffmpeg \u2014 smaller app, fewer dependencies"
   ],
   "releases": [
     {

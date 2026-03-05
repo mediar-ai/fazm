@@ -149,23 +149,11 @@ class ResourceMonitor {
         components["liveNotes_notesContext"] = liveNotes.existingNotesContextCount
         components["liveNotes_notesCount"] = liveNotes.notes.count
 
-        // VideoChunkEncoder buffer (actor — await)
-        let bufferStatus = await VideoChunkEncoder.shared.getBufferStatus()
-        components["videoEncoder_frameCount"] = bufferStatus.frameCount
-        if let age = bufferStatus.oldestFrameAge {
-            components["videoEncoder_oldestFrameAgeSec"] = Int(age)
-        }
-
         // FocusAssistant pending tasks (actor — await, optional since it may not be initialized)
         if let focusAssistant = ProactiveAssistantsPlugin.shared.currentFocusAssistant {
             components["focus_pendingTasks"] = await focusAssistant.pendingTasksCount
             components["focus_historyCount"] = await focusAssistant.analysisHistoryCount
         }
-
-        // Rewind backpressure stats (MainActor — direct access)
-        let plugin = ProactiveAssistantsPlugin.shared
-        components["rewind_droppedFrames"] = plugin.droppedFrameCount
-        components["rewind_isProcessing"] = plugin.isProcessingRewindFrame
 
         // Thread count is already in snapshot
         components["threadCount"] = snapshot.threadCount
@@ -322,7 +310,7 @@ class ResourceMonitor {
     var onMemoryPressureTrimTranscript: (() -> Void)?
 
     private func triggerMemoryRemediation() {
-        log("ResourceMonitor: Triggering memory remediation — flushing video encoder, clearing assistant pending work, trimming transcript, pausing AgentSync")
+        log("ResourceMonitor: Triggering memory remediation — clearing assistant pending work, trimming transcript, pausing AgentSync")
 
         let memoryBefore = getMemoryFootprintMB()
 
@@ -333,9 +321,6 @@ class ResourceMonitor {
         onMemoryPressureTrimTranscript?()
 
         Task {
-            // Flush VideoChunkEncoder and await completion
-            _ = try? await VideoChunkEncoder.shared.flushCurrentChunk()
-
             // Clear focus assistant pending tasks specifically
             if let focusAssistant = ProactiveAssistantsPlugin.shared.currentFocusAssistant {
                 await focusAssistant.clearPendingWork()

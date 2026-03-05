@@ -519,7 +519,7 @@ struct OnboardingChatView: View {
                 async let bridgeWarmup: () = chatProvider.warmupBridge()
 
                 // Ensure DB is ready before loading messages
-                try? await RewindDatabase.shared.initialize()
+                try? await AppDatabase.shared.initialize()
 
                 // Load previous messages from local database
                 let savedMessages = await OnboardingChatPersistence.loadMessages()
@@ -745,7 +745,7 @@ struct OnboardingChatView: View {
         }
 
         // Otherwise check if files are indexed and run exploration fresh
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         let fileCount = (try? await dbQueue.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM indexed_files")
         }) ?? 0
@@ -887,7 +887,7 @@ struct OnboardingChatView: View {
     /// Load a compact database schema string from sqlite_master for the exploration prompt.
     /// This gives the AI the actual table/column names so it doesn't hallucinate them.
     private static func loadDatabaseSchema() async -> String {
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
             return ""
         }
 

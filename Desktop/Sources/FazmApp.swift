@@ -44,7 +44,7 @@ class AuthState: ObservableObject {
     private init() {
         self.userEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
 
-        // Ensure a local userId exists (used by RewindDatabase)
+        // Ensure a local userId exists (used by AppDatabase)
         if let existingId = UserDefaults.standard.string(forKey: Self.kAuthUserId), !existingId.isEmpty {
             // Use existing userId
         } else {
@@ -255,7 +255,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Set per-user database path before any async tasks can trigger DB initialization.
         // This is synchronous and must happen before TierManager / TranscriptionRetryService.
         let userId = UserDefaults.standard.string(forKey: "auth_userId")
-        RewindDatabase.currentUserId = (userId?.isEmpty == false) ? userId : "anonymous"
+        AppDatabase.currentUserId = (userId?.isEmpty == false) ? userId : "anonymous"
 
         // Start resource monitoring (memory, CPU, disk)
         ResourceMonitor.shared.start()
@@ -722,7 +722,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sentryHeartbeatTimer = nil
 
         // Mark clean shutdown so next launch skips expensive DB integrity check
-        RewindDatabase.markCleanShutdown()
+        AppDatabase.markCleanShutdown()
 
         // Report final resources before termination
         ResourceMonitor.shared.reportResourcesNow(context: "app_terminating")

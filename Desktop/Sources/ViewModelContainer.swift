@@ -24,11 +24,11 @@ class ViewModelContainer: ObservableObject {
 
         // Configure database for the current user before initialization
         let userId = UserDefaults.standard.string(forKey: "auth_userId")
-        await RewindDatabase.shared.configure(userId: userId)
+        await AppDatabase.shared.configure(userId: userId)
 
         // Pre-initialize database
         do {
-            try await RewindDatabase.shared.initialize()
+            try await AppDatabase.shared.initialize()
             databaseInitFailed = false
         } catch {
             logError("ViewModelContainer: Database init failed", error: error)

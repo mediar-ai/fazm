@@ -1100,7 +1100,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     private func loadSchemaIfNeeded() async {
         guard !schemaLoaded else { return }
 
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
             log("ChatProvider: database not available for schema introspection")
             schemaLoaded = true
             return

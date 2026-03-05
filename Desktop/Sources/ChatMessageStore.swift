@@ -6,7 +6,7 @@ import GRDB
 enum ChatMessageStore {
 
     static func saveMessage(_ message: ChatMessage, context: String) async {
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         let sender = message.sender == .user ? "user" : "ai"
         let now = Date()
         do {
@@ -26,7 +26,7 @@ enum ChatMessageStore {
     }
 
     static func updateMessage(id: String, text: String) async {
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         do {
             try await dbQueue.write { db in
                 try db.execute(
@@ -40,7 +40,7 @@ enum ChatMessageStore {
     }
 
     static func loadMessages(context: String) async -> [ChatMessage] {
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return [] }
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return [] }
         do {
             return try await dbQueue.read { db in
                 let rows = try Row.fetchAll(db, sql: """
@@ -68,7 +68,7 @@ enum ChatMessageStore {
     }
 
     static func clearMessages(context: String) async {
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else { return }
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         do {
             try await dbQueue.write { db in
                 try db.execute(

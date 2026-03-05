@@ -2,7 +2,7 @@ import Foundation
 import PostHog
 
 /// Singleton manager for PostHog analytics with Session Replay
-/// Complements MixpanelManager - both track the same events
+/// Tracks analytics events via PostHog
 @MainActor
 class PostHogManager {
     static let shared = PostHogManager()

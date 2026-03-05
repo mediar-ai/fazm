@@ -147,7 +147,7 @@ class ChatToolExecutor {
         }
 
         // Get database queue
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
             return "Error: database not available"
         }
 
@@ -256,7 +256,7 @@ class ChatToolExecutor {
         let daysAgo = max(0, (args["days_ago"] as? Int) ?? 1)
         let dateLabel = daysAgo == 0 ? "Today" : daysAgo == 1 ? "Yesterday" : "Past \(daysAgo) days"
 
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
             return "Error: database not available"
         }
 
@@ -388,7 +388,7 @@ class ChatToolExecutor {
             var count = 0
 
             for result in vectorResults where result.similarity > 0.3 {
-                guard let screenshot = try? await RewindDatabase.shared.getScreenshot(id: result.screenshotId) else {
+                guard let screenshot = try? await AppDatabase.shared.getScreenshot(id: result.screenshotId) else {
                     continue
                 }
 
@@ -639,7 +639,7 @@ class ChatToolExecutor {
 
     /// Get file scan results from the database
     private static func getFileScanResultsFromDB() async -> String {
-        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
             return "Error: database not available"
         }
 

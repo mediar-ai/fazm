@@ -47,8 +47,8 @@ actor AIUserProfileService {
 
     private func ensureDB() async throws -> DatabasePool {
         if let db = _dbQueue { return db }
-        try await RewindDatabase.shared.initialize()
-        guard let db = await RewindDatabase.shared.getDatabaseQueue() else {
+        try await AppDatabase.shared.initialize()
+        guard let db = await AppDatabase.shared.getDatabaseQueue() else {
             throw ProfileError.databaseNotAvailable
         }
         _dbQueue = db
