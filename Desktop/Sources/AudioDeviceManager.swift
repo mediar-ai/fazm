@@ -23,10 +23,7 @@ class AudioDeviceManager: ObservableObject {
     @Published var selectedDeviceUID: String? {
         didSet {
             UserDefaults.standard.set(selectedDeviceUID, forKey: Self.selectedDeviceUDKey)
-            if isMonitoringLevel {
-                stopLevelMonitoring()
-                startLevelMonitoring()
-            }
+            restartLevelMonitoringIfNeeded()
         }
     }
     @Published var currentAudioLevel: Float = 0.0
@@ -135,6 +132,50 @@ class AudioDeviceManager: ObservableObject {
         levelCaptureService = nil
         isMonitoringLevel = false
         currentAudioLevel = 0.0
+    }
+
+    /// Restart level monitoring on a background thread so we can synchronously
+    /// stop the old capture (releasing the device) before starting a new one.
+    private func restartLevelMonitoringIfNeeded() {
+        guard isMonitoringLevel else { return }
+
+        let oldCapture = levelCaptureService
+        levelCaptureService = nil
+        isMonitoringLevel = false
+        currentAudioLevel = 0.0
+
+        let newDeviceUID = effectiveDeviceUID
+
+        Task.detached { [weak self] in
+            // Synchronously stop old capture so the device is fully released
+            oldCapture?.stopCapture(sync: true)
+
+            await MainActor.run {
+                guard let self else { return }
+                guard !self.isMonitoringLevel else { return }
+                self.isMonitoringLevel = true
+
+                let capture = AudioCaptureService()
+                self.levelCaptureService = capture
+
+                Task { @MainActor in
+                    do {
+                        try await capture.startCapture(
+                            deviceUID: newDeviceUID,
+                            onAudioChunk: { _ in },
+                            onAudioLevel: { [weak self] level in
+                                Task { @MainActor in
+                                    self?.currentAudioLevel = level
+                                }
+                            }
+                        )
+                    } catch {
+                        logError("AudioDeviceManager: level monitoring restart failed", error: error)
+                        self.isMonitoringLevel = false
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - CoreAudio Helpers

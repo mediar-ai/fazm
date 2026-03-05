@@ -239,7 +239,9 @@ class AudioCaptureService: @unchecked Sendable {
     }
 
     /// Stop capturing audio
-    func stopCapture() {
+    /// - Parameter sync: If true, waits for CoreAudio cleanup to complete before returning.
+    ///   Use sync=true when you need to immediately start a new capture on the same device.
+    func stopCapture(sync: Bool = false) {
         guard isCapturing else { return }
 
         removePropertyListeners()
@@ -264,11 +266,16 @@ class AudioCaptureService: @unchecked Sendable {
         detectedSampleRate = 0.0
         smoothedLevel = 0.0
 
-        // AudioDeviceStop can block waiting for the IO thread — run off main thread
+        // AudioDeviceStop can block waiting for the IO thread
         if let procID = procID, devID != kAudioObjectUnknown {
-            audioQueue.async {
+            let work = {
                 AudioDeviceStop(devID, procID)
                 AudioDeviceDestroyIOProcID(devID, procID)
+            }
+            if sync && !Thread.isMainThread {
+                audioQueue.sync(execute: work)
+            } else {
+                audioQueue.async(execute: work)
             }
         }
 
@@ -624,6 +631,12 @@ class AudioCaptureService: @unchecked Sendable {
     private static let maxRetries = 3
 
     private func reconfigureAfterChange(retryCount: Int) {
+        // If capture was stopped while we were waiting, don't restart
+        guard isCapturing else {
+            isReconfiguring = false
+            return
+        }
+
         // Get input device — prefer explicit UID if set, else system default
         var newDeviceID: AudioDeviceID = kAudioObjectUnknown
 
