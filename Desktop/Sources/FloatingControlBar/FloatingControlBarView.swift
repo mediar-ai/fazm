@@ -203,18 +203,25 @@ struct FloatingControlBarView: View {
 
     private var voiceListeningView: some View {
         HStack(spacing: 8) {
-            // Animated audio level bars
-            AudioLevelBarsView(
-                level: state.voiceAudioLevel,
-                barCount: 5,
-                barWidth: 3,
-                spacing: 2,
-                maxHeight: 20,
-                minHeight: 3,
-                color: .white
-            )
+            if state.isVoiceFinalizing {
+                // Transcribing loading indicator
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+            } else {
+                // Animated audio level bars
+                AudioLevelBarsView(
+                    level: state.voiceAudioLevel,
+                    barCount: 5,
+                    barWidth: 3,
+                    spacing: 2,
+                    maxHeight: 20,
+                    minHeight: 3,
+                    color: .white
+                )
+            }
 
-            if state.isVoiceLocked {
+            if state.isVoiceLocked && !state.isVoiceFinalizing {
                 Text("LOCKED")
                     .scaledFont(size: 10, weight: .bold)
                     .foregroundColor(.orange)
@@ -224,7 +231,11 @@ struct FloatingControlBarView: View {
                     .cornerRadius(4)
             }
 
-            if !state.voiceTranscript.isEmpty {
+            if state.isVoiceFinalizing {
+                Text("Transcribing...")
+                    .scaledFont(size: 13)
+                    .foregroundColor(.white.opacity(0.8))
+            } else if !state.voiceTranscript.isEmpty {
                 Text(state.voiceTranscript)
                     .scaledFont(size: 13)
                     .foregroundColor(.white.opacity(0.8))

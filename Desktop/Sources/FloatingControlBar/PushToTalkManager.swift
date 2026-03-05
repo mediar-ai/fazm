@@ -577,6 +577,7 @@ class PushToTalkManager: ObservableObject {
     barState.isVoiceListening =
       (state == .listening || state == .lockedListening || state == .finalizing)
     barState.isVoiceLocked = (state == .lockedListening)
+    barState.isVoiceFinalizing = (state == .finalizing)
     if state == .idle {
       barState.voiceTranscript = ""
       barState.voiceAudioLevel = 0.0

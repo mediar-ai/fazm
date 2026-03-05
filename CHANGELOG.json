@@ -13,6 +13,7 @@
     "Post-onboarding tutorial now continues as a guided chat in the floating bar with 3 test prompts",
     "Added Google Workspace integration \u2014 ask about your email, calendar, and files directly from the floating bar",
     "Fixed exploration text blocks running together without line breaks",
-    "Improved exploration card with larger pulsating toggle button and inline loading animation"
+    "Improved exploration card with larger pulsating toggle button and inline loading animation",
+    "Added visible loading animation when transcribing voice input after push-to-talk"
   ]
 }

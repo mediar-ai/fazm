@@ -42,6 +42,7 @@ class FloatingControlBarState: NSObject, ObservableObject {
     // Push-to-talk state
     @Published var isVoiceListening: Bool = false
     @Published var isVoiceLocked: Bool = false
+    @Published var isVoiceFinalizing: Bool = false
     @Published var voiceTranscript: String = ""
 
     // Audio level for PTT visualization
