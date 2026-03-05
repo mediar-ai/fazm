@@ -682,7 +682,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         guard let screen = targetScreen else { return .zero }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
-        let y = visibleFrame.minY + 20
+        let y = visibleFrame.minY + 60
         return NSPoint(x: x, y: y)
     }
 
@@ -696,7 +696,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - frame.width / 2
-        let y = visibleFrame.minY + 20  // 20pt from bottom
+        let y = visibleFrame.minY + 60  // 60pt from bottom (above dock)
         self.setFrameOrigin(NSPoint(x: x, y: y))
         log("FloatingControlBarWindow: centered at (\(x), \(y)) on screen \(visibleFrame)")
     }
