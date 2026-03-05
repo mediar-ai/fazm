@@ -139,6 +139,12 @@ export interface AuthSuccessMessage {
   type: "auth_success";
 }
 
+/** Sent when OAuth flow times out or fails */
+export interface AuthTimeoutMessage {
+  type: "auth_timeout";
+  reason: string;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -150,4 +156,5 @@ export type OutboundMessage =
   | ResultMessage
   | ErrorMessage
   | AuthRequiredMessage
-  | AuthSuccessMessage;
+  | AuthSuccessMessage
+  | AuthTimeoutMessage;

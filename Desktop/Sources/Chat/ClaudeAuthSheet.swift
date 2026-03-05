@@ -5,6 +5,8 @@ import SwiftUI
 struct ClaudeAuthSheet: View {
     let onConnect: () -> Void
     let onCancel: () -> Void
+    let hasTimedOut: Bool
+    let onRetry: () -> Void
 
     @State private var isConnecting = false
 
@@ -38,27 +40,40 @@ struct ClaudeAuthSheet: View {
             // Content
             VStack(spacing: 20) {
                 // Icon
-                Image(systemName: "person.badge.key")
+                Image(systemName: hasTimedOut ? "exclamationmark.triangle" : "person.badge.key")
                     .scaledFont(size: 40)
-                    .foregroundColor(FazmColors.textSecondary)
+                    .foregroundColor(hasTimedOut ? .orange : FazmColors.textSecondary)
                     .padding(.top, 8)
 
                 // Description
                 VStack(spacing: 8) {
-                    Text("Use your own Claude Pro or Max subscription")
-                        .scaledFont(size: 15, weight: .medium)
-                        .foregroundColor(FazmColors.textPrimary)
-                        .multilineTextAlignment(.center)
+                    if hasTimedOut {
+                        Text("Sign-in didn't complete")
+                            .scaledFont(size: 15, weight: .medium)
+                            .foregroundColor(FazmColors.textPrimary)
+                            .multilineTextAlignment(.center)
 
-                    Text("Your browser will open to sign in with Claude. After authenticating, return to Fazm.")
-                        .scaledFont(size: 13)
-                        .foregroundColor(FazmColors.textTertiary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+                        Text("If you just signed in to Claude, try again — the authorization step may have been missed.")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Use your own Claude Pro or Max subscription")
+                            .scaledFont(size: 15, weight: .medium)
+                            .foregroundColor(FazmColors.textPrimary)
+                            .multilineTextAlignment(.center)
+
+                        Text("Your browser will open to sign in with Claude. After authenticating, return to Fazm.")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.horizontal, 20)
 
-                if isConnecting {
+                if isConnecting && !hasTimedOut {
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.small)
@@ -77,26 +92,42 @@ struct ClaudeAuthSheet: View {
 
             // Actions
             VStack(spacing: 12) {
-                Button(action: {
-                    isConnecting = true
-                    onConnect()
-                }) {
-                    HStack(spacing: 8) {
-                        if isConnecting {
-                            ProgressView()
-                                .controlSize(.mini)
-                        }
-                        Text(isConnecting ? "Waiting for sign-in..." : "Connect Claude Account")
+                if hasTimedOut {
+                    Button(action: {
+                        isConnecting = false
+                        onRetry()
+                    }) {
+                        Text("Try Again")
                             .scaledFont(size: 14, weight: .semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(isConnecting ? FazmColors.backgroundTertiary : Color.accentColor)
-                    .foregroundColor(isConnecting ? FazmColors.textSecondary : .white)
-                    .cornerRadius(8)
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: {
+                        isConnecting = true
+                        onConnect()
+                    }) {
+                        HStack(spacing: 8) {
+                            if isConnecting {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            }
+                            Text(isConnecting ? "Waiting for sign-in..." : "Connect Claude Account")
+                                .scaledFont(size: 14, weight: .semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(isConnecting ? FazmColors.backgroundTertiary : Color.accentColor)
+                        .foregroundColor(isConnecting ? FazmColors.textSecondary : .white)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isConnecting)
                 }
-                .buttonStyle(.plain)
-                .disabled(isConnecting)
 
                 Button(action: onCancel) {
                     Text("Cancel")
@@ -110,5 +141,10 @@ struct ClaudeAuthSheet: View {
         }
         .frame(width: 400, height: 380)
         .background(FazmColors.backgroundPrimary)
+        .onChange(of: hasTimedOut) {
+            if hasTimedOut {
+                isConnecting = false
+            }
+        }
     }
 }

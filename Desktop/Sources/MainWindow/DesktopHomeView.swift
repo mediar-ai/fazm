@@ -82,6 +82,11 @@ struct DesktopHomeView: View {
                 },
                 onCancel: {
                     showClaudeAuth = false
+                },
+                hasTimedOut: viewModelContainer.chatProvider.claudeAuthTimedOut,
+                onRetry: {
+                    viewModelContainer.chatProvider.retryClaudeAuth()
+                    showClaudeAuth = false
                 }
             )
         }
