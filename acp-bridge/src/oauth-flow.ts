@@ -157,7 +157,7 @@ function waitForCallback(
     const timeout = setTimeout(() => {
       reject(new Error("OAuth callback timed out (10 minutes)"));
       server.close();
-    }, 10 * 60 * 1000);
+    }, 10 * 1000); // TEMP: 10s for testing (was 10 * 60 * 1000)
 
     server.on("request", (req: IncomingMessage, res: ServerResponse) => {
       const parsed = new URL(req.url || "", `http://localhost`);
