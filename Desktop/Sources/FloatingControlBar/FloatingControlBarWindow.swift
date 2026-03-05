@@ -27,6 +27,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var isUserResizing = false
     /// Suppresses hover resizes during close animation to prevent position drift.
     private var suppressHoverResize = false
+    /// The canonical bottom-edge Y position. Set once during initial positioning and
+    /// only updated by explicit user drag. ALL resizing reads from this value instead
+    /// of frame.origin.y, making vertical drift structurally impossible.
+    private var canonicalBottomY: CGFloat = 0
     private var inputHeightCancellable: AnyCancellable?
     private var responseHeightCancellable: AnyCancellable?
     private var resizeWorkItem: DispatchWorkItem?
@@ -83,6 +87,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             let onScreen = NSScreen.screens.contains { $0.visibleFrame.contains(NSPoint(x: origin.x + 14, y: origin.y + 14)) }
             if onScreen {
                 self.setFrameOrigin(origin)
+                canonicalBottomY = origin.y
             } else {
                 centerOnMainScreen()
             }
@@ -270,14 +275,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Restore the pill to its canonical position. Since all resizing uses
-        // bottom-anchor, origin.y never drifts — but we use the stored position
-        // for draggable mode in case the user moved the bar.
+        // Restore the pill to its canonical position using the stored canonicalBottomY
+        // which is immune to animation drift.
         let size = FloatingControlBarWindow.minBarSize
         let restoreOrigin: NSPoint
         if ShortcutSettings.shared.draggableBarEnabled {
-            // Keep current origin.y (stable because all resizing is bottom-anchored)
-            restoreOrigin = NSPoint(x: frame.midX - size.width / 2, y: frame.origin.y)
+            restoreOrigin = NSPoint(x: frame.midX - size.width / 2, y: canonicalBottomY)
         } else {
             restoreOrigin = defaultPillOrigin()
         }
@@ -515,12 +518,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     // MARK: - Window Geometry
 
-    /// Bottom-center: keeps bottom edge fixed, centers horizontally.
-    /// ALL resizing uses this anchor so the pill's origin.y never drifts.
+    /// Bottom-center: keeps bottom edge at canonicalBottomY, centers horizontally.
+    /// Uses the stored canonical Y instead of frame.origin.y to prevent drift.
     private func originForBottomCenterAnchor(newSize: NSSize) -> NSPoint {
         NSPoint(
             x: frame.midX - newSize.width / 2,
-            y: frame.origin.y
+            y: canonicalBottomY
         )
     }
 
@@ -655,7 +658,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         guard let screen = targetScreen else { return .zero }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
-        let y = visibleFrame.minY + 150
+        let y = visibleFrame.minY + 20
         return NSPoint(x: x, y: y)
     }
 
@@ -669,8 +672,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - frame.width / 2
-        let y = visibleFrame.minY + 150  // 150pt from bottom (well above dock)
+        let y = visibleFrame.minY + 20  // 20pt from bottom, just above dock
         self.setFrameOrigin(NSPoint(x: x, y: y))
+        canonicalBottomY = y
         log("FloatingControlBarWindow: centered at (\(x), \(y)) on screen \(visibleFrame)")
     }
 
@@ -738,6 +742,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Programmatic moves (resize animations, chat open/close) should not
         // overwrite the saved position — that causes silent drift.
         guard isUserDragging else { return }
+        canonicalBottomY = self.frame.origin.y
         UserDefaults.standard.set(
             NSStringFromPoint(self.frame.origin), forKey: FloatingControlBarWindow.positionKey
         )
