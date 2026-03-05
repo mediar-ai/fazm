@@ -531,6 +531,20 @@ struct OnboardingChatView: View {
                 // Load previous messages from local database
                 let savedMessages = await OnboardingChatPersistence.loadMessages()
                 log("OnboardingChatView: Loaded \(savedMessages.count) messages from local DB")
+
+                // If no conversation happened yet (e.g. quit during OAuth before any AI response),
+                // treat as fresh start instead of sending confusing "I'm back" message
+                if savedMessages.isEmpty && savedSessionId == nil {
+                    log("OnboardingChatView: No messages and no session — treating as fresh start")
+                    await bridgeWarmup
+                    await chatProvider.sendMessage(
+                        "Hi, I just installed Fazm!",
+                        model: "claude-sonnet-4-6",
+                        systemPromptPrefix: systemPrompt
+                    )
+                    return
+                }
+
                 if !savedMessages.isEmpty {
                     chatProvider.messages = savedMessages
                 }
@@ -569,6 +583,11 @@ struct OnboardingChatView: View {
             OnboardingChatPersistence.saveMidOnboarding()
 
             Task {
+                // Initialize DB so messages are persisted for restart recovery
+                let userId = UserDefaults.standard.string(forKey: "auth_userId")
+                AppDatabase.shared.configure(userId: userId)
+                try? await AppDatabase.shared.initialize()
+
                 await chatProvider.sendMessage(
                     "Hi, I just installed Fazm!",
                     model: "claude-sonnet-4-6",
