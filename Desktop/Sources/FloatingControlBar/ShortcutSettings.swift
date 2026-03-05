@@ -113,6 +113,21 @@ class ShortcutSettings: ObservableObject {
         ("claude-opus-4-6", "Opus"),
     ]
 
+    /// Floating bar response compactness level.
+    enum FloatingBarCompactness: String, CaseIterable {
+        case off = "Off"
+        case soft = "Soft"
+        case strict = "Strict"
+
+        var description: String {
+            switch self {
+            case .off: return "No compactness enforcement"
+            case .soft: return "Prefer short answers (1-3 sentences)"
+            case .strict: return "Exactly 1 sentence, no lists or headers"
+            }
+        }
+    }
+
     /// Push-to-talk transcription mode.
     enum PTTTranscriptionMode: String, CaseIterable {
         case live = "Live"
@@ -124,6 +139,10 @@ class ShortcutSettings: ObservableObject {
             case .batch: return "Transcribe after recording for better accuracy"
             }
         }
+    }
+
+    @Published var floatingBarCompactness: FloatingBarCompactness {
+        didSet { UserDefaults.standard.set(floatingBarCompactness.rawValue, forKey: "shortcut_floatingBarCompactness") }
     }
 
     @Published var pttTranscriptionMode: PTTTranscriptionMode {
@@ -152,6 +171,12 @@ class ShortcutSettings: ObservableObject {
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
         self.pttSoundsEnabled = UserDefaults.standard.object(forKey: "shortcut_pttSoundsEnabled") as? Bool ?? true
         self.selectedModel = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-sonnet-4-6"
+        if let saved = UserDefaults.standard.string(forKey: "shortcut_floatingBarCompactness"),
+           let mode = FloatingBarCompactness(rawValue: saved) {
+            self.floatingBarCompactness = mode
+        } else {
+            self.floatingBarCompactness = .off
+        }
         if let saved = UserDefaults.standard.string(forKey: "shortcut_pttTranscriptionMode"),
            let mode = PTTTranscriptionMode(rawValue: saved) {
             self.pttTranscriptionMode = mode
