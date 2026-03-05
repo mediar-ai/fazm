@@ -350,7 +350,7 @@ struct PostOnboardingTutorialView: View {
                         .font(.system(size: 12))
                         .foregroundColor(FazmColors.textTertiary)
 
-                    SpeakingPromptText(text: "Go to Google and search for fazm.ai")
+                    SpeakingPromptText(text: "Google fazm.ai, click the first result, read through the website, then go to my Twitter and draft a post about it")
                 }
 
                 Text("Then release ⌘ to send")
