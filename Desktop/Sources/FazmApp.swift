@@ -625,6 +625,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reportItem.target = self
         menu.addItem(reportItem)
 
+        // Reset Onboarding
+        let resetItem = NSMenuItem(title: "Reset Onboarding...", action: #selector(resetOnboarding), keyEquivalent: "")
+        resetItem.target = self
+        menu.addItem(resetItem)
+
         menu.addItem(NSMenuItem.separator())
 
         // Quit item
@@ -670,6 +675,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor @objc private func reportIssue() {
         AnalyticsManager.shared.menuBarActionClicked(action: "report_issue")
         FeedbackWindow.show(userEmail: AuthState.shared.userEmail)
+    }
+
+    @MainActor @objc private func resetOnboarding() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "reset_onboarding")
+        AppState().resetOnboardingAndRestart()
     }
 
     @MainActor @objc private func quitApp() {
