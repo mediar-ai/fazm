@@ -22,14 +22,26 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
-/// Background modifier using NSVisualEffectView with dark blur.
+/// Background modifier: solid dark when conversation is focused, semi-transparent blur otherwise.
 struct FloatingBackgroundModifier: ViewModifier {
     let cornerRadius: CGFloat
+    @EnvironmentObject private var state: FloatingControlBarState
+
+    /// Use solid background when the AI conversation is open and not collapsed.
+    private var useSolid: Bool {
+        state.showingAIConversation && !state.isCollapsed
+    }
 
     func body(content: Content) -> some View {
         content
             .background(
-                VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow, alphaValue: 0.6)
+                Group {
+                    if useSolid {
+                        Color(nsColor: NSColor(white: 0.12, alpha: 1.0))
+                    } else {
+                        VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow, alphaValue: 0.6)
+                    }
+                }
             )
             .cornerRadius(cornerRadius)
             .overlay(
