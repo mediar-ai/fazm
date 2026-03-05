@@ -889,11 +889,26 @@ class ChatToolExecutor {
                 return path
             }
         }
-        // Check npm global install
-        let npmGlobal = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".npm-global/bin/gws").path
-        if FileManager.default.isExecutableFile(atPath: npmGlobal) {
-            return npmGlobal
+        // Check npm global installs (various locations)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let npmPaths = [
+            home.appendingPathComponent(".npm-global/bin/gws").path,
+            home.appendingPathComponent(".nvm/versions/node").path, // check nvm below
+        ]
+        for path in npmPaths {
+            if path.contains(".nvm") {
+                // Search nvm node versions for gws
+                if let versions = try? FileManager.default.contentsOfDirectory(atPath: path) {
+                    for version in versions.sorted().reversed() {
+                        let gwsPath = "\(path)/\(version)/bin/gws"
+                        if FileManager.default.isExecutableFile(atPath: gwsPath) {
+                            return gwsPath
+                        }
+                    }
+                }
+            } else if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
         }
         return nil
     }

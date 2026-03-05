@@ -107,6 +107,27 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     echo "Copied acp-bridge to bundle"
 fi
 
+# Copy gws binary (Google Workspace CLI)
+GWS_BIN_DIR="Desktop/bin"
+GWS_BIN="$GWS_BIN_DIR/gws"
+if [ ! -f "$GWS_BIN" ]; then
+    echo "Downloading gws binary..."
+    mkdir -p "$GWS_BIN_DIR"
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "arm64" ]; then
+        GWS_ARTIFACT="gws-aarch64-apple-darwin.tar.gz"
+    else
+        GWS_ARTIFACT="gws-x86_64-apple-darwin.tar.gz"
+    fi
+    curl -sL "https://github.com/googleworkspace/cli/releases/download/v0.5.0/${GWS_ARTIFACT}" | tar xz -C "$GWS_BIN_DIR" --strip-components=1 --include '*/gws'
+    chmod +x "$GWS_BIN"
+fi
+if [ -f "$GWS_BIN" ]; then
+    cp -f "$GWS_BIN" "$APP_BUNDLE/Contents/Resources/gws"
+    chmod +x "$APP_BUNDLE/Contents/Resources/gws"
+    echo "Copied gws binary to bundle"
+fi
+
 # Copy .env.app file (app runtime secrets only)
 if [ -f ".env.app" ]; then
     cp ".env.app" "$APP_BUNDLE/Contents/Resources/.env"

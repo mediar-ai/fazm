@@ -219,6 +219,25 @@ workflows:
             exit 1
           fi
 
+          # Download and bundle gws (Google Workspace CLI)
+          GWS_VERSION="0.5.0"
+          GWS_BIN_DIR="Desktop/bin"
+          GWS_BIN="$GWS_BIN_DIR/gws"
+          if [ ! -f "$GWS_BIN" ]; then
+            mkdir -p "$GWS_BIN_DIR"
+            # Download both architectures and create universal binary
+            curl -sL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/gws-aarch64-apple-darwin.tar.gz" | tar xz -C /tmp --strip-components=1 --include '*/gws'
+            mv /tmp/gws /tmp/gws-arm64
+            curl -sL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/gws-x86_64-apple-darwin.tar.gz" | tar xz -C /tmp --strip-components=1 --include '*/gws'
+            mv /tmp/gws /tmp/gws-x86_64
+            lipo -create /tmp/gws-arm64 /tmp/gws-x86_64 -output "$GWS_BIN"
+            chmod +x "$GWS_BIN"
+            rm -f /tmp/gws-arm64 /tmp/gws-x86_64
+            echo "Downloaded gws v${GWS_VERSION} universal binary"
+          fi
+          cp -f "$GWS_BIN" "$APP_BUNDLE/Contents/Resources/gws"
+          chmod +x "$APP_BUNDLE/Contents/Resources/gws"
+
           # Update Info.plist metadata
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable   $BINARY_NAME"  "$APP_BUNDLE/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier   $BUNDLE_ID"    "$APP_BUNDLE/Contents/Info.plist"
@@ -288,6 +307,13 @@ workflows:
                 codesign --force --options runtime --timestamp \
                   --sign "$SIGN_IDENTITY" "$candidate"
             done
+          fi
+
+          # Sign gws binary
+          GWS_BUNDLE_BIN="$APP_BUNDLE/Contents/Resources/gws"
+          if [ -f "$GWS_BUNDLE_BIN" ]; then
+            codesign --force --options runtime --timestamp \
+              --sign "$SIGN_IDENTITY" "$GWS_BUNDLE_BIN"
           fi
 
           # Sign Sparkle components — innermost first
