@@ -16,6 +16,7 @@ struct AIResponseView: View {
     @Binding var voiceFollowUpTranscript: String
 
     var onClose: (() -> Void)?
+    var onNewChat: (() -> Void)?
     var onSendFollowUp: ((String) -> Void)?
     var onStopAgent: (() -> Void)?
 
@@ -118,18 +119,18 @@ struct AIResponseView: View {
 
             Spacer()
 
-            Button {
-                state.isPinned.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: state.isPinned ? "pin.fill" : "pin")
-                        .font(.system(size: 12))
-                    Text("⌘P")
-                        .scaledFont(size: 11)
+            if let onNewChat {
+                Button(action: onNewChat) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11))
+                        Text("New chat")
+                            .scaledFont(size: 11)
+                    }
+                    .foregroundColor(.secondary)
                 }
-                .foregroundColor(state.isPinned ? .white : .secondary)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
