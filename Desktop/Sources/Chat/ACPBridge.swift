@@ -69,8 +69,6 @@ actor ACPBridge {
   enum BridgeMode {
     /// User's own Claude account via OAuth (strip API key + Vertex vars)
     case personalOAuth
-    /// Fazm's bundled API key
-    case builtinApiKey
     /// Vertex AI via Workload Identity Federation
     case vertex(adcFilePath: String, projectId: String, region: String)
   }
@@ -96,11 +94,6 @@ actor ACPBridge {
 
   init(mode: BridgeMode = .personalOAuth) {
     self.mode = mode
-  }
-
-  /// Convenience: legacy passApiKey compatibility
-  init(passApiKey: Bool) {
-    self.mode = passApiKey ? .builtinApiKey : .personalOAuth
   }
 
   // MARK: - State
@@ -171,9 +164,6 @@ actor ACPBridge {
     switch mode {
     case .personalOAuth:
       env.removeValue(forKey: "ANTHROPIC_API_KEY")
-      env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
-    case .builtinApiKey:
-      env["ANTHROPIC_API_KEY"] = AnthropicKeyProvider.deobfuscate()
       env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
     case .vertex(let adcFilePath, let projectId, let region):
       env.removeValue(forKey: "ANTHROPIC_API_KEY")
