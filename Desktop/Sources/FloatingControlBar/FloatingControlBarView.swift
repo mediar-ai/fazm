@@ -319,7 +319,8 @@ struct FloatingControlBarView: View {
                     }
                     onSendQuery(message)
                 }
-            }
+            },
+            onStopAgent: onStopAgent
         )
         .transition(
             .asymmetric(

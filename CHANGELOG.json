@@ -3,6 +3,7 @@
     "Fixed Claude sign-in getting stuck when authorization step is missed \u2014 now shows a retry button",
     "Added built-in Claude account option (Vertex AI) - no personal Claude sign-in needed",
     "Added pin toggle (\u2318P) to keep the floating dialog open when clicking away",
-    "Added Response Style setting for floating bar (Off/Soft/Strict) to control answer compactness"
+    "Added Response Style setting for floating bar (Off/Soft/Strict) to control answer compactness",
+    "Added stop button and follow-up-while-streaming to floating bar"
   ]
 }
