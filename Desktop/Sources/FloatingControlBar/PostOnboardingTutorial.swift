@@ -224,7 +224,7 @@ class PostOnboardingTutorialWindow: NSWindow {
         self.contentView = hostingView
     }
 
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
@@ -290,6 +290,10 @@ struct PostOnboardingTutorialView: View {
                     .foregroundColor(FazmColors.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // Mic picker + level meter so user can verify mic before first PTT
+                TutorialMicPicker()
+                    .padding(.top, 4)
             }
             .transition(.opacity)
 
@@ -417,6 +421,87 @@ struct ActiveListeningIndicator: View {
     private func barHeight(for index: Int) -> CGFloat {
         let heights: [CGFloat] = [12, 20, 28, 18, 14]
         return heights[index]
+    }
+}
+
+// MARK: - TutorialMicPicker
+
+/// Compact mic picker + audio level bars for the tutorial's first step.
+private struct TutorialMicPicker: View {
+    @ObservedObject private var deviceManager = AudioDeviceManager.shared
+
+    private var selectedDeviceName: String {
+        if let uid = deviceManager.selectedDeviceUID,
+           let device = deviceManager.devices.first(where: { $0.uid == uid }) {
+            return device.name
+        }
+        return "System Default"
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Button {
+                showMicMenu()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 10))
+                    Text(selectedDeviceName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+
+            AudioLevelBarsSettingsView(level: deviceManager.currentAudioLevel)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onAppear { deviceManager.startLevelMonitoring() }
+        .onDisappear { deviceManager.stopLevelMonitoring() }
+    }
+
+    private func showMicMenu() {
+        let menu = NSMenu()
+
+        let defaultItem = NSMenuItem(title: "System Default", action: #selector(TutorialMicMenuTarget.selectDevice(_:)), keyEquivalent: "")
+        defaultItem.target = TutorialMicMenuTarget.shared
+        defaultItem.representedObject = nil as String?
+        if deviceManager.selectedDeviceUID == nil {
+            defaultItem.state = .on
+        }
+        menu.addItem(defaultItem)
+        menu.addItem(NSMenuItem.separator())
+
+        for device in deviceManager.devices {
+            let item = NSMenuItem(title: device.name, action: #selector(TutorialMicMenuTarget.selectDevice(_:)), keyEquivalent: "")
+            item.target = TutorialMicMenuTarget.shared
+            item.representedObject = device.uid
+            if deviceManager.selectedDeviceUID == device.uid {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+}
+
+private class TutorialMicMenuTarget: NSObject {
+    static let shared = TutorialMicMenuTarget()
+
+    @objc func selectDevice(_ sender: NSMenuItem) {
+        Task { @MainActor in
+            AudioDeviceManager.shared.selectedDeviceUID = sender.representedObject as? String
+        }
     }
 }
 
