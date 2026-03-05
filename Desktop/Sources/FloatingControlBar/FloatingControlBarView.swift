@@ -141,6 +141,7 @@ struct FloatingControlBarView: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
+                .frame(height: 50)
                 .transition(.opacity)
             } else {
                 compactCircleView
