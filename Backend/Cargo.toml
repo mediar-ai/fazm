@@ -1,0 +1,32 @@
+[package]
+name = "fazm-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Authentication
+jsonwebtoken = "9"
+
+# RSA key handling
+rsa = { version = "0.9", features = ["pem"] }
+
+# Utilities
+dotenvy = "0.15"
+chrono = "0.4"
+sha2 = "0.10"
+base64 = "0.21"
+hex = "0.4"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
