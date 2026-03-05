@@ -236,7 +236,7 @@ function startAcpProcess(): void {
   // If ANTHROPIC_API_KEY is present (Mode A), keep it so ACP uses OMI's key.
   // If absent (Mode B), ACP will use user's own OAuth.
   const env = { ...process.env };
-  delete env.CLAUDE_CODE_USE_VERTEX;
+  // Allow CLAUDE_CODE_USE_VERTEX to flow through when set by Swift (Vertex mode)
   // Remove CLAUDECODE so the ACP subprocess (and the Claude Code it spawns) don't
   // inherit the nested-session guard. Without this, `--resume` silently fails when
   // Claude Code detects it's being launched from inside another Claude Code session.
@@ -443,6 +443,8 @@ async function startAuthFlow(): Promise<void> {
       send({ type: "auth_success" });
     } catch (err) {
       logErr(`OAuth flow failed: ${err}`);
+      const isTimeout = err instanceof Error && err.message.includes("timed out");
+      send({ type: "auth_timeout", reason: isTimeout ? "timeout" : String(err) });
       throw err;
     } finally {
       activeOAuthFlow = null;

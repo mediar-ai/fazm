@@ -1,8 +1,7 @@
 import Foundation
 
 /// Manages a long-lived Node.js subprocess running the ACP (Agent Client Protocol) bridge.
-/// This is the sole bridge for AI chat — supports both Fazm's API key (passApiKey=true)
-/// and user's own Claude account via OAuth (passApiKey=false).
+/// Supports three modes: built-in API key, user's OAuth, or Vertex AI.
 /// Communication uses JSON lines over stdin/stdout pipes.
 actor ACPBridge {
 
@@ -43,6 +42,9 @@ actor ACPBridge {
   /// Callback for auth success
   typealias AuthSuccessHandler = @Sendable () -> Void
 
+  /// Callback for auth timeout (reason string)
+  typealias AuthTimeoutHandler = @Sendable (String) -> Void
+
   /// Inbound message types (Bridge → Swift, read from stdout)
   private enum InboundMessage {
     case `init`(sessionId: String)
@@ -58,29 +60,47 @@ actor ACPBridge {
     case error(message: String)
     case authRequired(methods: [[String: Any]], authUrl: String?)
     case authSuccess
+    case authTimeout(reason: String)
   }
 
   // MARK: - Configuration
 
-  /// When true, ANTHROPIC_API_KEY is passed through to the ACP subprocess
-  /// (Mode A: Fazm's key). When false, the key is stripped so ACP uses OAuth.
-  let passApiKey: Bool
+  /// How the bridge authenticates with Claude
+  enum BridgeMode {
+    /// User's own Claude account via OAuth (strip API key + Vertex vars)
+    case personalOAuth
+    /// Fazm's bundled API key
+    case builtinApiKey
+    /// Vertex AI via Workload Identity Federation
+    case vertex(adcFilePath: String, projectId: String, region: String)
+  }
+
+  let mode: BridgeMode
 
   /// Persistent auth handler called whenever auth_required arrives (even outside query)
   var onAuthRequiredGlobal: AuthRequiredHandler?
   /// Persistent auth success handler called whenever auth_success arrives (even outside query)
   var onAuthSuccessGlobal: AuthSuccessHandler?
+  /// Persistent auth timeout handler called whenever auth_timeout arrives (even outside query)
+  var onAuthTimeoutGlobal: AuthTimeoutHandler?
 
   func setGlobalAuthHandlers(
     onAuthRequired: AuthRequiredHandler?,
-    onAuthSuccess: AuthSuccessHandler?
+    onAuthSuccess: AuthSuccessHandler?,
+    onAuthTimeout: AuthTimeoutHandler? = nil
   ) {
     self.onAuthRequiredGlobal = onAuthRequired
     self.onAuthSuccessGlobal = onAuthSuccess
+    self.onAuthTimeoutGlobal = onAuthTimeout
   }
 
-  init(passApiKey: Bool = false) {
-    self.passApiKey = passApiKey
+  init(mode: BridgeMode = .personalOAuth) {
+    self.mode = mode
+  }
+
+  /// Convenience: legacy passApiKey compatibility
+  init(passApiKey: Bool) {
+    self.mode = passApiKey ? .builtinApiKey : .personalOAuth
   }
 
   // MARK: - State
@@ -145,17 +165,23 @@ actor ACPBridge {
     proc.executableURL = URL(fileURLWithPath: nodePath)
     proc.arguments = ["--max-old-space-size=256", "--max-semi-space-size=16", bridgePath]
 
-    // Build environment
+    // Build environment based on auth mode
     var env = ProcessInfo.processInfo.environment
     env["NODE_NO_WARNINGS"] = "1"
-    if !passApiKey {
-      // Mode B: Strip API key so ACP uses user's own OAuth
+    switch mode {
+    case .personalOAuth:
       env.removeValue(forKey: "ANTHROPIC_API_KEY")
-    } else {
-      // Mode A: Inject bundled Fazm API key
+      env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
+    case .builtinApiKey:
       env["ANTHROPIC_API_KEY"] = AnthropicKeyProvider.deobfuscate()
+      env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
+    case .vertex(let adcFilePath, let projectId, let region):
+      env.removeValue(forKey: "ANTHROPIC_API_KEY")
+      env["CLAUDE_CODE_USE_VERTEX"] = "1"
+      env["GOOGLE_APPLICATION_CREDENTIALS"] = adcFilePath
+      env["ANTHROPIC_VERTEX_PROJECT_ID"] = projectId
+      env["CLOUD_ML_REGION"] = region
     }
-    env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
 
     // Ensure the directory containing node is in PATH
     let nodeDir = (nodePath as NSString).deletingLastPathComponent
@@ -480,6 +506,10 @@ actor ACPBridge {
 
       case .authSuccess:
         onAuthSuccess()
+
+      case .authTimeout:
+        // Handled via global handler in deliverMessage(); ignore inside query loop
+        break
       }
     }
   }
@@ -608,6 +638,10 @@ actor ACPBridge {
     case "auth_success":
       return .authSuccess
 
+    case "auth_timeout":
+      let reason = dict["reason"] as? String ?? "unknown"
+      return .authTimeout(reason: reason)
+
     default:
       log("ACPBridge: unknown message type: \(type)")
       return nil
@@ -626,6 +660,11 @@ actor ACPBridge {
     case .authSuccess:
       if messageContinuation == nil, let handler = onAuthSuccessGlobal {
         handler()
+        return
+      }
+    case .authTimeout(let reason):
+      if messageContinuation == nil, let handler = onAuthTimeoutGlobal {
+        handler(reason)
         return
       }
     default:

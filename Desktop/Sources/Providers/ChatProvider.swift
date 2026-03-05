@@ -348,16 +348,19 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
 
-    // MARK: - Bridge (prefers user's Claude session, falls back to bundled key)
+    /// Bridge mode: "personal" (user's Claude OAuth), "builtin" (Vertex AI built-in account)
+    @AppStorage("bridgeMode") var bridgeMode: String = "personal"
+
+    // MARK: - Bridge (prefers user's Claude session, falls back to Vertex or bundled key)
     private lazy var acpBridge: ACPBridge = {
-        let hasSession = Self.hasExistingClaudeSession()
-        log("ChatProvider: Claude session detected = \(hasSession), using \(hasSession ? "Mode B (OAuth)" : "Mode A (bundled key)")")
-        return ACPBridge(passApiKey: !hasSession)
+        return createBridge()
     }()
     private var acpBridgeStarted = false
+    private var vertexTokenManager: VertexTokenManager?
 
     /// Whether the ACP bridge requires authentication (shown as sheet in UI)
     @Published var isClaudeAuthRequired = false
+    @Published var claudeAuthTimedOut = false
     /// Auth methods returned by ACP bridge
     @Published var claudeAuthMethods: [[String: Any]] = []
     /// OAuth URL to open in browser (sent by bridge when auth is needed)
@@ -397,6 +400,92 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         try? proc.run()
         proc.waitUntilExit()
         return proc.terminationStatus == 0
+    }
+
+    // MARK: - Bridge Creation & Mode Switching
+
+    /// Create an ACPBridge based on the current bridgeMode setting
+    private func createBridge() -> ACPBridge {
+        if bridgeMode == "builtin" {
+            // Vertex mode: check if token manager has already set up credentials
+            if vertexTokenManager != nil {
+                let tmpDir = NSTemporaryDirectory()
+                let adcPath = (tmpDir as NSString).appendingPathComponent("fazm-vertex-adc.json")
+                let env = ProcessInfo.processInfo.environment
+                let projectId = env["VERTEX_PROJECT_ID"] ?? "fazm-prod"
+                let region = env["VERTEX_REGION"] ?? "us-east5"
+                log("ChatProvider: Using Vertex mode (ADC=\(adcPath))")
+                return ACPBridge(mode: .vertex(adcFilePath: adcPath, projectId: projectId, region: region))
+            }
+            // Vertex not set up yet — fall back to built-in API key
+            log("ChatProvider: Vertex token manager not ready, falling back to built-in API key")
+            return ACPBridge(mode: .builtinApiKey)
+        } else {
+            // Personal mode: prefer OAuth if session exists, else use bundled key
+            let hasSession = Self.hasExistingClaudeSession()
+            log("ChatProvider: Claude session detected = \(hasSession), using \(hasSession ? "OAuth" : "bundled key")")
+            return ACPBridge(passApiKey: !hasSession)
+        }
+    }
+
+    /// Switch bridge mode, tearing down old bridge and setting up new one
+    func switchBridgeMode(to newMode: String) async {
+        guard newMode != bridgeMode else { return }
+        log("ChatProvider: switching bridge mode from \(bridgeMode) to \(newMode)")
+
+        // Stop current bridge
+        await acpBridge.stop()
+        acpBridgeStarted = false
+
+        // Tear down or set up vertex token manager
+        if newMode == "builtin" {
+            let vtm = VertexTokenManager()
+            vertexTokenManager = vtm
+            do {
+                let config = try await vtm.setup()
+                await vtm.startRefreshLoop()
+                log("ChatProvider: Vertex token manager set up (project=\(config.projectId), region=\(config.region))")
+            } catch {
+                log("ChatProvider: Vertex setup failed: \(error.localizedDescription), falling back to API key")
+            }
+        } else {
+            if let vtm = vertexTokenManager {
+                await vtm.stop()
+                vertexTokenManager = nil
+            }
+        }
+
+        bridgeMode = newMode
+        acpBridge = createBridge()
+
+        // Re-register global auth handlers
+        setupBridgeAuthHandlers()
+    }
+
+    private func setupBridgeAuthHandlers() {
+        Task {
+            await acpBridge.setGlobalAuthHandlers(
+                onAuthRequired: { [weak self] methods, authUrl in
+                    Task { @MainActor in
+                        self?.isClaudeAuthRequired = true
+                        self?.claudeAuthMethods = methods
+                        self?.claudeAuthUrl = authUrl
+                    }
+                },
+                onAuthSuccess: { [weak self] in
+                    Task { @MainActor in
+                        self?.isClaudeAuthRequired = false
+                        self?.isClaudeConnected = true
+                    }
+                },
+                onAuthTimeout: { [weak self] reason in
+                    Task { @MainActor in
+                        self?.claudeAuthTimedOut = true
+                        log("ChatProvider: Auth timeout: \(reason)")
+                    }
+                }
+            )
+        }
     }
 
     // MARK: - Cross-Platform Message Polling
@@ -628,7 +717,14 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 onAuthSuccess: { [weak self] in
                     Task { @MainActor [weak self] in
                         self?.isClaudeAuthRequired = false
+                        self?.claudeAuthTimedOut = false
                         self?.checkClaudeConnectionStatus()
+                    }
+                },
+                onAuthTimeout: { [weak self] reason in
+                    Task { @MainActor [weak self] in
+                        log("ChatProvider: Claude OAuth timed out: \(reason)")
+                        self?.claudeAuthTimedOut = true
                     }
                 }
             )
@@ -660,6 +756,19 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         } else {
             logError("ChatProvider: No auth URL available from bridge")
             isClaudeAuthRequired = false
+        }
+    }
+
+    /// Retry Claude OAuth after a timeout by restarting the ACP bridge
+    func retryClaudeAuth() {
+        log("ChatProvider: Retrying Claude OAuth")
+        claudeAuthTimedOut = false
+        isClaudeAuthRequired = false
+        acpBridgeStarted = false
+        Task {
+            // Restart bridge — this triggers a new OAuth flow
+            await acpBridge.stop()
+            _ = await ensureBridgeStarted()
         }
     }
 
