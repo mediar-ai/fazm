@@ -205,6 +205,35 @@ Use after finding the task with execute_sql. Pass the backendId from the action_
     },
   },
   {
+    name: "google_workspace",
+    description: `Interact with Google Workspace (Gmail, Calendar, Drive, Sheets, Docs).
+Actions:
+- "status": Check if Google Workspace is connected. ALWAYS call this first before any other action.
+- "login": Trigger OAuth login flow (opens browser). Use when status returns not_connected.
+- "exec": Run a gws CLI command. Pass the full command string (everything after "gws ").
+  Examples: exec "gmail messages list --params '{\\"maxResults\\": 5}'"
+            exec "calendar events list --params '{\\"timeMin\\": \\"2026-03-05T00:00:00Z\\", \\"timeMax\\": \\"2026-03-06T00:00:00Z\\"}'"
+            exec "drive files list --params '{\\"pageSize\\": 10}'"
+            exec "sheets spreadsheets.values get --params '{\\"spreadsheetId\\": \\"ID\\", \\"range\\": \\"Sheet1\\"}'"
+
+Call with action "status" first. If not connected, tell the user and call "login". After login succeeds, retry the original request.`,
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: {
+          type: "string" as const,
+          enum: ["status", "login", "exec"],
+          description: "The action to perform",
+        },
+        command: {
+          type: "string" as const,
+          description: "The gws command to run (only for action 'exec'). Everything after 'gws '.",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "load_skill",
     description: `Load the full instructions for a named skill. Call this when you decide to use a skill listed in <available_skills>. Returns the complete SKILL.md content with step-by-step instructions and workflows.`,
     inputSchema: {
@@ -470,6 +499,17 @@ async function handleJsonRpc(
       } else if (toolName === "delete_task") {
         const taskId = args.task_id as string;
         const result = await requestSwiftTool("delete_task", { task_id: taskId });
+        if (!isNotification) {
+          send({
+            jsonrpc: "2.0",
+            id,
+            result: { content: [{ type: "text", text: result }] },
+          });
+        }
+      } else if (toolName === "google_workspace") {
+        const action = args.action as string;
+        const command = args.command as string | undefined;
+        const result = await requestSwiftTool("google_workspace", { action, command });
         if (!isNotification) {
           send({
             jsonrpc: "2.0",

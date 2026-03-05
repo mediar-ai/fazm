@@ -43,6 +43,9 @@ class ChatToolExecutor {
         case "delete_task":
             return await executeDeleteTask(toolCall.arguments)
 
+        case "google_workspace":
+            return await executeGoogleWorkspace(toolCall.arguments)
+
         // Onboarding tools
         case "request_permission":
             let result = await executeRequestPermission(toolCall.arguments)
@@ -868,6 +871,219 @@ class ChatToolExecutor {
             return "Browser extension setup completed successfully. The user can now use browser automation."
         } else {
             return "Browser extension setup was skipped by the user. They can set it up later from Settings."
+        }
+    }
+
+    // MARK: - Google Workspace
+
+    /// Path to the gws binary (bundled or system-installed)
+    private static var gwsBinaryPath: String? {
+        // Check bundled binary first
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("gws").path,
+           FileManager.default.isExecutableFile(atPath: bundled) {
+            return bundled
+        }
+        // Check common install locations
+        for path in ["/usr/local/bin/gws", "/opt/homebrew/bin/gws"] {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        // Check npm global install
+        let npmGlobal = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".npm-global/bin/gws").path
+        if FileManager.default.isExecutableFile(atPath: npmGlobal) {
+            return npmGlobal
+        }
+        return nil
+    }
+
+    /// Check if gws is authenticated by looking for credential files
+    private static var isGWSAuthenticated: Bool {
+        let configDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/gws")
+        // gws stores encrypted credentials in ~/.config/gws/
+        let credFiles = (try? FileManager.default.contentsOfDirectory(atPath: configDir.path)) ?? []
+        return credFiles.contains(where: { $0.contains("credentials") || $0.contains("token") })
+    }
+
+    /// Execute a Google Workspace tool action
+    private static func executeGoogleWorkspace(_ args: [String: Any]) async -> String {
+        guard let action = args["action"] as? String else {
+            return "Error: 'action' parameter is required (status, login, exec)"
+        }
+
+        switch action {
+        case "status":
+            guard let gwsPath = gwsBinaryPath else {
+                return """
+                {"connected": false, "installed": false, "message": "Google Workspace CLI (gws) is not installed. \
+                The user needs to install it with: npm install -g @googleworkspace/cli"}
+                """
+            }
+            if isGWSAuthenticated {
+                return """
+                {"connected": true, "installed": true, "message": "Google Workspace is connected and ready."}
+                """
+            } else {
+                return """
+                {"connected": false, "installed": true, "message": "Google Workspace CLI is installed but not authenticated. \
+                Call with action 'login' to start the OAuth flow."}
+                """
+            }
+
+        case "login":
+            guard let gwsPath = gwsBinaryPath else {
+                return """
+                {"success": false, "message": "Google Workspace CLI (gws) is not installed. \
+                Install with: npm install -g @googleworkspace/cli"}
+                """
+            }
+            return await runGWSLogin(gwsPath: gwsPath)
+
+        case "exec":
+            guard let command = args["command"] as? String, !command.isEmpty else {
+                return "Error: 'command' parameter is required for action 'exec'"
+            }
+            guard let gwsPath = gwsBinaryPath else {
+                return "Error: Google Workspace CLI (gws) is not installed."
+            }
+            guard isGWSAuthenticated else {
+                return """
+                {"error": "not_authenticated", "message": "Google Workspace is not connected. \
+                Call with action 'login' first."}
+                """
+            }
+            return await runGWSCommand(gwsPath: gwsPath, command: command)
+
+        default:
+            return "Error: unknown action '\(action)'. Valid actions: status, login, exec"
+        }
+    }
+
+    /// Run `gws auth login` — opens browser for OAuth
+    private static func runGWSLogin(gwsPath: String) async -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: gwsPath)
+        process.arguments = ["auth", "login"]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+            // Wait up to 120 seconds for the user to complete OAuth in their browser
+            let deadline = Date().addingTimeInterval(120)
+            while process.isRunning && Date() < deadline {
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+            if process.isRunning {
+                process.terminate()
+                return """
+                {"success": false, "message": "Login timed out after 2 minutes. The user may need to complete the OAuth flow in their browser."}
+                """
+            }
+
+            let exitCode = process.terminationStatus
+            let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+
+            if exitCode == 0 {
+                log("GWS auth login succeeded")
+                return """
+                {"success": true, "message": "Google Workspace connected successfully! You can now access Gmail, Calendar, Drive, Sheets, and Docs."}
+                """
+            } else {
+                log("GWS auth login failed: exit=\(exitCode) stderr=\(stderr)")
+                let errMsg = stderr.isEmpty ? stdout : stderr
+                return """
+                {"success": false, "message": "Login failed: \(errMsg.prefix(500))"}
+                """
+            }
+        } catch {
+            logError("GWS auth login error", error: error)
+            return """
+            {"success": false, "message": "Failed to start login: \(error.localizedDescription)"}
+            """
+        }
+    }
+
+    /// Parse a shell-like command string into arguments, respecting quotes
+    private static func parseGWSArguments(_ command: String) -> [String] {
+        var args: [String] = []
+        var current = ""
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var escaped = false
+
+        for char in command {
+            if escaped {
+                current.append(char)
+                escaped = false
+            } else if char == "\\" && !inSingleQuote {
+                escaped = true
+            } else if char == "'" && !inDoubleQuote {
+                inSingleQuote.toggle()
+            } else if char == "\"" && !inSingleQuote {
+                inDoubleQuote.toggle()
+            } else if char == " " && !inSingleQuote && !inDoubleQuote {
+                if !current.isEmpty {
+                    args.append(current)
+                    current = ""
+                }
+            } else {
+                current.append(char)
+            }
+        }
+        if !current.isEmpty {
+            args.append(current)
+        }
+        return args
+    }
+
+    /// Run a gws CLI command and return JSON output
+    private static func runGWSCommand(gwsPath: String, command: String) async -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: gwsPath)
+        process.arguments = parseGWSArguments(command)
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+            // Wait up to 30 seconds for the command to complete
+            let deadline = Date().addingTimeInterval(30)
+            while process.isRunning && Date() < deadline {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
+            if process.isRunning {
+                process.terminate()
+                return "Error: command timed out after 30 seconds"
+            }
+
+            let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let exitCode = process.terminationStatus
+
+            if exitCode == 0 {
+                // Truncate very large responses
+                if stdout.count > 10000 {
+                    return String(stdout.prefix(10000)) + "\n... (truncated, \(stdout.count) total characters)"
+                }
+                return stdout
+            } else {
+                let errMsg = stderr.isEmpty ? stdout : stderr
+                log("GWS command failed: \(command) exit=\(exitCode)")
+                return "Error: \(errMsg.prefix(1000))"
+            }
+        } catch {
+            logError("GWS command error", error: error)
+            return "Error: \(error.localizedDescription)"
         }
     }
 
