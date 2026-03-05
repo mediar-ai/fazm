@@ -82,6 +82,13 @@ class FloatingControlBarState: NSObject, ObservableObject {
         SilenceOverlayWindow.shared.dismiss()
     }
 
+    // Last conversation (in-memory only, survives dismiss but not app restart)
+    var lastConversation: (history: [FloatingChatExchange], lastQuestion: String, lastMessage: ChatMessage)?
+
+    var hasLastConversation: Bool { lastConversation != nil }
+
+    func clearLastConversation() { lastConversation = nil }
+
     // Model selection
     @Published var selectedModel: String = "claude-sonnet-4-6"
 
