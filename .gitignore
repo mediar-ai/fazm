@@ -99,3 +99,4 @@ demo/out/
 # Claude project instructions (user-local, contains absolute paths)
 CLAUDE.md
 thread*.md
+Desktop/bin/
