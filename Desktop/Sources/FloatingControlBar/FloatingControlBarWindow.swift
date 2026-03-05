@@ -49,6 +49,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onAskAI: (() -> Void)?
     var onHide: (() -> Void)?
     var onSendQuery: ((String) -> Void)?
+    var onInterruptAndFollowUp: ((String) -> Void)?
+    var onStopAgent: (() -> Void)?
 
     override init(
         contentRect: NSRect, styleMask style: NSWindow.StyleMask,
@@ -119,7 +121,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onHide: { [weak self] in self?.hideBar() },
             onSendQuery: { [weak self] message in self?.onSendQuery?(message) },
             onCloseAI: { [weak self] in self?.closeAIConversation() },
-            onResumeLastChat: { [weak self] in self?.resumeLastConversation() }
+            onResumeLastChat: { [weak self] in self?.resumeLastConversation() },
+            onInterruptAndFollowUp: { [weak self] message in self?.onInterruptAndFollowUp?(message) },
+            onStopAgent: { [weak self] in self?.onStopAgent?() }
         ).environmentObject(state)
 
         hostingView = NSHostingView(rootView: AnyView(
@@ -834,6 +838,17 @@ class FloatingControlBarManager {
             }
         }
 
+        barWindow.onInterruptAndFollowUp = { [weak chatProvider] message in
+            guard let provider = chatProvider else { return }
+            Task { @MainActor in
+                await provider.sendFollowUp(message)
+            }
+        }
+
+        barWindow.onStopAgent = { [weak chatProvider] in
+            chatProvider?.stopAgent()
+        }
+
         // Observe recording state
         recordingCancellable = appState.$isTranscribing
             .combineLatest(appState.$isSavingConversation)
@@ -985,6 +1000,17 @@ class FloatingControlBarManager {
             Task { @MainActor in
                 await self.sendAIQuery(message, barWindow: window, provider: provider)
             }
+        }
+
+        window.onInterruptAndFollowUp = { [weak provider] message in
+            guard let provider = provider else { return }
+            Task { @MainActor in
+                await provider.sendFollowUp(message)
+            }
+        }
+
+        window.onStopAgent = { [weak provider] in
+            provider?.stopAgent()
         }
 
         // Activate the app so the window can become key and accept keyboard input.

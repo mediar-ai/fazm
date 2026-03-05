@@ -17,6 +17,7 @@ struct AIResponseView: View {
 
     var onClose: (() -> Void)?
     var onSendFollowUp: ((String) -> Void)?
+    var onStopAgent: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -360,16 +361,26 @@ struct AIResponseView: View {
                     }
                 }
 
-            Button(action: { sendFollowUp() }) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .scaledFont(size: 20)
-                    .foregroundColor(
-                        followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? .secondary : .white
-                    )
+            if isLoading && followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: { onStopAgent?() }) {
+                    Image(systemName: "stop.circle.fill")
+                        .scaledFont(size: 20)
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .help("Stop generating")
+            } else {
+                Button(action: { sendFollowUp() }) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .scaledFont(size: 20)
+                        .foregroundColor(
+                            followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? .secondary : .white
+                        )
+                }
+                .disabled(followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .buttonStyle(.plain)
             }
-            .disabled(followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .buttonStyle(.plain)
         }
     }
 
