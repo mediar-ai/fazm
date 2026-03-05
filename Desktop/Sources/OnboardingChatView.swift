@@ -2,6 +2,13 @@ import SwiftUI
 import MarkdownUI
 import GRDB
 
+/// A simple mutable box that can be shared across @Sendable closures.
+/// Only safe when callbacks are invoked sequentially (e.g. from a single event loop).
+final class UnsafeSendableBox<T>: @unchecked Sendable {
+    var value: T
+    init(_ value: T) { self.value = value }
+}
+
 // MARK: - Onboarding Chat Persistence
 
 /// Persists onboarding state across app restarts (e.g. screen recording permission requires restart).
@@ -876,12 +883,21 @@ struct OnboardingChatView: View {
                 let schema = await Self.loadDatabaseSchema()
                 let systemPrompt = ChatPromptBuilder.buildOnboardingProfileExploration(userName: userName, databaseSchema: schema)
 
+                // Flag shared between callbacks (called sequentially from bridge event loop)
+                let needsBoundary = UnsafeSendableBox(false)
+
                 let result = try await bridge.query(
                     prompt: "Begin exploration. \(fileCount) files have been indexed in the indexed_files table.",
                     systemPrompt: systemPrompt,
                     model: "claude-opus-4-6",
                     onTextDelta: { @Sendable delta in
+                        let insertBoundary = needsBoundary.value
+                        if insertBoundary { needsBoundary.value = false }
                         Task { @MainActor in
+                            // Insert newline separator between text blocks (after tool use)
+                            if insertBoundary && !explorationText.isEmpty && !explorationText.hasSuffix("\n\n") {
+                                explorationText += explorationText.hasSuffix("\n") ? "\n" : "\n\n"
+                            }
                             explorationText += delta
                             // Persist partial text periodically (every ~500 chars) so it survives crashes
                             if explorationText.count % 500 < delta.count {
@@ -899,11 +915,7 @@ struct OnboardingChatView: View {
                         log("OnboardingChat: Profile exploration tool \(name) \(status)")
                     },
                     onTextBlockBoundary: { @Sendable in
-                        Task { @MainActor in
-                            if !explorationText.isEmpty && !explorationText.hasSuffix("\n\n") {
-                                explorationText += explorationText.hasSuffix("\n") ? "\n" : "\n\n"
-                            }
-                        }
+                        needsBoundary.value = true
                     }
                 )
 
@@ -1320,6 +1332,7 @@ struct ExplorationProfileCard: View {
     let isCompleted: Bool
 
     @State private var isExpanded = false
+    @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1330,19 +1343,19 @@ struct ExplorationProfileCard: View {
                     isExpanded.toggle()
                 }
             }) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     if isRunning {
                         ProgressView()
-                            .controlSize(.mini)
+                            .controlSize(.small)
                     } else {
                         Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 12))
+                            .font(.system(size: 14))
                             .foregroundColor(FazmColors.purplePrimary)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(isRunning ? "Learning about you..." : "Your Digital Profile")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(FazmColors.textPrimary)
 
                         if !text.isEmpty {
@@ -1356,13 +1369,33 @@ struct ExplorationProfileCard: View {
                     Spacer(minLength: 4)
 
                     if !text.isEmpty {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 10))
-                            .foregroundColor(FazmColors.textTertiary)
+                        // Larger, attention-grabbing toggle button
+                        Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(FazmColors.purplePrimary)
+                            .scaleEffect(pulseScale)
+                            .onAppear {
+                                if !isExpanded {
+                                    withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                                        pulseScale = 1.2
+                                    }
+                                }
+                            }
+                            .onChange(of: isExpanded) { _, expanded in
+                                if expanded {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        pulseScale = 1.0
+                                    }
+                                } else {
+                                    withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                                        pulseScale = 1.2
+                                    }
+                                }
+                            }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
             }
             .buttonStyle(.plain)
 
@@ -1372,11 +1405,19 @@ struct ExplorationProfileCard: View {
                     .padding(.horizontal, 10)
 
                 ScrollView {
-                    Markdown(text)
-                        .markdownTheme(.aiMessage())
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Markdown(text)
+                            .markdownTheme(.aiMessage())
+                            .textSelection(.enabled)
+
+                        // Inline loading indicator while still running
+                        if isRunning {
+                            ExplorationInlineLoader()
+                                .padding(.top, 8)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
                 .frame(maxHeight: 300)
             }
@@ -1387,5 +1428,29 @@ struct ExplorationProfileCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(FazmColors.purplePrimary.opacity(0.2), lineWidth: 1)
         )
+    }
+}
+
+/// Inline loading animation shown at the end of streaming exploration text
+struct ExplorationInlineLoader: View {
+    @State private var dotCount = 0
+    private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(FazmColors.purplePrimary)
+                    .frame(width: 5, height: 5)
+                    .opacity(index <= dotCount ? 1.0 : 0.3)
+                    .animation(.easeInOut(duration: 0.3), value: dotCount)
+            }
+            Text("analyzing")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(FazmColors.textTertiary)
+        }
+        .onReceive(timer) { _ in
+            dotCount = (dotCount + 1) % 3
+        }
     }
 }
