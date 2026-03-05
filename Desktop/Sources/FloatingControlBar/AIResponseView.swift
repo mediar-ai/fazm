@@ -393,11 +393,11 @@ struct AIResponseView: View {
                     }
                 }
 
-            if isLoading && followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if (isLoading || currentMessage?.isStreaming == true) && followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button(action: { onStopAgent?() }) {
                     Image(systemName: "stop.circle.fill")
                         .scaledFont(size: 20)
-                        .foregroundColor(.white)
+                        .foregroundColor(.red)
                 }
                 .buttonStyle(.plain)
                 .help("Stop generating")

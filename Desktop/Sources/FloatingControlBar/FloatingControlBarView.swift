@@ -315,8 +315,16 @@ struct FloatingControlBarView: View {
             onClose: onCloseAI,
             onNewChat: onNewChat,
             onSendFollowUp: { message in
-                if state.isAILoading {
-                    // Interrupt current streaming and chain the follow-up
+                let isStillGenerating = state.isAILoading || state.currentAIMessage?.isStreaming == true
+                if isStillGenerating {
+                    // AI is still working — archive partial exchange and interrupt
+                    let currentQuery = state.displayedQuery
+                    if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
+                        state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                    }
+                    state.displayedQuery = message
+                    state.isAILoading = true
+                    state.currentAIMessage = nil
                     onInterruptAndFollowUp?(message)
                 } else {
                     // Archive current exchange to chat history
