@@ -7,6 +7,7 @@ struct AIResponseView: View {
     let currentMessage: ChatMessage?
     @State private var isQuestionExpanded = false
     @State private var followUpText: String = ""
+    @State private var preVoiceFollowUpText: String = ""
     @FocusState private var isFollowUpFocused: Bool
 
     let userInput: String
@@ -322,15 +323,29 @@ struct AIResponseView: View {
                 }
                 .onChange(of: state.pendingFollowUpText) {
                     if !state.pendingFollowUpText.isEmpty {
-                        followUpText = state.pendingFollowUpText
+                        if followUpText.isEmpty {
+                            followUpText = state.pendingFollowUpText
+                        } else {
+                            followUpText += " " + state.pendingFollowUpText
+                        }
                         state.pendingFollowUpText = ""
                         isFollowUpFocused = true
+                    }
+                }
+                .onChange(of: state.isVoiceListening) {
+                    if state.isVoiceListening {
+                        // Capture existing text before PTT starts so we can append to it
+                        preVoiceFollowUpText = followUpText
                     }
                 }
                 .onChange(of: state.aiInputText) {
                     // Sync PTT live transcript into follow-up field
                     if state.isVoiceListening && !state.aiInputText.isEmpty && state.aiInputText != followUpText {
-                        followUpText = state.aiInputText
+                        if preVoiceFollowUpText.isEmpty {
+                            followUpText = state.aiInputText
+                        } else {
+                            followUpText = preVoiceFollowUpText + " " + state.aiInputText
+                        }
                     }
                 }
 
