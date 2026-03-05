@@ -89,6 +89,9 @@ class FloatingControlBarState: NSObject, ObservableObject {
 
     func clearLastConversation() { lastConversation = nil }
 
+    // Pin dialog (prevents dismiss on click-away)
+    @Published var isPinned: Bool = false
+
     // Send button hint (pulsating animation during tutorial)
     @Published var showSendButtonHint: Bool = false
 
