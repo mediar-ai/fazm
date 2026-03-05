@@ -30,8 +30,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private var inputHeightCancellable: AnyCancellable?
     private var responseHeightCancellable: AnyCancellable?
     private var resizeWorkItem: DispatchWorkItem?
-    /// Saved center point from before chat opened, used to restore position on close.
-    private var preChatCenter: NSPoint?
     /// Token incremented each time a windowDidResignKey dismiss animation starts.
     /// Checked in the completion block so a new PTT query can cancel a stale close.
     private var resignKeyAnimationToken: Int = 0
@@ -272,17 +270,14 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Determine the target origin for the collapsed pill.
-        // Non-draggable: always use the fixed default position so the pill never drifts.
-        // Draggable: restore from preChatCenter (which preserves the true pill center
-        // through hover's center-anchor resize, avoiding the hover→open→close drift
-        // that occurs if we use frame.origin.y directly).
+        // Restore the pill to its canonical position. Since all resizing uses
+        // bottom-anchor, origin.y never drifts — but we use the stored position
+        // for draggable mode in case the user moved the bar.
         let size = FloatingControlBarWindow.minBarSize
         let restoreOrigin: NSPoint
-        if !ShortcutSettings.shared.draggableBarEnabled {
-            restoreOrigin = defaultPillOrigin()
-        } else if let center = preChatCenter {
-            restoreOrigin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
+        if ShortcutSettings.shared.draggableBarEnabled {
+            // Keep current origin.y (stable because all resizing is bottom-anchored)
+            restoreOrigin = NSPoint(x: frame.midX - size.width / 2, y: frame.origin.y)
         } else {
             restoreOrigin = defaultPillOrigin()
         }
@@ -301,7 +296,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         self.setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: true)
         NSAnimationContext.endGrouping()
         let targetFrame = NSRect(origin: restoreOrigin, size: size)
-        preChatCenter = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self = self else { return }
             self.isResizingProgrammatically = false
@@ -364,7 +358,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.animator().alphaValue = 0.5
         })
-        resizeAnchored(to: NSSize(width: frame.width, height: halfHeight), makeResizable: false, animated: true, anchorBottom: true)
+        resizeAnchored(to: NSSize(width: frame.width, height: halfHeight), makeResizable: false, animated: true)
     }
 
     /// Height of the window before it was collapsed (used to restore on focus).
@@ -382,7 +376,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         })
 
         if preCollapseHeight > 0 {
-            resizeAnchored(to: NSSize(width: frame.width, height: preCollapseHeight), makeResizable: true, animated: true, anchorBottom: true)
+            resizeAnchored(to: NSSize(width: frame.width, height: preCollapseHeight), makeResizable: true, animated: true)
         }
 
         makeKeyAndOrderFront(nil)
@@ -405,12 +399,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     func showAIConversation() {
         // Resize window BEFORE changing state so SwiftUI content doesn't render
         // in the old 28x28 frame (which causes a visible jump).
-        // Save center so we can restore exact position when chat closes (avoids drift).
-        preChatCenter = NSPoint(x: frame.midX, y: frame.midY)
 
         // Anchor from bottom so the control bar stays visually in place, chat grows upward.
         let inputSize = NSSize(width: FloatingControlBarWindow.expandedWidth, height: 120)
-        resizeAnchored(to: inputSize, makeResizable: false, animated: true, anchorBottom: true)
+        resizeAnchored(to: inputSize, makeResizable: false, animated: true)
 
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = true
@@ -463,7 +455,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         state.aiInputText = ""
 
         let inputSize = NSSize(width: FloatingControlBarWindow.expandedWidth, height: 120)
-        resizeAnchored(to: inputSize, makeResizable: false, animated: true, anchorBottom: true)
+        resizeAnchored(to: inputSize, makeResizable: false, animated: true)
         state.inputViewHeight = 120
         setupInputHeightObserver()
 
@@ -523,15 +515,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     // MARK: - Window Geometry
 
-    /// Center-center: preserves midpoint (used by hover expand/collapse).
-    private func originForCenterAnchor(newSize: NSSize) -> NSPoint {
-        NSPoint(
-            x: frame.midX - newSize.width / 2,
-            y: frame.midY - newSize.height / 2
-        )
-    }
-
-    /// Bottom-center: keeps bottom edge fixed, centers horizontally (used by chat expand/collapse).
+    /// Bottom-center: keeps bottom edge fixed, centers horizontally.
+    /// ALL resizing uses this anchor so the pill's origin.y never drifts.
     private func originForBottomCenterAnchor(newSize: NSSize) -> NSPoint {
         NSPoint(
             x: frame.midX - newSize.width / 2,
@@ -539,7 +524,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         )
     }
 
-    private func resizeAnchored(to size: NSSize, makeResizable: Bool, animated: Bool = false, anchorBottom: Bool = false) {
+    private func resizeAnchored(to size: NSSize, makeResizable: Bool, animated: Bool = false) {
         // Cancel any pending resizeToFixedHeight work item to prevent stale resizes
         resizeWorkItem?.cancel()
         resizeWorkItem = nil
@@ -548,9 +533,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             width: max(size.width, FloatingControlBarWindow.minBarSize.width),
             height: max(size.height, FloatingControlBarWindow.minBarSize.height)
         )
-        let newOrigin = anchorBottom
-            ? originForBottomCenterAnchor(newSize: constrainedSize)
-            : originForCenterAnchor(newSize: constrainedSize)
+        let newOrigin = originForBottomCenterAnchor(newSize: constrainedSize)
 
         log("FloatingControlBar: resizeAnchored to \(constrainedSize) resizable=\(makeResizable) animated=\(animated) from=\(frame.size)")
 
@@ -581,14 +564,14 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let width = FloatingControlBarWindow.expandedWidth
         let size = NSSize(width: width, height: height)
         resizeWorkItem = DispatchWorkItem { [weak self] in
-            self?.resizeAnchored(to: size, makeResizable: false, animated: animated, anchorBottom: true)
+            self?.resizeAnchored(to: size, makeResizable: false, animated: animated)
         }
         if let workItem = resizeWorkItem {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
         }
     }
 
-    /// Resize for hover expand/collapse — anchored from center so the circle grows outward.
+    /// Resize for hover expand/collapse — anchored from bottom so the pill expands upward.
     func resizeForHover(expanded: Bool) {
         guard !state.showingAIConversation, !state.isVoiceListening, !suppressHoverResize else { return }
         resizeWorkItem?.cancel()
@@ -598,10 +581,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
         let doResize: () -> Void = { [weak self] in
             guard let self = self else { return }
-            let newOrigin = NSPoint(
-                x: self.frame.midX - targetSize.width / 2,
-                y: self.frame.midY - targetSize.height / 2
-            )
+            let newOrigin = self.originForBottomCenterAnchor(newSize: targetSize)
             self.styleMask.remove(.resizable)
             self.isResizingProgrammatically = true
             self.setFrame(NSRect(origin: newOrigin, size: targetSize), display: true, animate: false)
@@ -610,15 +590,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
         if expanded {
             // Expand synchronously so the window is already large enough when
-            // SwiftUI re-evaluates body with isHovering=true. If this were async,
-            // the 50px expanded content renders in the still-22px window, causing
-            // the tracking area to invalidate and trigger immediate unhover — producing
-            // a flicker loop when hovering from the top or bottom edge.
+            // SwiftUI re-evaluates body with isHovering=true.
             doResize()
         } else {
             // Collapse async to avoid blocking SwiftUI body evaluation during unhover.
-            // Cancellable via resizeWorkItem so rapid hover in/out doesn't queue stale
-            // resizes. (OMI-COMPUTER-1PT)
             resizeWorkItem = DispatchWorkItem(block: doResize)
             DispatchQueue.main.async(execute: resizeWorkItem!)
         }
@@ -643,7 +618,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // shrink the window (e.g. during follow-up exchanges where it's already expanded).
         let startHeight = max(Self.minResponseHeight, frame.height)
         let initialSize = NSSize(width: Self.expandedWidth, height: startHeight)
-        resizeAnchored(to: initialSize, makeResizable: true, animated: animated, anchorBottom: true)
+        resizeAnchored(to: initialSize, makeResizable: true, animated: animated)
         setupResponseHeightObserver(maxHeight: maxHeight)
     }
 
@@ -1268,28 +1243,22 @@ extension FloatingControlBarWindow {
     }
 
     /// Snap the window to the pill position before opening a new chat.
-    /// If a close/restore animation is in flight, snap to its target first so the
-    /// saved origin reflects the true pill position, not an intermediate animation frame.
+    /// If a close/restore animation is in flight, snap to its target immediately
+    /// so the new chat starts from the correct position.
     func savePreChatCenterIfNeeded() {
-        guard preChatCenter == nil else { return }
         let size = FloatingControlBarWindow.minBarSize
-        if !ShortcutSettings.shared.draggableBarEnabled {
-            // Non-draggable: always snap to the default pill position before saving.
-            let origin = defaultPillOrigin()
-            isResizingProgrammatically = true
-            setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
-            isResizingProgrammatically = false
-            pendingRestoreOrigin = nil
-        } else if let restoreOrigin = pendingRestoreOrigin {
-            // Draggable: if a restore animation is running, snap to its target immediately
-            // so we record the correct pill position rather than a mid-animation frame.
+        if let restoreOrigin = pendingRestoreOrigin {
             isResizingProgrammatically = true
             setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: false)
             isResizingProgrammatically = false
             pendingRestoreOrigin = nil
+        } else if !ShortcutSettings.shared.draggableBarEnabled {
+            // Non-draggable: snap to canonical position to prevent drift.
+            let origin = defaultPillOrigin()
+            isResizingProgrammatically = true
+            setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
+            isResizingProgrammatically = false
         }
-        // Save bottom-left origin so closeAIConversation can restore with bottom anchoring.
-        preChatCenter = NSPoint(x: frame.midX, y: frame.midY)
     }
 
     /// Invalidates any in-flight windowDidResignKey dismiss animation so a new PTT
