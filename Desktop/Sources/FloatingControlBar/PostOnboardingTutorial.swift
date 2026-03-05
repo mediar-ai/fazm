@@ -5,16 +5,17 @@ import SwiftUI
 // MARK: - Tutorial Step
 
 enum TutorialStep: Int, CaseIterable {
-    case pressKey = 0
-    case speaking = 1
-    case done = 2
+    case selectMic = 0
+    case pressKey = 1
+    case speaking = 2
+    case done = 3
 }
 
 // MARK: - TutorialViewModel
 
 @MainActor
 class TutorialViewModel: ObservableObject {
-    @Published var step: TutorialStep = .pressKey
+    @Published var step: TutorialStep = .selectMic
     @Published var pulseScale: CGFloat = 1.0
 
     private var pulseTimer: Timer?
@@ -79,7 +80,6 @@ class PostOnboardingTutorialManager {
 
         positionBelowBar(tutorialWindow)
         log("PostOnboardingTutorial: show() — window frame=\(tutorialWindow.frame), barFrame=\(FloatingControlBarManager.shared.barWindowFrame ?? .zero)")
-        viewModel.startPulse()
 
         // Re-position when step changes (content size changes)
         viewModel.$step
@@ -124,6 +124,14 @@ class PostOnboardingTutorialManager {
             .sink { [weak self] isListening in
                 guard let self else { return }
                 switch self.viewModel.step {
+                case .selectMic:
+                    // If user presses PTT while on mic step, advance to speaking
+                    if isListening {
+                        self.viewModel.stopPulse()
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            self.viewModel.step = .speaking
+                        }
+                    }
                 case .pressKey:
                     if isListening {
                         self.viewModel.stopPulse()
@@ -134,14 +142,13 @@ class PostOnboardingTutorialManager {
                 case .speaking:
                     if !isListening {
                         // Wait briefly, then check if silence overlay appeared (no speech detected).
-                        // If so, go back to pressKey step instead of completing.
+                        // If so, go back to selectMic step instead of completing.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self, weak barState] in
                             guard let self, let barState else { return }
                             if barState.isSilenceOverlayVisible {
-                                // No speech detected — reset tutorial to try again
-                                self.viewModel.startPulse()
+                                // No speech detected — reset to mic selection
                                 withAnimation(.easeInOut(duration: 0.3)) {
-                                    self.viewModel.step = .pressKey
+                                    self.viewModel.step = .selectMic
                                 }
                             } else {
                                 withAnimation(.easeInOut(duration: 0.3)) {
@@ -277,6 +284,43 @@ struct PostOnboardingTutorialView: View {
     @ViewBuilder
     private var stepContent: some View {
         switch viewModel.step {
+        case .selectMic:
+            VStack(spacing: 8) {
+                Image(systemName: "mic.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(FazmColors.purplePrimary)
+                Text("Select your microphone")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(FazmColors.textPrimary)
+                    .multilineTextAlignment(.center)
+                Text("Make sure you see the level bars move when you speak")
+                    .font(.system(size: 12))
+                    .foregroundColor(FazmColors.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TutorialMicPicker()
+                    .padding(.top, 2)
+
+                Button {
+                    viewModel.startPulse()
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        viewModel.step = .pressKey
+                    }
+                } label: {
+                    Text("Next")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(FazmColors.purplePrimary)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+            .transition(.opacity)
+
         case .pressKey:
             VStack(spacing: 8) {
                 KeyCapView(pulseScale: viewModel.pulseScale)
@@ -290,10 +334,6 @@ struct PostOnboardingTutorialView: View {
                     .foregroundColor(FazmColors.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-
-                // Mic picker + level meter so user can verify mic before first PTT
-                TutorialMicPicker()
-                    .padding(.top, 4)
             }
             .transition(.opacity)
 
