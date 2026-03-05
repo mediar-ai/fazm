@@ -27,9 +27,9 @@ struct FloatingBackgroundModifier: ViewModifier {
     let cornerRadius: CGFloat
     @EnvironmentObject private var state: FloatingControlBarState
 
-    /// Use solid background when the AI conversation is open and not collapsed.
+    /// Use solid background when the AI conversation is open and not collapsed, or during push-to-talk.
     private var useSolid: Bool {
-        state.showingAIConversation && !state.isCollapsed
+        (state.showingAIConversation && !state.isCollapsed) || state.isVoiceListening
     }
 
     func body(content: Content) -> some View {
