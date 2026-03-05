@@ -113,6 +113,21 @@ class ShortcutSettings: ObservableObject {
         ("claude-sonnet-4-6", "Sonnet"),
     ]
 
+    /// Proactiveness level for the AI assistant.
+    enum ProactivenessLevel: String, CaseIterable {
+        case passive = "Passive"
+        case balanced = "Balanced"
+        case proactive = "Proactive"
+
+        var description: String {
+            switch self {
+            case .passive: return "Only do what is explicitly asked, confirm before taking actions"
+            case .balanced: return "Take obvious actions, ask for confirmation on ambiguous ones"
+            case .proactive: return "Proactively find and execute solutions without asking unless clarification is needed"
+            }
+        }
+    }
+
     /// Floating bar response compactness level.
     enum FloatingBarCompactness: String, CaseIterable {
         case off = "Off"
@@ -154,6 +169,11 @@ class ShortcutSettings: ObservableObject {
         didSet { UserDefaults.standard.set(draggableBarEnabled, forKey: "shortcut_draggableBarEnabled") }
     }
 
+    /// How proactive the AI assistant should be.
+    @Published var proactivenessLevel: ProactivenessLevel {
+        didSet { UserDefaults.standard.set(proactivenessLevel.rawValue, forKey: "shortcut_proactivenessLevel") }
+    }
+
     private init() {
         if let saved = UserDefaults.standard.string(forKey: "shortcut_pttKey"),
            let key = PTTKey(rawValue: saved) {
@@ -184,5 +204,11 @@ class ShortcutSettings: ObservableObject {
             self.pttTranscriptionMode = .batch
         }
         self.draggableBarEnabled = UserDefaults.standard.object(forKey: "shortcut_draggableBarEnabled") as? Bool ?? false
+        if let saved = UserDefaults.standard.string(forKey: "shortcut_proactivenessLevel"),
+           let level = ProactivenessLevel(rawValue: saved) {
+            self.proactivenessLevel = level
+        } else {
+            self.proactivenessLevel = .proactive
+        }
     }
 }
