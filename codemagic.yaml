@@ -238,6 +238,17 @@ workflows:
 
           # Write runtime .env from FAZM_APP_ENV secret
           echo "$FAZM_APP_ENV" | base64 --decode > "$APP_BUNDLE/Contents/Resources/.env"
+
+          # Verify required env vars are present in the bundle
+          REQUIRED_VARS="FAZM_BACKEND_URL FAZM_BACKEND_SECRET VERTEX_PROJECT_ID GCP_PROJECT_NUMBER GCP_SERVICE_ACCOUNT"
+          for var in $REQUIRED_VARS; do
+            if ! grep -q "^${var}=.\+" "$APP_BUNDLE/Contents/Resources/.env"; then
+              echo "ERROR: Required env var $var is missing or empty in bundled .env"
+              echo "Update FAZM_APP_ENV in Codemagic fazm_secrets group"
+              exit 1
+            fi
+          done
+          echo "All required env vars verified in bundled .env"
           echo "App bundle created: $APP_BUNDLE"
 
       - name: Sign app
