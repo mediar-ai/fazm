@@ -1,71 +1,18 @@
-import Cocoa
 import SwiftUI
-
-/// NSViewRepresentable wrapping NSPopUpButton for reliable dropdown in borderless panels.
-private struct MicPopUpButton: NSViewRepresentable {
-    @ObservedObject var deviceManager: AudioDeviceManager
-
-    func makeNSView(context: Context) -> NSPopUpButton {
-        let button = NSPopUpButton(frame: .zero, pullsDown: false)
-        button.isBordered = false
-        button.font = NSFont.systemFont(ofSize: 12)
-        // Style for dark background
-        (button.cell as? NSPopUpButtonCell)?.arrowPosition = .arrowAtBottom
-        updateItems(button)
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.selectionChanged(_:))
-        return button
-    }
-
-    func updateNSView(_ button: NSPopUpButton, context: Context) {
-        let currentSelection = deviceManager.selectedDeviceUID ?? ""
-        updateItems(button)
-        // Re-select the current device
-        if currentSelection.isEmpty {
-            button.selectItem(at: 0)
-        } else if let index = deviceManager.devices.firstIndex(where: { $0.uid == currentSelection }) {
-            button.selectItem(at: index + 1) // +1 for "System Default"
-        }
-    }
-
-    private func updateItems(_ button: NSPopUpButton) {
-        button.removeAllItems()
-        button.addItem(withTitle: "System Default")
-        for device in deviceManager.devices {
-            button.addItem(withTitle: device.name)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(deviceManager: deviceManager)
-    }
-
-    class Coordinator: NSObject {
-        let deviceManager: AudioDeviceManager
-
-        init(deviceManager: AudioDeviceManager) {
-            self.deviceManager = deviceManager
-        }
-
-        @MainActor @objc func selectionChanged(_ sender: NSPopUpButton) {
-            let index = sender.indexOfSelectedItem
-            if index == 0 {
-                deviceManager.selectedDeviceUID = nil
-            } else {
-                let deviceIndex = index - 1
-                if deviceIndex < deviceManager.devices.count {
-                    deviceManager.selectedDeviceUID = deviceManager.devices[deviceIndex].uid
-                }
-            }
-        }
-    }
-}
 
 /// Overlay shown when PTT finishes with no speech detected.
 /// Displays a mic picker and live audio level so the user can verify their mic works.
 struct SilenceOverlayView: View {
     @ObservedObject private var deviceManager = AudioDeviceManager.shared
     var onDismiss: () -> Void
+
+    private var selectedDeviceName: String {
+        if let uid = deviceManager.selectedDeviceUID,
+           let device = deviceManager.devices.first(where: { $0.uid == uid }) {
+            return device.name
+        }
+        return "System Default"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -89,9 +36,28 @@ struct SilenceOverlayView: View {
                 .buttonStyle(.plain)
             }
 
-            // Native NSPopUpButton for reliable dropdown in borderless panel
-            MicPopUpButton(deviceManager: deviceManager)
-                .frame(height: 24)
+            // Mic picker — SwiftUI Button that shows a native NSMenu on click
+            Button {
+                showMicMenu()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 10))
+                    Text(selectedDeviceName)
+                        .scaledFont(size: 12)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
 
             AudioLevelBarsSettingsView(level: deviceManager.currentAudioLevel)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -108,5 +74,44 @@ struct SilenceOverlayView: View {
         .padding(8)
         .onAppear { deviceManager.startLevelMonitoring() }
         .onDisappear { deviceManager.stopLevelMonitoring() }
+    }
+
+    private func showMicMenu() {
+        let menu = NSMenu()
+
+        let defaultItem = NSMenuItem(title: "System Default", action: #selector(MicMenuTarget.selectDevice(_:)), keyEquivalent: "")
+        defaultItem.target = MicMenuTarget.shared
+        defaultItem.representedObject = nil as String?
+        if deviceManager.selectedDeviceUID == nil {
+            defaultItem.state = .on
+        }
+        menu.addItem(defaultItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        for device in deviceManager.devices {
+            let item = NSMenuItem(title: device.name, action: #selector(MicMenuTarget.selectDevice(_:)), keyEquivalent: "")
+            item.target = MicMenuTarget.shared
+            item.representedObject = device.uid
+            if deviceManager.selectedDeviceUID == device.uid {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+
+        // Show at mouse location
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+}
+
+/// Target for NSMenu item actions (must be NSObject for @objc selectors).
+private class MicMenuTarget: NSObject {
+    static let shared = MicMenuTarget()
+
+    @objc func selectDevice(_ sender: NSMenuItem) {
+        Task { @MainActor in
+            let uid = sender.representedObject as? String
+            AudioDeviceManager.shared.selectedDeviceUID = uid
+        }
     }
 }

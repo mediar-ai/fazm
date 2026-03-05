@@ -1,8 +1,8 @@
 import Cocoa
 import SwiftUI
 
-/// NSPanel subclass that can become key (required for NSPopUpButton and other
-/// interactive controls to work in a borderless floating panel).
+/// NSPanel subclass that can become key (required for interactive controls
+/// like buttons to work in a borderless floating panel).
 private class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -27,9 +27,11 @@ class SilenceOverlayWindow {
             .frame(width: Self.overlayWidth)
         )
 
-        // Let SwiftUI compute the intrinsic height
+        // Let SwiftUI compute the intrinsic height, with a minimum to ensure
+        // the mic button and audio bars are never clipped
         let fittingSize = hostingView.fittingSize
-        let overlaySize = NSSize(width: Self.overlayWidth, height: fittingSize.height)
+        let overlayHeight = max(fittingSize.height, 120)
+        let overlaySize = NSSize(width: Self.overlayWidth, height: overlayHeight)
 
         let x = barFrame.midX - overlaySize.width / 2
         let y = barFrame.minY - overlaySize.height - 8
@@ -47,6 +49,7 @@ class SilenceOverlayWindow {
         panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.becomesKeyOnlyIfNeeded = false
+        panel.appearance = NSAppearance(named: .vibrantDark)
 
         hostingView.frame = NSRect(origin: .zero, size: overlaySize)
         panel.contentView = hostingView
