@@ -999,9 +999,15 @@ class ChatToolExecutor {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        // Accumulate stdout asynchronously so we can detect the OAuth URL while gws blocks
+        // Accumulate both stdout and stderr — gws writes the OAuth URL to stderr
         let accumulator = StdoutAccumulator()
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
+                accumulator.append(text)
+            }
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
                 accumulator.append(text)
@@ -1036,14 +1042,15 @@ class ChatToolExecutor {
             // URL never appeared
             process.terminate()
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
-            let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let stdout = accumulator.text
-            log("GWS auth login: no OAuth URL detected. stdout=\(stdout.prefix(200)) stderr=\(stderr.prefix(200))")
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
+            let allOutput = accumulator.text
+            log("GWS auth login: no OAuth URL detected. output=\(allOutput.prefix(400))")
             return """
-            {"success": false, "message": "Could not detect OAuth URL from gws. Output: \(String(stdout.prefix(300)))"}
+            {"success": false, "message": "Could not detect OAuth URL from gws. Output: \(String(allOutput.prefix(300)))"}
             """
         } catch {
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
             logError("GWS auth login error", error: error)
             return """
             {"success": false, "message": "Failed to start login: \(error.localizedDescription)"}
