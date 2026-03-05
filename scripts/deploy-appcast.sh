@@ -10,7 +10,7 @@ set -e
 
 GITHUB_REPO="m13v/fazm"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APPCAST_FILE="/tmp/appcast-$$.xml"
+APPCAST_FILE="/tmp/appcast.xml"
 
 echo "Deploying appcast.xml to latest GitHub release..."
 
@@ -29,7 +29,7 @@ fi
 echo "Uploading appcast.xml to release: $LATEST_TAG"
 
 # Step 3: Upload appcast.xml (--clobber overwrites if it already exists)
-gh release upload "$LATEST_TAG" "$APPCAST_FILE#appcast.xml" \
+gh release upload "$LATEST_TAG" "$APPCAST_FILE" \
     --repo "$GITHUB_REPO" \
     --clobber
 
