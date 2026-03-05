@@ -101,6 +101,12 @@ class FloatingControlBarState: NSObject, ObservableObject {
     @Published var tutorialChatStep: Int = 0  // 0 = first prompt done (from overlay), 1-3 = guided prompts
     @Published var tutorialWaitingForResponse: Bool = false
 
+    /// Dynamic tutorial prompts (personalized from onboarding data)
+    var tutorialPrompts: [(instruction: String, description: String)] = []
+
+    /// System prompt suffix injected during tutorial (cleared on finish)
+    var tutorialSystemPromptSuffix: String?
+
     // Model selection
     @Published var selectedModel: String = "claude-opus-4-6"
 
