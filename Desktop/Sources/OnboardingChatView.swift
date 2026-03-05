@@ -231,7 +231,6 @@ struct OnboardingChatView: View {
                                 case "microphone": return !appState.hasMicrophonePermission
                                 case "notifications": return !appState.hasNotificationPermission
                                 case "accessibility": return !appState.hasAccessibilityPermission
-                                case "automation": return !appState.hasAutomationPermission
                                 default: return false
                                 }
                             }()
@@ -378,7 +377,6 @@ struct OnboardingChatView: View {
             appState.checkScreenRecordingPermission()
             appState.checkMicrophonePermission()
             appState.checkAccessibilityPermission()
-            appState.checkAutomationPermission()
         }
         // When a pending permission is granted, bring app to front and notify the AI
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
@@ -392,9 +390,6 @@ struct OnboardingChatView: View {
         }
         .onChange(of: appState.hasAccessibilityPermission) { _, granted in
             if granted { handlePermissionGranted("accessibility", label: "Accessibility") }
-        }
-        .onChange(of: appState.hasAutomationPermission) { _, granted in
-            if granted { handlePermissionGranted("automation", label: "Automation") }
         }
     }
 
@@ -424,8 +419,6 @@ struct OnboardingChatView: View {
                 return "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
             case "accessibility":
                 return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            case "automation":
-                return "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
             case "notifications":
                 return "x-apple.systempreferences:com.apple.preference.security?Privacy_Notifications"
             default:
@@ -603,7 +596,6 @@ struct OnboardingChatView: View {
             "mic": "microphone",
             "notifications": "notifications",
             "accessibility": "accessibility",
-            "automation": "automation",
             "screen recording": "screen_recording",
         ]
         return mapping[name]

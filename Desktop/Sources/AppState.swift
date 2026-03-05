@@ -20,9 +20,6 @@ class AppState: ObservableObject {
     @Published var isScreenCaptureKitBroken = false  // TCC says yes but ScreenCaptureKit says no
     @Published var isScreenRecordingStale = false  // TCC says yes but capture fails (developer signing changed)
     var screenRecordingGrantAttempts = 0  // Track how many times user clicked Grant without success
-    @Published var hasAutomationPermission = false
-    @Published var automationPermissionError: OSStatus = 0  // Non-zero when check fails unexpectedly (e.g. -600 procNotFound)
-    private var isCheckingAutomationPermission = false  // Prevent concurrent checks (retry path has a 1s sleep)
     @Published var hasAccessibilityPermission = false
     @Published var isAccessibilityBroken = false  // TCC says yes but AX calls actually fail (common after macOS updates/app re-signs)
 
@@ -260,12 +257,6 @@ class AppState: ObservableObject {
         ScreenCaptureService.openScreenRecordingPreferences()
     }
 
-    func openAutomationPreferences() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     func requestNotificationPermission() {
         // First check current authorization status
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
@@ -361,68 +352,12 @@ class AppState: ObservableObject {
         ScreenCaptureService.requestAllScreenCapturePermissions()
     }
 
-    /// Trigger automation permission by attempting to use Apple Events
-    nonisolated func triggerAutomationPermission() {
-        // Run a simple AppleScript to trigger the permission prompt
-        // This must be done on a background thread since it's nonisolated
-        Task.detached {
-            // First, ensure System Events is running — without it, the TCC prompt won't appear
-            // and checkAutomationPermission returns -600 (procNotFound)
-            let launchScript = NSAppleScript(source: """
-                launch application "System Events"
-            """)
-            var launchError: NSDictionary?
-            launchScript?.executeAndReturnError(&launchError)
-            if let launchError = launchError {
-                log("AUTOMATION_TRIGGER: Failed to launch System Events: \(launchError)")
-            } else {
-                log("AUTOMATION_TRIGGER: System Events launched successfully")
-            }
-
-            // Small delay to let System Events initialize
-            try? await Task.sleep(nanoseconds: 500_000_000)
-
-            // Now trigger the actual TCC prompt
-            let script = NSAppleScript(source: """
-                tell application "System Events"
-                    return name of first process whose frontmost is true
-                end tell
-            """)
-            var error: NSDictionary?
-            script?.executeAndReturnError(&error)
-
-            if let error = error {
-                let errorNum = error[NSAppleScript.errorNumber] as? Int ?? 0
-                let errorMsg = error[NSAppleScript.errorMessage] as? String ?? "unknown"
-                log("AUTOMATION_TRIGGER: AppleScript failed: \(errorNum) - \(errorMsg)")
-            } else {
-                log("AUTOMATION_TRIGGER: AppleScript succeeded, permission may have been granted")
-            }
-
-            // Re-check permission status before opening settings
-            await MainActor.run { [weak self] in
-                self?.checkAutomationPermission()
-            }
-
-            // Small delay to let the check complete
-            try? await Task.sleep(nanoseconds: 300_000_000)
-
-            // Open settings so user can toggle if needed
-            await MainActor.run {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-        }
-    }
-
     // MARK: - Permission Status Checks
 
     /// Check and update all permission states
     func checkAllPermissions() {
         checkNotificationPermission()
         checkScreenRecordingPermission()
-        checkAutomationPermission()
         checkAccessibilityPermission()
         // One-time startup diagnostic for accessibility
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
@@ -553,70 +488,6 @@ class AppState: ObservableObject {
         } else {
             hasScreenRecordingPermission = true
         }
-    }
-
-    /// Check automation permission without triggering a prompt
-    /// Uses AEDeterminePermissionToAutomateTarget to query TCC status for System Events
-    func checkAutomationPermission() {
-        guard !isCheckingAutomationPermission else { return }
-        isCheckingAutomationPermission = true
-        Task.detached {
-            defer { Task { @MainActor in self.isCheckingAutomationPermission = false } }
-            let status = Self.queryAutomationPermissionStatus()
-
-            // noErr (0) = granted, errAEEventNotPermitted (-1743) = denied, -1744 = not determined
-            // -600 (procNotFound) = System Events not running — try to launch it and retry
-            if status == -600 {
-                log("AUTOMATION_CHECK: status=-600 (procNotFound), launching System Events and retrying...")
-                let launchScript = NSAppleScript(source: "launch application \"System Events\"")
-                var launchError: NSDictionary?
-                launchScript?.executeAndReturnError(&launchError)
-
-                // Wait for System Events to initialize
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-
-                let retryStatus = Self.queryAutomationPermissionStatus()
-                let hasPermission = retryStatus == noErr
-                log("AUTOMATION_CHECK: retry status=\(retryStatus), hasPermission=\(hasPermission)")
-
-                await MainActor.run {
-                    self.hasAutomationPermission = hasPermission
-                    self.automationPermissionError = hasPermission ? 0 : retryStatus
-                }
-            } else {
-                let hasPermission = status == noErr
-                let previousValue = await MainActor.run { self.hasAutomationPermission }
-                if hasPermission != previousValue {
-                    log("AUTOMATION_CHECK: status=\(status), hasPermission=\(hasPermission)")
-                }
-
-                await MainActor.run {
-                    self.hasAutomationPermission = hasPermission
-                    // Track unexpected errors (not denied/not-determined, which are normal states)
-                    self.automationPermissionError = (status == noErr || status == -1743 || status == -1744) ? 0 : status
-                }
-            }
-        }
-    }
-
-    /// Query the TCC automation permission status for System Events without triggering a prompt
-    nonisolated private static func queryAutomationPermissionStatus() -> OSStatus {
-        let bundleIDString = "com.apple.systemevents"
-        var addressDesc = AEAddressDesc()
-
-        let status: OSStatus = bundleIDString.withCString { cString in
-            AECreateDesc(typeApplicationBundleID, cString, strlen(cString), &addressDesc)
-            let result = AEDeterminePermissionToAutomateTarget(
-                &addressDesc,
-                typeWildCard,
-                typeWildCard,
-                false // askUserIfNeeded = false → never shows dialog
-            )
-            AEDisposeDesc(&addressDesc)
-            return result
-        }
-
-        return status
     }
 
     /// Check accessibility permission status
@@ -935,7 +806,6 @@ class AppState: ObservableObject {
             "onboardingStep",
             "hasSeenRewindIntro",
             "hasTriggeredNotification",
-            "hasTriggeredAutomation",
             "hasTriggeredScreenRecording",
             "hasTriggeredMicrophone",
             "hasTriggeredSystemAudio",

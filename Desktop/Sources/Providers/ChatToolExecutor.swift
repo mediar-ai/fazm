@@ -535,19 +535,8 @@ class ChatToolExecutor {
                 return "pending - user needs to toggle Accessibility for Fazm in System Settings"
             }
 
-        case "automation":
-            appState.triggerAutomationPermission()
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            appState.checkAutomationPermission()
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if appState.hasAutomationPermission {
-                return "granted"
-            } else {
-                return "pending - user needs to toggle Automation for Fazm in System Settings"
-            }
-
         default:
-            return "Error: unknown permission type '\(type)'. Valid types: screen_recording, microphone, notifications, accessibility, automation"
+            return "Error: unknown permission type '\(type)'. Valid types: screen_recording, microphone, notifications, accessibility"
         }
     }
 
@@ -565,14 +554,13 @@ class ChatToolExecutor {
             "microphone": appState.hasMicrophonePermission ? "granted" : "not_granted",
             "notifications": appState.hasNotificationPermission ? "granted" : "not_granted",
             "accessibility": appState.hasAccessibilityPermission ? "granted" : "not_granted",
-            "automation": appState.hasAutomationPermission ? "granted" : "not_granted",
         ]
 
         if let data = try? JSONSerialization.data(withJSONObject: statuses, options: .prettyPrinted),
            let json = String(data: data, encoding: .utf8) {
             return json
         }
-        return "screen_recording: \(statuses["screen_recording"]!), microphone: \(statuses["microphone"]!), notifications: \(statuses["notifications"]!), accessibility: \(statuses["accessibility"]!), automation: \(statuses["automation"]!)"
+        return "screen_recording: \(statuses["screen_recording"]!), microphone: \(statuses["microphone"]!), notifications: \(statuses["notifications"]!), accessibility: \(statuses["accessibility"]!)"
     }
 
     /// Scan files BLOCKING — triggers folder access dialogs, waits for scan, returns results
@@ -869,7 +857,6 @@ class ChatToolExecutor {
             ("microphone", appState.hasMicrophonePermission),
             ("notifications", appState.hasNotificationPermission),
             ("accessibility", appState.hasAccessibilityPermission),
-            ("automation", appState.hasAutomationPermission),
         ]
         for (name, granted) in permissions {
             if granted {

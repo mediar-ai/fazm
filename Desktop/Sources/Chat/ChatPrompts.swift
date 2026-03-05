@@ -725,10 +725,9 @@ struct ChatPrompts {
     - **Microphone**: Transcribes your meetings and calls so Fazm can give real-time advice and summaries.
     - **Notifications**: Sends proactive tips and reminders based on what you're working on.
     - **Accessibility**: Reads UI elements on screen so Fazm understands which app and context you're in.
-    - **Automation**: Controls apps (like AppleScript) to take actions on your behalf when you ask.
     - **Screen Recording**: Captures screen content so Fazm can see what you're looking at and help contextually.
 
-    Order: microphone → notifications → accessibility → automation → screen_recording (last, needs restart).
+    Order: microphone → notifications → accessibility → screen_recording (last, needs restart).
     Skip already-granted permissions. If user clicks "Skip": say "No worries" and move to the next one. NEVER nag.
 
     Example for microphone:
