@@ -109,8 +109,8 @@ class ShortcutSettings: ObservableObject {
 
     /// Available models for Ask Fazm.
     static let availableModels: [(id: String, label: String)] = [
-        ("claude-sonnet-4-6", "Sonnet"),
         ("claude-opus-4-6", "Opus"),
+        ("claude-sonnet-4-6", "Sonnet"),
     ]
 
     /// Floating bar response compactness level.
@@ -170,7 +170,7 @@ class ShortcutSettings: ObservableObject {
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
         self.pttSoundsEnabled = UserDefaults.standard.object(forKey: "shortcut_pttSoundsEnabled") as? Bool ?? true
-        self.selectedModel = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-sonnet-4-6"
+        self.selectedModel = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-opus-4-6"
         if let saved = UserDefaults.standard.string(forKey: "shortcut_floatingBarCompactness"),
            let mode = FloatingBarCompactness(rawValue: saved) {
             self.floatingBarCompactness = mode

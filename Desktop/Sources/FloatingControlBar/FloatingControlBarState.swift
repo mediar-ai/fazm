@@ -96,11 +96,11 @@ class FloatingControlBarState: NSObject, ObservableObject {
     @Published var showSendButtonHint: Bool = false
 
     // Model selection
-    @Published var selectedModel: String = "claude-sonnet-4-6"
+    @Published var selectedModel: String = "claude-opus-4-6"
 
     /// Available models for the floating bar picker
     static let availableModels: [(id: String, label: String)] = [
-        ("claude-sonnet-4-6", "Sonnet"),
         ("claude-opus-4-6", "Opus"),
+        ("claude-sonnet-4-6", "Sonnet"),
     ]
 }

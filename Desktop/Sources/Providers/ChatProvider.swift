@@ -743,7 +743,7 @@ class ChatProvider: ObservableObject {
             let floatingSystemPrompt = Self.floatingBarSystemPromptPrefixCurrent + "\n\n" + mainSystemPrompt
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
                 .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
-                .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt)
+                .init(key: "floating", model: "claude-opus-4-6", systemPrompt: floatingSystemPrompt)
             ])
             return true
         } catch {
