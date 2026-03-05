@@ -291,6 +291,19 @@ actor ACPBridge {
     }
   }
 
+  // MARK: - Session Reset
+
+  /// Invalidate a session so the next query creates a fresh one (no history).
+  func resetSession(key: String) {
+    guard isRunning else { return }
+    let msg: [String: Any] = ["type": "resetSession", "sessionKey": key]
+    if let data = try? JSONSerialization.data(withJSONObject: msg),
+      let str = String(data: data, encoding: .utf8)
+    {
+      sendLine(str)
+    }
+  }
+
   // MARK: - Session Pre-warming
 
   /// Tell the bridge to pre-create ACP sessions in the background.
