@@ -981,10 +981,7 @@ struct TaskAgentSettingsView: View {
 
 // MARK: - Window Stubs
 
-class FeedbackWindow {
-    static func show() {}
-    static func show(userEmail: String?) {}
-}
+// FeedbackWindow: moved to FeedbackView.swift
 
 class GlowDemoWindow {
     var frame: CGRect { .zero }

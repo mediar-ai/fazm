@@ -620,6 +620,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Report Issue
+        let reportItem = NSMenuItem(title: "Report Issue...", action: #selector(reportIssue), keyEquivalent: "")
+        reportItem.target = self
+        menu.addItem(reportItem)
+
         menu.addItem(NSMenuItem.separator())
 
         // Quit item
@@ -660,6 +665,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor @objc private func checkForUpdates() {
         AnalyticsManager.shared.menuBarActionClicked(action: "check_updates")
         UpdaterViewModel.shared.checkForUpdates()
+    }
+
+    @MainActor @objc private func reportIssue() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "report_issue")
+        FeedbackWindow.show(userEmail: AuthState.shared.userEmail)
     }
 
     @MainActor @objc private func quitApp() {
