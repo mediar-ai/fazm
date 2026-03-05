@@ -220,6 +220,9 @@ class PushToTalkManager: ObservableObject {
     preVoiceInputText = barState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
     if !chatWasOpenBeforePTT {
       FloatingControlBarManager.shared.openAIInput()
+    } else if barState?.isCollapsed == true {
+      // Bar was collapsed (semi-transparent, half height) — expand it back
+      FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
     }
 
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "hold")
@@ -248,6 +251,9 @@ class PushToTalkManager: ObservableObject {
     preVoiceInputText = barState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
     if !chatWasOpenBeforePTT {
       FloatingControlBarManager.shared.openAIInput()
+    } else if barState?.isCollapsed == true {
+      // Bar was collapsed (semi-transparent, half height) — expand it back
+      FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
     }
 
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "locked")
@@ -416,6 +422,8 @@ class PushToTalkManager: ObservableObject {
         barState?.aiInputText = preVoiceInputText.isEmpty ? query : preVoiceInputText + " " + query
       }
       pttOpenedChat = false
+      // Keep the window focused with cursor in the input after PTT
+      FloatingControlBarManager.shared.focusInputField()
     } else {
       log("PushToTalkManager: inserting transcription into input (\(query.count) chars): \(query)")
       FloatingControlBarManager.shared.openAIInputWithQuery(query)

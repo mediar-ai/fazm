@@ -327,7 +327,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private func installGlobalClickOutsideMonitor() {
         removeGlobalClickOutsideMonitor()
         globalClickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self, self.state.showingAIConversation, !self.suppressClickOutsideDismiss, !self.state.isCollapsed else { return }
+            guard let self, self.state.showingAIConversation, !self.suppressClickOutsideDismiss, !self.state.isCollapsed, !self.state.isVoiceListening else { return }
             // Don't collapse while AI is generating a response
             if self.state.showingAIResponse, self.state.currentAIMessage?.isStreaming == true || self.state.isAILoading { return }
             self.dismissConversationAnimated()
@@ -368,15 +368,20 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private var preCollapseHeight: CGFloat = 0
 
     /// Expand back from collapsed state when the window regains focus.
-    func expandFromCollapsed() {
+    /// When `instant` is true, skip the alpha animation (used by PTT to go solid immediately).
+    func expandFromCollapsed(instant: Bool = false) {
         guard state.isCollapsed else { return }
         state.isCollapsed = false
 
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.25
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.animator().alphaValue = 1.0
-        })
+        if instant {
+            self.alphaValue = 1.0
+        } else {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.25
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                self.animator().alphaValue = 1.0
+            })
+        }
 
         if preCollapseHeight > 0 {
             resizeAnchored(to: NSSize(width: frame.width, height: preCollapseHeight), makeResizable: true, animated: true)
@@ -715,8 +720,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         guard state.showingAIConversation else { return }
 
-        // Don't dismiss when already collapsed
-        guard !state.isCollapsed else { return }
+        // Don't dismiss when already collapsed or during push-to-talk
+        guard !state.isCollapsed, !state.isVoiceListening else { return }
 
         // Only dismiss when the user physically clicks away within our app.
         // Programmatic focus changes — e.g. the AI agent activating a browser
@@ -902,9 +907,11 @@ class FloatingControlBarManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self, let barState = self.barState else { return }
-            log("FloatingControlBarManager: Replaying post-onboarding tutorial")
-            PostOnboardingTutorialManager.shared.replay(barState: barState)
+            Task { @MainActor in
+                guard let self, let barState = self.barState else { return }
+                log("FloatingControlBarManager: Replaying post-onboarding tutorial")
+                PostOnboardingTutorialManager.shared.replay(barState: barState)
+            }
         }
     }
 
@@ -1099,6 +1106,12 @@ class FloatingControlBarManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             window.focusInputField()
         }
+    }
+
+    /// Expand the floating bar from collapsed state (used by PTT when bar was collapsed).
+    func expandFromCollapsed(instant: Bool = false) {
+        guard let window else { return }
+        window.expandFromCollapsed(instant: instant)
     }
 
     /// Resize the floating bar for PTT state changes.
