@@ -790,10 +790,10 @@ struct OnboardingChatView: View {
                 log("OnboardingChat: Using Vertex bridge (project=\(config.projectId))")
                 return ACPBridge(mode: .vertex(adcFilePath: config.adcFilePath, projectId: config.projectId, region: config.region))
             } catch {
-                log("OnboardingChat: Vertex setup failed, falling back to API key: \(error.localizedDescription)")
+                log("OnboardingChat: Vertex setup failed, falling back to personal OAuth: \(error.localizedDescription)")
             }
         }
-        return ACPBridge(passApiKey: true)
+        return ACPBridge(mode: .personalOAuth)
     }
 
     private func startExploration(fileCount: Int, graphViewModel: MemoryGraphViewModel?) {
