@@ -809,7 +809,9 @@ class FloatingControlBarManager {
         ) { [weak self] notification in
             guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
-            self?.lastActiveAppPID = app.processIdentifier
+            MainActor.assumeIsolated {
+                self?.lastActiveAppPID = app.processIdentifier
+            }
         }
         // Initialize with current frontmost app if it's not us
         if let frontApp = NSWorkspace.shared.frontmostApplication,
@@ -1160,6 +1162,29 @@ class FloatingControlBarManager {
     // MARK: - AI Query
 
     private func sendAIQuery(_ message: String, barWindow: FloatingControlBarWindow, provider: ChatProvider) async {
+        // Restore previous floating chat messages and session on first interaction
+        await provider.restoreFloatingChatIfNeeded()
+
+        // Populate the floating bar's chat history from restored messages
+        if barWindow.state.chatHistory.isEmpty && barWindow.state.currentAIMessage == nil {
+            let restored = provider.messages
+            if !restored.isEmpty {
+                // Pair up user/AI messages into exchanges for the history UI
+                var i = 0
+                while i < restored.count - 1 {
+                    if restored[i].sender == .user, restored[i + 1].sender == .ai {
+                        barWindow.state.chatHistory.append(
+                            FloatingChatExchange(question: restored[i].text, aiMessage: restored[i + 1])
+                        )
+                        i += 2
+                    } else {
+                        i += 1
+                    }
+                }
+                log("FloatingControlBarManager: Populated \(barWindow.state.chatHistory.count) exchanges from restored messages")
+            }
+        }
+
         // Capture the last active app's window (not the full desktop)
         let targetPID = self.lastActiveAppPID
         let needsHideBar = targetPID == 0 // Only hide for full-screen capture
