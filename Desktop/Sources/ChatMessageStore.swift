@@ -39,16 +39,34 @@ enum ChatMessageStore {
         }
     }
 
-    static func loadMessages(context: String) async -> [ChatMessage] {
+    static func loadMessages(context: String, limit: Int? = nil) async -> [ChatMessage] {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return [] }
         do {
             return try await dbQueue.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT messageId, sender, messageText, createdAt
-                    FROM chat_messages
-                    WHERE taskId = ?
-                    ORDER BY createdAt ASC
-                """, arguments: [context])
+                let sql: String
+                let arguments: StatementArguments
+                if let limit = limit {
+                    // Fetch the N most recent messages, then return in chronological order
+                    sql = """
+                        SELECT * FROM (
+                            SELECT messageId, sender, messageText, createdAt
+                            FROM chat_messages
+                            WHERE taskId = ?
+                            ORDER BY createdAt DESC
+                            LIMIT ?
+                        ) ORDER BY createdAt ASC
+                    """
+                    arguments = [context, limit]
+                } else {
+                    sql = """
+                        SELECT messageId, sender, messageText, createdAt
+                        FROM chat_messages
+                        WHERE taskId = ?
+                        ORDER BY createdAt ASC
+                    """
+                    arguments = [context]
+                }
+                let rows = try Row.fetchAll(db, sql: sql, arguments: arguments)
 
                 return rows.map { row in
                     ChatMessage(
