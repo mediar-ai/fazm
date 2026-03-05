@@ -16,7 +16,7 @@ class SilenceOverlayWindow {
     private var window: NSWindow?
     private static let overlayWidth: CGFloat = 300
 
-    /// Show the silence overlay positioned below the given bar window frame.
+    /// Show the silence overlay positioned above the given bar window frame.
     func show(below barFrame: NSRect) {
         dismiss()
 
@@ -34,7 +34,7 @@ class SilenceOverlayWindow {
         let overlaySize = NSSize(width: Self.overlayWidth, height: overlayHeight)
 
         let x = barFrame.midX - overlaySize.width / 2
-        let y = barFrame.minY - overlaySize.height - 8
+        let y = barFrame.maxY + 8
 
         let panel = KeyablePanel(
             contentRect: NSRect(origin: NSPoint(x: x, y: y), size: overlaySize),
