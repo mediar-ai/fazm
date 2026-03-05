@@ -1,5 +1,18 @@
 import SwiftUI
 
+// MARK: - Compact Code Blocks Environment Key
+
+private struct CompactCodeBlocksKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
+extension EnvironmentValues {
+    var compactCodeBlocks: Bool {
+        get { self[CompactCodeBlocksKey.self] }
+        set { self[CompactCodeBlocksKey.self] = newValue }
+    }
+}
+
 /// A markdown text view that supports text selection across paragraph breaks.
 ///
 /// Splits content into text segments and code blocks:
@@ -13,6 +26,7 @@ struct SelectableMarkdown: View {
     let text: String
     let sender: ChatSender
     @Environment(\.fontScale) private var fontScale
+    @Environment(\.compactCodeBlocks) private var compactCodeBlocks
 
     // Cached parsed segments — pre-computed on init, recomputed only when text changes.
     // Avoids running splitSegments() on every SwiftUI layout pass.
@@ -102,20 +116,24 @@ struct SelectableMarkdown: View {
 
     @ViewBuilder
     private func codeBlockView(_ code: String) -> some View {
-        let codeFontSize = round(13 * fontScale)
-        let bgColor = sender == .user
-            ? Color.white.opacity(0.15)
-            : FazmColors.backgroundTertiary
+        if compactCodeBlocks {
+            CollapsibleCodeBlockView(code: code, sender: sender, fontScale: fontScale)
+        } else {
+            let codeFontSize = round(13 * fontScale)
+            let bgColor = sender == .user
+                ? Color.white.opacity(0.15)
+                : FazmColors.backgroundTertiary
 
-        ScrollView(.horizontal, showsIndicators: false) {
-            Text(code)
-                .font(.system(size: codeFontSize, design: .monospaced))
-                .foregroundColor(sender == .user ? .white : FazmColors.textPrimary)
-                .if_available_writingToolsNone()
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(size: codeFontSize, design: .monospaced))
+                    .foregroundColor(sender == .user ? .white : FazmColors.textPrimary)
+                    .if_available_writingToolsNone()
+            }
+            .padding(12)
+            .background(bgColor)
+            .cornerRadius(8)
         }
-        .padding(12)
-        .background(bgColor)
-        .cornerRadius(8)
     }
 
     // MARK: - Attributed String Styling
@@ -275,5 +293,90 @@ struct SelectableMarkdown: View {
         }
 
         return segments
+    }
+}
+
+// MARK: - Collapsible Code Block (for floating bar)
+
+/// Code block that collapses to 5 lines with a copy button.
+/// Used in the floating control bar to keep responses compact.
+struct CollapsibleCodeBlockView: View {
+    let code: String
+    let sender: ChatSender
+    let fontScale: CGFloat
+
+    @State private var isExpanded = false
+    @State private var showCopied = false
+
+    private let maxCollapsedLines = 5
+
+    private var lines: [String] { code.components(separatedBy: "\n") }
+    private var needsCollapsing: Bool { lines.count > maxCollapsedLines }
+    private var displayedCode: String {
+        if isExpanded || !needsCollapsing {
+            return code
+        }
+        return lines.prefix(maxCollapsedLines).joined(separator: "\n")
+    }
+
+    var body: some View {
+        let codeFontSize = round(13 * fontScale)
+        let bgColor = sender == .user
+            ? Color.white.opacity(0.15)
+            : FazmColors.backgroundTertiary
+
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(displayedCode)
+                    .font(.system(size: codeFontSize, design: .monospaced))
+                    .foregroundColor(sender == .user ? .white : FazmColors.textPrimary)
+                    .if_available_writingToolsNone()
+            }
+            .padding(.top, 12)
+            .padding(.horizontal, 12)
+            .padding(.bottom, needsCollapsing && !isExpanded ? 4 : 12)
+
+            // Bottom bar with expand/collapse + copy
+            HStack(spacing: 8) {
+                if needsCollapsing {
+                    Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() } }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9))
+                            Text(isExpanded ? "Show less" : "\(lines.count - maxCollapsedLines) more lines")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                Button(action: copyCode) {
+                    HStack(spacing: 3) {
+                        Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 10))
+                        Text(showCopied ? "Copied" : "Copy")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(showCopied ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+        .background(bgColor)
+        .cornerRadius(8)
+    }
+
+    private func copyCode() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        showCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showCopied = false
+        }
     }
 }
