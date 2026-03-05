@@ -368,8 +368,42 @@ struct SettingsContentView: View {
 
     // MARK: - AI Chat Section
 
+    @AppStorage("bridgeMode") private var bridgeMode: String = "personal"
+
     private var aiChatSection: some View {
         VStack(spacing: 20) {
+            // Claude Account selector
+            settingsCard(settingId: "aichat.account") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "person.crop.circle")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textTertiary)
+
+                        Text("Claude Account")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Picker("", selection: $bridgeMode) {
+                        Text("Fazm Built-in").tag("builtin")
+                        Text("Your Claude Account").tag("personal")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: bridgeMode) { _, newValue in
+                        Task { await chatProvider?.switchBridgeMode(to: newValue) }
+                    }
+
+                    Text(bridgeMode == "builtin"
+                         ? "Using Fazm's built-in Claude account via Vertex AI. No sign-in required."
+                         : "Using your personal Claude account via OAuth. Sign in to connect.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+                }
+            }
+
             // Ask Mode card
             settingsCard(settingId: "aichat.askmode") {
                 VStack(alignment: .leading, spacing: 12) {

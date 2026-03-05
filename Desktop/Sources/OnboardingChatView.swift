@@ -762,6 +762,21 @@ struct OnboardingChatView: View {
         }
     }
 
+    /// Create an ACPBridge for onboarding: try Vertex first, fall back to bundled API key
+    private static func createOnboardingBridge() async -> ACPBridge {
+        let vtm = VertexTokenManager()
+        if await vtm.isConfigured {
+            do {
+                let config = try await vtm.setup()
+                log("OnboardingChat: Using Vertex bridge (project=\(config.projectId))")
+                return ACPBridge(mode: .vertex(adcFilePath: config.adcFilePath, projectId: config.projectId, region: config.region))
+            } catch {
+                log("OnboardingChat: Vertex setup failed, falling back to API key: \(error.localizedDescription)")
+            }
+        }
+        return ACPBridge(passApiKey: true)
+    }
+
     private func startExploration(fileCount: Int, graphViewModel: MemoryGraphViewModel?) {
         guard !explorationRunning else { return }
         explorationRunning = true
@@ -773,7 +788,7 @@ struct OnboardingChatView: View {
         // Session 1: Knowledge graph builder (graph-focused, no text output needed)
         graphTask = Task {
             do {
-                let bridge = ACPBridge(passApiKey: true)
+                let bridge = await Self.createOnboardingBridge()
                 await MainActor.run { graphBridge = bridge }
                 try await bridge.start()
 
@@ -817,7 +832,7 @@ struct OnboardingChatView: View {
         // Session 2: Profile text writer (text-focused, saves AI user profile)
         explorationTask = Task {
             do {
-                let bridge = ACPBridge(passApiKey: true)
+                let bridge = await Self.createOnboardingBridge()
                 await MainActor.run { explorationBridge = bridge }
                 try await bridge.start()
 

@@ -27,6 +27,7 @@ struct SettingsSearchItem: Identifiable {
 
         // AI Chat (under Advanced)
         SettingsSearchItem(name: "AI Chat", subtitle: "Configure AI assistant settings", keywords: ["claude", "chat settings"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.aichat"),
+        SettingsSearchItem(name: "Claude Account", subtitle: "Switch between built-in and personal Claude account", keywords: ["account", "vertex", "built-in", "oauth", "sign in"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.account"),
         SettingsSearchItem(name: "Ask Mode", subtitle: "Show an Ask/Act toggle in the chat to control tool use", keywords: ["ask", "act", "read only", "mode toggle"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.askmode"),
         SettingsSearchItem(name: "CLAUDE.md", subtitle: "Personal instructions loaded into AI chat", keywords: ["claude md", "claude config", "instructions", "view"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.claudemd"),
         SettingsSearchItem(name: "Skills", subtitle: "Enable or disable discovered AI skills", keywords: ["skills", "plugins", "abilities", "view"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.skills"),
