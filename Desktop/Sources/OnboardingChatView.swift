@@ -24,14 +24,28 @@ enum OnboardingChatPersistence {
         UserDefaults.standard.string(forKey: sessionIdKey)
     }
 
+    private static let midOnboardingVersionKey = "onboardingMidOnboardingVersion"
+
     /// Mark that onboarding is in progress (for restart detection)
     static func saveMidOnboarding() {
         UserDefaults.standard.set(true, forKey: midOnboardingKey)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        UserDefaults.standard.set(version, forKey: midOnboardingVersionKey)
     }
 
-    /// Whether the app was restarted mid-onboarding
+    /// Whether the app was restarted mid-onboarding (same version only).
+    /// If the app version changed, stale mid-onboarding state is cleared to start fresh.
     static var isMidOnboarding: Bool {
-        UserDefaults.standard.bool(forKey: midOnboardingKey)
+        guard UserDefaults.standard.bool(forKey: midOnboardingKey) else { return false }
+        let savedVersion = UserDefaults.standard.string(forKey: midOnboardingVersionKey) ?? ""
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        // Empty savedVersion means legacy state from before version tracking — treat as stale
+        if savedVersion.isEmpty || savedVersion != currentVersion {
+            log("OnboardingChatPersistence: Version changed (\(savedVersion.isEmpty ? "unknown" : savedVersion) → \(currentVersion)), clearing stale mid-onboarding state")
+            clear()
+            return false
+        }
+        return true
     }
 
     // MARK: - Exploration Persistence
