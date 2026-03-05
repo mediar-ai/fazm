@@ -484,7 +484,7 @@ class TutorialChatGuide {
 class PostOnboardingTutorialWindow: NSWindow {
     init(viewModel: TutorialViewModel) {
         super.init(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 160)),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 540, height: 380)),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -546,7 +546,7 @@ struct PostOnboardingTutorialView: View {
             .padding(.horizontal, 24)
             .padding(.top, 16)
             .padding(.bottom, 12)
-            .frame(width: 320)
+            .frame(width: viewModel.step == .pressKey ? 520 : 320)
             .background(Color(nsColor: NSColor(white: 0.12, alpha: 1.0)))
             .cornerRadius(16)
             .overlay(
@@ -697,49 +697,93 @@ struct SpeakingPromptText: View {
 
 // MARK: - KeyboardBottomRowView
 
-/// Simplified bottom row of a Mac keyboard showing where the Right ⌘ key is,
-/// with a repeating press-down animation on the highlighted key.
+/// Full Mac keyboard layout with the Right ⌘ key highlighted and animated.
 struct KeyboardBottomRowView: View {
     var pulseScale: CGFloat
 
     @State private var isPressed = false
 
-    private let keyHeight: CGFloat = 24
+    private let kh: CGFloat = 28       // standard key height
+    private let khSmall: CGFloat = 14  // half-height arrow keys
     private let gap: CGFloat = 2
     private let keyColor = Color(nsColor: NSColor(white: 0.15, alpha: 1.0))
     private let keyBorder = Color(nsColor: NSColor(white: 0.28, alpha: 1.0))
 
     var body: some View {
         VStack(spacing: gap) {
-            // Bottom modifier row: fn, ctrl, opt, cmd, space, cmd*, opt, arrows
+            // Row 1: Esc + F-keys
             HStack(spacing: gap) {
-                keyView("fn", width: 24)
-                keyView("⌃", width: 24)
-                keyView("⌥", width: 24)
-                keyView("⌘", width: 28)
-                // Space bar
-                keyView("", width: 80)
-                // Right ⌘ — highlighted & animated
-                rightCommandKey
-                keyView("⌥", width: 24)
-                // Arrow keys
+                key("esc", w: 30)
+                Spacer().frame(width: 8)
+                key("F1", w: 30); key("F2", w: 30); key("F3", w: 30); key("F4", w: 30)
+                Spacer().frame(width: 4)
+                key("F5", w: 30); key("F6", w: 30); key("F7", w: 30); key("F8", w: 30)
+                Spacer().frame(width: 4)
+                key("F9", w: 30); key("F10", w: 28); key("F11", w: 28); key("F12", w: 28)
+            }
+
+            // Row 2: Number row
+            HStack(spacing: gap) {
+                key("`", w: 28)
+                key("1", w: 28); key("2", w: 28); key("3", w: 28); key("4", w: 28); key("5", w: 28)
+                key("6", w: 28); key("7", w: 28); key("8", w: 28); key("9", w: 28); key("0", w: 28)
+                key("-", w: 28); key("=", w: 28)
+                key("⌫", w: 42)
+            }
+
+            // Row 3: QWERTY
+            HStack(spacing: gap) {
+                key("⇥", w: 38)
+                key("Q", w: 28); key("W", w: 28); key("E", w: 28); key("R", w: 28); key("T", w: 28)
+                key("Y", w: 28); key("U", w: 28); key("I", w: 28); key("O", w: 28); key("P", w: 28)
+                key("[", w: 28); key("]", w: 28)
+                key("\\", w: 38)
+            }
+
+            // Row 4: ASDF
+            HStack(spacing: gap) {
+                key("⇪", w: 46)
+                key("A", w: 28); key("S", w: 28); key("D", w: 28); key("F", w: 28); key("G", w: 28)
+                key("H", w: 28); key("J", w: 28); key("K", w: 28); key("L", w: 28)
+                key(";", w: 28); key("'", w: 28)
+                key("⏎", w: 50)
+            }
+
+            // Row 5: ZXCV
+            HStack(spacing: gap) {
+                key("⇧", w: 62)
+                key("Z", w: 28); key("X", w: 28); key("C", w: 28); key("V", w: 28); key("B", w: 28)
+                key("N", w: 28); key("M", w: 28); key(",", w: 28); key(".", w: 28); key("/", w: 28)
+                key("⇧", w: 62)
+            }
+
+            // Row 6: Bottom modifier row
+            HStack(spacing: gap) {
+                key("fn", w: 28)
+                key("⌃", w: 28)
+                key("⌥", w: 34)
+                key("⌘", w: 38)
+                key("", w: 130)  // space bar
+                rightCommandKey   // Right ⌘ — highlighted
+                key("⌥", w: 34)
+                // Arrow cluster
                 HStack(spacing: 1) {
-                    keyView("◀", width: 14)
+                    key("◀", w: 20)
                     VStack(spacing: 1) {
-                        keyView("▲", width: 14, height: keyHeight / 2 - 0.5)
-                        keyView("▼", width: 14, height: keyHeight / 2 - 0.5)
+                        key("▲", w: 20, h: khSmall)
+                        key("▼", w: 20, h: khSmall)
                     }
-                    keyView("▶", width: 14)
+                    key("▶", w: 20)
                 }
             }
         }
-        .padding(6)
+        .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: NSColor(white: 0.1, alpha: 1.0)))
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: NSColor(white: 0.08, alpha: 1.0)))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
         )
         .onAppear {
@@ -748,7 +792,6 @@ struct KeyboardBottomRowView: View {
     }
 
     private func startPressAnimation() {
-        // Repeating: press down for 1.5s, release for 0.8s
         withAnimation(.easeIn(duration: 0.15)) {
             isPressed = true
         }
@@ -764,33 +807,33 @@ struct KeyboardBottomRowView: View {
 
     private var rightCommandKey: some View {
         Text("⌘")
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.white)
-            .frame(width: 28, height: keyHeight)
+            .frame(width: 38, height: kh)
             .background(
                 RoundedRectangle(cornerRadius: 4)
                     .fill(FazmColors.purplePrimary.opacity(isPressed ? 0.6 : 0.25))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(FazmColors.purplePrimary.opacity(isPressed ? 1.0 : 0.7), lineWidth: 1)
+                    .strokeBorder(FazmColors.purplePrimary.opacity(isPressed ? 1.0 : 0.7), lineWidth: 1.5)
             )
-            .shadow(color: FazmColors.purplePrimary.opacity(isPressed ? 0.8 : 0.4), radius: isPressed ? 10 : 4, x: 0, y: 0)
+            .shadow(color: FazmColors.purplePrimary.opacity(isPressed ? 0.8 : 0.4), radius: isPressed ? 12 : 5, x: 0, y: 0)
             .scaleEffect(isPressed ? 0.92 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: isPressed)
     }
 
-    private func keyView(_ label: String, width: CGFloat, height: CGFloat? = nil) -> some View {
+    private func key(_ label: String, w: CGFloat, h: CGFloat? = nil) -> some View {
         Text(label)
-            .font(.system(size: 8, weight: .medium))
+            .font(.system(size: 9, weight: .medium))
             .foregroundColor(Color.white.opacity(0.4))
-            .frame(width: width, height: height ?? keyHeight)
+            .frame(width: w, height: h ?? kh)
             .background(
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: 4)
                     .fill(keyColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(keyBorder, lineWidth: 0.5)
             )
     }
