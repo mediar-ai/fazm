@@ -273,20 +273,13 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         suppressHoverResize = true
 
         // Determine the target origin for the collapsed pill.
-        // Non-draggable: always use the fixed default position so the pill never drifts,
-        // regardless of where the expanded window ended up (anchorBottom grows upward,
-        // so the window center shifts — anchoring from center would land in the wrong spot).
-        // Draggable + preChatCenter set: restore to where the bar was before chat opened.
-        // Draggable + no preChatCenter: fall back to current center-anchor (best effort).
+        // Keep the bottom edge fixed (same y as the chat window) so the pill doesn't
+        // shift vertically. Only re-center horizontally.
         let size = FloatingControlBarWindow.minBarSize
-        let restoreOrigin: NSPoint
-        if !ShortcutSettings.shared.draggableBarEnabled {
-            restoreOrigin = defaultPillOrigin()
-        } else if let center = preChatCenter {
-            restoreOrigin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
-        } else {
-            restoreOrigin = NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2)
-        }
+        let restoreOrigin = NSPoint(
+            x: frame.midX - size.width / 2,
+            y: frame.origin.y
+        )
 
         resizeWorkItem?.cancel()
         resizeWorkItem = nil
@@ -682,7 +675,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         guard let screen = targetScreen else { return .zero }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
-        let y = visibleFrame.minY + 60
+        let y = visibleFrame.minY + 150
         return NSPoint(x: x, y: y)
     }
 
@@ -696,7 +689,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - frame.width / 2
-        let y = visibleFrame.minY + 60  // 60pt from bottom (above dock)
+        let y = visibleFrame.minY + 150  // 150pt from bottom (well above dock)
         self.setFrameOrigin(NSPoint(x: x, y: y))
         log("FloatingControlBarWindow: centered at (\(x), \(y)) on screen \(visibleFrame)")
     }
@@ -1268,20 +1261,14 @@ extension FloatingControlBarWindow {
         resizeToResponseHeight(animated: animated)
     }
 
-    /// Save the current center point so closeAIConversation can restore position.
-    /// Only saves if preChatCenter is not already set (avoids overwriting during follow-ups).
-    /// If a close/restore animation is in flight (pendingRestoreOrigin is set), snaps the
-    /// window to that target first so the saved center reflects the true pill position,
-    /// not an intermediate animation frame.
-    /// In non-draggable mode, always snaps to the fixed default position so the saved
-    /// center is always the canonical top-center default, never a drifted value.
+    /// Snap the window to the pill position before opening a new chat.
+    /// If a close/restore animation is in flight, snap to its target first so the
+    /// saved origin reflects the true pill position, not an intermediate animation frame.
     func savePreChatCenterIfNeeded() {
         guard preChatCenter == nil else { return }
         let size = FloatingControlBarWindow.minBarSize
         if !ShortcutSettings.shared.draggableBarEnabled {
             // Non-draggable: always snap to the default pill position before saving.
-            // This ensures preChatCenter is always the canonical default, not a
-            // mid-animation frame or drifted position from a previous session.
             let origin = defaultPillOrigin()
             isResizingProgrammatically = true
             setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
@@ -1295,6 +1282,7 @@ extension FloatingControlBarWindow {
             isResizingProgrammatically = false
             pendingRestoreOrigin = nil
         }
+        // Save bottom-left origin so closeAIConversation can restore with bottom anchoring.
         preChatCenter = NSPoint(x: frame.midX, y: frame.midY)
     }
 
