@@ -104,6 +104,26 @@ else
     echo "Warning: acp-bridge directory not found at $ACP_BRIDGE_DIR"
 fi
 
+step "Ensuring gws binary..."
+GWS_VERSION="0.5.0"
+GWS_BIN_DIR="Desktop/bin"
+GWS_BIN="$GWS_BIN_DIR/gws"
+if [ ! -f "$GWS_BIN" ]; then
+    substep "Downloading gws v$GWS_VERSION"
+    mkdir -p "$GWS_BIN_DIR"
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "arm64" ]; then
+        GWS_ARTIFACT="gws-aarch64-apple-darwin.tar.gz"
+    else
+        GWS_ARTIFACT="gws-x86_64-apple-darwin.tar.gz"
+    fi
+    curl -sL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_ARTIFACT}" | tar xz -C "$GWS_BIN_DIR" gws
+    chmod +x "$GWS_BIN"
+    substep "Downloaded gws to $GWS_BIN"
+else
+    substep "gws binary already present"
+fi
+
 step "Checking schema docs..."
 bash scripts/check_schema_docs.sh
 
@@ -157,6 +177,12 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
 fi
 
+substep "Copying gws binary"
+if [ -f "$GWS_BIN" ]; then
+    cp -f "$GWS_BIN" "$APP_BUNDLE/Contents/Resources/gws"
+    chmod +x "$APP_BUNDLE/Contents/Resources/gws"
+fi
+
 substep "Copying .env.app"
 if [ -f ".env.app.dev" ]; then
     cp -f .env.app.dev "$APP_BUNDLE/Contents/Resources/.env"
@@ -202,6 +228,11 @@ if [ -n "$SIGN_IDENTITY" ]; then
     if [ -f "$NODE_BIN" ]; then
         substep "Signing bundled node binary"
         codesign --force --options runtime --entitlements Desktop/Node.entitlements --sign "$SIGN_IDENTITY" "$NODE_BIN"
+    fi
+    GWS_BUNDLED_BIN="$APP_BUNDLE/Contents/Resources/gws"
+    if [ -f "$GWS_BUNDLED_BIN" ]; then
+        substep "Signing bundled gws binary"
+        codesign --force --options runtime --sign "$SIGN_IDENTITY" "$GWS_BUNDLED_BIN"
     fi
     substep "Signing app bundle"
     codesign --force --options runtime --entitlements Desktop/Fazm.entitlements --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
