@@ -10,6 +10,7 @@ struct FloatingControlBarView: View {
     var onHide: () -> Void
     var onSendQuery: (String) -> Void
     var onCloseAI: () -> Void
+    var onResumeLastChat: () -> Void
 
     @State private var isHovering = false
 
@@ -123,6 +124,18 @@ struct FloatingControlBarView: View {
                     compactButton(title: "Push to talk", keys: [shortcutSettings.pttKey.symbol]) {
                         onAskAI()
                     }
+                    if state.hasLastConversation && !state.showingAIConversation {
+                        Button(action: onResumeLastChat) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                                .frame(width: 22, height: 22)
+                                .background(Color.white.opacity(0.12))
+                                .cornerRadius(5)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Resume last chat")
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -224,27 +237,43 @@ struct FloatingControlBarView: View {
     }
 
     private var aiInputView: some View {
-        AskAIInputView(
-            userInput: Binding(
-                get: { state.aiInputText },
-                set: { state.aiInputText = $0 }
-            ),
-            onSend: { message in
-                state.displayedQuery = message
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    state.showingAIResponse = true
-                    state.isAILoading = true
-                    state.currentAIMessage = nil
+        VStack(spacing: 0) {
+            AskAIInputView(
+                userInput: Binding(
+                    get: { state.aiInputText },
+                    set: { state.aiInputText = $0 }
+                ),
+                onSend: { message in
+                    state.displayedQuery = message
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        state.showingAIResponse = true
+                        state.isAILoading = true
+                        state.currentAIMessage = nil
+                    }
+                    onSendQuery(message)
+                },
+                onCancel: onCloseAI,
+                onHeightChange: { [weak state] height in
+                    guard let state = state else { return }
+                    let totalHeight = 50 + height + 24
+                    state.inputViewHeight = totalHeight
                 }
-                onSendQuery(message)
-            },
-            onCancel: onCloseAI,
-            onHeightChange: { [weak state] height in
-                guard let state = state else { return }
-                let totalHeight = 50 + height + 24
-                state.inputViewHeight = totalHeight
+            )
+
+            if state.hasLastConversation && state.chatHistory.isEmpty {
+                Button(action: onResumeLastChat) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10))
+                        Text("Resume last chat")
+                            .scaledFont(size: 11)
+                    }
+                    .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 8)
             }
-        )
+        }
         .transition(
             .asymmetric(
                 insertion: .scale(scale: 0.95).combined(with: .opacity),

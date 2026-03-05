@@ -112,7 +112,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onAskAI: { [weak self] in self?.handleAskAI() },
             onHide: { [weak self] in self?.hideBar() },
             onSendQuery: { [weak self] message in self?.onSendQuery?(message) },
-            onCloseAI: { [weak self] in self?.closeAIConversation() }
+            onCloseAI: { [weak self] in self?.closeAIConversation() },
+            onResumeLastChat: { [weak self] in self?.resumeLastConversation() }
         ).environmentObject(state)
 
         hostingView = NSHostingView(rootView: AnyView(
@@ -229,6 +230,22 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Cancel PTT if in follow-up mode
         if state.isVoiceFollowUp {
             PushToTalkManager.shared.cancelListening()
+        }
+
+        // Snapshot the conversation before clearing so user can resume it later
+        if let msg = state.currentAIMessage, !msg.text.isEmpty {
+            var fullHistory = state.chatHistory
+            if !state.displayedQuery.isEmpty {
+                fullHistory.append(FloatingChatExchange(question: state.displayedQuery, aiMessage: msg))
+            }
+            if !fullHistory.isEmpty {
+                let lastExchange = fullHistory.last!
+                state.lastConversation = (
+                    history: Array(fullHistory.dropLast()),
+                    lastQuestion: lastExchange.question,
+                    lastMessage: lastExchange.aiMessage
+                )
+            }
         }
 
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -384,6 +401,26 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             self?.focusInputField()
         }
 
+    }
+
+    func resumeLastConversation() {
+        guard let last = state.lastConversation else { return }
+
+        // Open the conversation UI (resize, monitors, etc.)
+        showAIConversation()
+
+        // Populate with saved conversation
+        state.chatHistory = last.history
+        state.displayedQuery = last.lastQuestion
+        state.currentAIMessage = last.lastMessage
+        state.isAILoading = false
+        state.showingAIResponse = true
+
+        // One-shot: clear saved conversation
+        state.clearLastConversation()
+
+        // Resize to response mode
+        resizeToResponseHeight(animated: true)
     }
 
     private func setupInputHeightObserver() {
