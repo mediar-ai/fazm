@@ -301,6 +301,7 @@ struct FloatingControlBarView: View {
                 set: { state.voiceFollowUpTranscript = $0 }
             ),
             onClose: onCloseAI,
+            onNewChat: onNewChat,
             onSendFollowUp: { message in
                 if state.isAILoading {
                     // Interrupt current streaming and chain the follow-up

@@ -327,32 +327,6 @@ struct SettingsContentView: View {
             }
 
             // Background Style
-            settingsCard(settingId: "general.background") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Background Style")
-                        .scaledFont(size: 16, weight: .semibold)
-                        .foregroundColor(FazmColors.textPrimary)
-
-                    HStack(spacing: 10) {
-                        backgroundStyleOption(
-                            label: "Transparent",
-                            icon: "rectangle.on.rectangle",
-                            isSelected: !ShortcutSettings.shared.solidBackground
-                        ) {
-                            ShortcutSettings.shared.solidBackground = false
-                        }
-
-                        backgroundStyleOption(
-                            label: "Solid",
-                            icon: "rectangle.fill",
-                            isSelected: ShortcutSettings.shared.solidBackground
-                        ) {
-                            ShortcutSettings.shared.solidBackground = true
-                        }
-                    }
-                }
-            }
-
         }
     }
 
@@ -1542,31 +1516,6 @@ struct SettingsContentView: View {
     }
 
     // MARK: - Helper Views
-
-    private func backgroundStyleOption(label: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .scaledFont(size: 14)
-                Text(label)
-                    .scaledFont(size: 13, weight: .medium)
-            }
-            .foregroundColor(FazmColors.textPrimary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected
-                          ? FazmColors.purplePrimary.opacity(0.3)
-                          : FazmColors.backgroundTertiary.opacity(0.5))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? FazmColors.purplePrimary : Color.clear, lineWidth: 1.5)
-            )
-        }
-        .buttonStyle(.plain)
-    }
 
     private func fontShortcutRow(label: String, keys: String) -> some View {
         HStack {
