@@ -146,7 +146,7 @@ class ShortcutSettings: ObservableObject {
            let key = AskFazmKey(rawValue: saved) {
             self.askFazmKey = key
         } else {
-            self.askFazmKey = .cmdEnter
+            self.askFazmKey = .cmdJ
         }
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
