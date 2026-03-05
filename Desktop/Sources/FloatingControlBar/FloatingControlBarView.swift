@@ -18,10 +18,7 @@ struct FloatingControlBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Main control bar - always visible
-            controlBarView
-
-            // AI conversation view - conditionally visible
+            // AI conversation view - conditionally visible (expands upward above the bar)
             if state.showingAIConversation {
                 Group {
                     if state.showingAIResponse {
@@ -35,11 +32,14 @@ struct FloatingControlBarView: View {
                         .strokeBorder(Color.black.opacity(0.5), lineWidth: 1)
                 )
                 .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .padding(.top, 8)
             }
+
+            // Main control bar - always visible at the bottom
+            controlBarView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .topLeading) {
+        .overlay(alignment: .bottomLeading) {
             if state.showingAIConversation {
                 Button {
                     onCloseAI()
@@ -55,7 +55,7 @@ struct FloatingControlBarView: View {
                 .transition(.opacity)
             }
         }
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .bottomTrailing) {
             if isHovering && !state.isVoiceListening {
                 Button {
                     openFloatingBarSettings()
@@ -72,7 +72,7 @@ struct FloatingControlBarView: View {
                 .transition(.opacity)
             }
         }
-        .overlay(alignment: .bottomTrailing) {
+        .overlay(alignment: .topTrailing) {
             if state.showingAIConversation {
                 ZStack {
                     ResizeHandleView(targetWindow: window)
