@@ -348,9 +348,11 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
 
-    // MARK: - Bridge (ACP-only, always uses user's Claude account)
+    // MARK: - Bridge (prefers user's Claude session, falls back to bundled key)
     private lazy var acpBridge: ACPBridge = {
-        return ACPBridge(passApiKey: false)
+        let hasSession = Self.hasExistingClaudeSession()
+        log("ChatProvider: Claude session detected = \(hasSession), using \(hasSession ? "Mode B (OAuth)" : "Mode A (bundled key)")")
+        return ACPBridge(passApiKey: !hasSession)
     }()
     private var acpBridgeStarted = false
 
@@ -371,6 +373,31 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     private var playwrightExtensionObserver: AnyCancellable?
     private var playwrightTokenObserver: AnyCancellable?
     private var sessionGroupingObserver: AnyCancellable?
+
+    // MARK: - Claude Session Detection
+
+    /// Check if the user has an existing Claude Code OAuth session.
+    /// Returns true if a cached token exists (config file or Keychain).
+    private static func hasExistingClaudeSession() -> Bool {
+        // 1. Check Claude config file for cached OAuth token
+        let configPath = NSString(string: "~/Library/Application Support/Claude/config.json")
+            .expandingTildeInPath
+        if FileManager.default.fileExists(atPath: configPath),
+           let data = FileManager.default.contents(atPath: configPath),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let tokenCache = json["oauth:tokenCache"] as? String, !tokenCache.isEmpty {
+            return true
+        }
+        // 2. Check Keychain for Claude Code credentials
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        proc.arguments = ["find-generic-password", "-s", "Claude Code-credentials"]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        try? proc.run()
+        proc.waitUntilExit()
+        return proc.terminationStatus == 0
+    }
 
     // MARK: - Cross-Platform Message Polling
     /// Polls for new messages from other platforms (mobile) every 15 seconds.

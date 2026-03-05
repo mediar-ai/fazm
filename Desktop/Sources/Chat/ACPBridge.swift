@@ -151,8 +151,10 @@ actor ACPBridge {
     if !passApiKey {
       // Mode B: Strip API key so ACP uses user's own OAuth
       env.removeValue(forKey: "ANTHROPIC_API_KEY")
+    } else {
+      // Mode A: Inject bundled Fazm API key
+      env["ANTHROPIC_API_KEY"] = AnthropicKeyProvider.deobfuscate()
     }
-    // else: Mode A: Keep ANTHROPIC_API_KEY for Fazm's key
     env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
 
     // Ensure the directory containing node is in PATH
