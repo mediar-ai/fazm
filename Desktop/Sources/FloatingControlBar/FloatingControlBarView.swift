@@ -10,7 +10,7 @@ struct FloatingControlBarView: View {
     var onHide: () -> Void
     var onSendQuery: (String) -> Void
     var onCloseAI: () -> Void
-    var onResumeLastChat: () -> Void
+    var onNewChat: () -> Void
     var onInterruptAndFollowUp: ((String) -> Void)?
     var onStopAgent: (() -> Void)?
 
@@ -127,8 +127,8 @@ struct FloatingControlBarView: View {
                         onAskAI()
                     }
                     if state.hasLastConversation && !state.showingAIConversation {
-                        Button(action: onResumeLastChat) {
-                            Image(systemName: "arrow.counterclockwise")
+                        Button(action: onNewChat) {
+                            Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.white.opacity(0.7))
                                 .frame(width: 22, height: 22)
@@ -136,7 +136,7 @@ struct FloatingControlBarView: View {
                                 .cornerRadius(5)
                         }
                         .buttonStyle(.plain)
-                        .help("Resume last chat")
+                        .help("New chat")
                     }
                 }
                 .padding(.horizontal, 6)
@@ -262,12 +262,12 @@ struct FloatingControlBarView: View {
                 }
             )
 
-            if state.hasLastConversation && state.chatHistory.isEmpty {
-                Button(action: onResumeLastChat) {
+            if !state.chatHistory.isEmpty || state.showingAIResponse {
+                Button(action: onNewChat) {
                     HStack(spacing: 4) {
-                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "plus")
                             .font(.system(size: 10))
-                        Text("Resume last chat")
+                        Text("New chat")
                             .scaledFont(size: 11)
                     }
                     .foregroundColor(.white.opacity(0.5))
