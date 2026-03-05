@@ -642,8 +642,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
                 self.resizeAnchored(
                     to: NSSize(width: Self.expandedWidth, height: clampedHeight),
                     makeResizable: true,
-                    animated: true,
-                    anchorBottom: true
+                    animated: true
                 )
             }
     }
