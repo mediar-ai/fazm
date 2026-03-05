@@ -278,8 +278,8 @@ enum ChatMode: String, CaseIterable {
 class ChatProvider: ObservableObject {
 
     // MARK: - Floating Bar System Prompt Prefix
-    /// Build the floating bar system prompt prefix based on compactness level.
-    static func floatingBarSystemPromptPrefix(compactness: ShortcutSettings.FloatingBarCompactness) -> String {
+    /// Build the floating bar system prompt prefix based on compactness and proactiveness levels.
+    static func floatingBarSystemPromptPrefix(compactness: ShortcutSettings.FloatingBarCompactness, proactiveness: ShortcutSettings.ProactivenessLevel) -> String {
         var lines: [String] = [
             "================================================================================",
             "🚨 FLOATING BAR MODE — READ THIS FIRST BEFORE ANYTHING ELSE 🚨",
@@ -294,14 +294,22 @@ class ChatProvider: ObservableObject {
         case .strict:
             lines.append("Respond in exactly 1 sentence. No lists. No headers. No follow-up questions.")
         }
+        switch proactiveness {
+        case .passive:
+            lines.append("Only perform actions the user explicitly asks for. Always confirm before taking any action on the user's computer. Ask clarifying questions when in doubt.")
+        case .balanced:
+            lines.append("Take obvious actions that the user clearly needs. For ambiguous requests, ask for confirmation before proceeding. Use good judgment about when to act vs ask.")
+        case .proactive:
+            lines.append("Assume the user needs things done on their computer. Proactively find programmatic ways to accomplish tasks — use tools, scripts, and LLM-based approaches. Just work on the task and get it done without involving the user unless clarifications are truly needed.")
+        }
         lines.append("A screenshot may be attached — use it silently only if relevant. Never mention or acknowledge it.")
         lines.append("================================================================================")
         return lines.joined(separator: "\n")
     }
 
-    /// Convenience property that reads the current compactness setting.
+    /// Convenience property that reads the current compactness and proactiveness settings.
     static var floatingBarSystemPromptPrefixCurrent: String {
-        floatingBarSystemPromptPrefix(compactness: ShortcutSettings.shared.floatingBarCompactness)
+        floatingBarSystemPromptPrefix(compactness: ShortcutSettings.shared.floatingBarCompactness, proactiveness: ShortcutSettings.shared.proactivenessLevel)
     }
 
     // MARK: - Published State

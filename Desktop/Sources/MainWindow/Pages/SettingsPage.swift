@@ -120,6 +120,7 @@ struct SettingsContentView: View {
     // Launch at login manager
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
+    @ObservedObject private var shortcutSettings = ShortcutSettings.shared
 
     enum SettingsSection: String, CaseIterable {
         case general = "General"
@@ -1153,6 +1154,87 @@ struct SettingsContentView: View {
                 }
             }
 
+            // AI Model
+            settingsCard(settingId: "advanced.preferences.aimodel") {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("AI Model")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Text("Choose the AI model for Ask Fazm conversations.")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textSecondary)
+                    }
+
+                    HStack(spacing: 12) {
+                        ForEach(ShortcutSettings.availableModels, id: \.id) { model in
+                            preferencesModelButton(model)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
+            // Response Style
+            settingsCard(settingId: "advanced.preferences.responsestyle") {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Response Style")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Text(shortcutSettings.floatingBarCompactness.description)
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textSecondary)
+                    }
+
+                    HStack(spacing: 12) {
+                        ForEach(ShortcutSettings.FloatingBarCompactness.allCases, id: \.self) { mode in
+                            preferencesCompactnessButton(mode)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
+            // Proactiveness Level
+            settingsCard(settingId: "advanced.preferences.proactiveness") {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Proactiveness")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Text(shortcutSettings.proactivenessLevel.description)
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textSecondary)
+                    }
+
+                    HStack(spacing: 12) {
+                        ForEach(ShortcutSettings.ProactivenessLevel.allCases, id: \.self) { level in
+                            preferencesProactivenessButton(level)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
+            // Draggable Floating Bar
+            settingsCard(settingId: "advanced.preferences.draggable") {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Draggable Floating Bar")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Text("Allow repositioning the floating bar by dragging it.")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textSecondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $shortcutSettings.draggableBarEnabled)
+                        .toggleStyle(.switch)
+                        .tint(FazmColors.purplePrimary)
+                }
+            }
+
             // Multiple Chat Sessions toggle
             settingsCard(settingId: "advanced.preferences.multichat") {
                 HStack(spacing: 16) {
@@ -1531,6 +1613,80 @@ struct SettingsContentView: View {
                 .background(FazmColors.backgroundTertiary.opacity(0.8))
                 .cornerRadius(5)
         }
+    }
+
+    // MARK: - Preferences Button Helpers
+
+    private func preferencesModelButton(_ model: (id: String, label: String)) -> some View {
+        let isSelected = shortcutSettings.selectedModel == model.id
+        return Button {
+            shortcutSettings.selectedModel = model.id
+        } label: {
+            Text(model.label)
+                .scaledFont(size: 13, weight: .medium)
+                .foregroundColor(FazmColors.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected
+                              ? FazmColors.purplePrimary.opacity(0.3)
+                              : FazmColors.backgroundTertiary.opacity(0.5))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isSelected ? FazmColors.purplePrimary : Color.clear, lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func preferencesCompactnessButton(_ mode: ShortcutSettings.FloatingBarCompactness) -> some View {
+        let isSelected = shortcutSettings.floatingBarCompactness == mode
+        return Button {
+            shortcutSettings.floatingBarCompactness = mode
+        } label: {
+            Text(mode.rawValue)
+                .scaledFont(size: 13, weight: .medium)
+                .foregroundColor(FazmColors.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected
+                              ? FazmColors.purplePrimary.opacity(0.3)
+                              : FazmColors.backgroundTertiary.opacity(0.5))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isSelected ? FazmColors.purplePrimary : Color.clear, lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func preferencesProactivenessButton(_ level: ShortcutSettings.ProactivenessLevel) -> some View {
+        let isSelected = shortcutSettings.proactivenessLevel == level
+        return Button {
+            shortcutSettings.proactivenessLevel = level
+        } label: {
+            Text(level.rawValue)
+                .scaledFont(size: 13, weight: .medium)
+                .foregroundColor(FazmColors.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected
+                              ? FazmColors.purplePrimary.opacity(0.3)
+                              : FazmColors.backgroundTertiary.opacity(0.5))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isSelected ? FazmColors.purplePrimary : Color.clear, lineWidth: 1.5)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private func settingsCard<Content: View>(settingId: String? = nil, @ViewBuilder content: () -> Content) -> some View {
