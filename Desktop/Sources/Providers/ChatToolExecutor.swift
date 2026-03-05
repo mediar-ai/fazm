@@ -18,6 +18,8 @@ class ChatToolExecutor {
     static var onKnowledgeGraphUpdated: (() -> Void)?
     /// Called when scan_files completes — used to kick off parallel exploration
     static var onScanFilesCompleted: ((_ fileCount: Int) -> Void)?
+    /// Called when AI invokes setup_browser_extension — opens the setup wizard, calls back on completion/skip
+    static var onSetupBrowserExtension: ((_ onDone: @escaping (_ completed: Bool) -> Void) -> Void)?
 
     private static var fileScanFileCount = 0
 
@@ -73,6 +75,11 @@ class ChatToolExecutor {
             let question = toolCall.arguments["question"] as? String ?? ""
             let optionCount = (toolCall.arguments["options"] as? [String])?.count ?? 0
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "ask_followup", properties: ["question_length": question.count, "option_count": optionCount])
+            return result
+
+        case "setup_browser_extension":
+            let result = await executeSetupBrowserExtension(toolCall.arguments)
+            AnalyticsManager.shared.onboardingChatToolUsed(tool: "setup_browser_extension")
             return result
 
         case "complete_onboarding":
@@ -846,6 +853,24 @@ class ChatToolExecutor {
     }
 
     /// Complete the onboarding process
+    private static func executeSetupBrowserExtension(_ args: [String: Any]) async -> String {
+        guard let handler = onSetupBrowserExtension else {
+            return "Error: browser extension setup handler not configured"
+        }
+
+        let completed = await withCheckedContinuation { continuation in
+            handler { didComplete in
+                continuation.resume(returning: didComplete)
+            }
+        }
+
+        if completed {
+            return "Browser extension setup completed successfully. The user can now use browser automation."
+        } else {
+            return "Browser extension setup was skipped by the user. They can set it up later from Settings."
+        }
+    }
+
     private static func executeCompleteOnboarding(_ args: [String: Any]) async -> String {
         guard let appState = onboardingAppState else {
             return "Error: onboarding not active"
@@ -878,6 +903,7 @@ class ChatToolExecutor {
         onQuickReplyOptions = nil
         onKnowledgeGraphUpdated = nil
         onScanFilesCompleted = nil
+        onSetupBrowserExtension = nil
         fileScanFileCount = 0
 
         return "Onboarding completed successfully! The app is now set up."
