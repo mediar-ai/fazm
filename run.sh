@@ -117,7 +117,7 @@ if [ ! -f "$GWS_BIN" ]; then
     else
         GWS_ARTIFACT="gws-x86_64-apple-darwin.tar.gz"
     fi
-    curl -sL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_ARTIFACT}" | tar xz -C "$GWS_BIN_DIR" gws
+    curl -sL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_ARTIFACT}" | tar xz -C "$GWS_BIN_DIR" --strip-components=1 --include '*/gws'
     chmod +x "$GWS_BIN"
     substep "Downloaded gws to $GWS_BIN"
 else
