@@ -275,15 +275,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Restore the pill to its canonical position using the stored canonicalBottomY
-        // which is immune to animation drift.
+        // Restore the pill using canonicalBottomY — the single source of truth for Y.
         let size = FloatingControlBarWindow.minBarSize
-        let restoreOrigin: NSPoint
-        if ShortcutSettings.shared.draggableBarEnabled {
-            restoreOrigin = NSPoint(x: frame.midX - size.width / 2, y: canonicalBottomY)
-        } else {
-            restoreOrigin = defaultPillOrigin()
-        }
+        let restoreOrigin = NSPoint(
+            x: defaultPillOrigin().x,
+            y: canonicalBottomY
+        )
 
         resizeWorkItem?.cancel()
         resizeWorkItem = nil
@@ -1260,22 +1257,17 @@ extension FloatingControlBarWindow {
     }
 
     /// Snap the window to the pill position before opening a new chat.
-    /// If a close/restore animation is in flight, snap to its target immediately
-    /// so the new chat starts from the correct position.
+    /// Always uses canonicalBottomY for Y to prevent any position jumps.
     func savePreChatCenterIfNeeded() {
         let size = FloatingControlBarWindow.minBarSize
-        if let restoreOrigin = pendingRestoreOrigin {
-            isResizingProgrammatically = true
-            setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: false)
-            isResizingProgrammatically = false
-            pendingRestoreOrigin = nil
-        } else if !ShortcutSettings.shared.draggableBarEnabled {
-            // Non-draggable: snap to canonical position to prevent drift.
-            let origin = defaultPillOrigin()
-            isResizingProgrammatically = true
-            setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
-            isResizingProgrammatically = false
-        }
+        let origin = NSPoint(
+            x: defaultPillOrigin().x,
+            y: canonicalBottomY
+        )
+        isResizingProgrammatically = true
+        setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
+        isResizingProgrammatically = false
+        pendingRestoreOrigin = nil
     }
 
     /// Invalidates any in-flight windowDidResignKey dismiss animation so a new PTT
