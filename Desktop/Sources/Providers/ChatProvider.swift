@@ -323,6 +323,10 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     /// After setup completes, the UI should call retryPendingMessage() to re-send it.
     var pendingRetryMessage: String?
 
+    /// Set when the agent is stopped due to browser extension setup.
+    /// Prevents `sendMessage` from clearing `pendingRetryMessage` on completion.
+    private var stoppedForBrowserSetup = false
+
     /// Whether the user is currently viewing the default chat (syncs with Flutter app)
     @Published var isInDefaultChat = true
 
@@ -1724,6 +1728,21 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         Task { await sendMessage(text) }
     }
 
+    /// Restart the ACP bridge so it picks up the new Playwright extension token.
+    /// Called after browser extension setup completes and before retrying the query.
+    func restartBridgeForNewToken() async {
+        guard acpBridgeStarted else { return }
+        log("ChatProvider: Restarting bridge to pick up new Playwright token")
+        acpBridgeStarted = false
+        do {
+            try await acpBridge.restart()
+            acpBridgeStarted = true
+            log("ChatProvider: Bridge restarted with new Playwright token")
+        } catch {
+            logError("Failed to restart bridge for new Playwright token", error: error)
+        }
+    }
+
     /// Send a follow-up message while the agent is still running.
     /// Interrupts the current query and chains a new one with full context.
     func sendFollowUp(_ text: String) async {
@@ -1938,6 +1957,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                             let token = UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? ""
                             if token.isEmpty {
                                 log("ChatProvider: Browser tool \(name) called without extension token — aborting query and prompting setup")
+                                self?.stoppedForBrowserSetup = true
                                 self?.needsBrowserExtensionSetup = true
                                 self?.stopAgent()
                                 // Bring the app to the foreground so the setup sheet is visible
@@ -2055,7 +2075,12 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             // backend copy into the local message rather than appending a duplicate.
             isSending = false
             isStopping = false
-            pendingRetryMessage = nil  // Successful completion — no retry needed
+            if stoppedForBrowserSetup {
+                // Keep pendingRetryMessage so retryPendingQuery() can re-send it
+                stoppedForBrowserSetup = false
+            } else {
+                pendingRetryMessage = nil  // Successful completion — no retry needed
+            }
 
             // Save AI response to backend. aiMessageId is captured above so we can
             // locate the right message even if the user has started a new query by
