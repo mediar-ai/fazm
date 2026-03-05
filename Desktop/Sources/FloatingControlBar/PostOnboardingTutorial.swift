@@ -109,11 +109,11 @@ class PostOnboardingTutorialManager {
 
         if let barFrame = FloatingControlBarManager.shared.barWindowFrame {
             let x = barFrame.midX - windowSize.width / 2
-            let y = barFrame.minY - windowSize.height - 12
+            let y = barFrame.maxY + 12
             tutorialWindow.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: windowSize), display: true)
         } else if let screen = NSScreen.main {
             let x = screen.frame.midX - windowSize.width / 2
-            let y = screen.frame.maxY - 80 - windowSize.height
+            let y = screen.visibleFrame.minY + 80
             tutorialWindow.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: windowSize), display: true)
         }
     }
@@ -151,15 +151,14 @@ class PostOnboardingTutorialManager {
                                     self.viewModel.step = .selectMic
                                 }
                             } else {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    self.viewModel.step = .done
-                                }
+                                // Speech detected — dismiss overlay and transition to guided chat
+                                self.dismiss()
                                 // Show pulsating send button hint and focus the input field
                                 barState.showSendButtonHint = true
                                 FloatingControlBarManager.shared.focusInputField()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
-                                    self?.dismiss()
-                                }
+                                // Start the tutorial chat guide — it will observe the first
+                                // response and then guide the user through more test prompts
+                                TutorialChatGuide.shared.start(barState: barState)
                             }
                         }
                     }
@@ -193,6 +192,9 @@ class PostOnboardingTutorialManager {
         window?.orderOut(nil)
         window = nil
 
+        // End any active tutorial chat guide
+        TutorialChatGuide.shared.finish(barState: barState)
+
         // Reset state
         viewModel = TutorialViewModel()
         UserDefaults.standard.set(false, forKey: userDefaultsKey)
@@ -203,6 +205,155 @@ class PostOnboardingTutorialManager {
             self.show()
             self.observeVoiceState(barState: barState)
         }
+    }
+}
+
+// MARK: - TutorialChatGuide
+
+/// Manages the guided tutorial chat experience in the floating bar.
+/// After the overlay tutorial completes, this takes over and guides the user
+/// through 3 test prompts via chat messages in the floating bar.
+@MainActor
+class TutorialChatGuide {
+    static let shared = TutorialChatGuide()
+
+    private var cancellables = Set<AnyCancellable>()
+
+    /// The test prompts the tutorial guides the user through.
+    static let testPrompts: [(instruction: String, description: String)] = [
+        (
+            "Open Safari and search for 'best productivity apps 2026'",
+            "browser automation — opening apps and searching the web"
+        ),
+        (
+            "Take a screenshot and describe what you see on my screen",
+            "screen awareness — understanding what's on your display"
+        ),
+        (
+            "Write a short email draft about rescheduling a meeting to tomorrow at 3pm",
+            "text generation — drafting content for you"
+        ),
+    ]
+
+    private init() {}
+
+    /// Start the tutorial chat guide after the overlay tutorial's first successful voice interaction.
+    func start(barState: FloatingControlBarState) {
+        barState.isTutorialChatActive = true
+        barState.tutorialChatStep = 0
+        barState.tutorialWaitingForResponse = false
+
+        // Observe when AI responses complete to inject next tutorial guidance
+        observeResponses(barState: barState)
+    }
+
+    /// Inject the next tutorial guidance message into the chat.
+    /// Called after a response finishes to tell the user what to try next.
+    func injectNextGuidance(barState: FloatingControlBarState) {
+        guard barState.isTutorialChatActive else { return }
+
+        let step = barState.tutorialChatStep
+
+        if step >= Self.testPrompts.count {
+            // All prompts done — send completion message and end tutorial
+            let completionMessage = ChatMessage(
+                text: "You've completed the tutorial! You now know the basics:\n\n"
+                    + "- **Browser automation** — control apps with your voice\n"
+                    + "- **Screen awareness** — the AI sees what you see\n"
+                    + "- **Text generation** — draft content hands-free\n\n"
+                    + "Press and hold **Right \u{2318}** anytime to talk to Fazm. Have fun!",
+                sender: .ai
+            )
+            injectTutorialMessage(completionMessage, barState: barState)
+            finish(barState: barState)
+            return
+        }
+
+        let prompt = Self.testPrompts[step]
+        let stepNumber = step + 1
+        let totalSteps = Self.testPrompts.count
+
+        let guideText: String
+        if step == 0 {
+            // First guided prompt — introduce what we're doing
+            guideText = "Nice work! Your first command is being processed.\n\n"
+                + "Let's try a few more things to see what Fazm can do. "
+                + "**Test \(stepNumber)/\(totalSteps)** — \(prompt.description):\n\n"
+                + "> \"\(prompt.instruction)\"\n\n"
+                + "Press **Right \u{2318}**, say the command above, then release to send."
+        } else {
+            guideText = "Great! **Test \(stepNumber)/\(totalSteps)** — \(prompt.description):\n\n"
+                + "> \"\(prompt.instruction)\"\n\n"
+                + "Press **Right \u{2318}**, say it, then release."
+        }
+
+        let guideMessage = ChatMessage(text: guideText, sender: .ai)
+        injectTutorialMessage(guideMessage, barState: barState)
+        barState.tutorialWaitingForResponse = false
+    }
+
+    /// Observe when the AI finishes responding so we can inject the next tutorial step.
+    private func observeResponses(barState: FloatingControlBarState) {
+        cancellables.removeAll()
+
+        // Watch for when currentAIMessage.isStreaming transitions to false (response complete).
+        // Use map + removeDuplicates to only fire when the streaming flag actually changes.
+        barState.$currentAIMessage
+            .map { $0?.isStreaming ?? false }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak barState] isStreaming in
+                guard let self, let barState, barState.isTutorialChatActive else { return }
+                guard !isStreaming, barState.tutorialWaitingForResponse else { return }
+                // Response finished streaming
+                barState.tutorialWaitingForResponse = false
+                barState.tutorialChatStep += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self, weak barState] in
+                    guard let self, let barState, barState.isTutorialChatActive else { return }
+                    self.injectNextGuidance(barState: barState)
+                }
+            }
+            .store(in: &cancellables)
+
+        // Watch for when a new query is sent (displayedQuery changes to non-empty)
+        barState.$displayedQuery
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak barState] query in
+                guard let barState, barState.isTutorialChatActive, !query.isEmpty else { return }
+                barState.tutorialWaitingForResponse = true
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Inject a tutorial message into the chat as a continuation of the conversation.
+    private func injectTutorialMessage(_ message: ChatMessage, barState: FloatingControlBarState) {
+        // Archive current exchange to history if there is one
+        if let currentMessage = barState.currentAIMessage,
+           !barState.displayedQuery.isEmpty,
+           !currentMessage.text.isEmpty {
+            barState.chatHistory.append(
+                FloatingChatExchange(question: barState.displayedQuery, aiMessage: currentMessage)
+            )
+        }
+
+        // Set empty query so the question bar is hidden, showing just the guide message
+        barState.displayedQuery = ""
+        barState.currentAIMessage = message
+        barState.isAILoading = false
+        if !barState.showingAIResponse {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                barState.showingAIResponse = true
+            }
+        }
+    }
+
+    /// End the tutorial chat guide.
+    func finish(barState: FloatingControlBarState) {
+        barState.isTutorialChatActive = false
+        barState.tutorialWaitingForResponse = false
+        cancellables.removeAll()
     }
 }
 

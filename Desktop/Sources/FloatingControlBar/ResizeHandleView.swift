@@ -3,7 +3,7 @@ import AppKit
 
 // MARK: - Resize Handle NSViewRepresentable
 
-/// NSViewRepresentable that adds a bottom-right corner resize handle.
+/// NSViewRepresentable that adds a top-right corner resize handle.
 /// Always active — not gated by the draggableBarEnabled toggle.
 struct ResizeHandleView: NSViewRepresentable {
     weak var targetWindow: NSWindow?
@@ -44,15 +44,14 @@ class ResizeHandleNSView: NSView {
         let deltaX = current.x - initialMouseLocation.x
         let deltaY = current.y - initialMouseLocation.y
 
-        // Anchor top-left: keep frame.maxY fixed, expand right and down.
+        // Anchor bottom-left: keep frame.origin.y fixed, expand right and up.
         let minW: CGFloat = 430
         let minH: CGFloat = 250
         let newWidth  = max(minW, initialWindowFrame.width  + deltaX)
-        let newHeight = max(minH, initialWindowFrame.height - deltaY) // screen-y up = drag down = height grows
+        let newHeight = max(minH, initialWindowFrame.height + deltaY) // drag up = height grows
 
-        let newOriginY = initialWindowFrame.maxY - newHeight
         window.setFrame(
-            NSRect(x: initialWindowFrame.minX, y: newOriginY, width: newWidth, height: newHeight),
+            NSRect(x: initialWindowFrame.minX, y: initialWindowFrame.minY, width: newWidth, height: newHeight),
             display: true
         )
     }
