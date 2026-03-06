@@ -1309,6 +1309,9 @@ class ChatToolExecutor {
             }
         }
 
+        // Install bundled skills (in case the AI didn't call install_skills during onboarding)
+        let _ = SkillInstaller.install()
+
         // Mark that the tool was called so the "Continue to App" button shows even after restart
         OnboardingChatPersistence.markToolCompleted()
 
