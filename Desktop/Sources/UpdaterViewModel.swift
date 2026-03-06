@@ -2,21 +2,21 @@ import Foundation
 import SwiftUI
 import Sparkle
 
-/// Update channel — production (stable) or staging
+/// Update channel — beta (default for all users) or staging (pre-release testing)
 enum UpdateChannel: String, CaseIterable {
-    case stable = "stable"
+    case beta = "beta"
     case staging = "staging"
 
     var displayName: String {
         switch self {
-        case .stable: return "Stable"
+        case .beta: return "Beta"
         case .staging: return "Staging"
         }
     }
 
     var description: String {
         switch self {
-        case .stable: return "Recommended for most users"
+        case .beta: return "Default channel for all users"
         case .staging: return "Pre-release builds for testing"
         }
     }
@@ -168,7 +168,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     /// Empty set = production only (items with no channel tag).
     /// ["staging"] = production + staging items.
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        let saved = UserDefaults.standard.string(forKey: "update_channel") ?? "stable"
+        let saved = UserDefaults.standard.string(forKey: "update_channel") ?? "beta"
         if saved == "staging" {
             return Set(["staging"])
         }
@@ -228,17 +228,17 @@ final class UpdaterViewModel: ObservableObject {
     private nonisolated(unsafe) static var _isUpdateInProgress: Bool = false
 
     /// Update channel — persisted to UserDefaults "update_channel"
-    @Published var updateChannel: UpdateChannel = .stable {
+    @Published var updateChannel: UpdateChannel = .beta {
         didSet {
             guard isInitialized else { return }
             UserDefaults.standard.set(updateChannel.rawValue, forKey: "update_channel")
-            activeChannelLabel = updateChannel == .stable ? "" : updateChannel.displayName
+            activeChannelLabel = updateChannel == .beta ? "" : updateChannel.displayName
             logSync("UpdaterViewModel: Channel changed to \(updateChannel.rawValue)")
             checkForUpdatesInBackground()
         }
     }
 
-    /// Channel label for display (empty when stable)
+    /// Channel label for display (empty when beta — only shown for non-default channels)
     @Published var activeChannelLabel: String = ""
 
     /// Whether a new update is available (set by delegate callbacks)
@@ -279,11 +279,16 @@ final class UpdaterViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .assign(to: &$updateSessionInProgress)
 
-        // Load saved channel preference
-        if let saved = UserDefaults.standard.string(forKey: "update_channel"),
-           let channel = UpdateChannel(rawValue: saved) {
-            updateChannel = channel
-            activeChannelLabel = channel == .stable ? "" : channel.displayName
+        // Load saved channel preference (migrate old "stable" → "beta")
+        if let saved = UserDefaults.standard.string(forKey: "update_channel") {
+            let migrated = saved == "stable" ? "beta" : saved
+            if let channel = UpdateChannel(rawValue: migrated) {
+                updateChannel = channel
+                activeChannelLabel = channel == .beta ? "" : channel.displayName
+                if saved == "stable" {
+                    UserDefaults.standard.set("beta", forKey: "update_channel")
+                }
+            }
         }
 
         isInitialized = true
