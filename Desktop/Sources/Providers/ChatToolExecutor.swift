@@ -142,7 +142,14 @@ class ChatToolExecutor {
             return "Error: query is required"
         }
 
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Sanitize common LLM SQL mistakes:
+        // 1. Backslash-escaped single quotes (\') → SQL-standard doubled quotes ('')
+        // 2. Escaped newlines/tabs that aren't valid in SQL literals
+        var sanitized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        sanitized = sanitized.replacingOccurrences(of: "\\'", with: "''")
+        sanitized = sanitized.replacingOccurrences(of: "\\\"", with: "\"")
+
+        let trimmed = sanitized
         let upper = trimmed.uppercased()
 
         // Block dangerous keywords
