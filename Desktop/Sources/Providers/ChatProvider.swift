@@ -786,7 +786,8 @@ class ChatProvider: ObservableObject {
         if key == "floating" {
             UserDefaults.standard.removeObject(forKey: Self.floatingSessionIdKey)
             pendingFloatingResume = nil
-            Task { await ChatMessageStore.clearMessages(context: "__floating__") }
+            messages = []
+            await ChatMessageStore.clearMessages(context: "__floating__")
         }
     }
 
