@@ -33,7 +33,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createServer as createNetServer, type Socket } from "net";
 import { tmpdir } from "os";
-import { unlinkSync, appendFileSync } from "fs";
+import { unlinkSync, appendFileSync, existsSync } from "fs";
 import type {
   InboundMessage,
   OutboundMessage,
@@ -56,6 +56,16 @@ const playwrightCli = join(
 );
 
 const omiToolsStdioScript = join(__dirname, "omi-tools-stdio.js");
+
+// mcp-server-macos-use binary lives in Contents/MacOS/ alongside the main app binary.
+// Node runs from Contents/Resources/Fazm_Fazm.bundle/node, so navigate up to Contents/.
+const macosUseBinary = join(
+  dirname(process.execPath),
+  "..",
+  "..",
+  "MacOS",
+  "mcp-server-macos-use"
+);
 
 // --- Helpers ---
 
@@ -573,6 +583,16 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
     args: playwrightArgs,
     env: playwrightEnv,
   });
+
+  // mcp-server-macos-use (native macOS accessibility automation)
+  if (existsSync(macosUseBinary)) {
+    servers.push({
+      name: "macos-use",
+      command: macosUseBinary,
+      args: [],
+      env: [],
+    });
+  }
 
   return servers;
 }

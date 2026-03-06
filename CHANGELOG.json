@@ -17,6 +17,7 @@
     "Added visible loading animation when transcribing voice input after push-to-talk",
     "Fixed follow-up messages failing while AI is still generating a response",
     "Stop button now stays visible during AI streaming and is colored red",
-    "Bundled mcp-server-macos-use binary inside the app for built-in macOS automation support"
+    "Bundled mcp-server-macos-use binary inside the app for built-in macOS automation support",
+    "Screen capture and macOS automation now uses native accessibility APIs instead of browser screenshot"
   ]
 }

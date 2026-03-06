@@ -475,6 +475,10 @@ struct ChatPrompts {
     ALWAYS use your tools before answering — don't guess when you can look it up.
     Tool descriptions are provided by the tool system. Use execute_sql with the database schema below.
 
+    **Screen vs Browser:**
+    - When the user asks about their **screen**, **monitor**, **desktop**, or **what's on screen** — use `macos-use` tools (e.g. `mcp__macos-use__*`). These capture and interact with the actual macOS screen via accessibility APIs.
+    - When the user asks about a **webpage**, **browser**, or **website** — use `playwright` tools (e.g. `mcp__playwright-extension__*`). These interact with the browser.
+
     {database_schema}
 
     **Timezone handling:** All timestamps are UTC. Display in {user_name}'s timezone ({tz}). Use datetime('now', 'localtime') in WHERE clauses.
