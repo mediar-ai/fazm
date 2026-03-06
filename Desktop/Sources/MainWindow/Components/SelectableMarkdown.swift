@@ -26,6 +26,16 @@ fileprivate class PlainCopyNSTextView: NSTextView {
         // Width changed → text reflows → height changes
         invalidateIntrinsicContentSize()
     }
+
+    // Don't show NSTextView's default context menu — let SwiftUI's .contextMenu handle it
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return nil
+    }
+
+    // Pass right-clicks through to the parent so SwiftUI context menus work
+    override func rightMouseDown(with event: NSEvent) {
+        superview?.rightMouseDown(with: event)
+    }
 }
 
 /// SwiftUI wrapper for NSTextView that supports text selection but copies only plain text.
