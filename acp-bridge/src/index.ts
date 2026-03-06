@@ -201,6 +201,32 @@ function startOmiToolsRelay(): Promise<string> {
 
 // --- ACP subprocess management ---
 
+/** Kill the ACP subprocess and its entire process group (MCP servers, etc.) */
+function killAcpProcessTree(): void {
+  if (!acpProcess) return;
+  const pid = acpProcess.pid;
+  if (pid) {
+    try {
+      // Kill the entire process group (negative PID)
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      // Process group may already be dead; try killing just the process
+      try {
+        acpProcess.kill("SIGTERM");
+      } catch {
+        // already dead
+      }
+    }
+  } else {
+    try {
+      acpProcess.kill("SIGTERM");
+    } catch {
+      // already dead
+    }
+  }
+  acpProcess = null;
+}
+
 let acpProcess: ChildProcess | null = null;
 let acpStdinWriter: ((line: string) => void) | null = null;
 let acpResponseHandlers = new Map<
@@ -264,6 +290,7 @@ function startAcpProcess(): void {
   acpProcess = spawn(nodeBin, [acpEntry], {
     env,
     stdio: ["pipe", "pipe", "pipe"],
+    detached: true,
   });
 
   if (!acpProcess.stdin || !acpProcess.stdout || !acpProcess.stderr) {
@@ -413,7 +440,7 @@ async function restartAcpProcess(): Promise<void> {
     const exitPromise = new Promise<void>((resolve) => {
       acpProcess!.once("exit", () => resolve());
     });
-    acpProcess.kill();
+    killAcpProcessTree();
     await exitPromise;
   }
   // State is cleaned up by the exit handler (sessions, handlers, etc.)
@@ -1254,9 +1281,7 @@ async function main(): Promise<void> {
       case "stop":
         logErr("Received stop signal, exiting");
         if (activeAbort) activeAbort.abort();
-        if (acpProcess) {
-          acpProcess.kill();
-        }
+        killAcpProcessTree();
         process.exit(0);
         break;
 
@@ -1269,7 +1294,16 @@ async function main(): Promise<void> {
     logErr("stdin closed, exiting");
     logCrash("stdin closed, exiting");
     if (activeAbort) activeAbort.abort();
-    if (acpProcess) acpProcess.kill();
+    killAcpProcessTree();
+    process.exit(0);
+  });
+}
+
+// Ensure child processes are cleaned up when this process is killed
+for (const sig of ["SIGTERM", "SIGHUP", "SIGINT"] as const) {
+  process.on(sig, () => {
+    logErr(`Received ${sig}, cleaning up`);
+    killAcpProcessTree();
     process.exit(0);
   });
 }
@@ -1278,5 +1312,6 @@ main().catch((err) => {
   logErr(`Fatal error: ${err}`);
   logCrash(`Fatal error: ${err}`);
   send({ type: "error", message: `Fatal: ${err}` });
+  killAcpProcessTree();
   process.exit(1);
 });
