@@ -425,17 +425,22 @@ class ChatProvider: ObservableObject {
     /// Create an ACPBridge based on the current bridgeMode setting
     private func createBridge() -> ACPBridge {
         if bridgeMode == "builtin" {
-            // Vertex mode: check if token manager has already set up credentials
+            // Bundled API key mode: direct Anthropic API (fastest path)
+            let apiKey = AnthropicKeyProvider.deobfuscate()
+            if !apiKey.isEmpty {
+                log("ChatProvider: Using bundled Anthropic API key (direct API)")
+                return ACPBridge(mode: .bundledKey(apiKey: apiKey))
+            }
+            // Fallback: try Vertex if bundled key is unavailable
             if vertexTokenManager != nil {
                 let tmpDir = NSTemporaryDirectory()
                 let adcPath = (tmpDir as NSString).appendingPathComponent("fazm-vertex-adc.json")
                 let projectId = { if let p = getenv("VERTEX_PROJECT_ID") { return String(cString: p) } else { return "fazm-prod" } }()
                 let region = { if let r = getenv("VERTEX_REGION") { return String(cString: r) } else { return "us-east5" } }()
-                log("ChatProvider: Using Vertex mode (ADC=\(adcPath))")
+                log("ChatProvider: Falling back to Vertex mode (ADC=\(adcPath))")
                 return ACPBridge(mode: .vertex(adcFilePath: adcPath, projectId: projectId, region: region))
             }
-            // Vertex not set up yet — fall back to personal OAuth (will trigger auth flow)
-            log("ChatProvider: Vertex token manager not ready, falling back to personal OAuth")
+            log("ChatProvider: No bundled key or Vertex available, falling back to personal OAuth")
             return ACPBridge(mode: .personalOAuth)
         } else {
             // Personal mode: always use OAuth
@@ -717,8 +722,8 @@ class ChatProvider: ObservableObject {
         }
         guard !acpBridgeStarted else { return true }
 
-        // If builtin mode but Vertex not set up yet, do it now (e.g. first launch with stored bridgeMode)
-        if bridgeMode == "builtin" && vertexTokenManager == nil {
+        // If builtin mode and bundled key isn't available, try Vertex setup
+        if bridgeMode == "builtin" && AnthropicKeyProvider.deobfuscate().isEmpty && vertexTokenManager == nil {
             let vtm = VertexTokenManager()
             if await vtm.isConfigured {
                 do {
