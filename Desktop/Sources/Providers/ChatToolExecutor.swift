@@ -47,6 +47,9 @@ class ChatToolExecutor {
         case "google_workspace":
             return await executeGoogleWorkspace(toolCall.arguments)
 
+        case "capture_screenshot":
+            return await executeCaptureScreenshot(toolCall.arguments)
+
         // Onboarding tools
         case "request_permission":
             let result = await executeRequestPermission(toolCall.arguments)
@@ -89,6 +92,18 @@ class ChatToolExecutor {
         case "complete_onboarding":
             let result = await executeCompleteOnboarding(toolCall.arguments)
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "complete_onboarding")
+            return result
+
+        case "list_bundled_skills":
+            let result = SkillInstaller.listBundledSkills()
+            AnalyticsManager.shared.onboardingChatToolUsed(tool: "list_bundled_skills")
+            return result
+
+        case "install_skills":
+            let names = toolCall.arguments["names"] as? [String]
+            let result = SkillInstaller.install(names: names)
+            let count = names?.count ?? SkillInstaller.bundledSkills.count
+            AnalyticsManager.shared.onboardingChatToolUsed(tool: "install_skills", properties: ["requested_count": count])
             return result
 
         case "save_knowledge_graph":
@@ -957,42 +972,77 @@ class ChatToolExecutor {
         }
     }
 
+    /// List connected gws accounts by reading ~/.config/gws/accounts.json
+    private static func listGWSAccounts() -> (accounts: [[String: String]], defaultAccount: String?) {
+        let fm = FileManager.default
+        let accountsFile = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/gws/accounts.json")
+        guard let data = fm.contents(atPath: accountsFile.path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let accountsDict = json["accounts"] as? [String: Any] else {
+            return ([], nil)
+        }
+        let defaultAccount = json["default"] as? String
+        let accounts = accountsDict.keys.sorted().map { email -> [String: String] in
+            ["email": email, "is_default": email == defaultAccount ? "true" : "false"]
+        }
+        return (accounts, defaultAccount)
+    }
+
     /// Execute a Google Workspace tool action
     private static func executeGoogleWorkspace(_ args: [String: Any]) async -> String {
         guard let action = args["action"] as? String else {
-            return "Error: 'action' parameter is required (status, login, exec)"
+            return "Error: 'action' parameter is required (status, accounts, login, exec)"
         }
+
+        let account = args["account"] as? String
 
         // Ensure OAuth client config is in place before any gws operation
         ensureGWSClientConfig()
 
         switch action {
         case "status":
-            guard let gwsPath = gwsBinaryPath else {
+            guard let _ = gwsBinaryPath else {
                 return """
-                {"connected": false, "installed": false, "message": "Google Workspace CLI (gws) is not installed. \
-                The user needs to install it with: npm install -g @googleworkspace/cli"}
+                {"connected": false, "installed": false, "message": "Google Workspace CLI (gws) is not installed."}
                 """
             }
             if isGWSAuthenticated {
+                let (accounts, defaultAccount) = listGWSAccounts()
+                let accountsJSON = (try? JSONSerialization.data(withJSONObject: accounts))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
                 return """
-                {"connected": true, "installed": true, "message": "Google Workspace is connected and ready."}
+                {"connected": true, "installed": true, "accounts": \(accountsJSON), \
+                "default_account": \(defaultAccount.map { "\"\($0)\"" } ?? "null"), \
+                "message": "Google Workspace is connected. \(accounts.count) account(s) available."}
                 """
             } else {
                 return """
-                {"connected": false, "installed": true, "message": "Google Workspace CLI is installed but not authenticated. \
-                Call with action 'login' to start the OAuth flow."}
+                {"connected": false, "installed": true, "accounts": [], \
+                "message": "Google Workspace is not authenticated. Call with action 'login' to start the OAuth flow."}
                 """
             }
+
+        case "accounts":
+            let (accounts, defaultAccount) = listGWSAccounts()
+            if accounts.isEmpty {
+                return """
+                {"accounts": [], "message": "No Google accounts connected. Use action 'login' to add one."}
+                """
+            }
+            let accountsJSON = (try? JSONSerialization.data(withJSONObject: accounts))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            return """
+            {"accounts": \(accountsJSON), "default_account": \(defaultAccount.map { "\"\($0)\"" } ?? "null")}
+            """
 
         case "login":
             guard let gwsPath = gwsBinaryPath else {
                 return """
-                {"success": false, "message": "Google Workspace CLI (gws) is not installed. \
-                Install with: npm install -g @googleworkspace/cli"}
+                {"success": false, "message": "Google Workspace CLI (gws) is not installed."}
                 """
             }
-            return await runGWSLogin(gwsPath: gwsPath)
+            return await runGWSLogin(gwsPath: gwsPath, account: account)
 
         case "auth_callback":
             return await checkGWSAuthCallback()
@@ -1010,10 +1060,10 @@ class ChatToolExecutor {
                 Call with action 'login' first."}
                 """
             }
-            return await runGWSCommand(gwsPath: gwsPath, command: command)
+            return await runGWSCommand(gwsPath: gwsPath, command: command, account: account)
 
         default:
-            return "Error: unknown action '\(action)'. Valid actions: status, login, auth_callback, exec"
+            return "Error: unknown action '\(action)'. Valid actions: status, accounts, login, auth_callback, exec"
         }
     }
 
@@ -1022,14 +1072,18 @@ class ChatToolExecutor {
 
     /// Run `gws auth login` — extracts the OAuth URL and returns it for the AI to handle via Playwright.
     /// The gws process stays alive in the background waiting for the OAuth callback on localhost.
-    private static func runGWSLogin(gwsPath: String) async -> String {
+    private static func runGWSLogin(gwsPath: String, account: String? = nil) async -> String {
         // Kill any previous login process
         activeLoginProcess?.terminate()
         activeLoginProcess = nil
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: gwsPath)
-        process.arguments = ["auth", "login", "-s", "gmail,calendar,drive"]
+        var loginArgs = ["auth", "login", "-s", "gmail,calendar,drive"]
+        if let account = account {
+            loginArgs += ["--account", account]
+        }
+        process.arguments = loginArgs
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -1190,10 +1244,14 @@ class ChatToolExecutor {
     }
 
     /// Run a gws CLI command and return JSON output
-    private static func runGWSCommand(gwsPath: String, command: String) async -> String {
+    private static func runGWSCommand(gwsPath: String, command: String, account: String? = nil) async -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: gwsPath)
-        process.arguments = parseGWSArguments(command)
+        var cmdArgs = parseGWSArguments(command)
+        if let account = account {
+            cmdArgs += ["--account", account]
+        }
+        process.arguments = cmdArgs
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
