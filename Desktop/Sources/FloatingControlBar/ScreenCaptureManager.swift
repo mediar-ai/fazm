@@ -57,7 +57,30 @@ class ScreenCaptureManager {
         return saveImage(image)
     }
 
+    /// Maximum raw JPEG size in bytes (~3.5 MB keeps base64 under the 5 MB API limit).
+    private static let maxJPEGBytes = 3_500_000
+
+    /// Downscale a CGImage so its longest edge is at most `maxEdge` pixels.
+    private static func downscale(_ image: CGImage, maxEdge: Int) -> CGImage {
+        let w = image.width
+        let h = image.height
+        guard max(w, h) > maxEdge else { return image }
+        let scale = CGFloat(maxEdge) / CGFloat(max(w, h))
+        let newW = Int(CGFloat(w) * scale)
+        let newH = Int(CGFloat(h) * scale)
+        guard let ctx = CGContext(
+            data: nil, width: newW, height: newH,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return image }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: newW, height: newH))
+        return ctx.makeImage() ?? image
+    }
+
     /// Save a CGImage as JPEG and return the file URL.
+    /// Downscales large images and adjusts quality to stay under the API size limit.
     private static func saveImage(_ image: CGImage) -> URL? {
         let fileManager = FileManager.default
         guard let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
@@ -81,22 +104,31 @@ class ScreenCaptureManager {
         let fileName = "screenshot-\(timestamp).jpg"
         let fileURL = screenshotsDirectory.appendingPathComponent(fileName)
 
-        guard let destination = CGImageDestinationCreateWithURL(fileURL as CFURL, "public.jpeg" as CFString, 1, nil) else {
-            log("ScreenCaptureManager: Could not create image destination")
-            return nil
+        // Downscale Retina captures to max 2560px on the longest edge
+        let scaled = downscale(image, maxEdge: 2560)
+
+        // Try JPEG at decreasing quality until under size limit
+        for quality in stride(from: 0.7, through: 0.3, by: -0.1) {
+            guard let destination = CGImageDestinationCreateWithURL(fileURL as CFURL, "public.jpeg" as CFString, 1, nil) else {
+                log("ScreenCaptureManager: Could not create image destination")
+                return nil
+            }
+            let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+            CGImageDestinationAddImage(destination, scaled, options as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else {
+                log("ScreenCaptureManager: Could not save image")
+                return nil
+            }
+            if let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
+               let size = attrs[.size] as? Int,
+               size <= maxJPEGBytes {
+                log("ScreenCaptureManager: Screenshot saved to \(fileURL.path) (\(size / 1024)KB, quality=\(String(format: "%.1f", quality)))")
+                return fileURL
+            }
         }
 
-        // JPEG at 0.75 quality keeps file size ~400–800 KB vs 5+ MB for PNG,
-        // staying well under the Claude API's 5 MB base64 limit.
-        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.75]
-        CGImageDestinationAddImage(destination, image, options as CFDictionary)
-
-        if !CGImageDestinationFinalize(destination) {
-            log("ScreenCaptureManager: Could not save image")
-            return nil
-        }
-
-        log("ScreenCaptureManager: Screenshot saved to \(fileURL.path)")
+        // Even at lowest quality it's too big — save anyway (bridge will handle gracefully)
+        log("ScreenCaptureManager: Screenshot saved to \(fileURL.path) (may exceed size limit)")
         return fileURL
     }
 }
