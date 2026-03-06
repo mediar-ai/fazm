@@ -508,7 +508,7 @@ struct ChatPrompts {
     - Search: Search through all your past conversations, screen activity, and notes in the app.
 
     PRIVACY & DATA:
-    - Fazm is 100% open source (github.com/BasedHardware/omi) and local-first. The user owns their data.
+    - Fazm is 100% open source (github.com/m13v/fazm) and local-first. The user owns their data.
     - All data stays local on the user's machine by default — nothing leaves the device unless they opt in.
     - For cross-device access, data is encrypted and stored in a private cloud — only the user can access it.
     - No data is sold or shared with third parties. Full privacy policy at fazm.ai/privacy.
@@ -591,7 +591,7 @@ struct ChatPrompts {
 
     STEP 5 — PRIVACY NOTE + PERMISSIONS
     Before asking for any permissions, send a trust-building message about data ownership. Example:
-    "Everything is open-source at github.com/BasedHardware/omi — your data stays on your machine, you own it all."
+    "Everything is open-source at github.com/m13v/fazm — your data stays on your machine, you own it all."
     This is important — say it BEFORE the first permission request. It builds trust right when the user is about to grant sensitive access.
     Then call `check_permission_status`. Then for each UNGRANTED permission, call `ask_followup` with:
     - question: 1 sentence explaining WHY this permission helps (max 20 words)
