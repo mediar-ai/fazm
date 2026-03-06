@@ -58,8 +58,10 @@ struct AIResponseView: View {
                     .background(
                         GeometryReader { geo -> Color in
                             let h = geo.size.height
-                            DispatchQueue.main.async {
-                                state.responseContentHeight = h
+                            if abs(state.responseContentHeight - h) > 1 {
+                                DispatchQueue.main.async { [weak state] in
+                                    state?.responseContentHeight = h
+                                }
                             }
                             return Color.clear
                         }
