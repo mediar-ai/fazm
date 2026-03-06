@@ -22,9 +22,14 @@ fileprivate class PlainCopyNSTextView: NSTextView {
     }
 
     override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = abs(bounds.width - newSize.width) > 0.5
         super.setFrameSize(newSize)
-        // Width changed → text reflows → height changes
-        invalidateIntrinsicContentSize()
+        // Only invalidate when width changes (text reflows → new height).
+        // Height-only changes must NOT re-invalidate or they create a
+        // recursive layout cycle that crashes during the display cycle.
+        if widthChanged {
+            invalidateIntrinsicContentSize()
+        }
     }
 
     // Don't show NSTextView's default context menu — let SwiftUI's .contextMenu handle it
