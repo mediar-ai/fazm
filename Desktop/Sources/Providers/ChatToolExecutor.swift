@@ -578,7 +578,6 @@ class ChatToolExecutor {
         let statuses: [String: String] = [
             "screen_recording": appState.hasScreenRecordingPermission ? "granted" : "not_granted",
             "microphone": appState.hasMicrophonePermission ? "granted" : "not_granted",
-            "notifications": appState.hasNotificationPermission ? "granted" : "not_granted",
             "accessibility": appState.hasAccessibilityPermission ? "granted" : "not_granted",
         ]
 
@@ -586,7 +585,7 @@ class ChatToolExecutor {
            let json = String(data: data, encoding: .utf8) {
             return json
         }
-        return "screen_recording: \(statuses["screen_recording"]!), microphone: \(statuses["microphone"]!), notifications: \(statuses["notifications"]!), accessibility: \(statuses["accessibility"]!)"
+        return "screen_recording: \(statuses["screen_recording"]!), microphone: \(statuses["microphone"]!), accessibility: \(statuses["accessibility"]!)"
     }
 
     /// Scan files BLOCKING — triggers folder access dialogs, waits for scan, returns results
@@ -1300,7 +1299,6 @@ class ChatToolExecutor {
         let permissions: [(String, Bool)] = [
             ("screen_recording", appState.hasScreenRecordingPermission),
             ("microphone", appState.hasMicrophonePermission),
-            ("notifications", appState.hasNotificationPermission),
             ("accessibility", appState.hasAccessibilityPermission),
         ]
         for (name, granted) in permissions {

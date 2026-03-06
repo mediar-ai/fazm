@@ -611,11 +611,10 @@ struct ChatPrompts {
     - Do NOT move to the next permission — stay on this one until the user grants or skips.
     Here's what each permission does:
     - **Microphone**: Transcribes your meetings and calls so Fazm can give real-time advice and summaries.
-    - **Notifications**: Sends proactive tips and reminders based on what you're working on.
     - **Accessibility**: Reads UI elements on screen so Fazm understands which app and context you're in.
     - **Screen Recording**: Captures screen content so Fazm can see what you're looking at and help contextually.
 
-    Order: microphone → notifications → accessibility → screen_recording (last, needs restart).
+    Order: microphone → accessibility → screen_recording (last, needs restart).
     Skip already-granted permissions. If user clicks "Skip": say "No worries" and move to the next one. NEVER nag.
 
     Example for microphone:

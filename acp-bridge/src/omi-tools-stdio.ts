@@ -206,32 +206,39 @@ Use after finding the task with execute_sql. Pass the backendId from the action_
   },
   {
     name: "google_workspace",
-    description: `Interact with Google Workspace (Gmail, Calendar, Drive, Sheets, Docs).
+    description: `Interact with Google Workspace (Gmail, Calendar, Drive, Sheets, Docs). Supports multiple Google accounts.
 Actions:
-- "status": Check if Google Workspace is connected. ALWAYS call this first before any other action.
-- "login": Start OAuth login. Returns an oauth_url. You MUST then use the Playwright browser tools to:
+- "status": Check connection status and list connected accounts. ALWAYS call this first.
+- "accounts": List all connected Google accounts and which is the default.
+- "login": Start OAuth login for a new account. Optionally pass "account" (email) to associate.
+  Returns an oauth_url. You MUST then use the Playwright browser tools to:
   1. Navigate to the oauth_url (browser_navigate)
-  2. Complete the Google sign-in flow (click account, approve permissions)
+  2. Complete the Google sign-in flow (click the correct account, approve permissions)
   3. After approval, call this tool with action "auth_callback" to verify success.
 - "auth_callback": Check if the OAuth flow completed. Call AFTER completing sign-in in the browser.
-- "exec": Run a gws CLI command. Pass the full command string (everything after "gws ").
-  Examples: exec "gmail messages list --params '{\\"maxResults\\": 5}'"
-            exec "calendar events list --params '{\\"timeMin\\": \\"2026-03-05T00:00:00Z\\", \\"timeMax\\": \\"2026-03-06T00:00:00Z\\"}'"
+- "exec": Run a gws CLI command. Optionally pass "account" (email) to target a specific account.
+  Pass the full command string (everything after "gws ").
+  Examples: exec "gmail users messages list --params '{\\"userId\\": \\"me\\", \\"maxResults\\": 5}'"
+            exec "calendar events list --params '{\\"calendarId\\": \\"primary\\", \\"timeMin\\": \\"2026-03-05T00:00:00Z\\"}'"
             exec "drive files list --params '{\\"pageSize\\": 10}'"
-            exec "sheets spreadsheets.values get --params '{\\"spreadsheetId\\": \\"ID\\", \\"range\\": \\"Sheet1\\"}'"
 
-Flow: status → login → browser_navigate(oauth_url) → complete sign-in → auth_callback → exec.`,
+Flow: status → login (if needed) → browser OAuth → auth_callback → exec.
+Multi-account: pass "account" param to login/exec to target a specific Google account.`,
     inputSchema: {
       type: "object" as const,
       properties: {
         action: {
           type: "string" as const,
-          enum: ["status", "login", "auth_callback", "exec"],
+          enum: ["status", "accounts", "login", "auth_callback", "exec"],
           description: "The action to perform",
         },
         command: {
           type: "string" as const,
           description: "The gws command to run (only for action 'exec'). Everything after 'gws '.",
+        },
+        account: {
+          type: "string" as const,
+          description: "Google account email to use (for login/exec). If omitted, uses the default account.",
         },
       },
       required: ["action"],
@@ -533,7 +540,8 @@ async function handleJsonRpc(
       } else if (toolName === "google_workspace") {
         const action = args.action as string;
         const command = args.command as string | undefined;
-        const result = await requestSwiftTool("google_workspace", { action, command });
+        const account = args.account as string | undefined;
+        const result = await requestSwiftTool("google_workspace", { action, command, account });
         if (!isNotification) {
           send({
             jsonrpc: "2.0",
