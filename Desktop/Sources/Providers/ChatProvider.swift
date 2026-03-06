@@ -676,15 +676,14 @@ class ChatProvider: ObservableObject {
                 self.groupedSessions = self.computeGroupedSessions()
             }
 
-        // Kill ACP bridge subprocess on app quit to prevent orphaned Node.js processes
+        // Kill ACP bridge subprocess on app quit to prevent orphaned Node.js processes.
+        // This runs synchronously (stop() is sync) to ensure cleanup completes before exit.
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            Task { @MainActor in
-                await self.acpBridge.stop()
-            }
+            self.acpBridge.stop()
         }
     }
 
@@ -1592,6 +1591,8 @@ class ChatProvider: ObservableObject {
         await loadTasksIfNeeded()
         await loadAIProfileIfNeeded()
         await loadSchemaIfNeeded()
+        // Auto-install bundled skills before discovery so they always appear
+        let _ = SkillInstaller.install()
         await discoverClaudeConfig()
 
         // Set working directory for Claude Agent SDK if workspace is configured
