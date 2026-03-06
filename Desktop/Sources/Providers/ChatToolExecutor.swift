@@ -919,13 +919,42 @@ class ChatToolExecutor {
         let configDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/gws")
         let fm = FileManager.default
-        // Prefer plain credentials (credentials.json) — encrypted (credentials.enc) has
-        // a decryption bug in gws 0.5.0 on macOS
+        // Check plain credentials (credentials.json)
         let plainCreds = configDir.appendingPathComponent("credentials.json").path
         if fm.fileExists(atPath: plainCreds) { return true }
-        // Fall back to checking encrypted (may work in future gws versions)
+        // Check global encrypted credentials (credentials.enc)
         let encCreds = configDir.appendingPathComponent("credentials.enc").path
-        return fm.fileExists(atPath: encCreds)
+        if fm.fileExists(atPath: encCreds) { return true }
+        // Check per-account encrypted credentials (credentials.<base64_email>.enc)
+        if let contents = try? fm.contentsOfDirectory(atPath: configDir.path) {
+            return contents.contains { $0.hasPrefix("credentials.") && $0.hasSuffix(".enc") }
+        }
+        return false
+    }
+
+    /// Ensure the gws client_secret.json exists in ~/.config/gws/
+    /// Copies from the app bundle if not already present.
+    private static func ensureGWSClientConfig() {
+        let fm = FileManager.default
+        let configDir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/gws")
+        let configFile = configDir.appendingPathComponent("client_secret.json")
+
+        if fm.fileExists(atPath: configFile.path) { return }
+
+        // Look for bundled client_secret.json
+        guard let bundledPath = Bundle.main.url(forResource: "gws_client_secret", withExtension: "json") else {
+            log("No bundled gws_client_secret.json found in app bundle")
+            return
+        }
+
+        do {
+            try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
+            try fm.copyItem(at: bundledPath, to: configFile)
+            log("Copied gws client_secret.json to \(configFile.path)")
+        } catch {
+            logError("Failed to copy gws client_secret.json", error: error)
+        }
     }
 
     /// Execute a Google Workspace tool action
@@ -933,6 +962,9 @@ class ChatToolExecutor {
         guard let action = args["action"] as? String else {
             return "Error: 'action' parameter is required (status, login, exec)"
         }
+
+        // Ensure OAuth client config is in place before any gws operation
+        ensureGWSClientConfig()
 
         switch action {
         case "status":
@@ -997,11 +1029,7 @@ class ChatToolExecutor {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: gwsPath)
-        // Use --plain to store credentials as unencrypted JSON.
-        // gws 0.5.0 has a bug where encrypted credentials (credentials.enc)
-        // can't be decrypted on macOS, causing 401 errors despite auth status
-        // showing token_valid: true. Plain storage works reliably.
-        process.arguments = ["auth", "login", "--plain"]
+        process.arguments = ["auth", "login", "-s", "gmail,calendar,drive"]
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -1241,5 +1269,35 @@ class ChatToolExecutor {
         fileScanFileCount = 0
 
         return "Onboarding completed successfully! The app is now set up."
+    }
+
+    // MARK: - Screenshot Capture
+
+    @MainActor
+    private static func executeCaptureScreenshot(_ args: [String: Any]) async -> String {
+        let mode = args["mode"] as? String ?? "screen"
+
+        // Screen capture APIs may require main thread on some macOS versions
+        let url: URL?
+        if mode == "window" {
+            let pid = FloatingControlBarManager.shared.lastActiveAppPID
+            if pid != 0 {
+                url = ScreenCaptureManager.captureAppWindow(pid: pid)
+            } else {
+                url = ScreenCaptureManager.captureScreen()
+            }
+        } else {
+            url = ScreenCaptureManager.captureScreen()
+        }
+        guard let url else {
+            log("capture_screenshot tool: capture returned nil (permission issue?)")
+            return "ERROR: Failed to capture screenshot. Make sure Screen Recording permission is granted."
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            log("capture_screenshot tool: could not read file at \(url.path)")
+            return "ERROR: Failed to read screenshot file."
+        }
+        log("capture_screenshot tool: returning \(data.count) bytes as base64")
+        return data.base64EncodedString()
     }
 }
