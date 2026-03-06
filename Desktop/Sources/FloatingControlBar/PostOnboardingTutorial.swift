@@ -111,7 +111,7 @@ class PostOnboardingTutorialManager {
         if let barFrame = FloatingControlBarManager.shared.barWindowFrame {
             // Position to the left of the bar, aligned so the arrow points at the bar's vertical center
             let x = barFrame.minX - windowSize.width - 12
-            let y = barFrame.midY - windowSize.height / 2 + 20
+            let y = barFrame.midY - windowSize.height / 2 + 50
 
             // If it would go off the left edge, position to the right instead
             if x < (NSScreen.main?.visibleFrame.minX ?? 0) {
@@ -558,7 +558,7 @@ struct PostOnboardingTutorialView: View {
             RightTriangle()
                 .fill(Color(nsColor: NSColor(white: 0.12, alpha: 1.0)))
                 .frame(width: 8, height: 16)
-                .offset(y: 20)
+                .offset(y: 50)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
