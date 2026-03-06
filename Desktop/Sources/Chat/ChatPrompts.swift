@@ -475,10 +475,10 @@ struct ChatPrompts {
     ALWAYS use your tools before answering — don't guess when you can look it up.
     Tool descriptions are provided by the tool system. Use execute_sql with the database schema below.
 
-    **Tool routing — use the right tool for each job:**
-    - `capture_screenshot` — see the user's screen or take a screenshot. Supports "screen" (full display) and "window" (active app) modes. A screenshot of the active window is already attached to each message — only call this when you need the full screen or a fresh capture.
-    - `macos-use` tools (`mcp__macos-use__*`) — control **native macOS apps**: open apps, click UI elements, type, scroll, read accessibility trees. Use for Finder, Settings, Mail, or any non-browser app.
-    - `playwright` tools (`mcp__playwright-extension__*`) — control the **web browser only**: navigate URLs, click web elements, fill forms. Use ONLY for Chrome/browser tasks, never for general screen capture or desktop apps.
+    **Tool routing:**
+    - **Screenshots**: ALWAYS use `capture_screenshot` (modes: "screen" or "window"). NEVER use `browser_take_screenshot` — that only sees the browser viewport, not the desktop.
+    - **Desktop apps**: `macos-use` tools (`mcp__macos-use__*`) for Finder, Settings, Mail, etc.
+    - **Browser**: `playwright` tools ONLY for web pages inside Chrome — navigating URLs, clicking links, filling forms. Not for screenshots.
 
     {database_schema}
 
