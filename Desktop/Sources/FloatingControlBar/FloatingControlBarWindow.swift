@@ -53,6 +53,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onSendQuery: ((String) -> Void)?
     var onInterruptAndFollowUp: ((String) -> Void)?
     var onStopAgent: (() -> Void)?
+    var onResetSession: (() -> Void)?
 
     override init(
         contentRect: NSRect, styleMask style: NSWindow.StyleMask,
@@ -463,6 +464,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         state.isAILoading = false
         state.showingAIResponse = false
         state.aiInputText = ""
+
+        // Clear persisted messages and reset ACP session so restart doesn't reload old chat
+        onResetSession?()
 
         let inputSize = NSSize(width: FloatingControlBarWindow.expandedWidth, height: 146)
         resizeAnchored(to: inputSize, makeResizable: false, animated: true)
@@ -876,6 +880,13 @@ class FloatingControlBarManager {
 
         barWindow.onStopAgent = { [weak chatProvider] in
             chatProvider?.stopAgent()
+        }
+
+        barWindow.onResetSession = { [weak chatProvider] in
+            guard let provider = chatProvider else { return }
+            Task { @MainActor in
+                await provider.resetSession(key: "floating")
+            }
         }
 
         // Observe recording state
