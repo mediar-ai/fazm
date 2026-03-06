@@ -225,7 +225,11 @@ struct FazmTextEditor: NSViewRepresentable {
 
             if abs(constrainedHeight - lastHeight) > 1 {
                 lastHeight = constrainedHeight
-                onHeightChange(constrainedHeight)
+                // Defer to avoid recursive layout: onHeightChange updates SwiftUI
+                // state, which must not happen during an active layout/display cycle.
+                DispatchQueue.main.async {
+                    onHeightChange(constrainedHeight)
+                }
             }
         }
     }
