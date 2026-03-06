@@ -669,7 +669,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let size = FloatingControlBarWindow.minBarSize
         let targetScreen: NSScreen?
         if followFocus {
-            targetScreen = NSApp.keyWindow?.screen ?? self.screen ?? NSScreen.main ?? NSScreen.screens.first
+            // NSScreen.main follows the system-wide foreground app (not just our app's key window)
+            targetScreen = NSScreen.main ?? self.screen ?? NSScreen.screens.first
         } else {
             targetScreen = self.screen ?? NSScreen.main ?? NSScreen.screens.first
         }
@@ -680,10 +681,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         return NSPoint(x: x, y: y)
     }
 
-    /// Center the bar near the bottom of the main screen.
+    /// Center the bar near the bottom of the active monitor (where the foreground app is).
     private func centerOnMainScreen() {
-        // Use the screen that has the key window, or fall back to main screen
-        let targetScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        // NSScreen.main follows the system-wide foreground app's key window
+        let targetScreen = NSScreen.main ?? NSScreen.screens.first
         guard let screen = targetScreen else {
             self.center()
             return
