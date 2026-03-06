@@ -1,4 +1,64 @@
+import AppKit
 import SwiftUI
+
+// MARK: - Plain-Text Copy NSTextView
+
+/// NSTextView subclass that always copies plain text (no RTF/rich formatting).
+fileprivate class PlainCopyNSTextView: NSTextView {
+    override func copy(_ sender: Any?) {
+        guard let storage = textStorage, selectedRange().length > 0 else { return }
+        let plain = storage.attributedSubstring(from: selectedRange()).string
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(plain, forType: .string)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard let lm = layoutManager, let tc = textContainer else {
+            return super.intrinsicContentSize
+        }
+        lm.ensureLayout(for: tc)
+        let rect = lm.usedRect(for: tc)
+        return NSSize(width: NSView.noIntrinsicMetric, height: ceil(rect.height))
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // Width changed → text reflows → height changes
+        invalidateIntrinsicContentSize()
+    }
+}
+
+/// SwiftUI wrapper for NSTextView that supports text selection but copies only plain text.
+struct PlainCopyText: NSViewRepresentable {
+    let attributedString: NSAttributedString
+
+    func makeNSView(context: Context) -> NSTextView {
+        let tv = PlainCopyNSTextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.drawsBackground = false
+        tv.backgroundColor = .clear
+        tv.textContainerInset = .zero
+        tv.textContainer?.lineFragmentPadding = 0
+        tv.textContainer?.widthTracksTextView = true
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tv.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        if #available(macOS 15.1, *) {
+            tv.writingToolsBehavior = .none
+        }
+        return tv
+    }
+
+    func updateNSView(_ tv: NSTextView, context: Context) {
+        // Only update if content actually changed to avoid layout thrashing
+        if tv.textStorage?.string != attributedString.string {
+            tv.textStorage?.setAttributedString(attributedString)
+            tv.invalidateIntrinsicContentSize()
+        }
+    }
+}
 
 // MARK: - Compact Code Blocks Environment Key
 
@@ -91,13 +151,17 @@ struct SelectableMarkdown: View {
 
         Group {
             if let s = styled {
-                Text(s)
-                    .if_available_writingToolsNone()
+                PlainCopyText(attributedString: NSAttributedString(s))
             } else {
-                Text(content)
-                    .font(.system(size: fontSize))
-                    .foregroundColor(sender == .user ? .white : FazmColors.textPrimary)
-                    .if_available_writingToolsNone()
+                let baseColor: NSColor = sender == .user ? .white : NSColor(FazmColors.textPrimary)
+                let fallbackAttr = NSAttributedString(
+                    string: content,
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: fontSize),
+                        .foregroundColor: baseColor,
+                    ]
+                )
+                PlainCopyText(attributedString: fallbackAttr)
             }
         }
         .onAppear {
@@ -123,12 +187,17 @@ struct SelectableMarkdown: View {
             let bgColor = sender == .user
                 ? Color.white.opacity(0.15)
                 : FazmColors.backgroundTertiary
+            let codeColor: NSColor = sender == .user ? .white : NSColor(FazmColors.textPrimary)
+            let codeAttr = NSAttributedString(
+                string: code,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: codeFontSize, weight: .regular),
+                    .foregroundColor: codeColor,
+                ]
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(.system(size: codeFontSize, design: .monospaced))
-                    .foregroundColor(sender == .user ? .white : FazmColors.textPrimary)
-                    .if_available_writingToolsNone()
+                PlainCopyText(attributedString: codeAttr)
             }
             .padding(12)
             .background(bgColor)
@@ -326,11 +395,16 @@ struct CollapsibleCodeBlockView: View {
             : FazmColors.backgroundTertiary
 
         VStack(alignment: .leading, spacing: 0) {
+            let codeColor: NSColor = sender == .user ? .white : NSColor(FazmColors.textPrimary)
+            let codeAttr = NSAttributedString(
+                string: displayedCode,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: codeFontSize, weight: .regular),
+                    .foregroundColor: codeColor,
+                ]
+            )
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(displayedCode)
-                    .font(.system(size: codeFontSize, design: .monospaced))
-                    .foregroundColor(sender == .user ? .white : FazmColors.textPrimary)
-                    .if_available_writingToolsNone()
+                PlainCopyText(attributedString: codeAttr)
             }
             .padding(.top, 12)
             .padding(.horizontal, 12)
