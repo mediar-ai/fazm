@@ -1466,7 +1466,10 @@ struct SettingsContentView: View {
                             Image(nsImage: logoImage)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 48, height: 48)
+                                .frame(width: 32, height: 32)
+                                .padding(8)
+                                .background(Color.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
 
                         VStack(alignment: .leading, spacing: 4) {
