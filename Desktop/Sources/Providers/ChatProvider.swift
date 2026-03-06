@@ -304,7 +304,7 @@ class ChatProvider: ObservableObject {
         }
         switch proactiveness {
         case .passive:
-            lines.append("Only perform actions the user explicitly asks for. Always confirm before taking any action on the user's computer. Ask clarifying questions when in doubt.")
+            break
         case .balanced:
             lines.append("Take obvious actions that the user clearly needs. For ambiguous requests, ask for confirmation before proceeding. Use good judgment about when to act vs ask.")
         case .proactive:

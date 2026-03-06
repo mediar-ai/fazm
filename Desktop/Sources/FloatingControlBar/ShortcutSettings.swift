@@ -121,7 +121,7 @@ class ShortcutSettings: ObservableObject {
 
         var description: String {
             switch self {
-            case .passive: return "Only do what is explicitly asked, confirm before taking actions"
+            case .passive: return "No proactiveness instructions — default AI behavior"
             case .balanced: return "Take obvious actions, ask for confirmation on ambiguous ones"
             case .proactive: return "Proactively find and execute solutions without asking unless clarification is needed"
             }
