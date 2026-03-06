@@ -223,9 +223,11 @@ class PushToTalkManager: ObservableObject {
     pttOpenedChat = true
     preVoiceInputText = barState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
     if !chatWasOpenBeforePTT {
+      FloatingControlBarManager.shared.moveToActiveScreen()
       FloatingControlBarManager.shared.openAIInput()
     } else if barState?.isCollapsed == true {
-      // Bar was collapsed (semi-transparent, half height) — expand it back
+      // Bar was collapsed (semi-transparent, half height) — move to active screen and expand
+      FloatingControlBarManager.shared.moveToActiveScreen()
       FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
     }
 
@@ -254,9 +256,11 @@ class PushToTalkManager: ObservableObject {
     pttOpenedChat = true
     preVoiceInputText = barState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
     if !chatWasOpenBeforePTT {
+      FloatingControlBarManager.shared.moveToActiveScreen()
       FloatingControlBarManager.shared.openAIInput()
     } else if barState?.isCollapsed == true {
-      // Bar was collapsed (semi-transparent, half height) — expand it back
+      // Bar was collapsed (semi-transparent, half height) — move to active screen and expand
+      FloatingControlBarManager.shared.moveToActiveScreen()
       FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
     }
 
