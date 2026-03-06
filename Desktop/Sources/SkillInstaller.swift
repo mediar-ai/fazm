@@ -62,11 +62,10 @@ enum SkillInstaller {
                 continue
             }
 
-            // Find the bundled skill file (stored as {name}.skill.md in BundledSkills/)
-            guard let bundledURL = Bundle.main.url(
+            // Find the bundled skill file (stored as {name}.skill.md, flattened by SPM)
+            guard let bundledURL = Bundle.resourceBundle.url(
                 forResource: "\(name).skill",
-                withExtension: "md",
-                subdirectory: "BundledSkills"
+                withExtension: "md"
             ) else {
                 failed.append(name)
                 continue
