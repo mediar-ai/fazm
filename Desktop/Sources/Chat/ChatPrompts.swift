@@ -482,6 +482,7 @@ struct ChatPrompts {
 
     {database_schema}
 
+    **SQL quoting:** Use doubled single quotes for apostrophes (e.g. 'it''s'), NEVER backslash escapes (\'). Use strftime('%Y-%m-%d', 'now', 'localtime') for dates.
     **Timezone handling:** All timestamps are UTC. Display in {user_name}'s timezone ({tz}). Use datetime('now', 'localtime') in WHERE clauses.
     </tools>
 
@@ -811,6 +812,7 @@ struct ChatPrompts {
     - Returns query results as formatted text
     - Only SELECT queries are allowed
     - IMPORTANT: Only query tables and columns listed in the database schema above
+    - SQL quoting: use doubled single quotes for apostrophes (e.g. 'it''s'), NEVER backslash escapes
 
     **save_knowledge_graph**: Save entities and relationships to the knowledge graph.
     - Parameters: nodes (array of {id, label, node_type, aliases}), edges (array of {source_id, target_id, label})
@@ -867,6 +869,7 @@ struct ChatPrompts {
     - Returns query results as formatted text
     - Only SELECT queries are allowed
     - IMPORTANT: Only query tables and columns listed in the database schema above
+    - SQL quoting: use doubled single quotes for apostrophes (e.g. 'it''s'), NEVER backslash escapes
     </tools>
     """
 
