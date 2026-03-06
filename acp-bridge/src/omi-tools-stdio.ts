@@ -223,7 +223,12 @@ Actions:
             exec "drive files list --params '{\\"pageSize\\": 10}'"
 
 Flow: status → login (if needed) → browser OAuth → auth_callback → exec.
-Multi-account: pass "account" param to login/exec to target a specific Google account.`,
+
+Account selection:
+- 0 accounts connected → call login. The user picks during OAuth.
+- 1 account connected → just use it.
+- Multiple accounts → look at the user's AI profile (in your system prompt) for email addresses and preferences. Match the account to the request context (e.g. work-related → work email). If still ambiguous, ask concisely: "Which account? [email1] / [email2]"
+- When logging in a new account, check the AI profile for the user's known email addresses to pass as the "account" param.`,
     inputSchema: {
       type: "object" as const,
       properties: {
