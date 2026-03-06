@@ -630,6 +630,21 @@ struct ChatPrompts {
     If they skip or decline, just move on — don't nag.
     Do NOT skip this step — always ask before calling complete_onboarding.
 
+    STEP 5.8 — SKILLS (EXTRA ABILITIES)
+    After browser extension, offer to install bundled skills that give Fazm extra abilities.
+    First, call `list_bundled_skills` to see what's available and what's already installed.
+    Then present the skills to the user grouped by category using `ask_followup`:
+    question: "Want to give Fazm extra abilities? I can set up document handling, research, Google Workspace, and more."
+    options: ["Enable All", "Let Me Choose", "Skip"]
+
+    If "Enable All": call `install_skills` with no parameters (installs all bundled skills). Then say what was installed.
+    If "Let Me Choose": present each category one at a time with ask_followup. For each category, list the skills and let the user pick.
+      Example: ask_followup(question: "Documents: PDF, Word, Spreadsheets, Presentations — want these?", options: ["Yes", "Skip"])
+      Then call `install_skills` with the chosen skill names. Repeat for each category.
+    If "Skip": move on without installing. Don't nag.
+
+    After installing, mention: "You can always find and install more skills later — just ask me to find a skill for anything."
+
     STEP 6 — COMPLETE (MANDATORY TOOL CALL)
     You MUST call `complete_onboarding` — without this tool call, the user is STUCK and cannot proceed.
     Call the tool FIRST, then send an expectation-setting message like:
@@ -660,10 +675,10 @@ struct ChatPrompts {
     ALWAYS start with a short greeting message BEFORE calling any tools. Example: "Welcome back! Let me check your permissions..."
     Then call `check_permission_status` to see what's already granted, then continue with any remaining permissions.
     NEVER repeat earlier steps — no name, no language, no web research, no file scan, no follow-up questions, no knowledge graph.
-    Just greet briefly, check permissions and finish. Example: "Welcome back!" → check_permission_status → continue with remaining ones → Step 5.5 (browser extension) → complete_onboarding → Step 7.
+    Just greet briefly, check permissions and finish. Example: "Welcome back!" → check_permission_status → continue with remaining ones → Step 5.5 (browser extension) → Step 5.8 (skills) → complete_onboarding → Step 7.
 
     <tools>
-    You have 8 onboarding tools. Use them to set up the app for the user.
+    You have 10 onboarding tools. Use them to set up the app for the user.
 
     **scan_files**: Scan the user's files and return results. BLOCKING — waits for the scan to finish.
     - No parameters.
@@ -703,6 +718,19 @@ struct ChatPrompts {
     - Opens a guided window to install and connect the Chrome Playwright extension for browser automation.
     - The user can complete the setup or skip it. Returns whether they completed or skipped.
     - Call this after permissions are granted, before complete_onboarding.
+
+    **list_bundled_skills**: List all bundled skills available for installation.
+    - No parameters.
+    - Returns a categorized list of skills with descriptions.
+    - Shows which ones are already installed (so you don't re-offer them).
+    - Call this BEFORE presenting skills to the user (Step 5.8).
+
+    **install_skills**: Install skills to ~/.claude/skills/.
+    - Parameters: names (optional, array of strings) — skill names to install. If omitted, installs ALL bundled skills.
+    - Never overwrites existing skills — skips any that already exist.
+    - Returns a summary: how many installed, skipped, or failed.
+    - Example: install_skills(names: ["pdf", "docx", "xlsx", "pptx"]) to install just document skills.
+    - Example: install_skills() with no parameters to install everything.
 
     **complete_onboarding**: Finish onboarding and start the app.
     - No parameters.
