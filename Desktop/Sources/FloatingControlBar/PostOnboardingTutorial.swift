@@ -235,6 +235,7 @@ class TutorialChatGuide {
     static let shared = TutorialChatGuide()
 
     private var cancellables = Set<AnyCancellable>()
+    private var stepDoneMarkerSeen = false
 
     /// Fallback prompts used when no onboarding data is available.
     static let defaultPrompts: [(instruction: String, description: String)] = [
@@ -410,13 +411,21 @@ class TutorialChatGuide {
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak barState] message in
                 guard let self, let barState, barState.isTutorialChatActive else { return }
-                guard !message.isStreaming, barState.tutorialWaitingForResponse else { return }
-                guard message.text.contains("[[TUTORIAL_STEP_DONE]]") else { return }
+                let marker = "[[TUTORIAL_STEP_DONE]]"
 
-                // Strip the marker from displayed text
-                barState.currentAIMessage?.text = message.text
-                    .replacingOccurrences(of: "[[TUTORIAL_STEP_DONE]]", with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                // Always strip the marker so it never shows to the user
+                let hasMarker = message.text.contains(marker)
+                if hasMarker {
+                    barState.currentAIMessage?.text = message.text
+                        .replacingOccurrences(of: marker, with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.stepDoneMarkerSeen = true
+                }
+
+                // Only advance steps once streaming is complete
+                guard !message.isStreaming, barState.tutorialWaitingForResponse,
+                      self.stepDoneMarkerSeen else { return }
+                self.stepDoneMarkerSeen = false
 
                 // Advance to next step
                 barState.tutorialWaitingForResponse = false
