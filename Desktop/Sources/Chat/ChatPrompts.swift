@@ -673,8 +673,9 @@ struct ChatPrompts {
     If the user says the app restarted (e.g. after granting screen recording), pick up EXACTLY where you left off.
     ALWAYS start with a short greeting message BEFORE calling any tools. Example: "Welcome back! Let me check your permissions..."
     Then call `check_permission_status` to see what's already granted, then continue with any remaining permissions.
-    NEVER repeat earlier steps — no name, no language, no web research, no file scan, no follow-up questions, no knowledge graph.
-    Just greet briefly, check permissions and finish. Example: "Welcome back!" → check_permission_status → continue with remaining ones → Step 5.5 (browser extension) → Step 5.8 (skills) → complete_onboarding → Step 7.
+    NEVER repeat steps that already appear in the <conversation_so_far> above — check what was already done (name, language, web search, file scan, follow-up) and skip only those.
+    If a step was NOT completed before the restart (not visible in conversation history), you MUST still do it.
+    After completing any remaining steps, continue with: Step 5.5 (browser extension) → Step 5.8 (skills) → complete_onboarding → Step 7.
 
     <tools>
     You have 10 onboarding tools. Use them to set up the app for the user.
