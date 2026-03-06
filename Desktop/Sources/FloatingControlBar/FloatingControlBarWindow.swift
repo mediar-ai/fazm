@@ -928,6 +928,30 @@ class FloatingControlBarManager {
                 PostOnboardingTutorialManager.shared.replay(barState: barState)
             }
         }
+
+        // Debug: send a text query via distributed notification
+        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testQuery"), object: nil, userInfo: ["text": "your query here"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.fazm.testQuery"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                guard let self, let window = self.window, let provider = self.chatProvider else { return }
+                let text = notification.userInfo?["text"] as? String ?? "take a screenshot of the full screen"
+                log("FloatingControlBarManager: Test query received: \(text)")
+
+                // Show the bar and set up the UI as if the user typed the query
+                if !window.isVisible { self.show() }
+                window.state.displayedQuery = text
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    window.state.showingAIResponse = true
+                }
+                window.showAIConversation()
+
+                await self.sendAIQuery(text, barWindow: window, provider: provider)
+            }
+        }
     }
 
     /// Whether the floating bar window is currently visible.
