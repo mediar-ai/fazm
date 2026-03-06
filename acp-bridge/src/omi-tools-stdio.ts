@@ -251,6 +251,26 @@ Flow: status → login → browser_navigate(oauth_url) → complete sign-in → 
       required: ["name"],
     },
   },
+  {
+    name: "capture_screenshot",
+    description: `Capture a screenshot of the user's screen and return it as a base64-encoded JPEG image.
+Use for: "what's on my screen", "take a screenshot", "describe what you see", screen analysis.
+Modes:
+- "screen": Full screen capture (default)
+- "window": Just the frontmost app window
+This is the ONLY way to see what's on the user's desktop. Do NOT use playwright's browser_take_screenshot for this — that only captures the browser viewport.`,
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        mode: {
+          type: "string" as const,
+          enum: ["screen", "window"],
+          description: "Capture mode: 'screen' for full display, 'window' for active app window (default: screen)",
+        },
+      },
+      required: [],
+    },
+  },
   // --- Onboarding tools ---
   {
     name: "check_permission_status",
@@ -520,6 +540,30 @@ async function handleJsonRpc(
             id,
             result: { content: [{ type: "text", text: result }] },
           });
+        }
+      } else if (toolName === "capture_screenshot") {
+        const mode = (args.mode as string) || "screen";
+        const result = await requestSwiftTool("capture_screenshot", { mode });
+        if (!isNotification) {
+          // Result from Swift is base64 JPEG — return as image content
+          if (result.startsWith("ERROR:")) {
+            send({
+              jsonrpc: "2.0",
+              id,
+              result: { content: [{ type: "text", text: result }] },
+            });
+          } else {
+            send({
+              jsonrpc: "2.0",
+              id,
+              result: {
+                content: [
+                  { type: "image", data: result, mimeType: "image/jpeg" },
+                  { type: "text", text: `Screenshot captured (${mode} mode).` },
+                ],
+              },
+            });
+          }
         }
       } else if (toolName === "load_skill") {
         const name = (args.name as string || "").trim();
