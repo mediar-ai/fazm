@@ -258,7 +258,9 @@ class TutorialChatGuide {
     func start(barState: FloatingControlBarState) {
         barState.isTutorialChatActive = true
         barState.tutorialChatStep = 0
-        barState.tutorialWaitingForResponse = false
+        // The first voice query is already in flight when start() is called,
+        // so mark as waiting so the response observer can detect [[TUTORIAL_STEP_DONE]].
+        barState.tutorialWaitingForResponse = true
 
         // Load personalized prompts from onboarding data, then set up the tutorial
         Task {
