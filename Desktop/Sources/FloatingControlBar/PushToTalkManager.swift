@@ -122,10 +122,14 @@ class PushToTalkManager: ObservableObject {
       guard event.modifierFlags.intersection(otherModifiers) == [] else { return }
       pttActive = event.modifierFlags.contains(.option)
     case .rightCommand:
-      // Right Cmd: keyCode 54. flagsChanged fires for both left/right Cmd.
-      // Only trigger on right Cmd (keyCode 54), not left (55).
-      guard event.keyCode == 54 || event.keyCode == 55 else { return }
-      pttActive = event.modifierFlags.contains(.command) && event.keyCode == 54
+      // Right Cmd: keyCode 54. Ignore left Cmd (55) entirely — otherwise pressing
+      // left Cmd while holding right Cmd falsely triggers handleOptionUp().
+      guard event.keyCode == 54 else { return }
+      // Ignore if other modifiers are held (Option, Ctrl, Shift) so Right Cmd
+      // used in shortcut combos (e.g. Cmd+Shift+Z) doesn't trigger PTT.
+      let otherModifiers: NSEvent.ModifierFlags = [.option, .control, .shift]
+      guard event.modifierFlags.intersection(otherModifiers) == [] else { return }
+      pttActive = event.modifierFlags.contains(.command)
     case .fn:
       pttActive = event.modifierFlags.contains(.function)
     }
