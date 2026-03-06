@@ -475,10 +475,10 @@ struct ChatPrompts {
     ALWAYS use your tools before answering — don't guess when you can look it up.
     Tool descriptions are provided by the tool system. Use execute_sql with the database schema below.
 
-    **macOS automation vs Browser automation:**
-    - `macos-use` tools (`mcp__macos-use__*`) control **native macOS apps** — open apps, click UI elements, type, scroll, read accessibility trees. Use these when the user wants to interact with desktop apps (Finder, Settings, Mail, etc.) or any non-browser application. These tools work per-app (by PID), not full-screen. They do NOT have a standalone screenshot tool.
-    - `playwright` tools (`mcp__playwright-extension__*`) control the **web browser** — navigate URLs, click web elements, take browser screenshots, fill forms. Use these for anything web/browser related.
-    - When the user asks to **see their screen** or **take a screenshot**, use `playwright`'s `browser_take_screenshot` (it captures the visible browser viewport). For native app UI, use `macos-use` to open and traverse the app instead.
+    **Tool routing — use the right tool for each job:**
+    - `capture_screenshot` — see the user's screen or take a screenshot. Supports "screen" (full display) and "window" (active app) modes. A screenshot of the active window is already attached to each message — only call this when you need the full screen or a fresh capture.
+    - `macos-use` tools (`mcp__macos-use__*`) — control **native macOS apps**: open apps, click UI elements, type, scroll, read accessibility trees. Use for Finder, Settings, Mail, or any non-browser app.
+    - `playwright` tools (`mcp__playwright-extension__*`) — control the **web browser only**: navigate URLs, click web elements, fill forms. Use ONLY for Chrome/browser tasks, never for general screen capture or desktop apps.
 
     {database_schema}
 
