@@ -140,16 +140,12 @@ struct FazmTextEditor: NSViewRepresentable {
         guard let minH = minHeight, let maxH = maxHeight else {
             return nil  // no height tracking — let SwiftUI use default NSView sizing
         }
-        guard let textView = nsView.documentView as? NSTextView,
-              let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else {
-            return CGSize(width: proposal.width ?? nsView.bounds.width, height: minH)
-        }
-        layoutManager.ensureLayout(for: textContainer)
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let contentHeight = usedRect.height + textView.textContainerInset.height * 2
-        let constrainedHeight = min(max(contentHeight, minH), maxH)
-        return CGSize(width: proposal.width ?? nsView.bounds.width, height: constrainedHeight)
+        // Use the coordinator's cached height instead of calling ensureLayout here.
+        // Calling ensureLayout during SwiftUI's layout pass can trigger NSScrollView
+        // frame changes → constraint updates → recursive layout invalidation → crash.
+        let cachedHeight = context.coordinator.lastHeight
+        let height = cachedHeight > 0 ? cachedHeight : minH
+        return CGSize(width: proposal.width ?? nsView.bounds.width, height: height)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -175,7 +171,9 @@ struct FazmTextEditor: NSViewRepresentable {
         private let minHeight: CGFloat?
         private let maxHeight: CGFloat?
         private let onHeightChange: ((CGFloat) -> Void)?
-        private var lastHeight: CGFloat = 0
+        /// Last computed content height — read by sizeThatFits to avoid
+        /// calling ensureLayout during SwiftUI's layout pass.
+        var lastHeight: CGFloat = 0
 
         init(
             text: Binding<String>,
