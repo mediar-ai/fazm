@@ -423,15 +423,21 @@ class PushToTalkManager: ObservableObject {
     if pttOpenedChat {
       // PTT already opened the chat and synced live transcript — just finalize the text
       log("PushToTalkManager: finalizing PTT transcript in open chat (\(query.count) chars): \(query)")
-      if barState?.showingAIResponse == true {
-        // Response is showing — use pendingFollowUpText to insert into follow-up field
-        barState?.pendingFollowUpText = query
-      } else {
+      let isShowingResponse = barState?.showingAIResponse == true
+      if !isShowingResponse {
         barState?.aiInputText = preVoiceInputText.isEmpty ? query : preVoiceInputText + " " + query
       }
       pttOpenedChat = false
-      // Keep the window focused with cursor in the input after PTT
+      // Activate app first (async), then focus and set pending text so SwiftUI @FocusState works
+      NSApp.activate(ignoringOtherApps: true)
       FloatingControlBarManager.shared.focusInputField()
+      if isShowingResponse {
+        // Set pendingFollowUpText after activation so the onChange handler's
+        // isFollowUpFocused=true is honored (requires active app)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+          self?.barState?.pendingFollowUpText = query
+        }
+      }
     } else {
       log("PushToTalkManager: inserting transcription into input (\(query.count) chars): \(query)")
       FloatingControlBarManager.shared.openAIInputWithQuery(query)
