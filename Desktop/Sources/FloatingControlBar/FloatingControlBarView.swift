@@ -44,14 +44,20 @@ struct FloatingControlBarView: View {
                 Button {
                     onCloseAI()
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
-                        .frame(width: 16, height: 16)
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5))
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                            .frame(width: 16, height: 16)
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5))
+                        Text("esc")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .buttonStyle(.plain)
-                .padding(6)
+                .padding(.leading, 8)
+                .padding(.bottom, 8)
                 .transition(.opacity)
             }
         }
