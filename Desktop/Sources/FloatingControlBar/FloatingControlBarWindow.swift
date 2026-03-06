@@ -280,10 +280,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Restore the pill using canonicalBottomY — the single source of truth for Y.
+        // Restore the pill to the screen it's already on (don't follow focus to another monitor).
         let size = FloatingControlBarWindow.minBarSize
         let restoreOrigin = NSPoint(
-            x: defaultPillOrigin().x,
+            x: defaultPillOrigin(followFocus: false).x,
             y: canonicalBottomY
         )
 
@@ -661,11 +661,18 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             }
     }
 
-    /// Compute the default origin for the collapsed pill (bottom-center of the key screen).
-    /// Used by closeAIConversation in non-draggable mode and centerOnMainScreen.
-    private func defaultPillOrigin() -> NSPoint {
+    /// Compute the default origin for the collapsed pill (bottom-center of a screen).
+    /// - Parameter followFocus: when true, uses the key window's screen (for opening new
+    ///   conversations to follow the user's focus). When false, uses the screen the bar
+    ///   is already on (for closing/restoring to avoid jumping away mid-conversation).
+    private func defaultPillOrigin(followFocus: Bool = true) -> NSPoint {
         let size = FloatingControlBarWindow.minBarSize
-        let targetScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let targetScreen: NSScreen?
+        if followFocus {
+            targetScreen = NSApp.keyWindow?.screen ?? self.screen ?? NSScreen.main ?? NSScreen.screens.first
+        } else {
+            targetScreen = self.screen ?? NSScreen.main ?? NSScreen.screens.first
+        }
         guard let screen = targetScreen else { return .zero }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
@@ -1322,11 +1329,11 @@ extension FloatingControlBarWindow {
     }
 
     /// Snap the window to the pill position before opening a new chat.
-    /// Always uses canonicalBottomY for Y to prevent any position jumps.
+    /// Uses the bar's current screen (not focus) since this is a transient snap before expansion.
     func savePreChatCenterIfNeeded() {
         let size = FloatingControlBarWindow.minBarSize
         let origin = NSPoint(
-            x: defaultPillOrigin().x,
+            x: defaultPillOrigin(followFocus: false).x,
             y: canonicalBottomY
         )
         isResizingProgrammatically = true
