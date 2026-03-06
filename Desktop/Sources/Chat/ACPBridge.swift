@@ -259,7 +259,7 @@ actor ACPBridge {
     try await start()
   }
 
-  /// Stop the bridge process
+  /// Stop the bridge process and all its child processes (MCP servers, etc.)
   func stop() {
     log("ACPBridge: stopping")
     readTask?.cancel()
@@ -271,7 +271,16 @@ actor ACPBridge {
       """)
     try? stdinPipe?.fileHandleForWriting.close()
 
-    process?.terminate()
+    // Kill the entire process group to prevent orphaned child processes.
+    // The bridge spawns ACP which spawns MCP servers (omi-tools, playwright, macos-use);
+    // terminate() only signals the top process, leaving grandchildren alive.
+    if let proc = process, proc.isRunning {
+      let pid = proc.processIdentifier
+      // Kill the process group (negative PID sends signal to all processes in the group)
+      kill(-pid, SIGTERM)
+      // Also terminate the main process in case it's not in its own group
+      proc.terminate()
+    }
     process = nil
     closePipes()
     isRunning = false
