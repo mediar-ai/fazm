@@ -18,6 +18,7 @@
     "Fixed follow-up messages failing while AI is still generating a response",
     "Stop button now stays visible during AI streaming and is colored red",
     "Bundled mcp-server-macos-use binary inside the app for built-in macOS automation support",
-    "Screen capture and macOS automation now uses native accessibility APIs instead of browser screenshot"
+    "Screen capture and macOS automation now uses native accessibility APIs instead of browser screenshot",
+    "Fixed AI responses appearing concatenated without spaces when using tool calls or chain of thought"
   ]
 }
