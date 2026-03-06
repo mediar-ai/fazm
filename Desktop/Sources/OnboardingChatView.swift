@@ -88,6 +88,22 @@ enum OnboardingChatPersistence {
         UserDefaults.standard.bool(forKey: toolCompletedKey)
     }
 
+    // MARK: - Completed Steps Tracking
+
+    private static let completedStepsKey = "onboardingCompletedSteps"
+
+    /// Record that an onboarding step was completed (e.g. "web_search", "file_scan", "name", "language")
+    static func markStepCompleted(_ step: String) {
+        var steps = completedSteps
+        steps.insert(step)
+        UserDefaults.standard.set(Array(steps), forKey: completedStepsKey)
+    }
+
+    /// Get all completed onboarding steps
+    static var completedSteps: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: completedStepsKey) ?? [])
+    }
+
     // MARK: - Message Persistence (SQLite)
 
     private static let context = "__onboarding__"
@@ -115,6 +131,7 @@ enum OnboardingChatPersistence {
         UserDefaults.standard.removeObject(forKey: explorationTextKey)
         UserDefaults.standard.removeObject(forKey: explorationCompletedKey)
         UserDefaults.standard.removeObject(forKey: toolCompletedKey)
+        UserDefaults.standard.removeObject(forKey: completedStepsKey)
         UserDefaults.standard.removeObject(forKey: "onboardingChatMessages")
         Task { await clearMessages() }
     }
@@ -580,11 +597,15 @@ struct OnboardingChatView: View {
 
                 // Build a conversation summary so the AI has context even if session/resume fails
                 let conversationContext = buildConversationContext(from: chatProvider.messages)
+                let completedSteps = OnboardingChatPersistence.completedSteps
+                let stepsNote = completedSteps.isEmpty
+                    ? "\n\nNo onboarding steps were completed before the restart — you must do all steps."
+                    : "\n\n<completed_steps_before_restart>\n\(completedSteps.sorted().joined(separator: ", "))\n</completed_steps_before_restart>\nSkip only these completed steps. Do all other steps that are NOT listed here."
                 let resumeSystemPrompt: String
                 if conversationContext.isEmpty {
-                    resumeSystemPrompt = systemPrompt
+                    resumeSystemPrompt = systemPrompt + stepsNote
                 } else {
-                    resumeSystemPrompt = systemPrompt + "\n\n<conversation_so_far>\n" + conversationContext + "\n</conversation_so_far>\n\nThe user's app just restarted after granting a macOS permission. Continue the onboarding from where you left off — do NOT re-ask questions the user already answered above."
+                    resumeSystemPrompt = systemPrompt + "\n\n<conversation_so_far>\n" + conversationContext + "\n</conversation_so_far>" + stepsNote + "\n\nThe user's app just restarted after granting a macOS permission. Continue the onboarding from where you left off — do NOT re-ask questions the user already answered above."
                 }
 
                 // Wait for bridge warmup before sending
@@ -768,10 +789,25 @@ struct OnboardingChatView: View {
         for message in messages {
             let role = message.sender == .user ? "User" : "Assistant"
             let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
+
+            // Include tool call names from contentBlocks so the model knows what already ran
+            var toolNames: [String] = []
+            for block in message.contentBlocks {
+                if case .toolCall(_, let name, let status, _, _, _) = block,
+                   status == .completed || status == .running {
+                    toolNames.append(name)
+                }
+            }
+
+            if text.isEmpty && toolNames.isEmpty { continue }
+
             // Truncate very long messages to keep the context compact
             let truncated = text.count > 500 ? String(text.prefix(500)) + "..." : text
-            lines.append("\(role): \(truncated)")
+            var line = "\(role): \(truncated)"
+            if !toolNames.isEmpty {
+                line += " [tools used: \(toolNames.joined(separator: ", "))]"
+            }
+            lines.append(line)
         }
         return lines.joined(separator: "\n")
     }
