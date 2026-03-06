@@ -141,6 +141,12 @@ struct AIResponseView: View {
 
             Spacer()
 
+            CopyConversationButton(
+                chatHistory: chatHistory,
+                userInput: userInput,
+                currentMessage: currentMessage
+            )
+
             if let onNewChat {
                 Button(action: onNewChat) {
                     HStack(spacing: 4) {
@@ -217,21 +223,29 @@ struct AIResponseView: View {
     private func chatExchangeView(_ exchange: FloatingChatExchange) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Question bubble
-            HStack(alignment: .top, spacing: 8) {
+            MessageWithCopyButton(alignment: .topTrailing) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(exchange.question, forType: .string)
+            } content: {
                 Text(exchange.question)
                     .scaledFont(size: 13)
                     .foregroundColor(.white)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(8)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(8)
 
             // Response with content blocks
-            contentBlocksView(for: exchange.aiMessage)
-                .padding(.horizontal, 4)
+            MessageWithCopyButton(alignment: .topTrailing) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(exchange.aiMessage.text, forType: .string)
+            } content: {
+                contentBlocksView(for: exchange.aiMessage)
+                    .padding(.horizontal, 4)
+            }
 
             Divider()
                 .background(Color.white.opacity(0.1))
@@ -241,7 +255,10 @@ struct AIResponseView: View {
     // MARK: - Current Question & Response
 
     private var questionBar: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        MessageWithCopyButton(alignment: .topTrailing) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(userInput, forType: .string)
+        } content: {
             HStack(alignment: .top, spacing: 8) {
                 Group {
                     if isQuestionExpanded {
@@ -249,7 +266,6 @@ struct AIResponseView: View {
                             Text(userInput)
                                 .scaledFont(size: 13)
                                 .foregroundColor(.white)
-                                .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .frame(maxHeight: 120)
@@ -259,7 +275,6 @@ struct AIResponseView: View {
                             .foregroundColor(.white)
                             .lineLimit(1)
                             .truncationMode(.head)
-                            .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -278,12 +293,6 @@ struct AIResponseView: View {
             .padding(.vertical, 8)
             .background(Color.white.opacity(0.1))
             .cornerRadius(8)
-            .contextMenu {
-                Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(userInput, forType: .string)
-                }
-            }
         }
     }
 
@@ -301,26 +310,20 @@ struct AIResponseView: View {
     private var currentContentView: some View {
         Group {
             if let message = currentMessage {
-                VStack(alignment: .leading, spacing: 4) {
-                    contentBlocksView(for: message)
+                MessageWithCopyButton(alignment: .topTrailing) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message.text, forType: .string)
+                } content: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        contentBlocksView(for: message)
 
-                    // Show typing indicator while AI is still generating
-                    if isLoading || message.isStreaming {
-                        TypingIndicator()
+                        // Show typing indicator while AI is still generating
+                        if isLoading || message.isStreaming {
+                            TypingIndicator()
+                        }
                     }
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 8)
-                .contextMenu {
-                    Button("Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(message.text, forType: .string)
-                    }
-                    Button("Copy Question & Answer") {
-                        let combined = "Q: \(userInput)\n\nA: \(message.text)"
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(combined, forType: .string)
-                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 8)
                 }
             } else {
                 TypingIndicator()
@@ -436,6 +439,94 @@ struct AIResponseView: View {
         followUpText = ""
         userHasScrolledUp = false
         onSendFollowUp?(trimmed)
+    }
+}
+
+// MARK: - Message Copy Button (hover overlay)
+
+/// Wraps content with a copy icon that appears on hover.
+struct MessageWithCopyButton<Content: View>: View {
+    let alignment: Alignment
+    let onCopy: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var isHovered = false
+    @State private var showCopied = false
+
+    var body: some View {
+        ZStack(alignment: alignment) {
+            content
+
+            if isHovered || showCopied {
+                Button(action: {
+                    onCopy()
+                    showCopied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        showCopied = false
+                    }
+                }) {
+                    Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 10))
+                        .foregroundColor(showCopied ? .green : .secondary)
+                        .padding(4)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .transition(.opacity)
+            }
+        }
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+    }
+}
+
+// MARK: - Copy Conversation Button
+
+/// Button in the header that copies the entire conversation.
+struct CopyConversationButton: View {
+    let chatHistory: [FloatingChatExchange]
+    let userInput: String
+    let currentMessage: ChatMessage?
+
+    @State private var showCopied = false
+
+    var body: some View {
+        Button(action: copyAll) {
+            HStack(spacing: 4) {
+                Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11))
+                Text(showCopied ? "Copied" : "Copy all")
+                    .scaledFont(size: 11)
+            }
+            .foregroundColor(showCopied ? .green : .secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func copyAll() {
+        var parts: [String] = []
+
+        for exchange in chatHistory {
+            parts.append("Q: \(exchange.question)")
+            parts.append("A: \(exchange.aiMessage.text)")
+        }
+
+        if !userInput.isEmpty {
+            parts.append("Q: \(userInput)")
+        }
+        if let msg = currentMessage, !msg.text.isEmpty {
+            parts.append("A: \(msg.text)")
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(parts.joined(separator: "\n\n"), forType: .string)
+
+        showCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showCopied = false
+        }
     }
 }
 
