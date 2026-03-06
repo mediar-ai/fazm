@@ -114,7 +114,12 @@ actor FileIndexerService {
 
         // For incremental scans, load existing index for O(1) lookup
         let existingIndex: [String: Date?] = incremental ? loadExistingIndex(from: db) : [:]
+        // Only track scanned paths for incremental scans (used to detect deleted files).
+        // For initial scans this set would grow unboundedly, wasting memory.
         var scannedPaths = Set<String>()
+        if incremental {
+            scannedPaths.reserveCapacity(existingIndex.count)
+        }
 
         if incremental {
             log("FileIndexer: Loaded \(existingIndex.count) existing paths for incremental scan")
@@ -146,6 +151,7 @@ actor FileIndexerService {
                 batch: &batch,
                 totalFiles: &totalFiles,
                 db: db,
+                incremental: incremental,
                 existingIndex: existingIndex,
                 scannedPaths: &scannedPaths
             )
@@ -174,6 +180,7 @@ actor FileIndexerService {
         batch: inout [IndexedFileRecord],
         totalFiles: inout Int,
         db: DatabasePool,
+        incremental: Bool,
         existingIndex: [String: Date?],
         scannedPaths: inout Set<String>
     ) {
@@ -208,7 +215,7 @@ actor FileIndexerService {
                     if relativePath.hasPrefix(homePath) {
                         relativePath = "~" + relativePath.dropFirst(homePath.count)
                     }
-                    scannedPaths.insert(relativePath)
+                    if incremental { scannedPaths.insert(relativePath) }
                     // Skip unchanged files (incremental scan)
                     if let existingModified = existingIndex[relativePath],
                        let newModified = resourceValues?.contentModificationDate,
@@ -246,6 +253,7 @@ actor FileIndexerService {
                     batch: &batch,
                     totalFiles: &totalFiles,
                     db: db,
+                    incremental: incremental,
                     existingIndex: existingIndex,
                     scannedPaths: &scannedPaths
                 )
@@ -267,7 +275,7 @@ actor FileIndexerService {
                 relativePath = "~" + relativePath.dropFirst(homePath.count)
             }
 
-            scannedPaths.insert(relativePath)
+            if incremental { scannedPaths.insert(relativePath) }
             // Skip unchanged files (incremental scan)
             if let existingModified = existingIndex[relativePath],
                let newModified = resourceValues?.contentModificationDate,
@@ -327,13 +335,15 @@ actor FileIndexerService {
 
     // MARK: - Incremental Scan Helpers
 
-    /// Load all existing indexed file paths and their modifiedAt dates for O(1) lookup
+    /// Load all existing indexed file paths and their modifiedAt dates for O(1) lookup.
+    /// Uses a cursor to stream rows instead of loading them all into an array first.
     private func loadExistingIndex(from db: DatabasePool) -> [String: Date?] {
         do {
             return try db.read { database in
-                var index: [String: Date?] = [:]
-                let rows = try Row.fetchAll(database, sql: "SELECT path, modifiedAt FROM indexed_files")
-                for row in rows {
+                let count = try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM indexed_files") ?? 0
+                var index: [String: Date?] = Dictionary(minimumCapacity: count)
+                let cursor = try Row.fetchCursor(database, sql: "SELECT path, modifiedAt FROM indexed_files")
+                while let row = try cursor.next() {
                     guard let path: String = row["path"] else { continue }
                     let modifiedAt: Date? = row["modifiedAt"]
                     index[path] = modifiedAt
