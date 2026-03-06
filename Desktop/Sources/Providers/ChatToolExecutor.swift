@@ -957,7 +957,7 @@ class ChatToolExecutor {
         if fm.fileExists(atPath: configFile.path) { return }
 
         // Look for bundled client_secret.json
-        guard let bundledPath = Bundle.main.url(forResource: "gws_client_secret", withExtension: "json") else {
+        guard let bundledPath = Bundle.resourceBundle.url(forResource: "gws_client_secret", withExtension: "json") else {
             log("No bundled gws_client_secret.json found in app bundle")
             return
         }
