@@ -92,9 +92,9 @@ struct SelectableMarkdown: View {
     // Avoids running splitSegments() on every SwiftUI layout pass.
     @State private var cachedSegments: [Segment]
 
-    // Cached AttributedStrings keyed by segment content.
+    // Cached NSAttributedStrings keyed by segment content.
     // Populated on first appear; reused on subsequent renders.
-    @State private var attrCache: [String: AttributedString?] = [:]
+    @State private var attrCache: [String: NSAttributedString?] = [:]
     // Font scale at time of caching — used to invalidate when scale changes.
     @State private var cachedFontScale: CGFloat = 0
 
@@ -138,20 +138,20 @@ struct SelectableMarkdown: View {
     @ViewBuilder
     private func textView(_ content: String) -> some View {
         let fontSize = round(14 * fontScale)
-        // Use cached AttributedString if available for the current font scale
-        let styled: AttributedString? = {
+        // Use cached NSAttributedString if available for the current font scale
+        let styled: NSAttributedString? = {
             if cachedFontScale == fontScale, let cached = attrCache[content] {
                 return cached
             }
             let processed = Self.preprocessText(content)
-            return Self.styledAttributedString(
+            return Self.styledNSAttributedString(
                 from: processed, sender: sender, fontSize: fontSize, fontScale: fontScale
             )
         }()
 
         Group {
             if let s = styled {
-                PlainCopyText(attributedString: NSAttributedString(s))
+                PlainCopyText(attributedString: s)
             } else {
                 let baseColor: NSColor = sender == .user ? .white : NSColor(FazmColors.textPrimary)
                 let fallbackAttr = NSAttributedString(
@@ -207,10 +207,11 @@ struct SelectableMarkdown: View {
 
     // MARK: - Attributed String Styling
 
-    private static func styledAttributedString(
+    /// Builds an NSAttributedString with proper AppKit types (NSColor, NSFont) for use in NSTextView.
+    private static func styledNSAttributedString(
         from processed: String, sender: ChatSender, fontSize: CGFloat, fontScale: CGFloat
-    ) -> AttributedString? {
-        guard var attributed = try? AttributedString(
+    ) -> NSAttributedString? {
+        guard let attributed = try? AttributedString(
             markdown: processed,
             options: .init(
                 allowsExtendedAttributes: true,
@@ -219,41 +220,65 @@ struct SelectableMarkdown: View {
         ) else { return nil }
 
         let codeFontSize = round(13 * fontScale)
-        let baseColor: Color = sender == .user ? .white : FazmColors.textPrimary
-        let linkColor: Color = sender == .user ? .white.opacity(0.9) : FazmColors.purplePrimary
-        let codeBgColor: Color = sender == .user
-            ? .white.opacity(0.15)
-            : FazmColors.backgroundTertiary
+        let baseColor: NSColor = sender == .user ? .white : NSColor(FazmColors.textPrimary)
+        let linkColor: NSColor = sender == .user
+            ? NSColor.white.withAlphaComponent(0.9)
+            : NSColor(FazmColors.purplePrimary)
+        let codeBgColor: NSColor = sender == .user
+            ? NSColor.white.withAlphaComponent(0.15)
+            : NSColor(FazmColors.backgroundTertiary)
+        let baseFont = NSFont.systemFont(ofSize: fontSize)
+        let boldFont = NSFont.boldSystemFont(ofSize: fontSize)
+        let codeFont = NSFont.monospacedSystemFont(ofSize: codeFontSize, weight: .regular)
 
-        attributed.font = .system(size: fontSize)
-        attributed.foregroundColor = baseColor
-
-        // Collect ranges for custom styling
-        var codeRanges = [Range<AttributedString.Index>]()
-        var linkRanges = [Range<AttributedString.Index>]()
+        let result = NSMutableAttributedString()
 
         for run in attributed.runs {
-            if let intent = run.inlinePresentationIntent, intent.contains(.code) {
-                codeRanges.append(run.range)
+            let text = String(attributed[run.range].characters)
+            var attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: baseColor,
+                .font: baseFont,
+            ]
+
+            // Handle inline presentation intents (bold, italic, code, strikethrough)
+            if let intent = run.inlinePresentationIntent {
+                if intent.contains(.code) {
+                    attrs[.font] = codeFont
+                    attrs[.backgroundColor] = codeBgColor
+                } else if intent.contains(.stronglyEmphasized) && intent.contains(.emphasized) {
+                    // Bold + Italic
+                    if let boldItalic = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+                        .withTraits(.italicFontMask) {
+                        attrs[.font] = boldItalic
+                    } else {
+                        attrs[.font] = boldFont
+                    }
+                } else if intent.contains(.stronglyEmphasized) {
+                    attrs[.font] = boldFont
+                } else if intent.contains(.emphasized) {
+                    if let italic = NSFont.systemFont(ofSize: fontSize, weight: .regular)
+                        .withTraits(.italicFontMask) {
+                        attrs[.font] = italic
+                    }
+                }
+                if intent.contains(.strikethrough) {
+                    attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                }
             }
-            if run.link != nil {
-                linkRanges.append(run.range)
+
+            // Handle links
+            if let url = run.link {
+                attrs[.foregroundColor] = linkColor
+                attrs[.link] = url
+                if sender == .user {
+                    attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                }
             }
+
+            result.append(NSAttributedString(string: text, attributes: attrs))
         }
 
-        for range in codeRanges {
-            attributed[range].font = .system(size: codeFontSize, design: .monospaced)
-            attributed[range].backgroundColor = codeBgColor
-        }
-
-        for range in linkRanges {
-            attributed[range].foregroundColor = linkColor
-            if sender == .user {
-                attributed[range].underlineStyle = .single
-            }
-        }
-
-        return attributed
+        return result
     }
 
     // MARK: - Markdown Preprocessing
@@ -452,5 +477,13 @@ struct CollapsibleCodeBlockView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             showCopied = false
         }
+    }
+}
+
+// MARK: - NSFont Trait Helper
+
+private extension NSFont {
+    func withTraits(_ traits: NSFontTraitMask) -> NSFont? {
+        NSFontManager.shared.convert(self, toHaveTrait: traits)
     }
 }
