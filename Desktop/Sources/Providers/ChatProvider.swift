@@ -1591,8 +1591,6 @@ class ChatProvider: ObservableObject {
         await loadTasksIfNeeded()
         await loadAIProfileIfNeeded()
         await loadSchemaIfNeeded()
-        // Auto-install bundled skills before discovery so they always appear
-        let _ = SkillInstaller.install()
         await discoverClaudeConfig()
 
         // Set working directory for Claude Agent SDK if workspace is configured
