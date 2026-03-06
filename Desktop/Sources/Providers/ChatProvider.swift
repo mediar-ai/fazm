@@ -308,7 +308,7 @@ class ChatProvider: ObservableObject {
         case .balanced:
             lines.append("Take obvious actions that the user clearly needs. For ambiguous requests, ask for confirmation before proceeding. Use good judgment about when to act vs ask.")
         case .proactive:
-            lines.append("Assume the user needs things done on their computer. Proactively find programmatic ways to accomplish tasks — use tools, scripts, and LLM-based approaches. Just work on the task and get it done without involving the user unless clarifications are truly needed.")
+            lines.append("Assume the user needs things done on their computer. Proactively find programmatic ways to accomplish tasks — use tools, scripts, and LLM-based approaches. Just work on the task and get it done without involving the user unless clarifications are truly needed. When starting a task, check what tools, libraries, or dependencies are needed and install them automatically (e.g. brew install, pip install, npm install) — don't fail or ask the user just because something isn't installed yet.")
         }
         lines.append("A screenshot may be attached — use it silently only if relevant. Never mention or acknowledge it.")
         lines.append("================================================================================")
