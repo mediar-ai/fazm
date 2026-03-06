@@ -843,24 +843,22 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         await startAuthFlow();
         return handleQuery(msg);
       }
-      // If an internal error occurred mid-conversation (e.g. "Image was too large"),
-      // retry on the SAME session with a hint so the model can adjust its approach.
-      // The session history is intact — the model just needs to know what went wrong.
       const errMsg = err instanceof Error ? err.message : String(err);
-      const isRetryableInternalError = errMsg.includes("Image was too large") ||
-        errMsg.includes("too large") ||
-        errMsg.includes("content too long");
-      if (isRetryableInternalError && sessionId && !retryingWithHint) {
-        logErr(`session/prompt failed with recoverable error, retrying on same session with hint: ${errMsg}`);
-        // Clear pending tool indicators
+
+      // Image/content too large — retry on the SAME session without the image,
+      // with a hint so the model can adjust its approach.
+      const isImageTooLarge = /image.*(too large|too big|exceeds.*limit)|unable to resize image|content too long/i.test(errMsg);
+      if (isImageTooLarge && sessionId && !retryingWithHint) {
+        logErr(`session/prompt failed with image-too-large error, retrying on same session without image: ${errMsg}`);
         for (const name of pendingTools) {
           send({ type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
 
-        // Retry on the same session — the model sees the error and can adjust
+        // Strip the image and retry with a hint
         retryingWithHint = true;
-        fullPrompt = `The previous tool result caused an error: "${errMsg}". Please continue with a different approach — for example, avoid reading large image files directly. Use smaller outputs or describe what you see from the tool's text output instead.`;
+        msg.imageBase64 = undefined;
+        fullPrompt = `The previous request failed because an image was too large: "${errMsg}". Please continue with a different approach — avoid reading large image files directly. Use smaller outputs or text-based tools instead.`;
         try {
           await sendPrompt();
         } finally {
