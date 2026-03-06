@@ -31,10 +31,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// only updated by explicit user drag. ALL resizing reads from this value instead
     /// of frame.origin.y, making vertical drift structurally impossible.
     private var canonicalBottomY: CGFloat = 0
-    /// The canonical center-X position. Like canonicalBottomY, set once during initial
-    /// positioning and only updated by explicit user drag. Prevents horizontal jumps
-    /// when closing conversations on multi-monitor setups.
-    private var canonicalCenterX: CGFloat = 0
     private var inputHeightCancellable: AnyCancellable?
     private var responseHeightCancellable: AnyCancellable?
     private var resizeWorkItem: DispatchWorkItem?
@@ -93,7 +89,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             if onScreen {
                 self.setFrameOrigin(origin)
                 canonicalBottomY = origin.y
-                canonicalCenterX = origin.x + self.frame.width / 2
             } else {
                 centerOnMainScreen()
             }
@@ -285,10 +280,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Restore the pill using canonical positions — the single source of truth.
+        // Restore the pill using canonicalBottomY — the single source of truth for Y.
         let size = FloatingControlBarWindow.minBarSize
         let restoreOrigin = NSPoint(
-            x: canonicalCenterX - size.width / 2,
+            x: defaultPillOrigin().x,
             y: canonicalBottomY
         )
 
@@ -666,11 +661,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             }
     }
 
-    /// Compute the default origin for the collapsed pill (bottom-center of the current screen).
-    /// Uses `self.screen` (the screen the bar is on) to prevent jumping between monitors.
+    /// Compute the default origin for the collapsed pill (bottom-center of the key screen).
+    /// Used by closeAIConversation in non-draggable mode and centerOnMainScreen.
     private func defaultPillOrigin() -> NSPoint {
         let size = FloatingControlBarWindow.minBarSize
-        let targetScreen = self.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let targetScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen = targetScreen else { return .zero }
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.midX - size.width / 2
@@ -678,10 +673,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         return NSPoint(x: x, y: y)
     }
 
-    /// Center the bar near the bottom of the current screen (or main screen on first launch).
+    /// Center the bar near the bottom of the main screen.
     private func centerOnMainScreen() {
-        // Prefer the screen the bar is already on, then main screen
-        let targetScreen = self.screen ?? NSScreen.main ?? NSScreen.screens.first
+        // Use the screen that has the key window, or fall back to main screen
+        let targetScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen = targetScreen else {
             self.center()
             return
@@ -691,7 +686,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let y = visibleFrame.minY + 20  // 20pt from bottom, just above dock
         self.setFrameOrigin(NSPoint(x: x, y: y))
         canonicalBottomY = y
-        canonicalCenterX = visibleFrame.midX
         log("FloatingControlBarWindow: centered at (\(x), \(y)) on screen \(visibleFrame)")
     }
 
@@ -760,7 +754,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // overwrite the saved position — that causes silent drift.
         guard isUserDragging else { return }
         canonicalBottomY = self.frame.origin.y
-        canonicalCenterX = self.frame.midX
         UserDefaults.standard.set(
             NSStringFromPoint(self.frame.origin), forKey: FloatingControlBarWindow.positionKey
         )
@@ -1329,11 +1322,11 @@ extension FloatingControlBarWindow {
     }
 
     /// Snap the window to the pill position before opening a new chat.
-    /// Always uses canonical positions to prevent any position jumps.
+    /// Always uses canonicalBottomY for Y to prevent any position jumps.
     func savePreChatCenterIfNeeded() {
         let size = FloatingControlBarWindow.minBarSize
         let origin = NSPoint(
-            x: canonicalCenterX - size.width / 2,
+            x: defaultPillOrigin().x,
             y: canonicalBottomY
         )
         isResizingProgrammatically = true
