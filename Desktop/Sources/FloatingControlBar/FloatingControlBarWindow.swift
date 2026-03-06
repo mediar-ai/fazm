@@ -138,14 +138,18 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Wrapping in a container breaks that "I own this window" relationship.
         //
         // sizingOptions: Remove .intrinsicContentSize so the hosting view can expand beyond
-        // its SwiftUI ideal size. Keep .minSize and .maxSize for proper min/max constraints.
-        // Setting [] removes ALL sizing info (broken). Default includes .intrinsicContentSize
-        // which pins the view to its ideal size (prevents expansion). [.minSize, .maxSize] is correct.
+        // its SwiftUI ideal size. Remove .minSize so the hosting view can't auto-resize the
+        // window when content changes (which anchors from top-left and breaks canonicalBottomY).
+        // Keep .maxSize only. All window sizing is controlled explicitly via resizeAnchored().
         let container = NSView()
         self.contentView = container
 
         if let hosting = hostingView {
-            hosting.sizingOptions = [.minSize, .maxSize]
+            // Only keep .maxSize — removing .minSize prevents the hosting view from
+            // force-resizing the window when SwiftUI content changes (e.g. pill → input).
+            // That auto-resize anchors from top-left, pushing origin.y below canonicalBottomY
+            // and causing the "sticking to bottom" glitch on first PTT expansion.
+            hosting.sizingOptions = [.maxSize]
             hosting.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(hosting)
             NSLayoutConstraint.activate([
@@ -540,7 +544,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         )
         let newOrigin = originForBottomCenterAnchor(newSize: constrainedSize)
 
-        log("FloatingControlBar: resizeAnchored to \(constrainedSize) resizable=\(makeResizable) animated=\(animated) from=\(frame.size)")
+        log("FloatingControlBar: resizeAnchored to \(constrainedSize) origin=\(newOrigin) resizable=\(makeResizable) animated=\(animated) from=\(frame.size) fromOrigin=\(frame.origin) canonicalY=\(canonicalBottomY)")
 
         if makeResizable {
             styleMask.insert(.resizable)
