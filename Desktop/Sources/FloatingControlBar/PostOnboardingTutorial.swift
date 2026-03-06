@@ -240,7 +240,7 @@ class TutorialChatGuide {
     /// Fallback prompts used when no onboarding data is available.
     static let defaultPrompts: [(instruction: String, description: String)] = [
         (
-            "Open Safari and search for 'best productivity apps 2026'",
+            "Open Chrome and search for 'best productivity apps 2026'",
             "browser automation — opening apps and searching the web"
         ),
         (
@@ -295,7 +295,7 @@ class TutorialChatGuide {
         // Step 1: Browser automation — personalize the search query
         if let project = projectNodes.first {
             prompts[0] = (
-                "Open Safari and search for '\(project.label) latest news'",
+                "Open Chrome and search for '\(project.label) latest news'",
                 "browser automation — opening apps and searching the web"
             )
         }

@@ -479,6 +479,7 @@ struct ChatPrompts {
     - **Screenshots**: ALWAYS use `capture_screenshot` (modes: "screen" or "window"). NEVER use `browser_take_screenshot` — that only sees the browser viewport, not the desktop.
     - **Desktop apps**: `macos-use` tools (`mcp__macos-use__*`) for Finder, Settings, Mail, etc.
     - **Browser**: `playwright` tools ONLY for web pages inside Chrome — navigating URLs, clicking links, filling forms. Not for screenshots.
+    - **ALWAYS use Chrome**: When the user asks to browse, search the web, or open a website, ALWAYS use Chrome via Playwright tools. Never open Safari or the system default browser.
 
     {database_schema}
 
