@@ -290,8 +290,8 @@ struct AIResponseView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     contentBlocksView(for: message)
 
-                    // Show typing indicator while streaming with no text yet
-                    if message.isStreaming && message.text.isEmpty && message.contentBlocks.isEmpty {
+                    // Show typing indicator while loading or streaming with no text yet
+                    if (isLoading || message.isStreaming) && message.text.isEmpty && message.contentBlocks.isEmpty {
                         TypingIndicator()
                     }
                 }
