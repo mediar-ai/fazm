@@ -162,9 +162,8 @@ class PostOnboardingTutorialManager {
                             } else {
                                 // Speech detected — dismiss overlay and transition to guided chat
                                 self.dismiss()
-                                // Show pulsating send button hint and focus the input field
+                                // Show pulsating send button hint (focus is handled by PushToTalkManager)
                                 barState.showSendButtonHint = true
-                                FloatingControlBarManager.shared.focusInputField()
                                 // Start the tutorial chat guide — it will observe the first
                                 // response and then guide the user through more test prompts
                                 TutorialChatGuide.shared.start(barState: barState)
