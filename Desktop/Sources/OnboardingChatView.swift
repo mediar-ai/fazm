@@ -546,7 +546,7 @@ struct OnboardingChatView: View {
                 // Ensure DB is ready before loading messages — must configure with
                 // the signed-in user's ID so we open the correct database file
                 let userId = UserDefaults.standard.string(forKey: "auth_userId")
-                AppDatabase.shared.configure(userId: userId)
+                await AppDatabase.shared.configure(userId: userId)
                 try? await AppDatabase.shared.initialize()
 
                 // Load previous messages from local database
@@ -606,7 +606,7 @@ struct OnboardingChatView: View {
             Task {
                 // Initialize DB so messages are persisted for restart recovery
                 let userId = UserDefaults.standard.string(forKey: "auth_userId")
-                AppDatabase.shared.configure(userId: userId)
+                await AppDatabase.shared.configure(userId: userId)
                 try? await AppDatabase.shared.initialize()
 
                 // Clear any stale messages from a previous onboarding session
