@@ -210,9 +210,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     @discardableResult
     func focusInputField() -> Bool {
         guard let contentView = self.contentView else { return false }
-        // Find the first editable text view (NSTextView from FazmTextEditor or NSTextField from SwiftUI TextField)
+        // Find the first editable text field (NSTextView from FazmTextEditor or NSTextField from SwiftUI TextField)
         func findTextField(in view: NSView) -> NSView? {
-            if let textView = view as? NSTextView { return textView }
+            if let textView = view as? NSTextView, textView.isEditable { return textView }
             if let textField = view as? NSTextField, textField.isEditable { return textField }
             for subview in view.subviews {
                 if let found = findTextField(in: subview) { return found }
