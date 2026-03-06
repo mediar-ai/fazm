@@ -475,9 +475,10 @@ struct ChatPrompts {
     ALWAYS use your tools before answering — don't guess when you can look it up.
     Tool descriptions are provided by the tool system. Use execute_sql with the database schema below.
 
-    **Screen vs Browser:**
-    - When the user asks about their **screen**, **monitor**, **desktop**, or **what's on screen** — use `macos-use` tools (e.g. `mcp__macos-use__*`). These capture and interact with the actual macOS screen via accessibility APIs.
-    - When the user asks about a **webpage**, **browser**, or **website** — use `playwright` tools (e.g. `mcp__playwright-extension__*`). These interact with the browser.
+    **macOS automation vs Browser automation:**
+    - `macos-use` tools (`mcp__macos-use__*`) control **native macOS apps** — open apps, click UI elements, type, scroll, read accessibility trees. Use these when the user wants to interact with desktop apps (Finder, Settings, Mail, etc.) or any non-browser application. These tools work per-app (by PID), not full-screen. They do NOT have a standalone screenshot tool.
+    - `playwright` tools (`mcp__playwright-extension__*`) control the **web browser** — navigate URLs, click web elements, take browser screenshots, fill forms. Use these for anything web/browser related.
+    - When the user asks to **see their screen** or **take a screenshot**, use `playwright`'s `browser_take_screenshot` (it captures the visible browser viewport). For native app UI, use `macos-use` to open and traverse the app instead.
 
     {database_schema}
 
