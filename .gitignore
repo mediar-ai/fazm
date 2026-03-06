@@ -96,7 +96,7 @@ network-requests.log
 **/dist/
 demo/out/
 
-# Claude project instructions (user-local, contains absolute paths)
-CLAUDE.md
+# Claude project instructions
+# CLAUDE.md is tracked (public, no secrets)
 thread*.md
 Desktop/bin/
