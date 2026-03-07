@@ -11,22 +11,22 @@ The fastest AI computer agent. Controls your browser, writes code, handles docum
 ### Twitter Automation
 Fazm browses Twitter, engages with posts, and manages your social presence hands-free.
 
-[![Twitter Automation](https://img.youtube.com/vi/_tI4LUO131c/maxresdefault.jpg)](https://www.youtube.com/watch?v=_tI4LUO131c)
+https://github.com/user-attachments/assets/8af42297-27f0-4b80-8eed-1d739c21208e
 
 ### Smart Connections
 Automatically find and connect with the right people across platforms.
 
-[![Smart Connections](https://img.youtube.com/vi/0vr2lolrNXo/maxresdefault.jpg)](https://www.youtube.com/watch?v=0vr2lolrNXo)
+https://github.com/user-attachments/assets/09cbf88d-6a11-45a4-9182-6c61127a3672
 
 ### CRM Management
 Keep your CRM up to date without lifting a finger — Fazm handles data entry and updates.
 
-[![CRM Management](https://img.youtube.com/vi/WuMTpSBzojE/maxresdefault.jpg)](https://www.youtube.com/watch?v=WuMTpSBzojE)
+https://github.com/user-attachments/assets/16454649-7375-450b-aa61-11f227cb15a3
 
 ### Visual Tasks
 Fazm understands images and visual context to complete complex workflows.
 
-[![Visual Tasks](https://img.youtube.com/vi/sZ-64dAbOIg/maxresdefault.jpg)](https://www.youtube.com/watch?v=sZ-64dAbOIg)
+https://github.com/user-attachments/assets/7f1d9f69-3825-40fd-af91-12c27fef7845
 
 ## Structure
 
