@@ -12,6 +12,7 @@ enum SkillInstaller {
         ("xlsx", "Create and edit spreadsheets", "Documents"),
         ("pptx", "Create and edit presentations", "Documents"),
         // Creation
+        ("video-edit", "Edit long videos into short, story-driven clips", "Creation"),
         ("frontend-design", "Build web pages, components, and UI", "Creation"),
         ("canvas-design", "Create posters, visual art, and diagrams", "Creation"),
         ("doc-coauthoring", "Co-write docs, proposals, and specs step by step", "Creation"),
