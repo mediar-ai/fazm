@@ -16,6 +16,7 @@ DerivedData/
 
 # Credentials
 **/google-credentials.json
+Desktop/Sources/Resources/gws_client_secret.json
 
 # Claude (user-local config, skills, memory)
 .claude/
