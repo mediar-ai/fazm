@@ -41,7 +41,7 @@ actor KnowledgeGraphStorage {
                 return KnowledgeGraphResponse(nodes: nodes, edges: edges)
             }
         } catch {
-            log("KnowledgeGraphStorage: Failed to load graph: \(error.localizedDescription)")
+            logError("KnowledgeGraphStorage: Failed to load graph", error: error)
             return KnowledgeGraphResponse(nodes: [], edges: [])
         }
     }

@@ -678,7 +678,7 @@ class AudioCaptureService: @unchecked Sendable {
 
         // Get new format
         guard let streamFormat = getStreamFormat(for: deviceID) else {
-            log("AudioCapture: Failed to get stream format (attempt \(retryCount + 1))")
+            logError("AudioCapture: Failed to get stream format (attempt \(retryCount + 1))")
             retryOrGiveUp(retryCount: retryCount)
             return
         }

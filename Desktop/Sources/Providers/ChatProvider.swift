@@ -464,7 +464,7 @@ class ChatProvider: ObservableObject {
                 await vtm.startRefreshLoop()
                 log("ChatProvider: Vertex token manager set up (project=\(config.projectId), region=\(config.region))")
             } catch {
-                log("ChatProvider: Vertex setup failed: \(error.localizedDescription), falling back to API key")
+                logError("ChatProvider: Vertex setup failed, falling back to API key", error: error)
             }
         } else {
             if let vtm = vertexTokenManager {
@@ -734,7 +734,7 @@ class ChatProvider: ObservableObject {
                     // Recreate bridge now that vertex is ready
                     acpBridge = createBridge()
                 } catch {
-                    log("ChatProvider: Vertex setup failed on bridge start: \(error.localizedDescription)")
+                    logError("ChatProvider: Vertex setup failed on bridge start", error: error)
                 }
             } else {
                 log("ChatProvider: Vertex env vars not configured, using fallback")
@@ -856,7 +856,7 @@ class ChatProvider: ObservableObject {
             log("ChatProvider: claude auth status → \(authenticated ? "authenticated" : "not authenticated")")
             isClaudeConnected = authenticated
         } catch {
-            log("ChatProvider: Failed to run claude auth status: \(error.localizedDescription)")
+            logError("ChatProvider: Failed to run claude auth status", error: error)
             isClaudeConnected = false
         }
     }
