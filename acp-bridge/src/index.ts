@@ -869,6 +869,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         logErr(`session/prompt failed with auth error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
         sessions.delete(sessionKey);
         activeSessionId = "";
+        msg.resume = undefined;
         await startAuthFlow();
         return handleQuery(msg);
       }
@@ -901,6 +902,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
         sessions.delete(sessionKey);
         activeSessionId = "";
+        // Clear msg.resume so the retry creates a truly fresh session
+        // instead of resuming the same broken session (which would infinite-loop).
+        msg.resume = undefined;
         return handleQuery(msg);
       }
       throw err;
