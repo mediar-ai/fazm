@@ -116,6 +116,14 @@ class PushToTalkManager: ObservableObject {
 
     let pttActive: Bool
     switch settings.pttKey {
+    case .leftControl:
+      // Left Control: keyCode 59. Ignore right Control (62).
+      guard event.keyCode == 59 else { return }
+      // Ignore if other modifiers are held (Cmd, Option, Shift) so Control
+      // used in shortcut combos (e.g. Ctrl+C) doesn't block the combo.
+      let otherModifiers: NSEvent.ModifierFlags = [.command, .option, .shift]
+      guard event.modifierFlags.intersection(otherModifiers) == [] else { return }
+      pttActive = event.modifierFlags.contains(.control)
     case .option:
       // Ignore if other modifiers are held (Cmd, Ctrl, Shift)
       let otherModifiers: NSEvent.ModifierFlags = [.command, .control, .shift]
