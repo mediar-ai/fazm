@@ -597,6 +597,8 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
     playwrightArgs.push("--extension");
   }
+  // Save snapshots to files and strip inline base64 screenshots to reduce context size
+  playwrightArgs.push("--output-mode", "file", "--image-responses", "omit", "--output-dir", "/tmp/playwright-mcp");
   const playwrightEnv: Array<{ name: string; value: string }> = [];
   if (process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN) {
     playwrightEnv.push({
@@ -1092,21 +1094,59 @@ function handleSessionUpdate(
           toolUseId: toolCallId,
         });
 
-        // Extract output from content array or rawOutput
+        // Check if this is an MCP tool error (isError flag from MCP protocol)
+        const isError = !!(update.isError ?? (update as Record<string, unknown>).is_error);
+
+        // Extract text output from content array or rawOutput.
+        // ACP wraps MCP content items as {type:"content", content:{type:"text"|"image", ...}}.
+        // We extract only text items and skip images to keep context small.
         let output = "";
         const contentArr = update.content as
-          | Array<{ type: string; text?: string }>
+          | Array<Record<string, unknown>>
           | undefined;
         if (contentArr && Array.isArray(contentArr)) {
-          output = contentArr
-            .filter((c) => c.type === "text" && c.text)
-            .map((c) => c.text)
-            .join("\n");
+          const texts: string[] = [];
+          for (const item of contentArr) {
+            // Direct MCP format: {type:"text", text:"..."}
+            if (item.type === "text" && typeof item.text === "string") {
+              texts.push(item.text as string);
+            }
+            // ACP-wrapped format: {type:"content", content:{type:"text", text:"..."}}
+            const inner = item.content as Record<string, unknown> | undefined;
+            if (inner && inner.type === "text" && typeof inner.text === "string") {
+              texts.push(inner.text as string);
+            }
+          }
+          output = texts.join("\n");
         }
         if (!output) {
-          const rawOutput = update.rawOutput as Record<string, unknown> | undefined;
-          if (rawOutput) {
+          // Fallback to rawOutput, but extract only text items (skip base64 images)
+          const rawOutput = update.rawOutput as unknown;
+          if (Array.isArray(rawOutput)) {
+            const texts: string[] = [];
+            for (const item of rawOutput as Array<Record<string, unknown>>) {
+              if (item.type === "text" && typeof item.text === "string") {
+                texts.push(item.text as string);
+              }
+            }
+            output = texts.join("\n");
+          } else if (rawOutput && typeof rawOutput === "object") {
             output = JSON.stringify(rawOutput);
+          }
+        }
+
+        // Log MCP tool errors prominently so they appear in Sentry breadcrumbs
+        if (isError || status === "failed") {
+          logErr(`Tool ERROR: ${title} (id=${toolCallId}) error=${output.slice(0, 500)}`);
+        }
+        // Also detect error patterns in tool output (e.g. MCP tools that return errors without isError flag)
+        if (output && !isError && status !== "failed") {
+          const outputLower = output.toLowerCase();
+          if (
+            (title.startsWith("mcp__playwright") || title.startsWith("mcp__macos-use")) &&
+            (outputLower.includes("error") || outputLower.includes("failed") || outputLower.includes("connection closed") || outputLower.includes("timeout"))
+          ) {
+            logErr(`Tool soft-error: ${title} (id=${toolCallId}) output=${output.slice(0, 500)}`);
           }
         }
 
@@ -1194,7 +1234,34 @@ process.stdout.on("error", (err) => {
 // --- Main ---
 
 async function main(): Promise<void> {
+  // Log MCP server versions at startup for diagnostics
+  let playwrightVersion = "unknown";
+  try {
+    const pkgPath = join(__dirname, "..", "node_modules", "@playwright", "mcp", "package.json");
+    const pkg = JSON.parse((await import("fs")).readFileSync(pkgPath, "utf8"));
+    playwrightVersion = pkg.version ?? "unknown";
+  } catch { /* ignore */ }
+
   logErr(`Bridge main() starting (pid=${process.pid}, node=${process.version}, execPath=${process.execPath})`);
+  logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}`);
+  logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
+
+  // Log browser diagnostics for debugging Playwright connection issues
+  try {
+    const { execSync } = await import("child_process");
+    const { readdirSync } = await import("fs");
+    const { homedir } = await import("os");
+    const home = homedir();
+    const chromeVersion = execSync("/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --version 2>/dev/null || echo 'not installed'", { encoding: "utf8" }).trim();
+    const chromeProcs = execSync("ps aux | grep -c '[G]oogle Chrome' 2>/dev/null || echo 0", { encoding: "utf8" }).trim();
+    const port9222 = execSync("lsof -i :9222 2>/dev/null | head -1 || echo 'free'", { encoding: "utf8" }).trim();
+    const singletonLock = existsSync(join(home, "Library/Application Support/Google/Chrome/SingletonLock")) ? "locked" : "unlocked";
+    let extensionCount = 0;
+    try { extensionCount = readdirSync(join(home, "Library/Application Support/Google/Chrome/Default/Extensions")).length; } catch { /* ignore */ }
+    logErr(`Browser diagnostics: chrome="${chromeVersion}", processes=${chromeProcs}, port9222="${port9222}", profileLock=${singletonLock}, extensions=${extensionCount}`);
+  } catch (err) {
+    logErr(`Browser diagnostics failed: ${err}`);
+  }
 
   // 1. Start Unix socket for omi-tools relay
   omiToolsPipePath = await startOmiToolsRelay();
