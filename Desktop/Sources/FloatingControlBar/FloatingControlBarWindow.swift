@@ -288,6 +288,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             }
         }
 
+        // Preserve unsent input text so it survives a dismiss-without-sending
+        if !state.aiInputText.isEmpty && state.currentAIMessage == nil {
+            state.draftInputText = state.aiInputText
+        }
+
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = false
             state.showingAIResponse = false
@@ -439,11 +444,15 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let inputSize = NSSize(width: inputWidth, height: 146)
         resizeAnchored(to: inputSize, makeResizable: false, animated: true)
 
+        // Restore any draft input that was preserved from a previous dismiss
+        let restoredDraft = state.draftInputText
+        state.draftInputText = ""
+
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = true
             state.showingAIResponse = false
             state.isAILoading = false
-            state.aiInputText = ""
+            state.aiInputText = restoredDraft
             state.currentAIMessage = nil
             // Match the explicit resize height so the observer doesn't immediately override it
             state.inputViewHeight = 146
