@@ -1601,6 +1601,29 @@ struct SettingsContentView: View {
                         .labelsHidden()
                         .frame(width: 100)
                     }
+
+                    if UserDefaults.standard.bool(forKey: "hasSeenAppManagementError") {
+                        Divider()
+                            .background(FazmColors.backgroundQuaternary)
+
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 12))
+
+                            Text("Auto-updates require App Management permission.")
+                                .scaledFont(size: 12)
+                                .foregroundColor(FazmColors.textTertiary)
+
+                            Button("Open Settings") {
+                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                        }
+                    }
                 }
             }
 
