@@ -449,7 +449,11 @@ class AnalyticsManager {
         toolNames: [String],
         costUsd: Double,
         messageLength: Int,
-        bridgeMode: String
+        bridgeMode: String,
+        inputTokens: Int = 0,
+        outputTokens: Int = 0,
+        cacheReadTokens: Int = 0,
+        cacheWriteTokens: Int = 0
     ) {
         let props: [String: Any] = [
             "duration_ms": durationMs,
@@ -457,7 +461,11 @@ class AnalyticsManager {
             "tool_names": toolNames.joined(separator: ","),
             "cost_usd": costUsd,
             "response_length": messageLength,
-            "bridge_mode": bridgeMode
+            "bridge_mode": bridgeMode,
+            "input_tokens": inputTokens,
+            "output_tokens": outputTokens,
+            "cache_read_tokens": cacheReadTokens,
+            "cache_write_tokens": cacheWriteTokens
         ]
         PostHogManager.shared.track("chat_agent_query_completed", properties: props)
     }
