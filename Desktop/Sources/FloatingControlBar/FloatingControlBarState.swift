@@ -56,6 +56,9 @@ class FloatingControlBarState: NSObject, ObservableObject {
     /// Pre-filled text for the follow-up input (set by PTT, consumed by AIResponseView)
     @Published var pendingFollowUpText: String = ""
 
+    /// Draft input text preserved when the conversation is dismissed without sending
+    var draftInputText: String = ""
+
     // Silence detection overlay
     @Published var isSilenceOverlayVisible: Bool = false
     private var silenceOverlayDismissWork: DispatchWorkItem?
