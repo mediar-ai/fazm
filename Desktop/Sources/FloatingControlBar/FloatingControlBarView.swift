@@ -132,6 +132,7 @@ struct FloatingControlBarView: View {
                     compactButton(title: "Push to talk", keys: [shortcutSettings.pttKey.symbol]) {
                         onAskAI()
                     }
+                    compactLabel("Ask Fazm", keys: shortcutSettings.askFazmKey.hintKeys)
                     if state.hasLastConversation && !state.showingAIConversation {
                         compactButton(title: "New chat", keys: ["⌘", "N"], action: onNewChat)
                     }
