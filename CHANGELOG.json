@@ -31,6 +31,7 @@
     "Added escape key hint to floating bar close button",
     "Added suggested reply buttons after AI responses in the floating bar",
     "Improved update experience: shows helpful guidance when macOS blocks auto-updates due to App Management permission",
-    "Fixed chat getting permanently stuck after a temporary API error"
+    "Fixed chat getting permanently stuck after a temporary API error",
+    "Reduced default chat height by half and persist user resize preference across sessions"
   ]
 }
