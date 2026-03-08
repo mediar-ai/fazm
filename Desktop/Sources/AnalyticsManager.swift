@@ -21,12 +21,12 @@ class AnalyticsManager {
     // MARK: - Initialization
 
     func initialize() {
-        // Skip analytics in development builds
-        guard !Self.isDevBuild else {
-            log("Analytics: Skipping initialization (development build)")
-            return
-        }
         PostHogManager.shared.initialize()
+        if Self.isDevBuild {
+            // Tag all dev events so they can be filtered out in PostHog dashboards
+            PostHogManager.shared.register(properties: ["is_dev_build": true])
+            log("Analytics: Initialized in development mode (events tagged with is_dev_build=true)")
+        }
     }
 
     // MARK: - User Identification
@@ -53,7 +53,6 @@ class AnalyticsManager {
 
     /// Start a periodic heartbeat (every 60s) to measure session duration in PostHog
     func startSessionHeartbeat() {
-        guard !Self.isDevBuild else { return }
         sessionStartTime = Date()
         sessionHeartbeatTimer?.invalidate()
         sessionHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -234,7 +233,6 @@ class AnalyticsManager {
     }
 
     func trackStartupTiming(dbInitMs: Double, timeToInteractiveMs: Double, hadUncleanShutdown: Bool, databaseInitFailed: Bool) {
-        guard !Self.isDevBuild else { return }
         let properties: [String: Any] = [
             "db_init_ms": round(dbInitMs),
             "time_to_interactive_ms": round(timeToInteractiveMs),
@@ -247,9 +245,6 @@ class AnalyticsManager {
     /// Track first launch with comprehensive system diagnostics
     /// This only fires once per installation
     func trackFirstLaunchIfNeeded() {
-        // Skip in dev builds
-        guard !Self.isDevBuild else { return }
-
         let defaults = UserDefaults.standard
         let hasLaunchedKey = "hasLaunchedBefore"
 
@@ -653,7 +648,6 @@ class AnalyticsManager {
     private let lastAllSettingsReportKey = "lastAllSettingsReportDate"
 
     func reportAllSettingsIfNeeded() {
-        guard !Self.isDevBuild else { return }
 
         let defaults = UserDefaults.standard
         let lastReport = defaults.object(forKey: lastAllSettingsReportKey) as? Date ?? .distantPast
