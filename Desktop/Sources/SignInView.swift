@@ -132,10 +132,9 @@ struct SignInView: View {
     // MARK: - Sign In Methods
 
     private func performAppleSignIn() {
-        authState.isLoading = true
-        authState.error = nil
-
-        Task {
+        Task { @MainActor in
+            authState.isLoading = true
+            authState.error = nil
             do {
                 try await AuthService.shared.signInWithApple()
                 authState.update(isSignedIn: true, userEmail: AuthService.shared.userEmail)
@@ -150,10 +149,9 @@ struct SignInView: View {
     }
 
     private func performGoogleSignIn() {
-        authState.isLoading = true
-        authState.error = nil
-
-        Task {
+        Task { @MainActor in
+            authState.isLoading = true
+            authState.error = nil
             do {
                 try await AuthService.shared.signInWithGoogle()
                 authState.update(isSignedIn: true, userEmail: AuthService.shared.userEmail)
