@@ -32,9 +32,6 @@ class ChatToolExecutor {
         case "execute_sql":
             return await executeSQL(toolCall.arguments)
 
-        case "semantic_search":
-            return await executeSemanticSearch(toolCall.arguments)
-
         case "get_daily_recap":
             return await executeDailyRecap(toolCall.arguments)
 
@@ -310,17 +307,6 @@ class ChatToolExecutor {
 
         do {
             return try await dbQueue.read { db in
-                // Q1: App usage
-                let apps = try Row.fetchAll(db, sql: """
-                    SELECT appName, COUNT(*) as screenshots, ROUND(COUNT(*) * 10.0 / 60, 1) as minutes,
-                        MIN(time(timestamp, 'localtime')) as first_seen, MAX(time(timestamp, 'localtime')) as last_seen
-                    FROM screenshots
-                    WHERE timestamp >= datetime('now', 'start of day', '-\(daysAgo) day', 'localtime')
-                        AND timestamp < \(upperBound)
-                        AND appName IS NOT NULL AND appName != ''
-                    GROUP BY appName ORDER BY screenshots DESC
-                    """)
-
                 // Q2: Conversations
                 let convos = try Row.fetchAll(db, sql: """
                     SELECT title, overview, emoji, category, startedAt, finishedAt,
@@ -344,22 +330,7 @@ class ChatToolExecutor {
                 // Format compact markdown
                 var out = "# \(dateLabel) Recap\n\n"
 
-                out += "## Apps (\(apps.count) apps)\n"
-                if apps.isEmpty {
-                    out += "No screen activity recorded.\n"
-                } else {
-                    for app in apps.prefix(20) {
-                        let name = app["appName"] as? String ?? "Unknown"
-                        let minutes = app["minutes"] as? Double ?? 0
-                        let screenshots = app["screenshots"] as? Int ?? 0
-                        let firstSeen = app["first_seen"] as? String ?? ""
-                        let lastSeen = app["last_seen"] as? String ?? ""
-                        out += "- **\(name)**: \(minutes) min (\(screenshots) captures, \(firstSeen)–\(lastSeen))\n"
-                    }
-                    if apps.count > 20 { out += "- ...and \(apps.count - 20) more apps\n" }
-                }
-
-                out += "\n## Conversations (\(convos.count))\n"
+                out += "## Conversations (\(convos.count))\n"
                 if convos.isEmpty {
                     out += "No conversations recorded.\n"
                 } else {
@@ -387,83 +358,12 @@ class ChatToolExecutor {
                     }
                 }
 
-                log("Tool get_daily_recap: \(apps.count) apps, \(convos.count) convos, \(tasks.count) tasks")
+                log("Tool get_daily_recap: \(convos.count) convos, \(tasks.count) tasks")
                 return out
             }
         } catch {
             logError("Tool get_daily_recap failed", error: error)
             return "Error: \(error.localizedDescription)"
-        }
-    }
-
-    // MARK: - Semantic Search
-
-    /// Search screenshots using vector similarity
-    private static func executeSemanticSearch(_ args: [String: Any]) async -> String {
-        guard let query = args["query"] as? String, !query.isEmpty else {
-            return "Error: query is required"
-        }
-
-        let days = (args["days"] as? Int) ?? 7
-        let appFilter = args["app_filter"] as? String
-
-        let calendar = Calendar.current
-        let endDate = Date()
-        let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) ?? endDate
-
-        do {
-            let vectorResults = try await OCREmbeddingService.shared.searchSimilar(
-                query: query,
-                startDate: startDate,
-                endDate: endDate,
-                appFilter: appFilter,
-                topK: 20
-            )
-
-            log("Tool semantic_search: vector returned \(vectorResults.count) results")
-
-            // Filter by similarity threshold and fetch screenshot details
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .medium
-            dateFormatter.timeStyle = .short
-
-            var lines: [String] = []
-            var count = 0
-
-            for result in vectorResults where result.similarity > 0.3 {
-                guard let screenshot = try? await AppDatabase.shared.getScreenshot(id: result.screenshotId) else {
-                    continue
-                }
-
-                count += 1
-                let dateStr = dateFormatter.string(from: screenshot.timestamp)
-                let windowTitle = screenshot.windowTitle ?? ""
-                let titlePart = windowTitle.isEmpty ? "" : " - \(windowTitle)"
-                lines.append("\n\(count). [\(dateStr)] \(screenshot.appName)\(titlePart) (similarity: \(String(format: "%.2f", result.similarity)))")
-
-                // Include OCR text preview (truncated)
-                if let ocrText = screenshot.ocrText, !ocrText.isEmpty {
-                    let preview = String(ocrText.prefix(300))
-                        .replacingOccurrences(of: "\n", with: " ")
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    lines.append("   Content: \(preview)")
-                }
-
-                if count >= 15 { break }
-            }
-
-            if lines.isEmpty {
-                return "No screenshots found matching \"\(query)\" in the last \(days) day(s)."
-            }
-
-            lines.insert("Found \(count) screenshot(s) matching \"\(query)\":", at: 0)
-
-            log("Tool semantic_search returned \(count) results")
-            return lines.joined(separator: "\n")
-
-        } catch {
-            logError("Tool semantic_search failed", error: error)
-            return "Failed to search: \(error.localizedDescription)"
         }
     }
 
@@ -1349,8 +1249,6 @@ class ChatToolExecutor {
 
         return "Onboarding completed successfully! The app is now set up."
     }
-
-    // MARK: - Screenshot Capture
 
     @MainActor
     private static func executeCaptureScreenshot(_ args: [String: Any]) async -> String {
