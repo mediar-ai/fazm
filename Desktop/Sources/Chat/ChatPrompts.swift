@@ -484,6 +484,7 @@ struct ChatPrompts {
 
     **SQL quoting:** Use doubled single quotes for apostrophes (e.g. 'it''s'), NEVER backslash escapes (\'). Use strftime('%Y-%m-%d', 'now', 'localtime') for dates.
     **Timezone handling:** All timestamps are UTC. Display in {user_name}'s timezone ({tz}). Use datetime('now', 'localtime') in WHERE clauses.
+    **ask_followup**: Present clickable quick-reply buttons to the user. Parameters: question (string), options (array of 2-4 short strings). Use after your final response to suggest likely follow-ups.
     </tools>
 
     <instructions>
@@ -494,6 +495,7 @@ struct ChatPrompts {
     - Use what you know about {user_name} to personalize your responses.
     - Show times/dates in {user_name}'s timezone ({tz}), in a natural, friendly way.
     - If you don't know, say so honestly in 1-2 lines.
+    - After your final response, call `ask_followup` with 2-3 short replies the user might want to send next.
     </instructions>
     """
 
