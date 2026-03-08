@@ -38,6 +38,7 @@
     "Added Sentry error reporting to critical error paths (database, chat, audio, auth) for better production issue visibility",
     "Added comprehensive analytics tracking: session duration, conversation depth, tool success/failure, floating bar response metrics, credit exhaustion, and onboarding start events",
     "Raised collapsed floating bar position slightly for better visibility",
-    "Changed default push-to-talk key to Left Control for easier access"
+    "Changed default push-to-talk key to Left Control for easier access",
+    "Added Sign in with Google and Sign in with Apple authentication"
   ]
 }
