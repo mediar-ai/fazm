@@ -1171,8 +1171,6 @@ extension Notification.Name {
     static let screenCapturePermissionLost = Notification.Name("screenCapturePermissionLost")
     /// Posted when ScreenCaptureKit is broken (TCC granted but SCK declined)
     static let screenCaptureKitBroken = Notification.Name("screenCaptureKitBroken")
-    /// Posted to navigate to Rewind settings
-    static let navigateToRewindSettings = Notification.Name("navigateToRewindSettings")
     /// Posted to navigate to Rewind page (global hotkey: Cmd+Option+R)
     static let navigateToRewind = Notification.Name("navigateToRewind")
     /// Posted to navigate to Ask Fazm Floating Bar settings
