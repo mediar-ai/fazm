@@ -876,6 +876,18 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       }
       const errMsg = err instanceof Error ? err.message : String(err);
 
+      // Credit balance exhausted — do NOT retry, surface immediately
+      const isCreditExhausted = /credit balance is too low|insufficient.*(credit|funds|balance)/i.test(errMsg);
+      if (isCreditExhausted) {
+        logErr(`Credit balance exhausted, not retrying: ${errMsg}`);
+        for (const name of pendingTools) {
+          send({ type: "tool_activity", name, status: "completed" });
+        }
+        pendingTools.length = 0;
+        send({ type: "credit_exhausted", message: errMsg });
+        return;
+      }
+
       // Image/content too large — retry on the SAME session without the image,
       // with a hint so the model can adjust its approach.
       const isImageTooLarge = /image.*(too large|too big|exceeds.*limit)|unable to resize image|content too long/i.test(errMsg);
@@ -940,6 +952,13 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       return handleQuery(msg);
     }
     const errMsg = err instanceof Error ? err.message : String(err);
+    // Credit balance exhausted — surface as specific type (outer catch)
+    const isCreditExhausted = /credit balance is too low|insufficient.*(credit|funds|balance)/i.test(errMsg);
+    if (isCreditExhausted) {
+      logErr(`Credit balance exhausted (outer): ${errMsg}`);
+      send({ type: "credit_exhausted", message: errMsg });
+      return;
+    }
     logErr(`Query error: ${errMsg}`);
     send({ type: "error", message: errMsg });
   } finally {
