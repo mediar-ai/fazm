@@ -611,7 +611,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     private func resizeToFixedHeight(_ height: CGFloat, animated: Bool = false) {
         resizeWorkItem?.cancel()
-        let width = FloatingControlBarWindow.expandedWidth
+        let savedWidth = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
+            .map(NSSizeFromString)?.width ?? 0
+        let width = max(FloatingControlBarWindow.expandedWidth, savedWidth)
         let size = NSSize(width: width, height: height)
         resizeWorkItem = DispatchWorkItem { [weak self] in
             self?.resizeAnchored(to: size, makeResizable: false, animated: animated)
