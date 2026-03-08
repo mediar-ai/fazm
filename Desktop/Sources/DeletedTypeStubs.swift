@@ -1126,7 +1126,7 @@ struct FlowLayout: Layout {
 // MARK: - Notification.Name Extensions
 
 extension Notification.Name {
-    static let userDidSignOut = Notification.Name("userDidSignOut")
+    static let userDidSignOut = Notification.Name("com.fazm.desktop.userDidSignOut")
     static let assistantMonitoringStateDidChange = Notification.Name("assistantMonitoringStateDidChange")
 }
 
