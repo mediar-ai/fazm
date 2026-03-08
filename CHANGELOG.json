@@ -36,6 +36,7 @@
     "Fixed infinite retry loop when built-in credits run out \u2014 now auto-switches to personal Claude account",
     "Fixed push-to-talk input being lost when clicking away without sending",
     "Added Sentry error reporting to critical error paths (database, chat, audio, auth) for better production issue visibility",
-    "Added comprehensive analytics tracking: session duration, conversation depth, tool success/failure, floating bar response metrics, credit exhaustion, and onboarding start events"
+    "Added comprehensive analytics tracking: session duration, conversation depth, tool success/failure, floating bar response metrics, credit exhaustion, and onboarding start events",
+    "Raised collapsed floating bar position slightly for better visibility"
   ]
 }
