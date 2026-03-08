@@ -2407,7 +2407,11 @@ class ChatProvider: ObservableObject {
                 toolNames: toolNames,
                 costUsd: queryResult.costUsd,
                 messageLength: responseLength,
-                bridgeMode: bridgeMode
+                bridgeMode: bridgeMode,
+                inputTokens: queryResult.inputTokens,
+                outputTokens: queryResult.outputTokens,
+                cacheReadTokens: queryResult.cacheReadTokens,
+                cacheWriteTokens: queryResult.cacheWriteTokens
             )
 
             // Track conversation depth (total messages in this session)
