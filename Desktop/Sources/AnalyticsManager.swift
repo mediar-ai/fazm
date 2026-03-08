@@ -13,6 +13,8 @@ class AnalyticsManager {
     }
 
     private var lastTranscriptionStartedAt: Date?
+    private var sessionHeartbeatTimer: Timer?
+    private var sessionStartTime: Date?
 
     private init() {}
 
@@ -47,7 +49,41 @@ class AnalyticsManager {
         PostHogManager.shared.optOut()
     }
 
+    // MARK: - Session Heartbeat
+
+    /// Start a periodic heartbeat (every 60s) to measure session duration in PostHog
+    func startSessionHeartbeat() {
+        guard !Self.isDevBuild else { return }
+        sessionStartTime = Date()
+        sessionHeartbeatTimer?.invalidate()
+        sessionHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, let start = self.sessionStartTime else { return }
+                let sessionMinutes = Int(Date().timeIntervalSince(start) / 60)
+                PostHogManager.shared.track("session_heartbeat", properties: [
+                    "session_duration_minutes": sessionMinutes
+                ])
+            }
+        }
+    }
+
+    func stopSessionHeartbeat() {
+        sessionHeartbeatTimer?.invalidate()
+        sessionHeartbeatTimer = nil
+        if let start = sessionStartTime {
+            let sessionMinutes = Int(Date().timeIntervalSince(start) / 60)
+            PostHogManager.shared.track("session_ended", properties: [
+                "session_duration_minutes": sessionMinutes
+            ])
+        }
+        sessionStartTime = nil
+    }
+
     // MARK: - Onboarding Events
+
+    func onboardingStarted() {
+        PostHogManager.shared.track("Onboarding Started")
+    }
 
     func onboardingStepCompleted(step: Int, stepName: String) {
         PostHogManager.shared.onboardingStepCompleted(step: step, stepName: stepName)
@@ -431,17 +467,21 @@ class AnalyticsManager {
         PostHogManager.shared.track("chat_agent_query_completed", properties: props)
     }
 
-    func chatToolCallCompleted(toolName: String, durationMs: Int) {
+    func chatToolCallCompleted(toolName: String, durationMs: Int, success: Bool = true, error: String? = nil) {
         let cleanName: String
         if toolName.hasPrefix("mcp__") {
             cleanName = String(toolName.split(separator: "__").last ?? Substring(toolName))
         } else {
             cleanName = toolName
         }
-        let props: [String: Any] = [
+        var props: [String: Any] = [
             "tool_name": cleanName,
-            "duration_ms": durationMs
+            "duration_ms": durationMs,
+            "success": success
         ]
+        if let error = error {
+            props["error"] = String(error.prefix(200))
+        }
         PostHogManager.shared.track("chat_tool_call_completed", properties: props)
     }
 
@@ -719,6 +759,38 @@ class AnalyticsManager {
             "files_indexed": filesIndexed
         ]
         PostHogManager.shared.track("knowledge_graph_build_failed", properties: props)
+    }
+
+    // MARK: - Floating Bar Response Metrics
+
+    func floatingBarResponseReceived(durationMs: Int, responseLength: Int, toolCount: Int) {
+        let props: [String: Any] = [
+            "duration_ms": durationMs,
+            "response_length": responseLength,
+            "tool_count": toolCount
+        ]
+        PostHogManager.shared.track("floating_bar_response_received", properties: props)
+    }
+
+    // MARK: - Chat Conversation Depth
+
+    func chatConversationDepth(messageCount: Int, sessionId: String?) {
+        var props: [String: Any] = [
+            "message_count": messageCount
+        ]
+        if let sid = sessionId {
+            props["session_id"] = sid
+        }
+        PostHogManager.shared.track("chat_conversation_depth", properties: props)
+    }
+
+    // MARK: - Credit Exhaustion
+
+    func creditExhausted(previousMode: String) {
+        let props: [String: Any] = [
+            "previous_mode": previousMode
+        ]
+        PostHogManager.shared.track("credit_exhausted", properties: props)
     }
 
     // MARK: - Display Info
