@@ -12,6 +12,7 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.24.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
+        .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "11.0.0"),
     ],
     targets: [
         .target(
@@ -23,6 +24,8 @@ let package = Package(
             name: "Fazm",
             dependencies: [
                 "ObjCExceptionCatcher",
+                .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "PostHog", package: "posthog-ios"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
                 .product(name: "GRDB", package: "GRDB.swift"),
