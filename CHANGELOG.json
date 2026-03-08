@@ -32,6 +32,7 @@
     "Added suggested reply buttons after AI responses in the floating bar",
     "Improved update experience: shows helpful guidance when macOS blocks auto-updates due to App Management permission",
     "Fixed chat getting permanently stuck after a temporary API error",
-    "Reduced default chat height by half and persist user resize preference across sessions"
+    "Reduced default chat height by half and persist user resize preference across sessions",
+    "Fixed infinite retry loop when built-in credits run out \u2014 now auto-switches to personal Claude account"
   ]
 }
