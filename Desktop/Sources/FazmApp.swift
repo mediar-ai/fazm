@@ -39,7 +39,6 @@ class AuthState: ObservableObject {
 
     @Published var isSignedIn: Bool = false
     @Published var isLoading: Bool = false
-    @Published var isRestoringAuth: Bool = true
     @Published var error: String?
     @Published var userEmail: String?
 
@@ -95,14 +94,7 @@ struct FazmApp: App {
         // Main desktop window - shows sign-in or main content based on auth state
         Window(windowTitle, id: "main") {
             Group {
-                if authState.isRestoringAuth {
-                    // Show loading while restoring auth
-                    ZStack {
-                        FazmColors.backgroundPrimary.ignoresSafeArea()
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    }
-                } else if !authState.isSignedIn {
+                if !authState.isSignedIn {
                     SignInView(authState: authState)
                 } else {
                     DesktopHomeView()
