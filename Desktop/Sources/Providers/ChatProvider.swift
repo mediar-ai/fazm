@@ -599,6 +599,9 @@ class ChatProvider: ObservableObject {
     init() {
         log("ChatProvider initialized, will start Claude bridge on first use")
 
+        // Check if user has an active Claude Code CLI session
+        checkClaudeConnectionStatus()
+
         // Observe changes to multiChatEnabled setting
         multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
             .dropFirst() // Skip initial value
