@@ -341,18 +341,7 @@ class APIClient {
 
 // MARK: - Auth & Services
 
-@MainActor
-class AuthService {
-    static let shared = AuthService()
-    var displayName: String { UserDefaults.standard.string(forKey: "user_displayName") ?? "" }
-    var givenName: String { UserDefaults.standard.string(forKey: "user_givenName") ?? "" }
-    func getIdToken() async throws -> String { "" }
-    func signOut() {}
-    func updateGivenName(_ name: String) async {
-        UserDefaults.standard.set(name, forKey: "user_givenName")
-        UserDefaults.standard.set(name, forKey: "user_displayName")
-    }
-}
+// AuthService moved to AuthService.swift
 
 class ScreenCaptureService {
     static func checkPermission() -> Bool { CGPreflightScreenCaptureAccess() }
