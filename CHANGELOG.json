@@ -29,6 +29,7 @@
     "Fixed plain text copying in markdown responses",
     "Fixed orphaned ACP bridge processes on quit",
     "Added escape key hint to floating bar close button",
-    "Added suggested reply buttons after AI responses in the floating bar"
+    "Added suggested reply buttons after AI responses in the floating bar",
+    "Improved update experience: shows helpful guidance when macOS blocks auto-updates due to App Management permission"
   ]
 }

@@ -25,13 +25,13 @@ enum UpdateChannel: String, CaseIterable {
 /// Delegate to customize Sparkle's standard user driver (update popup)
 final class UserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
     /// Prepend an App Management permission note to Sparkle's release notes
-    func standardUserDriverWillShowReleaseNotesText(_ text: NSAttributedString) -> NSAttributedString {
+    func standardUserDriverWillShowReleaseNotesText(_ releaseNotesText: NSAttributedString, forUpdate update: SUAppcastItem, withBundleDisplayVersion bundleDisplayVersion: String, bundleVersion: String) -> NSAttributedString? {
         let note = "Note: macOS may ask you to allow App Management permission for Fazm to install this update.\n\n"
         let result = NSMutableAttributedString(string: note, attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.secondaryLabelColor
         ])
-        result.append(text)
+        result.append(releaseNotesText)
         return result
     }
 }
