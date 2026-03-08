@@ -61,6 +61,7 @@ actor ACPBridge {
     case authRequired(methods: [[String: Any]], authUrl: String?)
     case authSuccess
     case authTimeout(reason: String)
+    case creditExhausted(message: String)
   }
 
   // MARK: - Configuration
@@ -529,6 +530,10 @@ actor ACPBridge {
       case .authTimeout:
         // Handled via global handler in deliverMessage(); ignore inside query loop
         break
+
+      case .creditExhausted(let message):
+        log("ACPBridge: credit exhausted: \(message)")
+        throw BridgeError.creditExhausted
       }
     }
   }
@@ -660,6 +665,10 @@ actor ACPBridge {
     case "auth_timeout":
       let reason = dict["reason"] as? String ?? "unknown"
       return .authTimeout(reason: reason)
+
+    case "credit_exhausted":
+      let message = dict["message"] as? String ?? "Credit balance exhausted"
+      return .creditExhausted(message: message)
 
     default:
       log("ACPBridge: unknown message type: \(type)")
@@ -918,6 +927,7 @@ enum BridgeError: LocalizedError {
   case processExited
   case outOfMemory
   case stopped
+  case creditExhausted
   case agentError(String)
 
   var errorDescription: String? {
@@ -938,6 +948,8 @@ enum BridgeError: LocalizedError {
       return "Not enough memory for AI chat. Close some apps and try again."
     case .stopped:
       return "Response stopped."
+    case .creditExhausted:
+      return "Built-in credits are exhausted. Please switch to your personal Claude account in Settings."
     case .agentError(let msg):
       let lower = msg.lowercased()
       if lower.contains("leaked") || lower.contains("api key") || lower.contains("api_key")
