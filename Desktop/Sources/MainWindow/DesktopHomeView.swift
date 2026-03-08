@@ -3,6 +3,7 @@ import SwiftUI
 struct DesktopHomeView: View {
     @StateObject private var appState = AppState()
     @StateObject private var viewModelContainer = ViewModelContainer()
+    @ObservedObject private var authState = AuthState.shared
 
     // Settings sidebar state
     @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .general
@@ -14,7 +15,9 @@ struct DesktopHomeView: View {
 
     var body: some View {
         Group {
-            if !appState.hasCompletedOnboarding {
+            if !authState.isSignedIn {
+                SignInView(authState: authState)
+            } else if !appState.hasCompletedOnboarding {
                 if shouldSkipOnboarding() {
                     Color.clear.onAppear {
                         log("DesktopHomeView: --skip-onboarding flag detected, skipping onboarding")
