@@ -71,7 +71,6 @@ class AuthState: ObservableObject {
 struct FazmApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState()
-    @StateObject private var authState = AuthState.shared
     @Environment(\.openWindow) private var openWindow
 
     /// Launch mode determined at startup from command-line arguments
@@ -91,19 +90,14 @@ struct FazmApp: App {
     }
 
     var body: some Scene {
-        // Main desktop window - shows sign-in or main content based on auth state
+        // Main desktop window — auth gate is inside DesktopHomeView (not here)
+        // to avoid AttributeGraph crashes from view hierarchy swaps at the Scene level.
         Window(windowTitle, id: "main") {
-            Group {
-                if !authState.isSignedIn {
-                    SignInView(authState: authState)
-                } else {
-                    DesktopHomeView()
-                        .withFontScaling()
+            DesktopHomeView()
+                .withFontScaling()
+                .onAppear {
+                    log("FazmApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
                 }
-            }
-            .onAppear {
-                log("FazmApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
-            }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
