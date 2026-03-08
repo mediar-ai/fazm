@@ -149,24 +149,34 @@ class ChatToolExecutor {
         sanitized = sanitized.replacingOccurrences(of: "\\'", with: "''")
         sanitized = sanitized.replacingOccurrences(of: "\\\"", with: "\"")
 
-        let trimmed = sanitized
-        let upper = trimmed.uppercased()
+        var upper = sanitized.uppercased()
 
         // Block dangerous keywords
         for keyword in blockedKeywords {
-            // Match keyword at word boundary (start of string or after whitespace/punctuation)
             if upper.range(of: "\\b\(keyword)\\b", options: .regularExpression) != nil {
                 return "Error: \(keyword) statements are not allowed"
             }
         }
 
         // Block multi-statement queries (semicolon followed by another statement)
-        let statements = trimmed.components(separatedBy: ";")
+        let statements = sanitized.components(separatedBy: ";")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         if statements.count > 1 {
             return "Error: multi-statement queries are not allowed. Send one statement at a time."
         }
+
+        // Auto-convert INSERTs into knowledge graph / profile tables to use OR REPLACE
+        // to avoid UNIQUE constraint failures when the AI re-inserts existing data
+        if upper.hasPrefix("INSERT") && !upper.hasPrefix("INSERT OR") {
+            let tables = ["LOCAL_KG_NODES", "LOCAL_KG_EDGES", "AI_USER_PROFILES"]
+            if tables.contains(where: { upper.contains($0) }) {
+                sanitized = "INSERT OR REPLACE" + sanitized.dropFirst("INSERT".count)
+                upper = sanitized.uppercased()
+            }
+        }
+
+        let trimmed = sanitized
 
         // Determine query type
         let isSelect = upper.hasPrefix("SELECT") || upper.hasPrefix("WITH")
@@ -595,44 +605,47 @@ class ChatToolExecutor {
         return "screen_recording: \(statuses["screen_recording"]!), microphone: \(statuses["microphone"]!), accessibility: \(statuses["accessibility"]!)"
     }
 
-    /// Scan files BLOCKING — triggers folder access dialogs, waits for scan, returns results
+    /// Scan files — triggers folder access dialogs, waits for scan, returns results.
+    /// File enumeration runs on a background thread to avoid blocking the main thread.
     private static func executeScanFiles(_ args: [String: Any]) async -> String {
-        let fm = FileManager.default
-        let homeDir = fm.homeDirectoryForCurrentUser
-        let foldersToScan = ["Downloads", "Documents", "Desktop", "Developer", "Projects"]
-            .map { homeDir.appendingPathComponent($0) }
-            .filter { fm.fileExists(atPath: $0.path) }
+        // Run folder pre-check and scan on a background thread to avoid main-thread hangs
+        let (accessibleFolders, deniedFolders) = await Task.detached(priority: .userInitiated) {
+            let fm = FileManager.default
+            let homeDir = fm.homeDirectoryForCurrentUser
+            let foldersToScan = ["Downloads", "Documents", "Desktop", "Developer", "Projects"]
+                .map { homeDir.appendingPathComponent($0) }
+                .filter { fm.fileExists(atPath: $0.path) }
 
-        let applicationsURL = URL(fileURLWithPath: "/Applications")
-        var allFolders = foldersToScan
-        if fm.fileExists(atPath: applicationsURL.path) {
-            allFolders.append(applicationsURL)
-        }
+            let applicationsURL = URL(fileURLWithPath: "/Applications")
+            var allFolders = foldersToScan
+            if fm.fileExists(atPath: applicationsURL.path) {
+                allFolders.append(applicationsURL)
+            }
 
-        // Pre-check folder access — this triggers macOS TCC dialogs
-        var deniedFolders: [String] = []
-        var accessibleFolders: [URL] = []
-        for folder in allFolders {
-            do {
-                _ = try fm.contentsOfDirectory(
-                    at: folder,
-                    includingPropertiesForKeys: [.fileSizeKey],
-                    options: [.skipsHiddenFiles]
-                )
-                accessibleFolders.append(folder)
-            } catch {
-                let nsError = error as NSError
-                if nsError.domain == NSCocoaErrorDomain && nsError.code == 257 {
-                    // Permission denied — TCC dialog was shown or already denied
-                    deniedFolders.append(folder.lastPathComponent)
-                } else {
-                    // Other error (e.g. folder doesn't exist) — skip silently
-                    log("FileIndexer: Pre-check failed for \(folder.lastPathComponent): \(error.localizedDescription)")
+            // Pre-check folder access — this triggers macOS TCC dialogs
+            var denied: [String] = []
+            var accessible: [URL] = []
+            for folder in allFolders {
+                do {
+                    _ = try fm.contentsOfDirectory(
+                        at: folder,
+                        includingPropertiesForKeys: [.fileSizeKey],
+                        options: [.skipsHiddenFiles]
+                    )
+                    accessible.append(folder)
+                } catch {
+                    let nsError = error as NSError
+                    if nsError.domain == NSCocoaErrorDomain && nsError.code == 257 {
+                        denied.append(folder.lastPathComponent)
+                    } else {
+                        log("FileIndexer: Pre-check failed for \(folder.lastPathComponent): \(error.localizedDescription)")
+                    }
                 }
             }
-        }
+            return (accessible, denied)
+        }.value
 
-        // Actually scan accessible folders (blocking)
+        // Actually scan accessible folders (runs on FileIndexerService actor)
         let count = await FileIndexerService.shared.scanFolders(accessibleFolders)
         fileScanFileCount = count
         log("Onboarding file scan completed: \(count) files indexed, \(deniedFolders.count) folders denied")
