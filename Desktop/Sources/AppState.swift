@@ -492,6 +492,12 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Track retry state for accessibility broken detection
+    private var accessibilityRetryCount = 0
+    private var accessibilityRetryTimer: Timer?
+    private static let maxAccessibilityRetries = 3
+    private static let accessibilityRetryInterval: TimeInterval = 5.0
+
     /// Check accessibility permission status
     /// AXIsProcessTrusted() can return stale data after macOS updates or app re-signs,
     /// so we also do a functional AX test to detect the "broken" state.
@@ -515,8 +521,10 @@ class AppState: ObservableObject {
                 isAccessibilityBroken = broken
                 if broken {
                     log("ACCESSIBILITY_CHECK: TCC says granted but AX calls fail — stuck/broken state detected")
+                    startAccessibilityRetryTimer()
                 } else {
                     log("ACCESSIBILITY_CHECK: AX calls working normally")
+                    stopAccessibilityRetryTimer()
                 }
             }
         } else {
@@ -531,11 +539,13 @@ class AppState: ObservableObject {
                 if !axWorks {
                     if !isAccessibilityBroken {
                         log("ACCESSIBILITY_CHECK: Event tap OK but AX calls fail — marking as broken")
+                        startAccessibilityRetryTimer()
                     }
                     isAccessibilityBroken = true
                 } else {
                     if isAccessibilityBroken {
                         log("ACCESSIBILITY_CHECK: Permission confirmed via event tap probe, AX calls working")
+                        stopAccessibilityRetryTimer()
                     }
                     isAccessibilityBroken = false
                 }
@@ -547,8 +557,67 @@ class AppState: ObservableObject {
                 }
                 hasAccessibilityPermission = false
                 isAccessibilityBroken = false
+                stopAccessibilityRetryTimer()
             }
         }
+    }
+
+    /// Start a retry timer that re-checks AX permission every 5 seconds.
+    /// After 3 failed attempts, shows an alert prompting the user to restart the app.
+    private func startAccessibilityRetryTimer() {
+        guard accessibilityRetryTimer == nil else { return }
+        accessibilityRetryCount = 0
+        log("ACCESSIBILITY_CHECK: Starting retry timer (max \(Self.maxAccessibilityRetries) attempts, every \(Self.accessibilityRetryInterval)s)")
+        accessibilityRetryTimer = Timer.scheduledTimer(withTimeInterval: Self.accessibilityRetryInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.accessibilityRetryCount += 1
+                log("ACCESSIBILITY_CHECK: Retry \(self.accessibilityRetryCount)/\(AppState.maxAccessibilityRetries)")
+
+                // Re-check — this will call stopAccessibilityRetryTimer() if it recovers
+                self.checkAccessibilityPermission()
+
+                if self.isAccessibilityBroken && self.accessibilityRetryCount >= AppState.maxAccessibilityRetries {
+                    log("ACCESSIBILITY_CHECK: All retries exhausted, prompting user to restart")
+                    self.stopAccessibilityRetryTimer()
+                    self.showAccessibilityRestartAlert()
+                }
+            }
+        }
+    }
+
+    private func stopAccessibilityRetryTimer() {
+        accessibilityRetryTimer?.invalidate()
+        accessibilityRetryTimer = nil
+        accessibilityRetryCount = 0
+    }
+
+    /// Show an alert asking the user to quit and reopen the app to fix accessibility.
+    private func showAccessibilityRestartAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Accessibility Permission Needs Restart"
+        alert.informativeText = "macOS granted accessibility permission but it isn't working yet. Please quit and reopen Fazm to activate it."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Quit & Reopen")
+        alert.addButton(withTitle: "Later")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            log("ACCESSIBILITY_CHECK: User chose Quit & Reopen")
+            relaunchApp()
+        } else {
+            log("ACCESSIBILITY_CHECK: User chose Later")
+        }
+    }
+
+    /// Relaunch the app by spawning a delayed open command and terminating.
+    private func relaunchApp() {
+        let bundlePath = Bundle.main.bundlePath
+        let task = Process()
+        task.launchPath = "/bin/sh"
+        task.arguments = ["-c", "sleep 1 && open \"\(bundlePath)\""]
+        try? task.run()
+        NSApplication.shared.terminate(nil)
     }
 
     /// Test if Accessibility API actually works by attempting a real AX call.
