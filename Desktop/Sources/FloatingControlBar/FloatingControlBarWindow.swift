@@ -8,6 +8,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private static let sizeKey = "FloatingControlBarSize"
     private static let defaultSize = NSSize(width: 40, height: 10)
     private static let minBarSize = NSSize(width: 40, height: 10)
+    /// Extra vertical offset (pt) applied to the collapsed pill so it sits slightly higher.
+    private static let collapsedYOffset: CGFloat = 6
     static let expandedBarSize = NSSize(width: 210, height: 50)
     private static let maxBarSize = NSSize(width: 1200, height: 1000)
     private static let expandedWidth: CGFloat = 430
@@ -310,7 +312,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let size = FloatingControlBarWindow.minBarSize
         let restoreOrigin = NSPoint(
             x: defaultPillOrigin(followFocus: false).x,
-            y: canonicalBottomY
+            y: canonicalBottomY + FloatingControlBarWindow.collapsedYOffset
         )
 
         resizeWorkItem?.cancel()
@@ -633,7 +635,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
         let doResize: () -> Void = { [weak self] in
             guard let self = self else { return }
-            let newOrigin = self.originForBottomCenterAnchor(newSize: targetSize)
+            var newOrigin = self.originForBottomCenterAnchor(newSize: targetSize)
+            if !expanded {
+                newOrigin.y += FloatingControlBarWindow.collapsedYOffset
+            }
             self.styleMask.remove(.resizable)
             self.isResizingProgrammatically = true
             self.setFrame(NSRect(origin: newOrigin, size: targetSize), display: true, animate: false)
@@ -656,7 +661,19 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let size = expanded
             ? NSSize(width: FloatingControlBarWindow.expandedWidth, height: FloatingControlBarWindow.expandedBarSize.height)
             : FloatingControlBarWindow.minBarSize
-        resizeAnchored(to: size, makeResizable: false, animated: true)
+        if !expanded {
+            // Collapsed pill sits slightly higher than the expanded bar.
+            let origin = NSPoint(
+                x: frame.midX - size.width / 2,
+                y: canonicalBottomY + FloatingControlBarWindow.collapsedYOffset
+            )
+            styleMask.remove(.resizable)
+            isResizingProgrammatically = true
+            setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+            isResizingProgrammatically = false
+        } else {
+            resizeAnchored(to: size, makeResizable: false, animated: true)
+        }
     }
 
     private func resizeToResponseHeight(animated: Bool = false) {
@@ -1416,7 +1433,7 @@ extension FloatingControlBarWindow {
         let size = FloatingControlBarWindow.minBarSize
         let origin = NSPoint(
             x: defaultPillOrigin(followFocus: false).x,
-            y: canonicalBottomY
+            y: canonicalBottomY + FloatingControlBarWindow.collapsedYOffset
         )
         isResizingProgrammatically = true
         setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
