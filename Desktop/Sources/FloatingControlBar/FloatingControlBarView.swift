@@ -319,9 +319,14 @@ struct FloatingControlBarView: View {
                 get: { state.voiceFollowUpTranscript },
                 set: { state.voiceFollowUpTranscript = $0 }
             ),
+            suggestedReplies: Binding(
+                get: { state.suggestedReplies },
+                set: { state.suggestedReplies = $0 }
+            ),
             onClose: onCloseAI,
             onNewChat: onNewChat,
             onSendFollowUp: { message in
+                state.suggestedReplies = []
                 let isStillGenerating = state.isAILoading || state.currentAIMessage?.isStreaming == true
                 if isStillGenerating {
                     // AI is still working — archive partial exchange and interrupt
