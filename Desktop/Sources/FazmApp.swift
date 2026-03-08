@@ -1,6 +1,7 @@
 import SwiftUI
 import Sentry
 import Sparkle
+import FirebaseCore
 
 // MARK: - Launch Mode
 /// Determines which UI to show based on command-line arguments
@@ -26,7 +27,7 @@ func shouldSkipOnboarding() -> Bool {
     return CommandLine.arguments.contains("--skip-onboarding")
 }
 
-// Local auth state — always signed in, no Firebase dependency
+// Auth state — backed by Firebase Auth via AuthService
 @MainActor
 class AuthState: ObservableObject {
     static let shared = AuthState()
@@ -34,36 +35,34 @@ class AuthState: ObservableObject {
     // UserDefaults keys
     private static let kAuthUserEmail = "auth_userEmail"
     private static let kAuthUserId = "auth_userId"
+    private static let kAuthIsSignedIn = "auth_isSignedIn"
 
-    @Published var isSignedIn: Bool = true
+    @Published var isSignedIn: Bool = false
     @Published var isLoading: Bool = false
-    @Published var isRestoringAuth: Bool = false
+    @Published var isRestoringAuth: Bool = true
     @Published var error: String?
     @Published var userEmail: String?
 
     private init() {
+        // Restore from UserDefaults — AuthService.configure() will update these
+        let savedSignedIn = UserDefaults.standard.bool(forKey: Self.kAuthIsSignedIn)
+        self.isSignedIn = savedSignedIn
         self.userEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
 
-        // Ensure a local userId exists (used by AppDatabase)
-        if let existingId = UserDefaults.standard.string(forKey: Self.kAuthUserId), !existingId.isEmpty {
-            // Use existing userId
-        } else {
-            let localId = UUID().uuidString
-            UserDefaults.standard.set(localId, forKey: Self.kAuthUserId)
-            NSLog("FazmApp AuthState: Generated local userId: %@", localId)
-        }
-
-        NSLog("FazmApp AuthState: Initialized (always signed in), email=%@, userId=%@",
+        NSLog("FazmApp AuthState: Initialized, savedSignedIn=%@, email=%@, userId=%@",
+              savedSignedIn ? "true" : "false",
               self.userEmail ?? "nil",
               UserDefaults.standard.string(forKey: Self.kAuthUserId) ?? "nil")
     }
 
     func update(isSignedIn: Bool, userEmail: String? = nil) {
-        // Always stay signed in
-        self.userEmail = userEmail
+        self.isSignedIn = isSignedIn
+        if let email = userEmail {
+            self.userEmail = email
+        }
     }
 
-    /// Get the user's local UID from UserDefaults
+    /// Get the user's UID from UserDefaults (set by AuthService on sign-in)
     var userId: String? {
         UserDefaults.standard.string(forKey: Self.kAuthUserId)
     }
@@ -93,13 +92,26 @@ struct FazmApp: App {
     }
 
     var body: some Scene {
-        // Main desktop window - same view for both modes, sidebar hidden in rewind mode
+        // Main desktop window - shows sign-in or main content based on auth state
         Window(windowTitle, id: "main") {
-            DesktopHomeView()
-                .withFontScaling()
-                .onAppear {
-                    log("FazmApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
+            Group {
+                if authState.isRestoringAuth {
+                    // Show loading while restoring auth
+                    ZStack {
+                        FazmColors.backgroundPrimary.ignoresSafeArea()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    }
+                } else if !authState.isSignedIn {
+                    SignInView(authState: authState)
+                } else {
+                    DesktopHomeView()
+                        .withFontScaling()
                 }
+            }
+            .onAppear {
+                log("FazmApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
+            }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
@@ -161,6 +173,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // These break the code signature seal, causing the NEXT update to fail with
         // "An error occurred while running the updater."
         stripProvenanceXattrs()
+
+        // Configure Firebase and AuthService
+        AuthService.shared.configure()
 
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(FazmApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
@@ -772,7 +787,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         NSLog("FazmApp AppDelegate: Received URL event: %@", urlString)
 
-        log("FazmApp AppDelegate: URL callback received (no auth handler)")
+        // Forward auth callbacks to AuthService
+        if urlString.contains("auth/callback") {
+            if let url = URL(string: urlString) {
+                AuthService.shared.handleOAuthCallback(url: url)
+            }
+        }
 
     }
 
