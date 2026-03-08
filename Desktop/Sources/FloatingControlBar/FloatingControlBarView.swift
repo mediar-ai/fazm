@@ -133,16 +133,7 @@ struct FloatingControlBarView: View {
                         onAskAI()
                     }
                     if state.hasLastConversation && !state.showingAIConversation {
-                        Button(action: onNewChat) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                                .frame(width: 22, height: 22)
-                                .background(Color.white.opacity(0.12))
-                                .cornerRadius(5)
-                        }
-                        .buttonStyle(.plain)
-                        .help("New chat")
+                        compactButton(title: "New chat", keys: ["⌘", "N"], action: onNewChat)
                     }
                 }
                 .padding(.horizontal, 6)
@@ -288,6 +279,11 @@ struct FloatingControlBarView: View {
                             .font(.system(size: 10))
                         Text("New chat")
                             .scaledFont(size: 11)
+                        Text("⌘N")
+                            .scaledFont(size: 9)
+                            .padding(.horizontal, 3)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(3)
                     }
                     .foregroundColor(.white.opacity(0.5))
                 }
