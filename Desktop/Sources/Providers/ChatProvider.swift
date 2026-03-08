@@ -819,29 +819,40 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Check whether a cached Claude OAuth token exists (config file or Keychain)
+    /// Check whether the user has an active Claude Code CLI session by running `claude auth status`
     func checkClaudeConnectionStatus() {
-        // Check config file
-        let configPath = NSString(string: "~/Library/Application Support/Claude/config.json").expandingTildeInPath
-        if FileManager.default.fileExists(atPath: configPath),
-           let data = FileManager.default.contents(atPath: configPath),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let tokenCache = json["oauth:tokenCache"] as? String, !tokenCache.isEmpty {
-            isClaudeConnected = true
+        let home = NSHomeDirectory()
+        var candidates = [
+            "\(home)/.claude/bin/claude",
+            "/usr/local/bin/claude",
+            "/opt/homebrew/bin/claude",
+        ]
+        // Check NVM node versions (claude is an npm global)
+        let nvmDir = "\(home)/.nvm/versions/node"
+        if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmDir) {
+            for v in versions.sorted(by: { $0.compare($1, options: .numeric) == .orderedDescending }) {
+                candidates.append("\(nvmDir)/\(v)/bin/claude")
+            }
+        }
+        guard let claudePath = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            log("ChatProvider: Claude CLI not found")
+            isClaudeConnected = false
             return
         }
 
-        // Check Keychain via security CLI (Keychain item owned by Claude Desktop)
-        let secProcess = Process()
-        secProcess.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        secProcess.arguments = ["find-generic-password", "-s", "Claude Code-credentials"]
-        secProcess.standardOutput = FileHandle.nullDevice
-        secProcess.standardError = FileHandle.nullDevice
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: claudePath)
+        proc.arguments = ["auth", "status"]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
         do {
-            try secProcess.run()
-            secProcess.waitUntilExit()
-            isClaudeConnected = (secProcess.terminationStatus == 0)
+            try proc.run()
+            proc.waitUntilExit()
+            let authenticated = proc.terminationStatus == 0
+            log("ChatProvider: claude auth status → \(authenticated ? "authenticated" : "not authenticated")")
+            isClaudeConnected = authenticated
         } catch {
+            log("ChatProvider: Failed to run claude auth status: \(error.localizedDescription)")
             isClaudeConnected = false
         }
     }
