@@ -787,12 +787,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         NSLog("FazmApp AppDelegate: Received URL event: %@", urlString)
 
-        // Forward auth callbacks to AuthService
-        if urlString.contains("auth/callback") {
-            if let url = URL(string: urlString) {
-                AuthService.shared.handleOAuthCallback(url: url)
-            }
-        }
+        log("FazmApp AppDelegate: URL event received: \(urlString)")
 
     }
 
