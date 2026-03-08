@@ -26,6 +26,7 @@ class FloatingControlBarState: NSObject, ObservableObject {
     @Published var inputViewHeight: CGFloat = 146
     @Published var responseContentHeight: CGFloat = 0
     @Published var chatHistory: [FloatingChatExchange] = []
+    @Published var suggestedReplies: [String] = []
 
     /// Convenience accessor for plain-text response (used by window geometry and error handling).
     var aiResponseText: String {
