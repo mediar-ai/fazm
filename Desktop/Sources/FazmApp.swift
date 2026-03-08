@@ -327,6 +327,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
 
+        // Start PostHog session heartbeat (every 60s) for session duration tracking
+        AnalyticsManager.shared.startSessionHeartbeat()
+
         // Activate app and show main window after a brief delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             log("AppDelegate: Checking windows after 0.2s delay, count=\(NSApp.windows.count)")
@@ -716,6 +719,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Stop session heartbeat and record final session duration
+        AnalyticsManager.shared.stopSessionHeartbeat()
+
         // Remove window observers
         for observer in windowObservers {
             NotificationCenter.default.removeObserver(observer)
