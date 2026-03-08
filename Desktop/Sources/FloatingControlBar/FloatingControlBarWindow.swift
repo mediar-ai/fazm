@@ -9,7 +9,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private static let defaultSize = NSSize(width: 40, height: 10)
     private static let minBarSize = NSSize(width: 40, height: 10)
     /// Extra vertical offset (pt) applied to the collapsed pill so it sits slightly higher.
-    private static let collapsedYOffset: CGFloat = 6
+    private static let collapsedYOffset: CGFloat = 18
     static let expandedBarSize = NSSize(width: 210, height: 50)
     private static let maxBarSize = NSSize(width: 1200, height: 1000)
     private static let expandedWidth: CGFloat = 430
