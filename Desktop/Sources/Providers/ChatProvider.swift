@@ -115,7 +115,6 @@ enum ChatContentBlock: Identifiable {
 
         switch cleanName {
         case "execute_sql": return "Querying database"
-        case "semantic_search": return "Searching conversations"
         case "google_workspace": return "Google Workspace"
         case "Read": return "Reading file"
         case "Write": return "Writing file"
@@ -166,8 +165,6 @@ enum ChatContentBlock: Identifiable {
             } else {
                 summary = nil
             }
-        case "semantic_search":
-            summary = input["query"] as? String
         case "google_workspace":
             let action = input["action"] as? String ?? ""
             if action == "exec", let cmd = input["command"] as? String {
