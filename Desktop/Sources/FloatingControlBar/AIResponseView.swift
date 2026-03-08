@@ -161,6 +161,12 @@ struct AIResponseView: View {
                             .font(.system(size: 11))
                         Text("New chat")
                             .scaledFont(size: 11)
+                        Text("⌘N")
+                            .scaledFont(size: 9)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(3)
                     }
                     .foregroundColor(.secondary)
                 }
