@@ -12,9 +12,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private static let maxBarSize = NSSize(width: 1200, height: 1000)
     private static let expandedWidth: CGFloat = 430
     /// Minimum window height when AI response first appears.
-    private static let minResponseHeight: CGFloat = 250
-    /// Base height used as the reference for 2× cap (same as current default response height).
-    private static let defaultBaseResponseHeight: CGFloat = 430
+    private static let minResponseHeight: CGFloat = 200
+    /// Base height used as the reference for 2× cap.
+    private static let defaultBaseResponseHeight: CGFloat = 215
     /// Overhead (px) added to measured scroll content to account for control bar, header, follow-up input, and padding.
     private static let responseViewOverhead: CGFloat = 190
 
@@ -25,6 +25,15 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// Set by ResizeHandleNSView while the user is manually dragging the corner.
     /// Prevents the response-height observer from fighting manual resize.
     var isUserResizing = false
+
+    /// Persist the current window size as the user's preferred chat height.
+    func saveUserSize() {
+        guard state.showingAIResponse else { return }
+        UserDefaults.standard.set(
+            NSStringFromSize(self.frame.size), forKey: FloatingControlBarWindow.sizeKey
+        )
+    }
+
     /// Suppresses hover resizes during close animation to prevent position drift.
     private var suppressHoverResize = false
     /// The canonical bottom-edge Y position. Set once during initial positioning and
