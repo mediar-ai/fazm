@@ -151,6 +151,12 @@ export interface AuthTimeoutMessage {
   reason: string;
 }
 
+/** Sent when built-in credit balance is exhausted */
+export interface CreditExhaustedMessage {
+  type: "credit_exhausted";
+  message: string;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -163,4 +169,5 @@ export type OutboundMessage =
   | ErrorMessage
   | AuthRequiredMessage
   | AuthSuccessMessage
-  | AuthTimeoutMessage;
+  | AuthTimeoutMessage
+  | CreditExhaustedMessage;

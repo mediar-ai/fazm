@@ -329,6 +329,7 @@ class ChatProvider: ObservableObject {
     @Published var isStopping = false
     @Published var isClearing = false
     @Published var errorMessage: String?
+    @Published var showCreditExhaustedAlert = false
 
     /// Set to true during onboarding so the ACP session ID is persisted for restart recovery.
     var isOnboarding = false
@@ -2457,6 +2458,14 @@ class ChatProvider: ObservableObject {
             // Show error to user (unless they intentionally stopped)
             if let bridgeError = error as? BridgeError, case .stopped = bridgeError {
                 // User stopped — no error to show
+            } else if let bridgeError = error as? BridgeError, case .creditExhausted = bridgeError {
+                // Built-in credits exhausted — auto-switch to personal mode
+                log("ChatProvider: credit exhausted, auto-switching to personal mode")
+                if bridgeMode == "builtin" {
+                    await switchBridgeMode(to: "personal")
+                }
+                showCreditExhaustedAlert = true
+                errorMessage = bridgeError.errorDescription
             } else {
                 errorMessage = error.localizedDescription
             }

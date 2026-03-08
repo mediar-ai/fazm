@@ -1359,7 +1359,11 @@ class FloatingControlBarManager {
         // Handle errors after sendMessage completes
         barWindow.state.isAILoading = false
 
-        if let errorText = provider.errorMessage {
+        if provider.showCreditExhaustedAlert {
+            provider.showCreditExhaustedAlert = false
+            let creditMsg = "Your free built-in credits have run out. Please connect your personal Claude account to continue.\n\nGo to Settings → Claude Account to sign in."
+            barWindow.state.currentAIMessage = ChatMessage(text: creditMsg, sender: .ai)
+        } else if let errorText = provider.errorMessage {
             // Provider reported an error (timeout, bridge crash, etc.)
             // Show it even if there's partial content — append to existing or create new message
             if barWindow.state.currentAIMessage != nil && !barWindow.state.aiResponseText.isEmpty {
