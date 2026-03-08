@@ -545,6 +545,9 @@ struct OnboardingChatView: View {
         // Mark as onboarding so ACP session ID gets persisted for restart recovery
         chatProvider.isOnboarding = true
 
+        // Track onboarding start
+        AnalyticsManager.shared.onboardingStarted()
+
         // Check if we're resuming after a mid-onboarding restart (e.g. screen recording permission)
         if OnboardingChatPersistence.isMidOnboarding {
             let savedSessionId = OnboardingChatPersistence.loadSessionId()
