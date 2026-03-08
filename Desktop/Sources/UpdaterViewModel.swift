@@ -22,6 +22,20 @@ enum UpdateChannel: String, CaseIterable {
     }
 }
 
+/// Delegate to customize Sparkle's standard user driver (update popup)
+final class UserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    /// Prepend an App Management permission note to Sparkle's release notes
+    func standardUserDriverWillShowReleaseNotesText(_ text: NSAttributedString) -> NSAttributedString {
+        let note = "Note: macOS may ask you to allow App Management permission for Fazm to install this update.\n\n"
+        let result = NSMutableAttributedString(string: note, attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ])
+        result.append(text)
+        return result
+    }
+}
+
 /// Delegate to track Sparkle update events for analytics
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
@@ -110,12 +124,28 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
             // SUInstallationError (4005): Sparkle's installer failed to launch.
             // On macOS 26, AuthorizationCreate/SMJobSubmit can fail due to stricter
             // code signature validation or on-demand-only launchd mode.
-            // Fallback: open the download page so the user can install manually.
+            // Show an alert guiding the user to enable App Management permission.
             let isInstallationError = nsError.domain == SUSparkleErrorDomain && nsError.code == 4005
             if isInstallationError {
-                logSync("Sparkle: Installation failed, opening download page as fallback")
-                if let url = URL(string: "https://github.com/m13v/fazm/releases") {
-                    NSWorkspace.shared.open(url)
+                logSync("Sparkle: Installation failed (4005), showing App Management permission alert")
+                UserDefaults.standard.set(true, forKey: "hasSeenAppManagementError")
+                Task { @MainActor in
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "Update requires permission"
+                    alert.informativeText = "macOS blocked the update because Fazm needs App Management permission. To enable auto-updates:\n\n1. Open System Settings → Privacy & Security → App Management\n2. Toggle Fazm on\n3. Try updating again"
+                    alert.addButton(withTitle: "Open Settings")
+                    alert.addButton(withTitle: "Download Manually")
+                    let response = alert.runModal()
+                    if response == .alertFirstButtonReturn {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } else {
+                        if let url = URL(string: "https://github.com/m13v/fazm/releases") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
                 }
             }
         }
@@ -194,6 +224,7 @@ final class UpdaterViewModel: ObservableObject {
 
     private let updaterController: SPUStandardUpdaterController
     private let updaterDelegate = UpdaterDelegate()
+    private let userDriverDelegate = UserDriverDelegate()
     private var isInitialized = false
 
     /// Whether automatic update checks are enabled
@@ -257,7 +288,7 @@ final class UpdaterViewModel: ObservableObject {
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: updaterDelegate,
-            userDriverDelegate: nil
+            userDriverDelegate: userDriverDelegate
         )
 
         // Initialize published properties from updater state (must be before using `self`)
