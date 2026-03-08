@@ -556,7 +556,7 @@ actor ACPBridge {
       do {
         try pipe.fileHandleForWriting.write(contentsOf: data)
       } catch {
-        log("ACPBridge: Failed to write to stdin pipe: \(error.localizedDescription)")
+        logError("ACPBridge: Failed to write to stdin pipe", error: error)
       }
     }
   }
@@ -598,7 +598,7 @@ actor ACPBridge {
       let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
       let type = dict["type"] as? String
     else {
-      log("ACPBridge: failed to parse message: \(json.prefix(200))")
+      logError("ACPBridge: failed to parse message: \(json.prefix(200))")
       return nil
     }
 

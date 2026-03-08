@@ -72,7 +72,7 @@ actor VertexTokenManager {
                     try writeTokenFiles(subjectToken: token)
                     log("VertexTokenManager: token refreshed successfully")
                 } catch {
-                    log("VertexTokenManager: refresh failed (non-fatal): \(error.localizedDescription)")
+                    logError("VertexTokenManager: token refresh failed", error: error)
                 }
                 try? await Task.sleep(nanoseconds: 50 * 60 * 1_000_000_000)
             }

@@ -21,7 +21,7 @@ enum ChatMessageStore {
                 )
             }
         } catch {
-            log("ChatMessageStore: Failed to save message: \(error)")
+            logError("ChatMessageStore: Failed to save message", error: error)
         }
     }
 
@@ -35,7 +35,7 @@ enum ChatMessageStore {
                 )
             }
         } catch {
-            log("ChatMessageStore: Failed to update message: \(error)")
+            logError("ChatMessageStore: Failed to update message", error: error)
         }
     }
 
@@ -80,7 +80,7 @@ enum ChatMessageStore {
                 }
             }
         } catch {
-            log("ChatMessageStore: Failed to load messages: \(error)")
+            logError("ChatMessageStore: Failed to load messages", error: error)
             return []
         }
     }
@@ -95,7 +95,7 @@ enum ChatMessageStore {
                 )
             }
         } catch {
-            log("ChatMessageStore: Failed to clear messages: \(error)")
+            logError("ChatMessageStore: Failed to clear messages", error: error)
         }
     }
 }
