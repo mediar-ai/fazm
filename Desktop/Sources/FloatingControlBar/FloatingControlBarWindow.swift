@@ -108,6 +108,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             }
             return
         }
+        // Cmd+N starts a new chat
+        if event.keyCode == 45 && event.modifierFlags.contains(.command) { // N
+            startNewChat()
+            return
+        }
         super.keyDown(with: event)
     }
 
