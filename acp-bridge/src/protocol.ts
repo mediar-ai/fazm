@@ -40,6 +40,7 @@ export interface WarmupSessionConfig {
   key: string;
   model: string;
   systemPrompt?: string;
+  resume?: string;  // if set, resume this session ID instead of creating a new one
 }
 
 /** Swift tells the bridge to pre-create an ACP session in the background */
