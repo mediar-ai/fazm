@@ -471,6 +471,7 @@ class AuthService: NSObject {
         saveAuthState()
         updateAuthState()
         setSentryUserContext()
+        setPostHogUserContext()
 
         log("AuthService: Firebase auth successful (provider: \(provider), userId: \(localId), email: \(userEmail ?? "nil"))")
     }
@@ -655,6 +656,7 @@ class AuthService: NSObject {
         if isSignedIn {
             log("AuthService: Restored auth state (userId: \(userId ?? "nil"), email: \(userEmail ?? "nil"))")
             setSentryUserContext()
+            setPostHogUserContext()
             // Don't call updateAuthState() here — AuthState.init() already restored
             // isSignedIn from UserDefaults synchronously. Calling updateAuthState() during
             // applicationDidFinishLaunching would mutate @Published properties while
@@ -676,6 +678,15 @@ class AuthService: NSObject {
         sentryUser.email = userEmail
         sentryUser.username = displayName.isEmpty ? nil : displayName
         SentrySDK.setUser(sentryUser)
+    }
+
+    /// Link authenticated user to PostHog for analytics attribution.
+    func setPostHogUserContext() {
+        guard let userId = userId else { return }
+        var properties: [String: Any] = ["firebase_uid": userId]
+        if let email = userEmail { properties["email"] = email }
+        if !displayName.isEmpty { properties["name"] = displayName }
+        PostHogManager.shared.identifyAuthUser(userId: userId, properties: properties)
     }
 
     // MARK: - Localhost HTTP Server for OAuth
