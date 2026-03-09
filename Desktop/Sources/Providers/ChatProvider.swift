@@ -1981,9 +1981,12 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Stop / Follow-Up
 
-    /// Text of a follow-up queued while the current query is being interrupted.
+    /// Text and session key of a follow-up queued while the current query is being interrupted.
     /// Checked at the end of `sendMessage` — if set, a new query is chained automatically.
     private var pendingFollowUpText: String?
+    private var pendingFollowUpSessionKey: String?
+    /// Session key of the currently running sendMessage call, so follow-ups can be chained on the same session.
+    private var activeSessionKey: String?
 
     /// Stop the running agent, keeping partial response
     func stopAgent() {
