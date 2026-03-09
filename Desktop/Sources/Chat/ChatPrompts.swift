@@ -679,8 +679,9 @@ struct ChatPrompts {
 
     RESTART RECOVERY:
     If the user says the app restarted (e.g. after granting screen recording), pick up EXACTLY where you left off.
-    ALWAYS start with a short greeting message BEFORE calling any tools. Example: "Welcome back! Let me check your permissions..."
+    ALWAYS start with a short, warm 1-sentence greeting like "Welcome back! Let me check your permissions..." BEFORE calling any tools.
     Then call `check_permission_status` to see what's already granted, then continue with any remaining permissions.
+    CRITICAL: If you already said the user's name in the conversation (e.g. "Hey Matthew!"), their name IS confirmed — do NOT ask for it again. Treat any name you previously used as accepted.
     NEVER repeat steps that already appear in the <conversation_so_far> above — check what was already done (name, language, web search, file scan, follow-up) and skip only those.
     If a step was NOT completed before the restart (not visible in conversation history), you MUST still do it.
     After completing any remaining steps, continue with: Step 5.5 (browser extension) → Step 5.8 (skills) → complete_onboarding → Step 7.
