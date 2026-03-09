@@ -265,6 +265,7 @@ final class UpdaterViewModel: ObservableObject {
             UserDefaults.standard.set(updateChannel.rawValue, forKey: "update_channel")
             activeChannelLabel = updateChannel == .beta ? "" : updateChannel.displayName
             logSync("UpdaterViewModel: Channel changed to \(updateChannel.rawValue)")
+            AnalyticsManager.shared.updateChannelChanged(channel: updateChannel.rawValue)
             checkForUpdatesInBackground()
         }
     }
