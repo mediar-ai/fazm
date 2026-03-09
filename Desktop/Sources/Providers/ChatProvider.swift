@@ -614,13 +614,14 @@ class ChatProvider: ObservableObject {
         log("ChatProvider initialized, will start Claude bridge on first use")
 
         // Check if user has an active Claude Code CLI session and auto-switch to personal mode
-        checkClaudeConnectionStatus()
-        if isClaudeConnected && bridgeMode != "personal" {
-            log("ChatProvider: Active Claude CLI session detected, auto-switching to personal mode")
-            Task { @MainActor in
-                await self.switchBridgeMode(to: "personal")
-            }
-        }
+        // TEMP: disabled for cap testing
+        // checkClaudeConnectionStatus()
+        // if isClaudeConnected && bridgeMode != "personal" {
+        //     log("ChatProvider: Active Claude CLI session detected, auto-switching to personal mode")
+        //     Task { @MainActor in
+        //         await self.switchBridgeMode(to: "personal")
+        //     }
+        // }
 
         // Observe changes to multiChatEnabled setting
         multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
