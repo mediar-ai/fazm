@@ -26,7 +26,13 @@ class PushToTalkManager: ObservableObject {
 
   private var globalMonitor: Any?
   private var localMonitor: Any?
+  private var globalKeyDownMonitor: Any?
+  private var localKeyDownMonitor: Any?
   private var barState: FloatingControlBarState?
+
+  // Left Control delayed activation — waits briefly to distinguish solo Control from Ctrl+key combos
+  private var controlDelayWorkItem: DispatchWorkItem?
+  private var isControlHeld: Bool = false
 
   // Double-tap detection
   private var lastOptionDownTime: TimeInterval = 0
@@ -92,6 +98,19 @@ class PushToTalkManager: ObservableObject {
       return event
     }
 
+    // KeyDown monitors — cancel delayed Control activation if another key is pressed
+    globalKeyDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+      Task { @MainActor in
+        self?.cancelControlDelayIfNeeded()
+      }
+    }
+    localKeyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      Task { @MainActor in
+        self?.cancelControlDelayIfNeeded()
+      }
+      return event
+    }
+
     log("PushToTalkManager: event monitors installed")
   }
 
@@ -104,6 +123,22 @@ class PushToTalkManager: ObservableObject {
       NSEvent.removeMonitor(monitor)
       localMonitor = nil
     }
+    if let monitor = globalKeyDownMonitor {
+      NSEvent.removeMonitor(monitor)
+      globalKeyDownMonitor = nil
+    }
+    if let monitor = localKeyDownMonitor {
+      NSEvent.removeMonitor(monitor)
+      localKeyDownMonitor = nil
+    }
+  }
+
+  /// Cancel pending Left Control PTT activation (another key was pressed during delay).
+  private func cancelControlDelayIfNeeded() {
+    guard controlDelayWorkItem != nil else { return }
+    controlDelayWorkItem?.cancel()
+    controlDelayWorkItem = nil
+    isControlHeld = false
   }
 
   // MARK: - Option Key Handling
@@ -122,8 +157,34 @@ class PushToTalkManager: ObservableObject {
       // Ignore if other modifiers are held (Cmd, Option, Shift) so Control
       // used in shortcut combos (e.g. Ctrl+C) doesn't block the combo.
       let otherModifiers: NSEvent.ModifierFlags = [.command, .option, .shift]
-      guard event.modifierFlags.intersection(otherModifiers) == [] else { return }
-      pttActive = event.modifierFlags.contains(.control)
+      guard event.modifierFlags.intersection(otherModifiers) == [] else {
+        cancelControlDelayIfNeeded()
+        return
+      }
+      let controlDown = event.modifierFlags.contains(.control)
+      if controlDown && state == .idle {
+        // Delay activation to allow Ctrl+key combos to fire first
+        isControlHeld = true
+        let workItem = DispatchWorkItem { [weak self] in
+          Task { @MainActor in
+            guard let self, self.isControlHeld else { return }
+            self.controlDelayWorkItem = nil
+            self.handleOptionDown()
+          }
+        }
+        controlDelayWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+        return
+      } else if !controlDown {
+        isControlHeld = false
+        if controlDelayWorkItem != nil {
+          // Control released before delay fired — it was a quick Ctrl+key combo
+          controlDelayWorkItem?.cancel()
+          controlDelayWorkItem = nil
+          return
+        }
+      }
+      pttActive = controlDown
     case .option:
       // Ignore if other modifiers are held (Cmd, Ctrl, Shift)
       let otherModifiers: NSEvent.ModifierFlags = [.command, .control, .shift]
