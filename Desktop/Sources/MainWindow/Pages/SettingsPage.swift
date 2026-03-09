@@ -373,10 +373,34 @@ struct SettingsContentView: View {
                     }
 
                     Text(bridgeMode == "builtin"
-                         ? "Using Fazm's built-in Claude account via Vertex AI. No sign-in required."
+                         ? "Using Fazm's built-in Claude account. No sign-in required."
                          : "Using your personal Claude account via OAuth. Sign in to connect.")
                         .scaledFont(size: 12)
                         .foregroundColor(FazmColors.textTertiary)
+
+                    if bridgeMode == "personal" && chatProvider?.isClaudeConnected == true {
+                        Divider()
+
+                        HStack {
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 8, height: 8)
+                            Text("Connected to Claude")
+                                .scaledFont(size: 12)
+                                .foregroundColor(FazmColors.textSecondary)
+
+                            Spacer()
+
+                            Button("Disconnect") {
+                                Task {
+                                    await chatProvider?.disconnectClaude()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .scaledFont(size: 12, weight: .medium)
+                            .foregroundColor(.red)
+                        }
+                    }
                 }
             }
 
