@@ -272,6 +272,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Calling it here ensures email/firebase_uid are linked to the device UUID.
         AuthService.shared.setPostHogUserContext()
 
+        // Start session recording if feature flag is enabled (PostHog must be initialized first)
+        SessionRecordingManager.shared.startIfEnabled()
+
         // One-time migration: Switch existing users from personal OAuth to Vertex built-in
         migrateBridgeModeToBuiltin()
 
@@ -750,6 +753,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Stop session recording
+        SessionRecordingManager.shared.stop()
+
         // Stop session heartbeat and record final session duration
         AnalyticsManager.shared.stopSessionHeartbeat()
 
