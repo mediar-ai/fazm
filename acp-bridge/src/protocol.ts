@@ -158,6 +158,49 @@ export interface CreditExhaustedMessage {
   message: string;
 }
 
+/** Agent status changed (e.g. compacting context) */
+export interface StatusChangeMessage {
+  type: "status_change";
+  status: string | null;  // "compacting" | null
+}
+
+/** Compact boundary — context was compacted */
+export interface CompactBoundaryMessage {
+  type: "compact_boundary";
+  trigger: string;   // "auto" | "manual"
+  preTokens: number; // token count before compaction
+}
+
+/** Sub-task/agent started */
+export interface TaskStartedMessage {
+  type: "task_started";
+  taskId: string;
+  description: string;
+}
+
+/** Sub-task/agent completed, failed, or stopped */
+export interface TaskNotificationMessage {
+  type: "task_notification";
+  taskId: string;
+  status: string;  // "completed" | "failed" | "stopped"
+  summary: string;
+}
+
+/** Tool execution progress (elapsed time) */
+export interface ToolProgressMessage {
+  type: "tool_progress";
+  toolUseId: string;
+  toolName: string;
+  elapsedTimeSeconds: number;
+}
+
+/** Collapsed summary of multiple tool calls */
+export interface ToolUseSummaryMessage {
+  type: "tool_use_summary";
+  summary: string;
+  precedingToolUseIds: string[];
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -171,4 +214,10 @@ export type OutboundMessage =
   | AuthRequiredMessage
   | AuthSuccessMessage
   | AuthTimeoutMessage
-  | CreditExhaustedMessage;
+  | CreditExhaustedMessage
+  | StatusChangeMessage
+  | CompactBoundaryMessage
+  | TaskStartedMessage
+  | TaskNotificationMessage
+  | ToolProgressMessage
+  | ToolUseSummaryMessage;
