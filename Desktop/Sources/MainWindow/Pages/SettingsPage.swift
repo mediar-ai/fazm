@@ -121,6 +121,8 @@ struct SettingsContentView: View {
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
     @ObservedObject private var shortcutSettings = ShortcutSettings.shared
+    @ObservedObject private var authState = AuthState.shared
+    @State private var showSignOutAlert = false
 
     enum SettingsSection: String, CaseIterable {
         case general = "General"
@@ -1482,6 +1484,51 @@ struct SettingsContentView: View {
 
     private var aboutSection: some View {
         VStack(spacing: 20) {
+            // Account card
+            if authState.isSignedIn {
+                settingsCard(settingId: "about.account") {
+                    HStack(spacing: 16) {
+                        Image(systemName: "person.crop.circle")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textSecondary)
+                            .frame(width: 24, height: 24)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Account")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+
+                            Text(authState.userEmail ?? "Signed in")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Button(action: { showSignOutAlert = true }) {
+                            Text("Sign Out")
+                                .scaledFont(size: 13, weight: .medium)
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.red.opacity(0.12))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .alert("Sign Out?", isPresented: $showSignOutAlert) {
+                    Button("Cancel", role: .cancel) { }
+                    Button("Sign Out", role: .destructive) {
+                        AuthService.shared.signOut()
+                    }
+                } message: {
+                    Text("You will be signed out of Fazm.")
+                }
+            }
+
             settingsCard(settingId: "about.version") {
                 VStack(spacing: 16) {
                     // App info
