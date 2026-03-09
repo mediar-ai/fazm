@@ -2063,6 +2063,7 @@ class ChatProvider: ObservableObject {
         // When sendMessage finishes (due to the interrupt), it checks
         // pendingFollowUpText and chains a new full query automatically.
         pendingFollowUpText = trimmedText
+        pendingFollowUpSessionKey = activeSessionKey
         await acpBridge.interrupt()
         log("ChatProvider: follow-up queued, interrupt sent")
     }
@@ -2085,6 +2086,9 @@ class ChatProvider: ObservableObject {
             log("ChatProvider: sendMessage called while already sending, ignoring")
             return
         }
+
+        // Track the active session key so follow-ups can be chained on the same session
+        activeSessionKey = sessionKey
 
         // Auto-resume floating chat session after app restart
         var resume = resume
@@ -2593,9 +2597,11 @@ class ChatProvider: ObservableObject {
 
         // If a follow-up was queued while we were running, chain it as a new full query
         if let followUp = pendingFollowUpText {
+            let followUpSessionKey = pendingFollowUpSessionKey
             pendingFollowUpText = nil
+            pendingFollowUpSessionKey = nil
             log("ChatProvider: chaining follow-up query")
-            await sendMessage(followUp, isFollowUp: true)
+            await sendMessage(followUp, isFollowUp: true, sessionKey: followUpSessionKey)
         }
     }
 
