@@ -173,15 +173,20 @@ async fn iam_sign_blob(sa_email: &str, data: &[u8]) -> Result<Vec<u8>, String> {
 
     #[derive(serde::Deserialize)]
     struct SignBlobResponse {
-        #[serde(rename = "signedBlob")]
-        signed_blob: String,
+        #[serde(rename = "signedBytes")]
+        signed_bytes: Option<String>,
+        signature: Option<String>,
     }
 
     let sign_resp: SignBlobResponse = serde_json::from_str(&resp_text)
         .map_err(|e| format!("IAM signBlob response parse: {} body: {}", e, &resp_text[..resp_text.len().min(200)]))?;
 
+    let sig_b64 = sign_resp.signature
+        .or(sign_resp.signed_bytes)
+        .ok_or_else(|| format!("IAM signBlob: no signature field in response: {}", &resp_text[..resp_text.len().min(200)]))?;
+
     base64::engine::general_purpose::STANDARD
-        .decode(&sign_resp.signed_blob)
+        .decode(&sig_b64)
         .map_err(|e| format!("IAM signBlob base64 decode: {}", e))
 }
 
