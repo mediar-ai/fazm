@@ -278,6 +278,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // One-time migration: Enable launch at login for existing users who haven't set it
         migrateLaunchAtLoginDefault()
 
+        // Install any newly-bundled skills that existing users don't have yet.
+        // `install()` is a no-op for skills already on disk — safe to call every launch.
+        // Skipped for users mid-onboarding; the onboarding flow handles initial install.
+        if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+            DispatchQueue.global(qos: .utility).async {
+                let result = SkillInstaller.install()
+                log("AppDelegate: SkillInstaller on launch: \(result)")
+            }
+        }
+
         // Track launch at login status once per app launch
         Task { @MainActor in
             let isEnabled = LaunchAtLoginManager.shared.isEnabled
