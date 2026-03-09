@@ -693,11 +693,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         responseHeightCancellable?.cancel()
         responseHeightCancellable = state.$responseContentHeight
             .removeDuplicates()
-            .debounce(for: .milliseconds(80), scheduler: DispatchQueue.main)
+            .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
             .sink { [weak self] contentHeight in
                 guard let self = self,
                       self.state.showingAIResponse,
                       !self.isUserResizing,
+                      !self.isResizingProgrammatically,
                       contentHeight > 0
                 else { return }
                 let targetHeight = (contentHeight + Self.responseViewOverhead).rounded()

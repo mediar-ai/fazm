@@ -48,6 +48,7 @@
     "Added compaction indicator showing when AI is compacting context during long conversations",
     "Improved session recovery to resume previous sessions after crashes instead of starting fresh",
     "Fixed floating bar randomly starting a new session when switching between built-in and personal Claude accounts",
-    "Fixed floating bar losing session context when Claude re-authentication (OAuth) was required mid-conversation"
+    "Fixed floating bar losing session context when Claude re-authentication (OAuth) was required mid-conversation",
+    "Fixed a crash on macOS 26 caused by a window constraint feedback loop during AI response resize"
   ]
 }
