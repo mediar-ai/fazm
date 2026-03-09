@@ -793,10 +793,13 @@ class ChatProvider: ObservableObject {
             let mainSystemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
             cachedMainSystemPrompt = mainSystemPrompt
             let floatingSystemPrompt = Self.floatingBarSystemPromptPrefixCurrent + "\n\n" + mainSystemPrompt
+            let savedFloatingSessionId = UserDefaults.standard.string(forKey: Self.floatingSessionIdKey)
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
                 .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
-                .init(key: "floating", model: "claude-opus-4-6", systemPrompt: floatingSystemPrompt)
+                .init(key: "floating", model: "claude-opus-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId)
             ])
+            // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
+            pendingFloatingResume = nil
             return true
         } catch {
             logError("Failed to start ACP bridge", error: error)
