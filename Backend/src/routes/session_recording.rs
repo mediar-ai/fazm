@@ -44,15 +44,15 @@ pub async fn get_upload_url(
         body.chunk_index
     );
 
-    // Generate V4 signed URL for PUT
-    let signed_url = generate_v4_signed_url(
-        &config.vertex_sa_private_key_pem,
+    // Generate V4 signed URL using IAM signBlob API (no PEM key needed on Cloud Run)
+    let signed_url = generate_v4_signed_url_iam(
         &config.gcp_service_account,
         bucket,
         &object_path,
         "PUT",
         900, // 15 minutes
     )
+    .await
     .map_err(|e| {
         tracing::error!("Failed to generate signed URL: {}", e);
         axum::http::StatusCode::INTERNAL_SERVER_ERROR
@@ -64,12 +64,12 @@ pub async fn get_upload_url(
     }))
 }
 
-/// Generate a GCS V4 signed URL.
+/// Generate a GCS V4 signed URL using the IAM signBlob API.
 ///
-/// Uses the service account's RSA private key to create a self-signed URL
-/// that grants temporary access to upload an object to GCS.
-fn generate_v4_signed_url(
-    sa_private_key_pem: &str,
+/// Instead of signing locally with a PEM key, this calls the IAM API to sign
+/// using Google-managed keys. This is more reliable on Cloud Run — no risk of
+/// key corruption from base64 encoding in env vars.
+async fn generate_v4_signed_url_iam(
     sa_email: &str,
     bucket: &str,
     object: &str,
@@ -83,7 +83,7 @@ fn generate_v4_signed_url(
     let credential_scope = format!("{}/auto/storage/goog4_request", datestamp);
     let credential = format!("{}/{}", sa_email, credential_scope);
 
-    let host = format!("storage.googleapis.com");
+    let host = "storage.googleapis.com";
     let resource = format!("/{}/{}", bucket, object);
 
     // Canonical query string (sorted)
@@ -119,40 +119,98 @@ fn generate_v4_signed_url(
         datetime, credential_scope, canonical_request_hash
     );
 
-    // Sign with RSA-SHA256
-    let signature = rsa_sha256_sign(sa_private_key_pem, string_to_sign.as_bytes())?;
-    let signature_hex = hex::encode(signature);
+    // Sign via IAM signBlob API
+    let signature_bytes = iam_sign_blob(sa_email, string_to_sign.as_bytes()).await?;
+    let signature_hex = hex::encode(signature_bytes);
 
-    let signed_url = format!(
-        "https://{}/{}?{}&X-Goog-Signature={}",
-        host,
-        format!("{}/{}", bucket, object),
-        canonical_query,
-        signature_hex
+    Ok(format!(
+        "https://{}/{}/{}?{}&X-Goog-Signature={}",
+        host, bucket, object, canonical_query, signature_hex
+    ))
+}
+
+/// Sign bytes using the IAM signBlob API.
+///
+/// On Cloud Run, the default service account has permission to call signBlob
+/// on itself, so no additional credentials are needed.
+async fn iam_sign_blob(sa_email: &str, data: &[u8]) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+
+    // Get access token from metadata server (available on Cloud Run)
+    let token = get_access_token().await?;
+
+    let payload_b64 = base64::engine::general_purpose::STANDARD.encode(data);
+    let body = serde_json::json!({
+        "payload": payload_b64
+    });
+
+    let url = format!(
+        "https://iam.googleapis.com/v1/projects/-/serviceAccounts/{}:signBlob",
+        sa_email
     );
 
-    Ok(signed_url)
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("IAM signBlob request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("IAM signBlob returned {}: {}", status, text));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SignBlobResponse {
+        #[serde(rename = "signedBlob")]
+        signed_blob: String,
+    }
+
+    let sign_resp: SignBlobResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("IAM signBlob response parse: {}", e))?;
+
+    base64::engine::general_purpose::STANDARD
+        .decode(&sign_resp.signed_blob)
+        .map_err(|e| format!("IAM signBlob base64 decode: {}", e))
+}
+
+/// Get an access token from the GCE metadata server (available on Cloud Run).
+async fn get_access_token() -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
+        .header("Metadata-Flavor", "Google")
+        .send()
+        .await
+        .map_err(|e| format!("Metadata server token request: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Metadata server returned {}", resp.status()));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+    }
+
+    let token_resp: TokenResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Token response parse: {}", e))?;
+
+    Ok(token_resp.access_token)
 }
 
 fn hex_sha256(data: &[u8]) -> String {
     use sha2::Digest;
     let hash = Sha256::digest(data);
     hex::encode(hash)
-}
-
-fn rsa_sha256_sign(private_key_pem: &str, data: &[u8]) -> Result<Vec<u8>, String> {
-    use rsa::pkcs1v15::SigningKey;
-    use rsa::pkcs8::DecodePrivateKey;
-    use rsa::signature::{SignatureEncoding, Signer};
-    use rsa::RsaPrivateKey;
-
-    let private_key =
-        RsaPrivateKey::from_pkcs8_pem(private_key_pem).map_err(|e| format!("RSA key parse: {}", e))?;
-
-    let signing_key = SigningKey::<Sha256>::new(private_key);
-    let signature = signing_key.sign(data);
-
-    Ok(signature.to_vec())
 }
 
 fn url_encode(s: &str) -> String {
