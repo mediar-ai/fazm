@@ -75,6 +75,14 @@ To promote: `./scripts/promote_release.sh <tag>` (staging → beta → stable).
 - Generate the base64 value: `cat .env.app | base64`
 - The build will fail if required Vertex vars are missing (verified in codemagic.yaml)
 
+## Bundled Skills Pipeline
+
+Bundled skills live in `Desktop/Sources/Resources/BundledSkills/` as `{name}.skill.md` files. **This is the only place to manage them** — adding or removing a file there is all that's needed. `SkillInstaller.swift` auto-discovers them at runtime; no code change required.
+
+Category display for onboarding is in `categoryMap` inside `SkillInstaller.swift`.
+
+Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for publishing GWS skills to skillhu.bz/skills.sh and is unrelated to the app bundle.
+
 ## Development Workflow
 
 ### Building & Running
