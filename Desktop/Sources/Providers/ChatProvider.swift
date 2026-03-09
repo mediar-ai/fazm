@@ -412,7 +412,7 @@ class ChatProvider: ObservableObject {
     // MARK: - Built-in API Key Usage Cap ($10)
 
     /// Maximum spend allowed on the built-in API key before auto-switching to personal mode
-    static let builtinCostCapUsd: Double = 0.50
+    static let builtinCostCapUsd: Double = 10.0
 
     /// Cumulative cost tracked locally (seeded from Firestore on startup)
     @AppStorage("builtinCumulativeCostUsd") var builtinCumulativeCostUsd: Double = 0.0
@@ -614,14 +614,13 @@ class ChatProvider: ObservableObject {
         log("ChatProvider initialized, will start Claude bridge on first use")
 
         // Check if user has an active Claude Code CLI session and auto-switch to personal mode
-        // TEMP: disabled for cap testing
-        // checkClaudeConnectionStatus()
-        // if isClaudeConnected && bridgeMode != "personal" {
-        //     log("ChatProvider: Active Claude CLI session detected, auto-switching to personal mode")
-        //     Task { @MainActor in
-        //         await self.switchBridgeMode(to: "personal")
-        //     }
-        // }
+        checkClaudeConnectionStatus()
+        if isClaudeConnected && bridgeMode != "personal" {
+            log("ChatProvider: Active Claude CLI session detected, auto-switching to personal mode")
+            Task { @MainActor in
+                await self.switchBridgeMode(to: "personal")
+            }
+        }
 
         // Observe changes to multiChatEnabled setting
         multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
