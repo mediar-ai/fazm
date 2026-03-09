@@ -11,6 +11,8 @@ pub struct Config {
     pub gcp_workload_pool: String,
     pub gcp_oidc_provider: String,
     pub gcp_service_account: String,
+    // Session replay GCS bucket
+    pub gcs_session_replay_bucket: String,
 }
 
 impl Config {
@@ -51,6 +53,8 @@ impl Config {
                 .unwrap_or_else(|_| "fazm-backend-provider".to_string()),
             gcp_service_account: std::env::var("GCP_SERVICE_ACCOUNT")
                 .unwrap_or_default(),
+            gcs_session_replay_bucket: std::env::var("GCS_SESSION_REPLAY_BUCKET")
+                .unwrap_or_else(|_| "fazm-session-recordings".to_string()),
         }
     }
 }
