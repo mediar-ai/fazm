@@ -2386,8 +2386,8 @@ class ChatProvider: ObservableObject {
                                 toolUseId: taskId,
                                 input: nil
                             )
-                        case .toolProgress(let toolUseId, _, let elapsed):
-                            self.updateToolElapsedTime(toolUseId: toolUseId, elapsed: elapsed, messageId: aiMessageId)
+                        case .toolProgress(let toolUseId, let toolName, let elapsed):
+                            self.logToolProgress(toolUseId: toolUseId, toolName: toolName, elapsed: elapsed)
                         case .toolUseSummary(let summary):
                             log("ChatProvider: Tool summary — \(summary.prefix(100))")
                         }
@@ -2844,17 +2844,9 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Update elapsed time on a running tool call block
-    private func updateToolElapsedTime(toolUseId: String, elapsed: Double, messageId: String) {
-        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
-        for i in messages[index].contentBlocks.indices {
-            if case .toolCall(_, _, let status, let tuid, _, _) = messages[index].contentBlocks[i],
-               tuid == toolUseId, status == .running {
-                // Store elapsed time in toolStartTimes for UI to pick up
-                toolStartTimes[toolUseId] = Date(timeIntervalSinceNow: -elapsed)
-                return
-            }
-        }
+    /// Log tool progress (elapsed time) — future: could update UI with timer display
+    private func logToolProgress(toolUseId: String, toolName: String, elapsed: Double) {
+        log("ChatProvider: Tool progress — \(toolName) (\(toolUseId)) elapsed \(String(format: "%.1f", elapsed))s")
     }
 
     /// Append thinking text to the streaming message via the shared buffer.
