@@ -9,7 +9,7 @@ struct AIResponseView: View {
     @State private var followUpText: String = ""
     @State private var preVoiceFollowUpText: String = ""
     @State private var userHasScrolledUp: Bool = false
-    @FocusState private var isFollowUpFocused: Bool
+    @State private var followUpTextHeight: CGFloat = 36
 
     let userInput: String
     let chatHistory: [FloatingChatExchange]
@@ -122,11 +122,6 @@ struct AIResponseView: View {
         .onChange(of: isLoading) {
             if isLoading {
                 userHasScrolledUp = false
-            } else {
-                // Auto-focus follow-up field when loading finishes
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    isFollowUpFocused = true
-                }
             }
         }
     }
@@ -416,18 +411,29 @@ struct AIResponseView: View {
     // MARK: - Follow-Up Input
 
     private var followUpInputView: some View {
-        HStack(spacing: 6) {
-            TextField("Ask follow up...", text: $followUpText)
-                .textFieldStyle(.plain)
-                .scaledFont(size: 13)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(8)
-                .focused($isFollowUpFocused)
-                .onSubmit {
-                    sendFollowUp()
+        HStack(alignment: .bottom, spacing: 6) {
+            ZStack(alignment: .topLeading) {
+                if followUpText.isEmpty {
+                    Text("Ask follow up...")
+                        .scaledFont(size: 13)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
                 }
+
+                FazmTextEditor(
+                    text: $followUpText,
+                    lineFragmentPadding: 8,
+                    onSubmit: { sendFollowUp() },
+                    focusOnAppear: false,
+                    minHeight: 36,
+                    maxHeight: 120,
+                    onHeightChange: { newHeight in
+                        if abs(followUpTextHeight - newHeight) > 1 {
+                            followUpTextHeight = newHeight
+                        }
+                    }
+                )
                 .onChange(of: state.pendingFollowUpText) {
                     if !state.pendingFollowUpText.isEmpty {
                         if followUpText.isEmpty {
@@ -436,17 +442,14 @@ struct AIResponseView: View {
                             followUpText += " " + state.pendingFollowUpText
                         }
                         state.pendingFollowUpText = ""
-                        isFollowUpFocused = true
                     }
                 }
                 .onChange(of: state.isVoiceListening) {
                     if state.isVoiceListening {
-                        // Capture existing text before PTT starts so we can append to it
                         preVoiceFollowUpText = followUpText
                     }
                 }
                 .onChange(of: state.aiInputText) {
-                    // Sync PTT live transcript into follow-up field
                     if state.isVoiceListening && !state.aiInputText.isEmpty && state.aiInputText != followUpText {
                         if preVoiceFollowUpText.isEmpty {
                             followUpText = state.aiInputText
@@ -455,6 +458,10 @@ struct AIResponseView: View {
                         }
                     }
                 }
+            }
+            .frame(height: followUpTextHeight)
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(8)
 
             if (isLoading || currentMessage?.isStreaming == true) && followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button(action: { onStopAgent?() }) {
