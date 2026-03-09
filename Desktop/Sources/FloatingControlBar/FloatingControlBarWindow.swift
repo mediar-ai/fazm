@@ -867,6 +867,7 @@ class FloatingControlBarManager {
     private var recordingCancellable: AnyCancellable?
     private var durationCancellable: AnyCancellable?
     private var chatCancellable: AnyCancellable?
+    private var compactCancellable: AnyCancellable?
     private(set) var chatProvider: ChatProvider?
     private var workspaceObserver: Any?
 
@@ -1393,6 +1394,14 @@ class FloatingControlBarManager {
                 } else {
                     barWindow?.state.isAILoading = false
                 }
+            }
+
+        // Observe compaction status
+        compactCancellable?.cancel()
+        compactCancellable = provider.$isCompacting
+            .receive(on: DispatchQueue.main)
+            .sink { [weak barWindow] isCompacting in
+                barWindow?.state.isCompacting = isCompacting
             }
 
         await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: barWindow.state.tutorialSystemPromptSuffix, systemPromptPrefix: ChatProvider.floatingBarSystemPromptPrefixCurrent, sessionKey: "floating", imageData: screenshotData)
