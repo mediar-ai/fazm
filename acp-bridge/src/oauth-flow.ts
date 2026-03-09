@@ -189,9 +189,43 @@ function waitForCallback(
 
       logErr("OAuth callback received with valid code");
 
-      // Redirect browser to success page
-      res.writeHead(302, { Location: SUCCESS_URL });
-      res.end();
+      // Serve branded success page
+      const successHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Fazm — Connected</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      display: flex; justify-content: center; align-items: center;
+      height: 100vh; background: #0F0F0F; color: white;
+    }
+    .container { text-align: center; max-width: 420px; padding: 40px; }
+    .icon {
+      width: 64px; height: 64px; margin: 0 auto 24px;
+      background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+      border-radius: 16px; display: flex; align-items: center;
+      justify-content: center; font-size: 28px; color: white;
+    }
+    h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: #888; font-size: 15px; line-height: 1.5; margin-bottom: 32px; }
+    .hint { color: #555; font-size: 12px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">&#10003;</div>
+    <h1>Claude connected!</h1>
+    <p class="subtitle">Your Claude account has been linked to Fazm.<br>You can close this tab and return to the app.</p>
+    <p class="hint">This tab will close automatically.</p>
+  </div>
+  <script>setTimeout(function() { window.close(); }, 3000);</script>
+</body>
+</html>`;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(successHTML);
 
       clearTimeout(timeout);
       resolve(code);
