@@ -857,11 +857,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         switch url.host {
         case "auth-success":
-            // Bring the app to front after successful browser sign-in
+            // Bring the app and main window to front after successful browser sign-in
             NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                window.makeKeyAndOrderFront(nil)
+            }
         case "auth-failed":
-            // Bring the app to front so user can retry
+            // Bring the app and main window to front so user can retry
             NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                window.makeKeyAndOrderFront(nil)
+            }
         default:
             log("FazmApp AppDelegate: Unhandled URL path: \(url.host ?? "nil")")
         }
