@@ -338,7 +338,9 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Floating Chat Session Persistence
 
-    private static let floatingSessionIdKey = "floatingACPSessionId"
+    /// Per-mode UserDefaults key so sessions from one mode aren't mistakenly
+    /// resumed by a different mode (builtin API key vs personal OAuth).
+    private var floatingSessionIdKey: String { "floatingACPSessionId_\(bridgeMode)" }
     /// Maximum number of messages to restore from local DB on startup
     private static let floatingRestoreLimit = 50
 
@@ -460,12 +462,14 @@ class ChatProvider: ObservableObject {
     /// Switch bridge mode, tearing down old bridge and setting up new one
     func switchBridgeMode(to newMode: String) async {
         let oldMode = bridgeMode
+        guard newMode != oldMode else {
+            log("ChatProvider: switchBridgeMode(\(newMode)) — already in this mode, skipping restart")
+            return
+        }
         log("ChatProvider: switching bridge mode to \(newMode) (current stored: \(oldMode))")
 
         // Track the mode switch in analytics
-        if oldMode != newMode {
-            AnalyticsManager.shared.chatBridgeModeChanged(from: oldMode, to: newMode)
-        }
+        AnalyticsManager.shared.chatBridgeModeChanged(from: oldMode, to: newMode)
 
         // Stop current bridge
         await acpBridge.stop()
@@ -795,7 +799,7 @@ class ChatProvider: ObservableObject {
             let mainSystemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
             cachedMainSystemPrompt = mainSystemPrompt
             let floatingSystemPrompt = Self.floatingBarSystemPromptPrefixCurrent + "\n\n" + mainSystemPrompt
-            let savedFloatingSessionId = UserDefaults.standard.string(forKey: Self.floatingSessionIdKey)
+            let savedFloatingSessionId = UserDefaults.standard.string(forKey: floatingSessionIdKey)
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
                 .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
                 .init(key: "floating", model: "claude-opus-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId)
@@ -814,7 +818,7 @@ class ChatProvider: ObservableObject {
     func resetSession(key: String) async {
         await acpBridge.resetSession(key: key)
         if key == "floating" {
-            UserDefaults.standard.removeObject(forKey: Self.floatingSessionIdKey)
+            UserDefaults.standard.removeObject(forKey: floatingSessionIdKey)
             pendingFloatingResume = nil
             messages = []
             await ChatMessageStore.clearMessages(context: "__floating__")
@@ -1619,7 +1623,7 @@ class ChatProvider: ObservableObject {
         log("ChatProvider: Restored \(savedMessages.count) floating chat messages from local DB")
 
         // Load saved ACP session ID for resume
-        if let savedSessionId = UserDefaults.standard.string(forKey: Self.floatingSessionIdKey) {
+        if let savedSessionId = UserDefaults.standard.string(forKey: floatingSessionIdKey) {
             pendingFloatingResume = savedSessionId
             log("ChatProvider: Will resume floating ACP session \(savedSessionId)")
         }
@@ -2487,7 +2491,7 @@ class ChatProvider: ObservableObject {
                     OnboardingChatPersistence.saveSessionId(queryResult.sessionId)
                 }
                 if sessionKey == "floating" {
-                    UserDefaults.standard.set(queryResult.sessionId, forKey: Self.floatingSessionIdKey)
+                    UserDefaults.standard.set(queryResult.sessionId, forKey: floatingSessionIdKey)
                 }
             }
 
