@@ -868,30 +868,6 @@ class ChatToolExecutor {
         return false
     }
 
-    /// Ensure the gws client_secret.json exists in ~/.config/gws/
-    /// Copies from the app bundle if not already present.
-    private static func ensureGWSClientConfig() {
-        let fm = FileManager.default
-        let configDir = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/gws")
-        let configFile = configDir.appendingPathComponent("client_secret.json")
-
-        if fm.fileExists(atPath: configFile.path) { return }
-
-        // Look for bundled client_secret.json
-        guard let bundledPath = Bundle.resourceBundle.url(forResource: "gws_client_secret", withExtension: "json") else {
-            log("No bundled gws_client_secret.json found in app bundle")
-            return
-        }
-
-        do {
-            try fm.createDirectory(at: configDir, withIntermediateDirectories: true)
-            try fm.copyItem(at: bundledPath, to: configFile)
-            log("Copied gws client_secret.json to \(configFile.path)")
-        } catch {
-            logError("Failed to copy gws client_secret.json", error: error)
-        }
-    }
 
     /// List connected gws accounts by reading ~/.config/gws/accounts.json
     private static func listGWSAccounts() -> (accounts: [[String: String]], defaultAccount: String?) {
@@ -917,9 +893,6 @@ class ChatToolExecutor {
         }
 
         let account = args["account"] as? String
-
-        // Ensure OAuth client config is in place before any gws operation
-        ensureGWSClientConfig()
 
         switch action {
         case "status":
