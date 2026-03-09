@@ -1236,6 +1236,67 @@ function handleSessionUpdate(
       break;
     }
 
+    // --- Forwarded events (previously dropped by acp-agent.js) ---
+
+    case "compact_boundary": {
+      const trigger = (update.trigger as string) ?? "auto";
+      const preTokens = (update.preTokens as number) ?? 0;
+      send({ type: "compact_boundary", trigger, preTokens });
+      logErr(`Compact boundary: trigger=${trigger}, preTokens=${preTokens}`);
+      break;
+    }
+
+    case "status_change": {
+      const status = (update.status as string | null) ?? null;
+      send({ type: "status_change", status });
+      logErr(`Status change: ${status}`);
+      break;
+    }
+
+    case "compaction_start": {
+      send({ type: "status_change", status: "compacting" });
+      logErr("Compaction stream started");
+      break;
+    }
+
+    case "compaction_delta": {
+      // High-frequency — status_change "compacting" is sufficient for UI
+      break;
+    }
+
+    case "task_started": {
+      const taskId = (update.taskId as string) ?? "";
+      const description = (update.description as string) ?? "";
+      send({ type: "task_started", taskId, description });
+      logErr(`Task started: ${taskId} — ${description}`);
+      break;
+    }
+
+    case "task_notification": {
+      const taskId = (update.taskId as string) ?? "";
+      const status = (update.status as string) ?? "";
+      const summary = (update.summary as string) ?? "";
+      send({ type: "task_notification", taskId, status, summary });
+      logErr(`Task notification: ${taskId} ${status}`);
+      break;
+    }
+
+    case "tool_progress": {
+      const toolUseId = (update.toolUseId as string) ?? "";
+      const toolName = (update.toolName as string) ?? "";
+      const elapsed = (update.elapsedTimeSeconds as number) ?? 0;
+      send({ type: "tool_progress", toolUseId, toolName, elapsedTimeSeconds: elapsed });
+      break;
+    }
+
+    case "tool_use_summary": {
+      const summary = (update.summary as string) ?? "";
+      const ids = (update.precedingToolUseIds as string[]) ?? [];
+      send({ type: "tool_use_summary", summary, precedingToolUseIds: ids });
+      logErr(`Tool use summary: ${summary.slice(0, 100)}`);
+      break;
+    }
+
     default:
       logErr(
         `Unknown session update type: ${sessionUpdate} — ${JSON.stringify(update).slice(0, 200)}`
