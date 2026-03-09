@@ -2,41 +2,57 @@ import Foundation
 
 /// Installs bundled skills from the app's Resources/BundledSkills to ~/.claude/skills/
 /// Skills are only installed if they don't already exist (never overwrites user data).
+///
+/// To add or remove a bundled skill: add/remove the *.skill.md file in
+/// Desktop/Sources/Resources/BundledSkills/ — no code change required.
+/// To assign a category for onboarding display, update categoryMap below.
 enum SkillInstaller {
 
-    /// All bundled skill names and their user-facing descriptions
-    static let bundledSkills: [(name: String, description: String, category: String)] = [
-        // Documents
-        ("pdf", "Read, merge, split, OCR, and create PDF files", "Documents"),
-        ("docx", "Create and edit Word documents", "Documents"),
-        ("xlsx", "Create and edit spreadsheets", "Documents"),
-        ("pptx", "Create and edit presentations", "Documents"),
-        // Creation
-        ("video-edit", "Edit long videos into short, story-driven clips", "Creation"),
-        ("frontend-design", "Build web pages, components, and UI", "Creation"),
-        ("canvas-design", "Create posters, visual art, and diagrams", "Creation"),
-        ("doc-coauthoring", "Co-write docs, proposals, and specs step by step", "Creation"),
-        // Research & Planning
-        ("deep-research", "Multi-source research reports with citations", "Research & Planning"),
-        ("travel-planner", "Trip planning, itineraries, and budgets", "Research & Planning"),
-        ("web-scraping", "Extract content from websites locally", "Research & Planning"),
-        // Google Workspace
-        ("gws-gmail", "Read, search, and send Gmail", "Google Workspace"),
-        ("gws-calendar", "Google Calendar events and scheduling", "Google Workspace"),
-        ("gws-docs", "Read Google Docs", "Google Workspace"),
-        ("gws-docs-write", "Create and edit Google Docs", "Google Workspace"),
-        ("gws-sheets", "Read and write Google Sheets", "Google Workspace"),
-        ("gws-drive", "Google Drive file management", "Google Workspace"),
-        // Social Media
-        ("social-autoposter", "Automate social media posting across Reddit, X, LinkedIn, and Moltbook", "Social Media"),
-        ("social-autoposter-setup", "Set up social-autoposter: accounts, database, and scheduled automation", "Social Media"),
-        // Discovery
-        ("find-skills", "Discover and install new skills from skillhu.bz and skills.sh", "Discovery"),
+    /// Category grouping for the onboarding display. UI config only — not stored in skill files.
+    private static let categoryMap: [String: String] = [
+        "pdf": "Documents", "docx": "Documents", "xlsx": "Documents", "pptx": "Documents",
+        "video-edit": "Creation", "frontend-design": "Creation", "canvas-design": "Creation", "doc-coauthoring": "Creation",
+        "deep-research": "Research & Planning", "travel-planner": "Research & Planning", "web-scraping": "Research & Planning",
+        "gws-gmail": "Google Workspace", "gws-calendar": "Google Workspace", "gws-docs": "Google Workspace",
+        "gws-docs-write": "Google Workspace", "gws-sheets": "Google Workspace", "gws-drive": "Google Workspace",
+        "gws-setup": "Google Workspace",
+        "social-autoposter": "Social Media", "social-autoposter-setup": "Social Media",
+        "find-skills": "Discovery",
     ]
 
+    private static let categoryOrder = [
+        "Documents", "Creation", "Research & Planning", "Google Workspace", "Social Media", "Discovery"
+    ]
+
+    /// Auto-discovered skill names from all *.skill.md files in the app bundle.
+    static var bundledSkillNames: [String] {
+        guard let bundleURL = Bundle.resourceBundle.resourceURL else { return [] }
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: bundleURL, includingPropertiesForKeys: nil
+        )) ?? []
+        return contents
+            .filter { $0.pathExtension == "md" && $0.deletingPathExtension().pathExtension == "skill" }
+            .map { $0.deletingPathExtension().deletingPathExtension().lastPathComponent }
+            .sorted()
+    }
+
+    /// Parse the `description:` field from a skill's YAML frontmatter.
+    private static func skillDescription(for name: String) -> String {
+        guard let url = Bundle.resourceBundle.url(forResource: "\(name).skill", withExtension: "md"),
+              let content = try? String(contentsOf: url) else { return name }
+        for line in content.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("description:") else { continue }
+            return trimmed
+                .dropFirst("description:".count)
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        }
+        return name
+    }
+
     /// Install specified skills (by name). Returns a summary of what was done.
-    /// - Parameter names: skill names to install. If empty, installs all.
-    /// - Returns: Human-readable result string
+    /// - Parameter names: skill names to install. If nil or empty, installs all bundled skills.
     static func install(names: [String]? = nil) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let skillsDir = "\(home)/.claude/skills"
@@ -49,7 +65,7 @@ enum SkillInstaller {
         if let names = names, !names.isEmpty {
             toInstall = names
         } else {
-            toInstall = bundledSkills.map { $0.name }
+            toInstall = bundledSkillNames
         }
 
         var installed: [String] = []
@@ -99,25 +115,33 @@ enum SkillInstaller {
         return parts.isEmpty ? "No skills to install." : parts.joined(separator: ". ")
     }
 
-    /// Returns a JSON-formatted list of bundled skills grouped by category, for the AI to present.
+    /// Returns a formatted list of bundled skills grouped by category, for the AI to present during onboarding.
     static func listBundledSkills() -> String {
         var categories: [String: [(name: String, description: String)]] = [:]
-        for skill in bundledSkills {
-            categories[skill.category, default: []].append((name: skill.name, description: skill.description))
+        for name in bundledSkillNames {
+            let category = categoryMap[name] ?? "Other"
+            categories[category, default: []].append((name: name, description: skillDescription(for: name)))
         }
 
-        let order = ["Documents", "Creation", "Research & Planning", "Google Workspace", "Social Media", "Discovery"]
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
         var lines: [String] = []
-        for cat in order {
-            guard let skills = categories[cat] else { continue }
-            lines.append("\(cat):")
+
+        func appendSkills(_ skills: [(name: String, description: String)]) {
             for s in skills {
-                // Check if already installed
-                let home = FileManager.default.homeDirectoryForCurrentUser.path
                 let exists = FileManager.default.fileExists(atPath: "\(home)/.claude/skills/\(s.name)/SKILL.md")
                 let status = exists ? " [already installed]" : ""
                 lines.append("  - \(s.name): \(s.description)\(status)")
             }
+        }
+
+        for cat in categoryOrder {
+            guard let skills = categories[cat] else { continue }
+            lines.append("\(cat):")
+            appendSkills(skills)
+        }
+        if let other = categories["Other"] {
+            lines.append("Other:")
+            appendSkills(other)
         }
         return lines.joined(separator: "\n")
     }
