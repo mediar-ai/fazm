@@ -137,6 +137,7 @@ struct SignInView: View {
             authState.error = nil
             do {
                 try await AuthService.shared.signInWithApple()
+                UserDefaults.standard.set(true, forKey: "signInJustCompleted")
                 authState.update(isSignedIn: true, userEmail: AuthService.shared.userEmail)
                 authState.isLoading = false
             } catch AuthError.cancelled {
@@ -154,6 +155,7 @@ struct SignInView: View {
             authState.error = nil
             do {
                 try await AuthService.shared.signInWithGoogle()
+                UserDefaults.standard.set(true, forKey: "signInJustCompleted")
                 authState.update(isSignedIn: true, userEmail: AuthService.shared.userEmail)
                 authState.isLoading = false
             } catch AuthError.cancelled {
