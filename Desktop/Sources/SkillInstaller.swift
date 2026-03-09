@@ -27,6 +27,9 @@ enum SkillInstaller {
         ("gws-docs-write", "Create and edit Google Docs", "Google Workspace"),
         ("gws-sheets", "Read and write Google Sheets", "Google Workspace"),
         ("gws-drive", "Google Drive file management", "Google Workspace"),
+        // Social Media
+        ("social-autoposter", "Automate social media posting across Reddit, X, LinkedIn, and Moltbook", "Social Media"),
+        ("social-autoposter-setup", "Set up social-autoposter: accounts, database, and scheduled automation", "Social Media"),
         // Discovery
         ("find-skills", "Discover and install new skills from skillhu.bz and skills.sh", "Discovery"),
     ]
@@ -103,7 +106,7 @@ enum SkillInstaller {
             categories[skill.category, default: []].append((name: skill.name, description: skill.description))
         }
 
-        let order = ["Documents", "Creation", "Research & Planning", "Google Workspace", "Discovery"]
+        let order = ["Documents", "Creation", "Research & Planning", "Google Workspace", "Social Media", "Discovery"]
         var lines: [String] = []
         for cat in order {
             guard let skills = categories[cat] else { continue }
