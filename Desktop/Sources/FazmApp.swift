@@ -102,37 +102,10 @@ struct FazmApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
-        .commands {
-            // Remove Apple's text formatting (Bold/Italic/Font panel) — not relevant for a chat app.
-            // Replace with our font size controls so the Format menu stays but is actually useful.
-            CommandGroup(replacing: .textFormatting) {
-                Button("Increase Font Size") {
-                    let s = FontScaleSettings.shared
-                    s.scale = min(2.0, round((s.scale + 0.05) * 20) / 20)
-                }
-                .keyboardShortcut("+", modifiers: .command)
-
-                Button("Decrease Font Size") {
-                    let s = FontScaleSettings.shared
-                    s.scale = max(0.5, round((s.scale - 0.05) * 20) / 20)
-                }
-                .keyboardShortcut("-", modifiers: .command)
-
-                Button("Reset Font Size") {
-                    FontScaleSettings.shared.resetToDefault()
-                }
-                .keyboardShortcut("0", modifiers: .command)
-
-                Divider()
-
-                Button("Reset Window Size") {
-                    resetWindowToDefaultSize()
-                }
-            }
-
-            // Remove the Help menu — macOS help search is irrelevant for Fazm.
-            CommandGroup(replacing: .help) {}
-        }
+        // Menu commands (font size, help) are managed via AppDelegate.setupAppMenus()
+        // instead of SwiftUI .commands {} to avoid AttributeGraph crashes during menu rendering.
+        // SwiftUI's menu rendering re-evaluates the entire scene view graph, and if any @Published
+        // state mutation is in flight (e.g. ViewModelContainer init), AG::Graph::value_set crashes.
 
         // Note: Menu bar is now handled by NSStatusBar in AppDelegate.setupMenuBar()
         // for better reliability on macOS Sequoia (SwiftUI MenuBarExtra had rendering issues)
@@ -322,6 +295,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Ensure app always shows in dock as a regular app
         NSApp.setActivationPolicy(.regular)
+
+        // Set up app menus (Format, Help) via AppKit instead of SwiftUI .commands {}
+        // to avoid AttributeGraph crashes during menu rendering
+        setupAppMenus()
 
         // Set up menu bar icon with NSStatusBar (more reliable than SwiftUI MenuBarExtra)
         // Called synchronously on main thread to ensure status item is created before app finishes launching
@@ -714,6 +691,65 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor @objc private func signOutFromMenu() {
         AnalyticsManager.shared.menuBarActionClicked(action: "sign_out")
         AuthService.shared.signOut()
+    }
+
+    // MARK: - App Menus (Format / Help)
+
+    /// Replace SwiftUI-generated Format and Help menus with AppKit equivalents.
+    /// SwiftUI's .commands {} shares the scene view graph and can crash with
+    /// AG::Graph::value_set if any @Published state mutates during menu rendering.
+    private func setupAppMenus() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        // -- Format menu: replace SwiftUI's default text formatting with font size controls --
+        if let formatMenu = mainMenu.item(withTitle: "Format")?.submenu {
+            formatMenu.removeAllItems()
+
+            let increaseItem = NSMenuItem(title: "Increase Font Size", action: #selector(increaseFontSize), keyEquivalent: "+")
+            increaseItem.keyEquivalentModifierMask = .command
+            increaseItem.target = self
+            formatMenu.addItem(increaseItem)
+
+            let decreaseItem = NSMenuItem(title: "Decrease Font Size", action: #selector(decreaseFontSize), keyEquivalent: "-")
+            decreaseItem.keyEquivalentModifierMask = .command
+            decreaseItem.target = self
+            formatMenu.addItem(decreaseItem)
+
+            let resetItem = NSMenuItem(title: "Reset Font Size", action: #selector(resetFontSize), keyEquivalent: "0")
+            resetItem.keyEquivalentModifierMask = .command
+            resetItem.target = self
+            formatMenu.addItem(resetItem)
+
+            formatMenu.addItem(NSMenuItem.separator())
+
+            let resetWindowItem = NSMenuItem(title: "Reset Window Size", action: #selector(resetWindowSize), keyEquivalent: "")
+            resetWindowItem.target = self
+            formatMenu.addItem(resetWindowItem)
+        }
+
+        // -- Help menu: remove it (macOS help search is irrelevant for Fazm) --
+        let helpIndex = mainMenu.indexOfItem(withTitle: "Help")
+        if helpIndex >= 0 {
+            mainMenu.removeItem(at: helpIndex)
+        }
+    }
+
+    @objc private func increaseFontSize() {
+        let s = FontScaleSettings.shared
+        s.scale = min(2.0, round((s.scale + 0.05) * 20) / 20)
+    }
+
+    @objc private func decreaseFontSize() {
+        let s = FontScaleSettings.shared
+        s.scale = max(0.5, round((s.scale - 0.05) * 20) / 20)
+    }
+
+    @objc private func resetFontSize() {
+        FontScaleSettings.shared.resetToDefault()
+    }
+
+    @objc private func resetWindowSize() {
+        resetWindowToDefaultSize()
     }
 
     // MARK: - NSMenuDelegate
