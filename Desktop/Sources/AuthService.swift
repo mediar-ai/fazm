@@ -798,10 +798,15 @@ class AuthService: NSObject {
                     """
                 }
 
-                let httpResponse = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\(responseHTML)"
-                _ = httpResponse.withCString { ptr in
-                    send(clientFD, ptr, strlen(ptr), 0)
+                let htmlData = Data(responseHTML.utf8)
+                let httpHeader = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(htmlData.count)\r\nConnection: close\r\n\r\n"
+                let fullResponse = Data(httpHeader.utf8) + htmlData
+                fullResponse.withUnsafeBytes { ptr in
+                    _ = send(clientFD, ptr.baseAddress!, ptr.count, 0)
                 }
+                // Graceful shutdown so the browser receives all data before close
+                shutdown(clientFD, SHUT_WR)
+                usleep(100_000) // 100ms for browser to read
 
                 if let code = code {
                     continuation.resume(returning: code)
