@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Sentry
 
 /// Unified analytics manager that sends events to PostHog
 @MainActor
@@ -26,6 +27,14 @@ class AnalyticsManager {
             // Tag all dev events so they can be filtered out in PostHog dashboards
             PostHogManager.shared.register(properties: ["is_dev_build": true])
             log("Analytics: Initialized in development mode (events tagged with is_dev_build=true)")
+        }
+
+        // Register update channel as a super property (sent with every event)
+        let channel = UserDefaults.standard.string(forKey: "update_channel") ?? "beta"
+        PostHogManager.shared.register(properties: ["update_channel": channel])
+        PostHogManager.shared.setUserProperty(key: "update_channel", value: channel)
+        SentrySDK.configureScope { scope in
+            scope.setTag(value: channel, key: "update_channel")
         }
     }
 
@@ -603,6 +612,17 @@ class AnalyticsManager {
         PostHogManager.shared.updateCheckFailed(error: error, errorDomain: errorDomain, errorCode: errorCode, underlyingError: underlyingError, underlyingDomain: underlyingDomain, underlyingCode: underlyingCode)
     }
 
+    func updateChannelChanged(channel: String) {
+        // Update PostHog super property so all future events include the channel
+        PostHogManager.shared.register(properties: ["update_channel": channel])
+        PostHogManager.shared.setUserProperty(key: "update_channel", value: channel)
+        PostHogManager.shared.track("Update Channel Changed", properties: ["channel": channel])
+        // Update Sentry tag
+        SentrySDK.configureScope { scope in
+            scope.setTag(value: channel, key: "update_channel")
+        }
+    }
+
     // MARK: - Notification Events
 
     func notificationSent(notificationId: String, title: String, assistantId: String) {
@@ -689,6 +709,9 @@ class AnalyticsManager {
 
         // -- Dev Mode --
         props["dev_mode_enabled"] = ud.bool(forKey: "devModeEnabled")
+
+        // -- Update Channel --
+        props["update_channel"] = ud.string(forKey: "update_channel") ?? "beta"
 
         return props
     }
