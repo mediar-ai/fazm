@@ -687,14 +687,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Use user's saved preferred size if available, otherwise fall back to defaults.
         let savedSize = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
             .map(NSSizeFromString)
-        let preferredHeight = savedSize?.height ?? Self.defaultBaseResponseHeight
         let preferredWidth = savedSize?.width ?? Self.expandedWidth
-        let baseHeight = max(preferredHeight, Self.defaultBaseResponseHeight)
-        let maxHeight = baseHeight * 2
-
-        // Start at the user's preferred size (or minResponseHeight / current frame,
-        // whichever is larger) so we restore their chosen size.
-        let startHeight = max(Self.minResponseHeight, max(preferredHeight, frame.height))
+        // The saved height is the user's chosen maximum. Start at half of it
+        // and auto-expand up to it as content streams in.
+        let maxHeight = max(savedSize?.height ?? Self.defaultBaseResponseHeight * 2, Self.defaultBaseResponseHeight * 2)
+        let startHeight = max(Self.minResponseHeight, max(maxHeight / 2, frame.height))
         let startWidth = max(Self.expandedWidth, preferredWidth)
         let initialSize = NSSize(width: startWidth, height: startHeight)
         resizeAnchored(to: initialSize, makeResizable: true, animated: animated)
