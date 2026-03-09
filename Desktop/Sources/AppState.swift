@@ -528,9 +528,11 @@ class AppState: ObservableObject {
                 }
             }
         } else {
-            // AXIsProcessTrusted() says not granted — but on macOS 26 this may be stale.
-            // Probe via event tap which checks the live TCC database.
-            if probeAccessibilityViaEventTap() {
+            // AXIsProcessTrusted() says not granted.
+            // On macOS 26 the TCC cache can go stale — but only probe via event tap when we
+            // previously had permission, to avoid triggering the "prevented from modifying apps"
+            // Privacy & Security notification every polling cycle when permission was never granted.
+            if previouslyGranted && probeAccessibilityViaEventTap() {
                 if !previouslyGranted {
                     log("ACCESSIBILITY_CHECK: AXIsProcessTrusted() returned false but event tap succeeded — stale cache detected")
                 }
