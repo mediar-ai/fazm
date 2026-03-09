@@ -35,9 +35,6 @@ let package = Package(
                 .product(name: "SessionReplay", package: "macos-session-replay"),
             ],
             path: "Sources",
-            exclude: [
-                "Resources/BundledSkills",
-            ],
             resources: [
                 .copy("Resources/BundledSkills"),
                 .process("Resources"),
