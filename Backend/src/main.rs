@@ -31,6 +31,10 @@ async fn main() {
             "/v1/vertex/subject-token",
             axum::routing::post(routes::vertex::subject_token),
         )
+        .route(
+            "/api/session-recording/get-upload-url",
+            axum::routing::post(routes::session_recording::get_upload_url),
+        )
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // Public routes
