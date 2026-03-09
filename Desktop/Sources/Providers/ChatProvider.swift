@@ -854,39 +854,41 @@ class ChatProvider: ObservableObject {
 
     /// Check whether the user has an active Claude Code CLI session by running `claude auth status`
     func checkClaudeConnectionStatus() {
-        let home = NSHomeDirectory()
-        var candidates = [
-            "\(home)/.claude/bin/claude",
-            "/usr/local/bin/claude",
-            "/opt/homebrew/bin/claude",
-        ]
-        // Check NVM node versions (claude is an npm global)
-        let nvmDir = "\(home)/.nvm/versions/node"
-        if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmDir) {
-            for v in versions.sorted(by: { $0.compare($1, options: .numeric) == .orderedDescending }) {
-                candidates.append("\(nvmDir)/\(v)/bin/claude")
+        Task.detached { [weak self] in
+            let home = NSHomeDirectory()
+            var candidates = [
+                "\(home)/.claude/bin/claude",
+                "/usr/local/bin/claude",
+                "/opt/homebrew/bin/claude",
+            ]
+            // Check NVM node versions (claude is an npm global)
+            let nvmDir = "\(home)/.nvm/versions/node"
+            if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmDir) {
+                for v in versions.sorted(by: { $0.compare($1, options: .numeric) == .orderedDescending }) {
+                    candidates.append("\(nvmDir)/\(v)/bin/claude")
+                }
             }
-        }
-        guard let claudePath = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            log("ChatProvider: Claude CLI not found")
-            isClaudeConnected = false
-            return
-        }
+            guard let claudePath = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+                log("ChatProvider: Claude CLI not found")
+                await MainActor.run { self?.isClaudeConnected = false }
+                return
+            }
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: claudePath)
-        proc.arguments = ["auth", "status"]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            let authenticated = proc.terminationStatus == 0
-            log("ChatProvider: claude auth status → \(authenticated ? "authenticated" : "not authenticated")")
-            isClaudeConnected = authenticated
-        } catch {
-            logError("ChatProvider: Failed to run claude auth status", error: error)
-            isClaudeConnected = false
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: claudePath)
+            proc.arguments = ["auth", "status"]
+            proc.standardOutput = FileHandle.nullDevice
+            proc.standardError = FileHandle.nullDevice
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                let authenticated = proc.terminationStatus == 0
+                log("ChatProvider: claude auth status → \(authenticated ? "authenticated" : "not authenticated")")
+                await MainActor.run { self?.isClaudeConnected = authenticated }
+            } catch {
+                logError("ChatProvider: Failed to run claude auth status", error: error)
+                await MainActor.run { self?.isClaudeConnected = false }
+            }
         }
     }
 
