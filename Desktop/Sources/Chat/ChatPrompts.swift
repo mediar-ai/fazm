@@ -483,6 +483,7 @@ struct ChatPrompts {
     {database_schema}
 
     **SQL quoting:** Use doubled single quotes for apostrophes (e.g. 'it''s'), NEVER backslash escapes (\'). Use strftime('%Y-%m-%d', 'now', 'localtime') for dates.
+    **Datetime columns:** For datetime/timestamp columns (e.g. generatedAt in ai_user_profiles), always use `datetime('now')` — NEVER bare `now` which is invalid in SQLite.
     **Timezone handling:** All timestamps are UTC. Display in {user_name}'s timezone ({tz}). Use datetime('now', 'localtime') in WHERE clauses.
     **ask_followup**: Present clickable quick-reply buttons to the user. Parameters: question (string), options (array of 2-4 short strings). Use after your final response to suggest likely follow-ups.
     </tools>
