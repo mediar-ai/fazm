@@ -185,6 +185,39 @@ class PushToTalkManager: ObservableObject {
         }
       }
       pttActive = controlDown
+    case .leftCommand:
+      // Left Cmd: keyCode 55. Ignore right Cmd (54).
+      guard event.keyCode == 55 else { return }
+      // Ignore if other modifiers are held (Option, Control, Shift) so Left Cmd
+      // used in shortcut combos (e.g. Cmd+C) doesn't block the combo.
+      let otherCmdModifiers: NSEvent.ModifierFlags = [.option, .control, .shift]
+      guard event.modifierFlags.intersection(otherCmdModifiers) == [] else {
+        cancelControlDelayIfNeeded()
+        return
+      }
+      let cmdDown = event.modifierFlags.contains(.command)
+      if cmdDown && state == .idle {
+        // Delay activation to allow Cmd+key combos to fire first
+        isControlHeld = true
+        let workItem = DispatchWorkItem { [weak self] in
+          Task { @MainActor in
+            guard let self, self.isControlHeld else { return }
+            self.controlDelayWorkItem = nil
+            self.handleOptionDown()
+          }
+        }
+        controlDelayWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+        return
+      } else if !cmdDown {
+        isControlHeld = false
+        if controlDelayWorkItem != nil {
+          controlDelayWorkItem?.cancel()
+          controlDelayWorkItem = nil
+          return
+        }
+      }
+      pttActive = cmdDown
     case .option:
       // Ignore if other modifiers are held (Cmd, Ctrl, Shift)
       let otherModifiers: NSEvent.ModifierFlags = [.command, .control, .shift]
