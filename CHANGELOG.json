@@ -42,6 +42,7 @@
     "Added Sign in with Google and Sign in with Apple authentication",
     "Follow-up chat input now wraps text like the initial input",
     "Improved sign-in experience with branded browser page, deep link back to app, and auto-close of settings window",
-    "Fixed floating bar showing \"Something went wrong\" instead of re-prompting Claude sign-in when OAuth expires"
+    "Fixed floating bar showing \"Something went wrong\" instead of re-prompting Claude sign-in when OAuth expires",
+    "Fixed \"Fazm was prevented from modifying apps\" privacy warning on launch"
   ]
 }

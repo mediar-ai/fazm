@@ -161,11 +161,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             reason: "Push-to-talk event monitors must stay active"
         )
 
-        // Strip com.apple.provenance xattrs that macOS adds when Sparkle extracts updates.
-        // These break the code signature seal, causing the NEXT update to fail with
-        // "An error occurred while running the updater."
-        stripProvenanceXattrs()
-
         // Configure Firebase and AuthService
         AuthService.shared.configure()
 
@@ -381,24 +376,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Strip com.apple.provenance extended attributes from our own bundle.
-    /// macOS adds these when Sparkle extracts the update ZIP, which breaks the code
-    /// signature seal and causes subsequent updates to fail.
-    private func stripProvenanceXattrs() {
-        let bundlePath = Bundle.main.bundlePath
-        DispatchQueue.global(qos: .utility).async {
-            let process = Process()
-            process.launchPath = "/usr/bin/xattr"
-            process.arguments = ["-cr", bundlePath]
-            process.standardOutput = nil
-            process.standardError = nil
-            try? process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 {
-                log("AppDelegate: Stripped provenance xattrs from bundle")
-            }
-        }
-    }
 
     /// One-time icon cache reset to force macOS to pick up the new squircle icon.
     /// Runs lsregister unregister/register + kills iconservicesagent (auto-restarts).
