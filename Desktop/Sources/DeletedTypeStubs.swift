@@ -304,8 +304,146 @@ class APIClient {
     func getInitialMessage(sessionId: String, appId: String? = nil) async throws -> InitialMessageResponse {
         InitialMessageResponse(message: "Hello!", messageId: UUID().uuidString)
     }
-    func recordLlmUsage(inputTokens: Int = 0, outputTokens: Int = 0, cacheReadTokens: Int = 0, cacheWriteTokens: Int = 0, totalTokens: Int = 0, costUsd: Double = 0, account: String = "") async {}
-    func fetchTotalOmiAICost() async -> Double? { 0.0 }
+    // MARK: - LLM Usage (Firestore REST API)
+
+    private static let firestoreProjectId = "fazm-prod"
+
+    /// Record LLM usage to Firestore using atomic field transforms (server-side increments).
+    /// Uses the Firebase ID token from AuthService for authentication.
+    func recordLlmUsage(inputTokens: Int = 0, outputTokens: Int = 0, cacheReadTokens: Int = 0, cacheWriteTokens: Int = 0, totalTokens: Int = 0, costUsd: Double = 0, account: String = "") async {
+        guard let uid = AuthService.shared.userId else {
+            log("APIClient: recordLlmUsage skipped — not signed in")
+            return
+        }
+        guard let idToken = try? await AuthService.shared.getIdToken() else {
+            log("APIClient: recordLlmUsage skipped — no ID token")
+            return
+        }
+
+        let dateKey = {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone(identifier: "UTC")
+            return formatter.string(from: Date())
+        }()
+
+        let docPath = "projects/\(Self.firestoreProjectId)/databases/(default)/documents/users/\(uid)/llm_usage/\(dateKey)"
+        let commitUrl = "https://firestore.googleapis.com/v1/projects/\(Self.firestoreProjectId)/databases/(default)/documents:commit"
+        let acctPrefix = "desktop_chat_\(account)"
+
+        func intIncrement(_ field: String, _ value: Int) -> [String: Any] {
+            ["fieldPath": field, "increment": ["integerValue": String(value)] as [String: Any]]
+        }
+        func dblIncrement(_ field: String, _ value: Double) -> [String: Any] {
+            ["fieldPath": field, "increment": ["doubleValue": value] as [String: Any]]
+        }
+
+        let transforms: [[String: Any]] = [
+            intIncrement("desktop_chat.input_tokens", inputTokens),
+            intIncrement("desktop_chat.output_tokens", outputTokens),
+            intIncrement("desktop_chat.cache_read_tokens", cacheReadTokens),
+            intIncrement("desktop_chat.cache_write_tokens", cacheWriteTokens),
+            intIncrement("desktop_chat.total_tokens", totalTokens),
+            dblIncrement("desktop_chat.cost_usd", costUsd),
+            intIncrement("desktop_chat.call_count", 1),
+            intIncrement("\(acctPrefix).input_tokens", inputTokens),
+            intIncrement("\(acctPrefix).output_tokens", outputTokens),
+            intIncrement("\(acctPrefix).cache_read_tokens", cacheReadTokens),
+            intIncrement("\(acctPrefix).cache_write_tokens", cacheWriteTokens),
+            intIncrement("\(acctPrefix).total_tokens", totalTokens),
+            dblIncrement("\(acctPrefix).cost_usd", costUsd),
+            intIncrement("\(acctPrefix).call_count", 1),
+        ]
+
+        let write: [String: Any] = [
+            "transform": [
+                "document": docPath,
+                "fieldTransforms": transforms,
+            ] as [String: Any]
+        ]
+        let body: [String: Any] = ["writes": [write]]
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: body)
+            var request = URLRequest(url: URL(string: commitUrl)!)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = jsonData
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                log("APIClient: recordLlmUsage failed (status \(httpResponse.statusCode))")
+            }
+        } catch {
+            log("APIClient: recordLlmUsage failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Fetch total LLM cost for the current user from Firestore.
+    /// Sums desktop_chat.cost_usd across all daily llm_usage documents.
+    func fetchTotalBuiltinCost() async -> Double? {
+        guard let uid = AuthService.shared.userId else {
+            log("APIClient: fetchTotalBuiltinCost skipped — not signed in")
+            return nil
+        }
+        guard let idToken = try? await AuthService.shared.getIdToken() else {
+            log("APIClient: fetchTotalBuiltinCost skipped — no ID token")
+            return nil
+        }
+
+        let parent = "https://firestore.googleapis.com/v1/projects/\(Self.firestoreProjectId)/databases/(default)/documents/users/\(uid)"
+        let queryUrl = "\(parent):runQuery"
+
+        let query: [String: Any] = [
+            "structuredQuery": [
+                "from": [["collectionId": "llm_usage"]]
+            ]
+        ]
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: query)
+            var request = URLRequest(url: URL(string: queryUrl)!)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = jsonData
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                log("APIClient: fetchTotalBuiltinCost failed (status \(statusCode))")
+                return nil
+            }
+
+            guard let results = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                return nil
+            }
+
+            var total: Double = 0
+            for entry in results {
+                if let fields = (entry["document"] as? [String: Any])?["fields"] as? [String: Any],
+                   let desktopChat = (fields["desktop_chat"] as? [String: Any])?["mapValue"] as? [String: Any],
+                   let chatFields = desktopChat["fields"] as? [String: Any],
+                   let costField = chatFields["cost_usd"] as? [String: Any] {
+                    if let doubleVal = costField["doubleValue"] as? Double {
+                        total += doubleVal
+                    } else if let intStr = costField["integerValue"] as? String, let intVal = Double(intStr) {
+                        total += intVal
+                    }
+                }
+            }
+
+            log("APIClient: Total builtin cost from Firestore: $\(String(format: "%.4f", total))")
+            return total
+        } catch {
+            log("APIClient: fetchTotalBuiltinCost failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Legacy stub name — redirects to fetchTotalBuiltinCost
+    func fetchTotalOmiAICost() async -> Double? { await fetchTotalBuiltinCost() }
 
     // Knowledge Graph
     func getKnowledgeGraph() async throws -> KnowledgeGraphResponse { KnowledgeGraphResponse(nodes: [], edges: []) }
