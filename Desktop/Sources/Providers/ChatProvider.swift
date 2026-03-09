@@ -330,6 +330,8 @@ class ChatProvider: ObservableObject {
     @Published var isClearing = false
     @Published var errorMessage: String?
     @Published var showCreditExhaustedAlert = false
+    /// True while the agent is compacting conversation context
+    @Published var isCompacting = false
 
     /// Set to true during onboarding so the ACP session ID is persisted for restart recovery.
     var isOnboarding = false
@@ -2354,6 +2356,42 @@ class ChatProvider: ObservableObject {
                         self?.isClaudeAuthRequired = false
                         self?.checkClaudeConnectionStatus()
                     }
+                },
+                onStatusEvent: { [weak self] event in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        switch event {
+                        case .compacting(let active):
+                            self.isCompacting = active
+                            if active {
+                                log("ChatProvider: Context compaction started")
+                            } else {
+                                log("ChatProvider: Context compaction finished")
+                            }
+                        case .compactBoundary(let trigger, let preTokens):
+                            log("ChatProvider: Compact boundary — trigger=\(trigger), preTokens=\(preTokens)")
+                        case .taskStarted(let taskId, let description):
+                            self.addToolActivity(
+                                messageId: aiMessageId,
+                                toolName: "Subtask",
+                                status: .running,
+                                toolUseId: taskId,
+                                input: ["description": description]
+                            )
+                        case .taskNotification(let taskId, let status, _):
+                            self.addToolActivity(
+                                messageId: aiMessageId,
+                                toolName: "Subtask",
+                                status: status == "completed" ? .completed : .completed,
+                                toolUseId: taskId,
+                                input: nil
+                            )
+                        case .toolProgress(let toolUseId, _, let elapsed):
+                            self.updateToolElapsedTime(toolUseId: toolUseId, elapsed: elapsed, messageId: aiMessageId)
+                        case .toolUseSummary(let summary):
+                            log("ChatProvider: Tool summary — \(summary.prefix(100))")
+                        }
+                    }
                 }
             )
 
@@ -2801,6 +2839,19 @@ class ChatProvider: ObservableObject {
                     id: id, name: blockName, status: status,
                     toolUseId: toolUseId, input: input, output: output
                 )
+                return
+            }
+        }
+    }
+
+    /// Update elapsed time on a running tool call block
+    private func updateToolElapsedTime(toolUseId: String, elapsed: Double, messageId: String) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        for i in messages[index].contentBlocks.indices {
+            if case .toolCall(_, _, let status, let tuid, _, _) = messages[index].contentBlocks[i],
+               tuid == toolUseId, status == .running {
+                // Store elapsed time in toolStartTimes for UI to pick up
+                toolStartTimes[toolUseId] = Date(timeIntervalSinceNow: -elapsed)
                 return
             }
         }
