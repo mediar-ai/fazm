@@ -42,16 +42,24 @@ See `.claude/skills/user-logs/SKILL.md` for full documentation and API queries.
 
 ## Release Pipeline
 
-Merging `desktop/**` changes to `main` triggers a fully automated release:
+### Desktop App (Codemagic)
 
-1. **GitHub Actions** (`desktop_auto_release.yml`) — auto-increments version, pushes a `v*-macos` tag
-2. **Codemagic** (`codemagic.yaml`, workflow `fazm-desktop-release`) — triggered by the tag, runs on Mac mini M2:
+Push a `v*-macos` tag to trigger a release:
+```bash
+git tag v0.2.4+16-macos && git push origin v0.2.4+16-macos
+```
+
+**Codemagic** (`codemagic.yaml`, workflow `fazm-desktop-release`) — runs on Mac mini M2:
    - Builds universal binary (arm64 + x86_64)
    - Signs with Developer ID, notarizes with Apple
    - Creates DMG + Sparkle ZIP
-   - Publishes GitHub release, uploads to GCS, registers in Firestore
-   - Deploys Rust backend to Cloud Run
-3. **Sparkle auto-update** delivers the new version to users
+   - Publishes GitHub release
+**Sparkle auto-update** delivers the new version to users.
+
+### Rust Backend (GitHub Actions)
+
+Pushing `Backend/**` changes to `main` auto-deploys to Cloud Run via `.github/workflows/deploy-backend.yml`.
+Uses Workload Identity Federation (no stored keys) → `github-actions-deploy@fazm-prod.iam.gserviceaccount.com`.
 
 **Codemagic CLI & API:**
 - Token: `$CODEMAGIC_API_TOKEN` (set in `~/.zshrc`)
