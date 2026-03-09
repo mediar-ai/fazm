@@ -409,6 +409,14 @@ class ChatProvider: ObservableObject {
     /// Cumulative tokens used in the current session
     @Published var sessionTokensUsed: Int = 0
 
+    // MARK: - Built-in API Key Usage Cap ($10)
+
+    /// Maximum spend allowed on the built-in API key before auto-switching to personal mode
+    static let builtinCostCapUsd: Double = 10.0
+
+    /// Cumulative cost tracked locally (seeded from Firestore on startup)
+    @AppStorage("builtinCumulativeCostUsd") var builtinCumulativeCostUsd: Double = 0.0
+
     private let messagesPageSize = 50
     private let maxMessagesInMemory = 200
     private var multiChatObserver: AnyCancellable?
@@ -1600,6 +1608,24 @@ class ChatProvider: ObservableObject {
 
     /// Initialize chat: fetch sessions and load messages
     func initialize() async {
+        // Seed cumulative builtin cost from Firestore (background, no latency impact)
+        Task.detached(priority: .background) { [weak self] in
+            guard let serverCost = await APIClient.shared.fetchTotalBuiltinCost() else { return }
+            guard let self else { return }
+            await MainActor.run {
+                // Always trust the server value — it's the authoritative total
+                self.builtinCumulativeCostUsd = serverCost
+                log("ChatProvider: Seeded builtin cumulative cost from Firestore: $\(String(format: "%.4f", serverCost))")
+
+                // If already over cap and still in builtin mode, switch immediately
+                if self.bridgeMode == "builtin" && serverCost >= Self.builtinCostCapUsd {
+                    log("ChatProvider: Builtin cost already at $\(String(format: "%.2f", serverCost)) on startup — switching to personal mode")
+                    self.showCreditExhaustedAlert = true
+                    Task { await self.switchBridgeMode(to: "personal") }
+                }
+            }
+        }
+
         if multiChatEnabled {
             // Multi-chat mode: load sessions, default to default chat
             await fetchSessions()
@@ -2051,6 +2077,14 @@ class ChatProvider: ObservableObject {
             log("ChatProvider: Using saved floating session ID for resume: \(pendingResume)")
         }
 
+        // Pre-query guard: check if builtin cost cap is reached
+        if bridgeMode == "builtin" && builtinCumulativeCostUsd >= Self.builtinCostCapUsd {
+            log("ChatProvider: Builtin cost cap reached ($\(String(format: "%.2f", builtinCumulativeCostUsd))/$\(String(format: "%.0f", Self.builtinCostCapUsd))) — switching to personal mode")
+            showCreditExhaustedAlert = true
+            await switchBridgeMode(to: "personal")
+            // Don't return — let the query proceed on the personal account
+        }
+
         // Ensure bridge is running
         guard await ensureBridgeStarted() else {
             errorMessage = "AI not available"
@@ -2429,6 +2463,8 @@ class ChatProvider: ObservableObject {
                 )
             }
 
+            let isBuiltinMode = bridgeMode == "builtin"
+            let accountType = isBuiltinMode ? "builtin" : "personal"
             let r = queryResult
             Task.detached(priority: .background) {
                 await APIClient.shared.recordLlmUsage(
@@ -2438,10 +2474,21 @@ class ChatProvider: ObservableObject {
                     cacheWriteTokens: r.cacheWriteTokens,
                     totalTokens: r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens,
                     costUsd: r.costUsd,
-                    account: "personal"
+                    account: accountType
                 )
             }
             sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
+
+            // Post-query: accumulate cost and check cap (builtin mode only)
+            if isBuiltinMode {
+                builtinCumulativeCostUsd += queryResult.costUsd
+                if builtinCumulativeCostUsd >= Self.builtinCostCapUsd {
+                    log("ChatProvider: Builtin cost cap reached after query ($\(String(format: "%.2f", builtinCumulativeCostUsd))) — switching to personal mode")
+                    showCreditExhaustedAlert = true
+                    AnalyticsManager.shared.creditExhausted(previousMode: bridgeMode)
+                    await switchBridgeMode(to: "personal")
+                }
+            }
 
             // Fire-and-forget: check if user's message mentions goal progress
             let chatText = trimmedText
