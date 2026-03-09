@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Sheet shown when ACP bridge (Mode B) requires the user to authenticate
 /// with their Claude account via OAuth.
@@ -146,5 +147,87 @@ struct ClaudeAuthSheet: View {
                 isConnecting = false
             }
         }
+    }
+}
+
+// MARK: - Standalone Window Controller
+
+/// Wrapper view that observes ChatProvider so claudeAuthTimedOut updates propagate.
+private struct ClaudeAuthWindowContent: View {
+    @ObservedObject var chatProvider: ChatProvider
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ClaudeAuthSheet(
+            onConnect: {
+                chatProvider.startClaudeAuth()
+            },
+            onCancel: {
+                chatProvider.isClaudeAuthRequired = false
+                onDismiss()
+            },
+            hasTimedOut: chatProvider.claudeAuthTimedOut,
+            onRetry: {
+                chatProvider.retryClaudeAuth()
+                onDismiss()
+            }
+        )
+        .onReceive(chatProvider.$isClaudeAuthRequired) { required in
+            if !required {
+                onDismiss()
+            }
+        }
+    }
+}
+
+/// Manages a standalone floating window for Claude OAuth sign-in.
+/// Shown when auth is needed regardless of whether the main window is visible.
+final class ClaudeAuthWindowController {
+    static let shared = ClaudeAuthWindowController()
+    private var window: NSWindow?
+    private var hostingView: NSHostingView<AnyView>?
+
+    func show(chatProvider: ChatProvider) {
+        if let existing = window, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let controller = self
+        let content = ClaudeAuthWindowContent(
+            chatProvider: chatProvider,
+            onDismiss: { controller.close() }
+        )
+
+        let hostingView = NSHostingView(rootView: AnyView(content))
+        hostingView.setFrameSize(NSSize(width: 400, height: 380))
+
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 400, height: 380)),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        self.window = window
+        self.hostingView = hostingView
+    }
+
+    func close() {
+        window?.orderOut(nil)
+        window = nil
+        hostingView = nil
     }
 }
