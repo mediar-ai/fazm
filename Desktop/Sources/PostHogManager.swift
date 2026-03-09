@@ -71,6 +71,13 @@ class PostHogManager {
         PostHogSDK.shared.identify(PostHogSDK.shared.getDistinctId(), userProperties: [key: value])
     }
 
+    /// Identify an authenticated user (links device to Firebase user)
+    func identifyAuthUser(userId: String, properties: [String: Any]) {
+        guard isInitialized else { return }
+        PostHogSDK.shared.identify(userId, userProperties: properties)
+        log("PostHog: Identified auth user \(userId)")
+    }
+
     /// Register super properties that are sent with every event
     func register(properties: [String: Any]) {
         guard isInitialized else { return }
