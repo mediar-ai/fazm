@@ -1,8 +1,22 @@
 import SwiftUI
 
+struct GoogleIcon: View {
+    var size: CGFloat = 18
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+                .frame(width: size, height: size)
+            Text("G")
+                .font(.system(size: size * 0.65, weight: .bold, design: .rounded))
+                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+        }
+    }
+}
+
 struct SignInView: View {
     @ObservedObject var authState: AuthState
-    @State private var isHoveringApple = false
     @State private var isHoveringGoogle = false
 
     var body: some View {
@@ -50,41 +64,12 @@ struct SignInView: View {
 
                 // Sign-in buttons
                 VStack(spacing: 12) {
-                    // Apple Sign In
-                    Button(action: {
-                        performAppleSignIn()
-                    }) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "apple.logo")
-                                .font(.system(size: 18, weight: .medium))
-                            Text("Sign in with Apple")
-                                .scaledFont(size: 15, weight: .medium)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: 280)
-                        .frame(height: 44)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(isHoveringApple ? Color.white.opacity(0.15) : Color.white.opacity(0.1))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(FazmColors.border, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { hovering in
-                        isHoveringApple = hovering
-                    }
-                    .disabled(authState.isLoading)
-
                     // Google Sign In
                     Button(action: {
                         performGoogleSignIn()
                     }) {
                         HStack(spacing: 10) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 16, weight: .medium))
+                            GoogleIcon(size: 18)
                             Text("Sign in with Google")
                                 .scaledFont(size: 15, weight: .medium)
                         }
@@ -130,24 +115,6 @@ struct SignInView: View {
     }
 
     // MARK: - Sign In Methods
-
-    private func performAppleSignIn() {
-        Task { @MainActor in
-            authState.isLoading = true
-            authState.error = nil
-            do {
-                try await AuthService.shared.signInWithApple()
-                UserDefaults.standard.set(true, forKey: "signInJustCompleted")
-                authState.update(isSignedIn: true, userEmail: AuthService.shared.userEmail)
-                authState.isLoading = false
-            } catch AuthError.cancelled {
-                authState.isLoading = false
-            } catch {
-                authState.error = "Apple Sign-In failed: \(error.localizedDescription)"
-                authState.isLoading = false
-            }
-        }
-    }
 
     private func performGoogleSignIn() {
         Task { @MainActor in
