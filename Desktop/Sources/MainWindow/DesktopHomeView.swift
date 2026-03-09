@@ -10,9 +10,6 @@ struct DesktopHomeView: View {
     @State private var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection? = nil
     @State private var highlightedSettingId: String? = nil
 
-    // Sheet triggers (driven by ChatProvider @Published flags)
-    @State private var showClaudeAuth = false
-
     var body: some View {
         Group {
             if !authState.isSignedIn {
@@ -84,23 +81,6 @@ struct DesktopHomeView: View {
         .frame(minWidth: 900, minHeight: 600)
         .preferredColorScheme(.dark)
         .tint(FazmColors.purplePrimary)
-        // Browser extension setup handled below via .onReceive
-        // Claude auth (triggered when ACP bridge needs OAuth)
-        .sheet(isPresented: $showClaudeAuth) {
-            ClaudeAuthSheet(
-                onConnect: {
-                    viewModelContainer.chatProvider.startClaudeAuth()
-                },
-                onCancel: {
-                    showClaudeAuth = false
-                },
-                hasTimedOut: viewModelContainer.chatProvider.claudeAuthTimedOut,
-                onRetry: {
-                    viewModelContainer.chatProvider.retryClaudeAuth()
-                    showClaudeAuth = false
-                }
-            )
-        }
         // Observe ChatProvider flags
         .onReceive(viewModelContainer.chatProvider.$needsBrowserExtensionSetup) { needs in
             if needs {
@@ -115,7 +95,7 @@ struct DesktopHomeView: View {
         }
         .onReceive(viewModelContainer.chatProvider.$isClaudeAuthRequired) { needs in
             if needs {
-                showClaudeAuth = true
+                ClaudeAuthWindowController.shared.show(chatProvider: viewModelContainer.chatProvider)
             }
         }
         .onAppear {
