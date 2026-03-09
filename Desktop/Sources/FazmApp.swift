@@ -271,6 +271,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AnalyticsManager.shared.identify()
         AnalyticsManager.shared.reportAllSettingsIfNeeded()
 
+        // Re-identify authenticated user with PostHog now that the SDK is initialized.
+        // restoreAuthState() (called at line 170, before PostHog initializes) calls
+        // setPostHogUserContext() too early — PostHogManager silently drops it.
+        // Calling it here ensures email/firebase_uid are linked to the device UUID.
+        AuthService.shared.setPostHogUserContext()
+
         // One-time migration: Switch existing users from personal OAuth to Vertex built-in
         migrateBridgeModeToBuiltin()
 
