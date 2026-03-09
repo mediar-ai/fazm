@@ -909,18 +909,22 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         }
         return;
       }
-      // If session/prompt failed while reusing an existing session, retry once with a fresh one.
+      // If session/prompt failed while reusing an existing session, retry once.
+      // Try to resume the same session first (session files on disk may still be valid
+      // even if the ACP process died). The resume path (line ~755) has its own try/catch
+      // that falls back to session/new if the session file is gone or corrupt.
       // Guard: isNewSession check prevents retry after a fresh session, and sessionRetryCount
-      // caps retries to 1 as a safety net against infinite loops (e.g. if session/resume
-      // causes isNewSession to stay false).
+      // caps retries to 1 as a safety net against infinite loops.
       if (!isNewSession && sessionId && sessionRetryCount === 0) {
         sessionRetryCount++;
-        logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
+        logErr(`session/prompt failed with existing session, retrying with session resume: ${err}`);
+        const failedSessionId = sessionId;
         sessions.delete(sessionKey);
         activeSessionId = "";
-        // Clear msg.resume so the retry creates a truly fresh session
-        // instead of resuming the same broken session.
-        msg.resume = undefined;
+        // Attempt to resume the failed session — the ACP SDK can reload
+        // conversation history from ~/.claude/projects/ session files.
+        // If resume fails, the resume path falls back to session/new automatically.
+        msg.resume = failedSessionId;
         return handleQuery(msg);
       }
       throw err;
