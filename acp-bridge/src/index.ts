@@ -430,10 +430,13 @@ let authRetryCount = 0;
 const MAX_AUTH_RETRIES = 2;
 let activeAuthPromise: Promise<void> | null = null;
 let activeOAuthFlow: OAuthFlowHandle | null = null;
+/** Last warmup config received from Swift — replayed after OAuth subprocess restart */
+let lastWarmupConfig: { cwd?: string; sessions?: WarmupSessionConfig[] } | null = null;
 
 // --- Auth flow (OAuth) ---
 
-/** Restart the ACP subprocess so it picks up freshly-stored credentials */
+/** Restart the ACP subprocess so it picks up freshly-stored credentials,
+ *  then replay the last warmup so sessions are restored before the caller retries. */
 async function restartAcpProcess(): Promise<void> {
   logErr("Restarting ACP subprocess to pick up new credentials...");
   if (acpProcess) {
@@ -445,6 +448,13 @@ async function restartAcpProcess(): Promise<void> {
   }
   // State is cleaned up by the exit handler (sessions, handlers, etc.)
   startAcpProcess();
+
+  // Replay warmup so sessions are re-created/resumed with the new credentials.
+  // Without this, the caller would get a fresh (no-history) session after OAuth.
+  if (lastWarmupConfig) {
+    logErr("Replaying warmup after OAuth restart...");
+    await preWarmSession(lastWarmupConfig.cwd, lastWarmupConfig.sessions);
+  }
 }
 
 /**
@@ -642,6 +652,11 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
   // Use tmpdir() instead of $HOME to avoid triggering macOS TCC/FileProvider
   // prompts (e.g. Dropbox) when ACP scans the cwd during session init.
   const warmCwd = cwd || tmpdir();
+
+  // Save config so it can be replayed after an OAuth-triggered subprocess restart
+  if (sessionConfigs && sessionConfigs.length > 0) {
+    lastWarmupConfig = { cwd, sessions: sessionConfigs };
+  }
 
   // Build the list of sessions to warm: new format (sessionConfigs) takes priority over legacy (models array)
   const toWarm: WarmupSessionConfig[] = sessionConfigs && sessionConfigs.length > 0
