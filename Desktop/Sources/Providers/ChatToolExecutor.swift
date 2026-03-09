@@ -101,7 +101,7 @@ class ChatToolExecutor {
         case "install_skills":
             let names = toolCall.arguments["names"] as? [String]
             let result = SkillInstaller.install(names: names)
-            let count = names?.count ?? SkillInstaller.bundledSkills.count
+            let count = names?.count ?? SkillInstaller.bundledSkillNames.count
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "install_skills", properties: ["requested_count": count])
             return result
 
