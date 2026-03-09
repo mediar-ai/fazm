@@ -133,9 +133,6 @@ struct FloatingControlBarView: View {
                         onAskAI()
                     }
                     compactLabel("Open chat", keys: shortcutSettings.askFazmKey.hintKeys)
-                    if state.hasLastConversation && !state.showingAIConversation {
-                        compactButton(title: "New chat", keys: ["⌘", "N"], action: onNewChat)
-                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
