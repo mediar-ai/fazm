@@ -103,7 +103,9 @@ struct FazmApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
         .commands {
-            CommandGroup(after: .textFormatting) {
+            // Remove Apple's text formatting (Bold/Italic/Font panel) — not relevant for a chat app.
+            // Replace with our font size controls so the Format menu stays but is actually useful.
+            CommandGroup(replacing: .textFormatting) {
                 Button("Increase Font Size") {
                     let s = FontScaleSettings.shared
                     s.scale = min(2.0, round((s.scale + 0.05) * 20) / 20)
@@ -127,6 +129,9 @@ struct FazmApp: App {
                     resetWindowToDefaultSize()
                 }
             }
+
+            // Remove the Help menu — macOS help search is irrelevant for Fazm.
+            CommandGroup(replacing: .help) {}
         }
 
         // Note: Menu bar is now handled by NSStatusBar in AppDelegate.setupMenuBar()
