@@ -45,6 +45,25 @@ actor ACPBridge {
   /// Callback for auth timeout (reason string)
   typealias AuthTimeoutHandler = @Sendable (String) -> Void
 
+  /// Status events forwarded from the ACP SDK (compaction, tasks, tool progress)
+  enum StatusEvent: Sendable {
+    /// Agent is compacting context (true) or finished compacting (false)
+    case compacting(Bool)
+    /// Compaction boundary with token count before compaction
+    case compactBoundary(trigger: String, preTokens: Int)
+    /// Sub-task/agent started
+    case taskStarted(taskId: String, description: String)
+    /// Sub-task/agent completed/failed/stopped
+    case taskNotification(taskId: String, status: String, summary: String)
+    /// Tool execution progress (elapsed time)
+    case toolProgress(toolUseId: String, toolName: String, elapsedTimeSeconds: Double)
+    /// Collapsed summary of multiple tool calls
+    case toolUseSummary(summary: String)
+  }
+
+  /// Callback for status events (compaction, tasks, tool progress)
+  typealias StatusEventHandler = @Sendable (StatusEvent) -> Void
+
   /// Inbound message types (Bridge → Swift, read from stdout)
   private enum InboundMessage {
     case `init`(sessionId: String)
@@ -62,6 +81,12 @@ actor ACPBridge {
     case authSuccess
     case authTimeout(reason: String)
     case creditExhausted(message: String)
+    case statusChange(status: String?)
+    case compactBoundary(trigger: String, preTokens: Int)
+    case taskStarted(taskId: String, description: String)
+    case taskNotification(taskId: String, status: String, summary: String)
+    case toolProgress(toolUseId: String, toolName: String, elapsedTimeSeconds: Double)
+    case toolUseSummary(summary: String)
   }
 
   // MARK: - Configuration
@@ -389,7 +414,8 @@ actor ACPBridge {
     onTextBlockBoundary: @escaping TextBlockBoundaryHandler = {},
     onToolResultDisplay: @escaping ToolResultDisplayHandler = { _, _, _ in },
     onAuthRequired: @escaping AuthRequiredHandler = { _, _ in },
-    onAuthSuccess: @escaping AuthSuccessHandler = {}
+    onAuthSuccess: @escaping AuthSuccessHandler = {},
+    onStatusEvent: @escaping StatusEventHandler = { _ in }
   ) async throws -> QueryResult {
     guard isRunning else {
       throw BridgeError.notRunning
@@ -542,6 +568,24 @@ actor ACPBridge {
       case .creditExhausted(let message):
         log("ACPBridge: credit exhausted: \(message)")
         throw BridgeError.creditExhausted
+
+      case .statusChange(let status):
+        onStatusEvent(status == "compacting" ? .compacting(true) : .compacting(false))
+
+      case .compactBoundary(let trigger, let preTokens):
+        onStatusEvent(.compactBoundary(trigger: trigger, preTokens: preTokens))
+
+      case .taskStarted(let taskId, let description):
+        onStatusEvent(.taskStarted(taskId: taskId, description: description))
+
+      case .taskNotification(let taskId, let status, let summary):
+        onStatusEvent(.taskNotification(taskId: taskId, status: status, summary: summary))
+
+      case .toolProgress(let toolUseId, let toolName, let elapsed):
+        onStatusEvent(.toolProgress(toolUseId: toolUseId, toolName: toolName, elapsedTimeSeconds: elapsed))
+
+      case .toolUseSummary(let summary):
+        onStatusEvent(.toolUseSummary(summary: summary))
       }
     }
   }
@@ -677,6 +721,36 @@ actor ACPBridge {
     case "credit_exhausted":
       let message = dict["message"] as? String ?? "Credit balance exhausted"
       return .creditExhausted(message: message)
+
+    case "status_change":
+      let status = dict["status"] as? String
+      return .statusChange(status: status)
+
+    case "compact_boundary":
+      let trigger = dict["trigger"] as? String ?? "auto"
+      let preTokens = dict["preTokens"] as? Int ?? 0
+      return .compactBoundary(trigger: trigger, preTokens: preTokens)
+
+    case "task_started":
+      let taskId = dict["taskId"] as? String ?? ""
+      let description = dict["description"] as? String ?? ""
+      return .taskStarted(taskId: taskId, description: description)
+
+    case "task_notification":
+      let taskId = dict["taskId"] as? String ?? ""
+      let status = dict["status"] as? String ?? ""
+      let summary = dict["summary"] as? String ?? ""
+      return .taskNotification(taskId: taskId, status: status, summary: summary)
+
+    case "tool_progress":
+      let toolUseId = dict["toolUseId"] as? String ?? ""
+      let toolName = dict["toolName"] as? String ?? ""
+      let elapsed = dict["elapsedTimeSeconds"] as? Double ?? 0
+      return .toolProgress(toolUseId: toolUseId, toolName: toolName, elapsedTimeSeconds: elapsed)
+
+    case "tool_use_summary":
+      let summary = dict["summary"] as? String ?? ""
+      return .toolUseSummary(summary: summary)
 
     default:
       log("ACPBridge: unknown message type: \(type)")
