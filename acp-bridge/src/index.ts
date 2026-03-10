@@ -850,8 +850,14 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Send the prompt — retry with fresh session if stale
     const sendPrompt = async (): Promise<void> => {
       const promptBlocks: Array<Record<string, unknown>> = [];
-      if (msg.imageBase64 && !retryingWithHint) {
+      // Cap image sends per session to avoid Claude's "many-image" stricter 2000px limit.
+      // After MAX_IMAGE_TURNS images in a session, screenshots are silently dropped.
+      const currentImageTurns = imageTurnCounts.get(sessionKey) ?? 0;
+      const includeImage = !!(msg.imageBase64 && !retryingWithHint && currentImageTurns < MAX_IMAGE_TURNS);
+      if (includeImage) {
         promptBlocks.push({ type: "image", data: msg.imageBase64, mimeType: "image/jpeg" });
+      } else if (msg.imageBase64 && !retryingWithHint) {
+        logErr(`Skipping screenshot — session has ${currentImageTurns} image turns (cap=${MAX_IMAGE_TURNS})`);
       }
       promptBlocks.push({ type: "text", text: fullPrompt });
 
@@ -868,6 +874,11 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       };
 
       logErr(`Prompt completed: stopReason=${promptResult.stopReason}`);
+
+      // Increment image turn counter so we know when to stop including screenshots.
+      if (includeImage) {
+        imageTurnCounts.set(sessionKey, currentImageTurns + 1);
+      }
 
       // Mark any remaining pending tools as completed
       for (const name of pendingTools) {
