@@ -10,6 +10,8 @@ struct AIResponseView: View {
     @State private var preVoiceFollowUpText: String = ""
     @State private var userHasScrolledUp: Bool = false
     @State private var followUpTextHeight: CGFloat = 36
+    @State private var isHanging = false
+    @State private var hangTask: Task<Void, Never>?
 
     let userInput: String
     let chatHistory: [FloatingChatExchange]
@@ -124,6 +126,16 @@ struct AIResponseView: View {
         .onChange(of: isLoading) {
             if isLoading {
                 userHasScrolledUp = false
+                hangTask?.cancel()
+                hangTask = Task {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard !Task.isCancelled else { return }
+                    isHanging = true
+                }
+            } else {
+                hangTask?.cancel()
+                hangTask = nil
+                isHanging = false
             }
         }
     }
@@ -152,6 +164,8 @@ struct AIResponseView: View {
 
             Spacer()
 
+            ReportIssueButton(isHanging: isHanging)
+
             CopyConversationButton(
                 chatHistory: chatHistory,
                 userInput: userInput,
@@ -163,8 +177,6 @@ struct AIResponseView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "plus")
                             .font(.system(size: 11))
-                        Text("New chat")
-                            .scaledFont(size: 11)
                         Text("⌘N")
                             .scaledFont(size: 9)
                             .padding(.horizontal, 3)
@@ -175,6 +187,7 @@ struct AIResponseView: View {
                     .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .help("New chat")
             }
         }
     }
@@ -556,15 +569,12 @@ struct CopyConversationButton: View {
 
     var body: some View {
         Button(action: copyAll) {
-            HStack(spacing: 4) {
-                Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 11))
-                Text(showCopied ? "Copied" : "Copy all")
-                    .scaledFont(size: 11)
-            }
-            .foregroundColor(showCopied ? .green : .secondary)
+            Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11))
+                .foregroundColor(showCopied ? .green : .secondary)
         }
         .buttonStyle(.plain)
+        .help(showCopied ? "Copied!" : "Copy all")
     }
 
     private func copyAll() {
@@ -588,6 +598,38 @@ struct CopyConversationButton: View {
         showCopied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             showCopied = false
+        }
+    }
+}
+
+// MARK: - Report Issue Button
+
+/// Icon-only button that opens the Report Issue dialog.
+/// Flashes orange when the AI appears to be hanging (isHanging == true).
+struct ReportIssueButton: View {
+    let isHanging: Bool
+
+    @State private var flashOpacity: Double = 1.0
+
+    var body: some View {
+        Button(action: { FeedbackWindow.show() }) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 11))
+                .foregroundColor(isHanging ? .orange : .secondary)
+                .opacity(flashOpacity)
+        }
+        .buttonStyle(.plain)
+        .help("Report an issue")
+        .onChange(of: isHanging) {
+            if isHanging {
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    flashOpacity = 0.15
+                }
+            } else {
+                withAnimation(.default) {
+                    flashOpacity = 1.0
+                }
+            }
         }
     }
 }
