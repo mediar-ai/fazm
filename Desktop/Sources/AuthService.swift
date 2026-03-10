@@ -473,6 +473,9 @@ class AuthService: NSObject {
         setSentryUserContext()
         setPostHogUserContext()
 
+        // Re-check session recording flag now that distinct_id is the Firebase UID
+        SessionRecordingManager.shared.recheckAfterSignIn()
+
         log("AuthService: Firebase auth successful (provider: \(provider), userId: \(localId), email: \(userEmail ?? "nil"))")
     }
 

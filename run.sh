@@ -104,6 +104,31 @@ else
     echo "Warning: acp-bridge directory not found at $ACP_BRIDGE_DIR"
 fi
 
+step "Ensuring ffmpeg binary..."
+FFMPEG_RESOURCE="Desktop/Sources/Resources/ffmpeg"
+if [ -x "$FFMPEG_RESOURCE" ]; then
+    substep "ffmpeg binary already present"
+else
+    substep "Downloading ffmpeg for dev build..."
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "arm64" ]; then
+        FFMPEG_ARCH="arm64"
+    else
+        FFMPEG_ARCH="amd64"
+    fi
+    FFMPEG_TEMP="/tmp/ffmpeg-dev-$$"
+    mkdir -p "$FFMPEG_TEMP"
+    curl -L -o "$FFMPEG_TEMP/ffmpeg.zip" \
+        "https://ffmpeg.martin-riedl.de/redirect/latest/macos/$FFMPEG_ARCH/release/ffmpeg.zip"
+    unzip -q -o "$FFMPEG_TEMP/ffmpeg.zip" -d "$FFMPEG_TEMP/"
+    FFMPEG_BIN=$(find "$FFMPEG_TEMP" -name "ffmpeg" -type f | head -1)
+    cp "$FFMPEG_BIN" "$FFMPEG_RESOURCE"
+    chmod +x "$FFMPEG_RESOURCE"
+    codesign -f -s - "$FFMPEG_RESOURCE"
+    rm -rf "$FFMPEG_TEMP"
+    substep "Downloaded ffmpeg to $FFMPEG_RESOURCE"
+fi
+
 step "Ensuring gws binary..."
 GWS_VERSION="0.6.3"
 GWS_BIN_DIR="Desktop/bin"
@@ -232,6 +257,12 @@ if [ -n "$SIGN_IDENTITY" ]; then
     if [ -d "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" ]; then
         substep "Signing Sparkle framework"
         codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    fi
+    # Sign the bundled ffmpeg binary
+    FFMPEG_BIN="$APP_BUNDLE/Contents/Resources/Fazm_Fazm.bundle/ffmpeg"
+    if [ -f "$FFMPEG_BIN" ]; then
+        substep "Signing bundled ffmpeg binary"
+        codesign --force --options runtime --sign "$SIGN_IDENTITY" "$FFMPEG_BIN"
     fi
     # Sign the bundled node binary with developer identity + Node.entitlements
     # (macOS requires executables inside app bundles to be properly signed)

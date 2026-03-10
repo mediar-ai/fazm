@@ -26,6 +26,15 @@ class SessionRecordingManager {
         }
     }
 
+    /// Re-check the feature flag after sign-in (distinct_id changes to Firebase UID).
+    func recheckAfterSignIn() {
+        log("SessionRecording: re-checking flag after sign-in")
+        PostHogManager.shared.reloadFeatureFlags()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.checkFlagAndUpdate()
+        }
+    }
+
     private func startPolling() {
         guard pollTimer == nil else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
@@ -55,15 +64,21 @@ class SessionRecordingManager {
             return
         }
 
-        let ffmpegPaths = [
+        // Check bundled ffmpeg first, then fall back to system paths
+        let bundledPath = Bundle.main.resourceURL?
+            .appendingPathComponent("Fazm_Fazm.bundle/ffmpeg").path
+        var ffmpegPaths = [String]()
+        if let bp = bundledPath { ffmpegPaths.append(bp) }
+        ffmpegPaths += [
             "/opt/homebrew/bin/ffmpeg",
             "/usr/local/bin/ffmpeg",
             "/usr/bin/ffmpeg",
         ]
         guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-            log("SessionRecording: ffmpeg not found, skipping")
+            log("SessionRecording: ffmpeg not found (checked bundled + system paths), skipping")
             return
         }
+        log("SessionRecording: using ffmpeg at \(ffmpegPath)")
 
         let backendURL = env("FAZM_BACKEND_URL")
         let backendSecret = env("FAZM_BACKEND_SECRET")
@@ -128,6 +143,10 @@ class SessionRecordingManager {
     }
 
     private func getDeviceId() -> String {
+        // Prefer Firebase UID (stable across sessions) over random device UUID
+        if let firebaseUid = AuthService.shared.userId, !firebaseUid.isEmpty {
+            return firebaseUid
+        }
         let key = "analytics_device_id"
         if let existing = UserDefaults.standard.string(forKey: key) {
             return existing
