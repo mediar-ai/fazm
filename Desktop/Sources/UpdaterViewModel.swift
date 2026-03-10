@@ -133,7 +133,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
                     let alert = NSAlert()
                     alert.alertStyle = .warning
                     alert.messageText = "Update requires permission"
-                    alert.informativeText = "macOS blocked the update because Fazm needs App Management permission. To enable auto-updates:\n\n1. Open System Settings → Privacy & Security → App Management\n2. Toggle Fazm on\n3. Try updating again"
+                    alert.informativeText = "macOS blocked the update because Fazm needs App Management permission. To enable auto-updates:\n\n1. Open System Settings → Privacy & Security → App Management\n2. Toggle Fazm on\n\nFazm will retry the update automatically when you return."
                     alert.addButton(withTitle: "Open Settings")
                     alert.addButton(withTitle: "Download Manually")
                     let response = alert.runModal()
@@ -141,6 +141,8 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
                             NSWorkspace.shared.open(url)
                         }
+                        // Retry the update automatically when the user returns from System Settings
+                        self.viewModel?.scheduleRetryAfterAppManagementGrant()
                     } else {
                         if let url = URL(string: "https://github.com/m13v/fazm/releases") {
                             NSWorkspace.shared.open(url)
@@ -334,6 +336,26 @@ final class UpdaterViewModel: ObservableObject {
     /// Manually check for updates
     func checkForUpdates() {
         updaterController.checkForUpdates(nil)
+    }
+
+    /// After the user grants App Management permission in System Settings and returns to Fazm,
+    /// automatically retry the update so they don't have to trigger it manually again.
+    func scheduleRetryAfterAppManagementGrant() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            NotificationCenter.default.removeObserver(notification.object as AnyObject,
+                                                       name: NSApplication.didBecomeActiveNotification,
+                                                       object: nil)
+            logSync("Sparkle: Retrying update after App Management permission grant")
+            // Small delay to let the TCC change take effect
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.checkForUpdatesInBackground()
+            }
+        }
     }
 
     /// Background update check (no UI). Used after channel changes.
