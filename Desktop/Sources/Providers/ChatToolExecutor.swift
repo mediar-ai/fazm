@@ -328,45 +328,20 @@ class ChatToolExecutor {
 
         do {
             return try await dbQueue.read { db in
-                // Q2: Conversations
-                let convos = try Row.fetchAll(db, sql: """
-                    SELECT title, overview, emoji, category, startedAt, finishedAt,
-                        ROUND((julianday(finishedAt) - julianday(startedAt)) * 1440, 1) as duration_min
-                    FROM transcription_sessions
-                    WHERE startedAt >= datetime('now', 'start of day', '-\(daysAgo) day', 'localtime')
-                        AND startedAt < \(upperBound)
-                        AND deleted = 0 AND discarded = 0
-                    ORDER BY startedAt DESC
-                    """)
-
-                // Q3: Action items
-                let tasks = try Row.fetchAll(db, sql: """
-                    SELECT description, completed, priority, createdAt FROM action_items
-                    WHERE createdAt >= datetime('now', 'start of day', '-\(daysAgo) day', 'localtime')
-                        AND createdAt < \(upperBound)
-                        AND deleted = 0
-                    ORDER BY createdAt DESC
-                    """)
-
                 // Format compact markdown
                 var out = "# \(dateLabel) Recap\n\n"
 
-                out += "## Conversations (\(convos.count))\n"
-                if convos.isEmpty {
-                    out += "No conversations recorded.\n"
-                } else {
-                    for convo in convos {
-                        let title = convo["title"] as? String ?? "Untitled"
-                        let overview = convo["overview"] as? String ?? "No summary"
-                        let emoji = convo["emoji"] as? String ?? ""
-                        let durMin = convo["duration_min"] as? Double ?? 0
-                        let dur = durMin > 0 ? " (\(durMin) min)" : ""
-                        out += "- \(emoji) **\(title)**\(dur): \(overview)\n"
-                    }
-                }
+                // Recent chat messages
+                let messages = try Row.fetchAll(db, sql: """
+                    SELECT role, text, createdAt FROM chat_messages
+                    WHERE createdAt >= datetime('now', 'start of day', '-\(daysAgo) day', 'localtime')
+                        AND createdAt < \(upperBound)
+                    ORDER BY createdAt DESC
+                    LIMIT 50
+                    """)
 
-                out += "\n## Tasks (\(tasks.count))\n"
-                if tasks.isEmpty {
+                out += "## Chat Messages (\(messages.count))\n"
+                if messages.isEmpty {
                     out += "No tasks created.\n"
                 } else {
                     for task in tasks {
