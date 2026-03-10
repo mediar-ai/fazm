@@ -104,8 +104,10 @@ class ScreenCaptureManager {
         let fileName = "screenshot-\(timestamp).jpg"
         let fileURL = screenshotsDirectory.appendingPathComponent(fileName)
 
-        // Downscale Retina captures to max 2560px on the longest edge
-        let scaled = downscale(image, maxEdge: 2560)
+        // Downscale Retina captures to max 1568px on the longest edge.
+        // Claude API enforces a 2000px limit per image in multi-image conversations;
+        // staying at 1568 leaves headroom for the API's stricter "many-image" path.
+        let scaled = downscale(image, maxEdge: 1568)
 
         // Try JPEG at decreasing quality until under size limit
         for quality in stride(from: 0.7, through: 0.3, by: -0.1) {
