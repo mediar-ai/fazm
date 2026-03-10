@@ -47,7 +47,7 @@ class PostHogManager {
         // will be called right after with the Firebase UID. Calling identify() with a device
         // UUID first prevents PostHog from properly aliasing the anonymous → authenticated
         // transition, leaving users as "anonymous" in the dashboard.
-        if UserDefaults.standard.string(forKey: "auth_userId")?.isEmpty == false {
+        if UserDefaults.standard.string(forKey: "auth_tokenUserId")?.isEmpty == false {
             log("PostHog: Skipping device identify — authenticated user will be identified via identifyAuthUser()")
             return
         }
