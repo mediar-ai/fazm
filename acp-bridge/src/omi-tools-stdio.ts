@@ -177,13 +177,13 @@ Runs app usage, conversations, and action items queries in one call — much fas
   {
     name: "complete_task",
     description: `Toggle a task's completion status. Syncs to backend (Firestore).
-Use after finding the task with execute_sql. Pass the backendId from the action_items table.`,
+Pass the task's backendId.`,
     inputSchema: {
       type: "object" as const,
       properties: {
         task_id: {
           type: "string" as const,
-          description: "The backendId of the task from action_items table",
+          description: "The task's backendId",
         },
       },
       required: ["task_id"],
@@ -192,13 +192,13 @@ Use after finding the task with execute_sql. Pass the backendId from the action_
   {
     name: "delete_task",
     description: `Delete a task permanently. Syncs to backend (Firestore).
-Use after finding the task with execute_sql. Pass the backendId from the action_items table.`,
+Pass the task's backendId.`,
     inputSchema: {
       type: "object" as const,
       properties: {
         task_id: {
           type: "string" as const,
-          description: "The backendId of the task from action_items table",
+          description: "The task's backendId",
         },
       },
       required: ["task_id"],
