@@ -73,14 +73,13 @@ for app in "${CONFLICTING_APPS[@]}"; do
         rm -rf "$app"
     fi
 done
-# Kill stale "Fazm Dev.app" bundles from other repo clones
-# These confuse LaunchServices and get launched instead of /Applications/Fazm Dev.app
-find "$HOME" -maxdepth 4 -name "Fazm Dev.app" -type d \
-    -not -path "$APP_BUNDLE" -not -path "$APP_PATH" \
-    -not -path "*/Library/*" -not -path "*/node_modules/*" -not -path "*/.Trash/*" \
-    2>/dev/null | while read stale; do
-    substep "Removing stale clone: $stale"
-    rm -rf "$stale"
+# Remove stale "Fazm Dev.app" from known worktree/clone locations
+for stale_dir in "$HOME"/fazm-*/build "$HOME"/*/fazm/build "$HOME"/fazm/.claude/worktrees/*/build; do
+    stale="$stale_dir/Fazm Dev.app"
+    if [ -d "$stale" ] && [ "$stale" != "$APP_BUNDLE" ]; then
+        substep "Removing stale clone: $stale"
+        rm -rf "$stale"
+    fi
 done
 
 # Check if another SwiftPM instance is running (will block our build)
