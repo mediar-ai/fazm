@@ -39,9 +39,18 @@ class PostHogManager {
 
     // MARK: - User Identification
 
-    /// Identify the current device
+    /// Identify the current device (anonymous only — skips if auth user will identify shortly)
     func identify() {
         guard isInitialized else { return }
+
+        // Don't identify with device UUID if user is authenticated — identifyAuthUser()
+        // will be called right after with the Firebase UID. Calling identify() with a device
+        // UUID first prevents PostHog from properly aliasing the anonymous → authenticated
+        // transition, leaving users as "anonymous" in the dashboard.
+        if UserDefaults.standard.string(forKey: "auth_userId")?.isEmpty == false {
+            log("PostHog: Skipping device identify — authenticated user will be identified via identifyAuthUser()")
+            return
+        }
 
         let uid = getOrCreateDeviceId()
 
@@ -74,8 +83,16 @@ class PostHogManager {
     /// Identify an authenticated user (links device to Firebase user)
     func identifyAuthUser(userId: String, properties: [String: Any]) {
         guard isInitialized else { return }
+
+        // Create an alias from the anonymous device UUID to the Firebase UID.
+        // This merges the anonymous person with the authenticated person in PostHog.
+        let currentDistinctId = PostHogSDK.shared.getDistinctId()
+        if currentDistinctId != userId {
+            PostHogSDK.shared.alias(userId)
+        }
+
         PostHogSDK.shared.identify(userId, userProperties: properties)
-        log("PostHog: Identified auth user \(userId)")
+        log("PostHog: Identified auth user \(userId) (was: \(currentDistinctId))")
     }
 
     /// Register super properties that are sent with every event
