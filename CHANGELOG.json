@@ -53,6 +53,7 @@
     "Fixed main window not coming to front after signing in",
     "Fixed crash during AI response streaming caused by overlapping window resize animations",
     "Fixed floating bar window expanding beyond screen bounds during long conversations",
-    "Fixed SQLite syntax error when AI generates double-escaped datetime queries"
+    "Fixed SQLite syntax error when AI generates double-escaped datetime queries",
+    "Auto-retry update after granting App Management permission in System Settings"
   ]
 }
