@@ -261,6 +261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.global(qos: .utility).async {
                 let result = SkillInstaller.install()
                 log("AppDelegate: SkillInstaller on launch: \(result)")
+                SkillInstaller.checkNpmSkillUpdates()
             }
         }
 
