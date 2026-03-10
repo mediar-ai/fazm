@@ -940,6 +940,20 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         fullPrompt = `The previous request failed because an image was too large: "${errMsg}". Please continue with a different approach — avoid reading large image files directly. Use smaller outputs or text-based tools instead.`;
         try {
           await sendPrompt();
+        } catch (retryErr) {
+          const retryErrMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          const isStillImageTooLarge = /image.*(too large|too big|exceeds.*limit)|unable to resize image|content too long/i.test(retryErrMsg);
+          if (isStillImageTooLarge) {
+            // The session history itself contains oversized images — start a fresh session.
+            logErr(`Retry without image also failed with image-too-large — session history poisoned, starting new session: ${retryErrMsg}`);
+            sessions.delete(sessionKey);
+            activeSessionId = "";
+            msg.resume = undefined;
+            msg.imageBase64 = undefined;
+            fullPrompt = msg.prompt;
+            return handleQuery(msg);
+          }
+          throw retryErr;
         } finally {
           retryingWithHint = false;
         }
