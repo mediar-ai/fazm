@@ -579,15 +579,20 @@ struct BrowserExtensionSetup: View {
             end tell
         end tell
         """
-        if let appleScript = NSAppleScript(source: script) {
+        guard let appleScript = NSAppleScript(source: script) else {
+            openURLInChrome(urlString)
+            return
+        }
+        // Run off the main thread — AppleScript blocks until Chrome responds,
+        // which can hang indefinitely if Chrome is slow or unresponsive.
+        DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
             appleScript.executeAndReturnError(&error)
             if error != nil {
-                // Fallback: try NSWorkspace (may be blocked by newer Chrome)
-                openURLInChrome(urlString)
+                DispatchQueue.main.async {
+                    Self.openURLInChrome(urlString)
+                }
             }
-        } else {
-            openURLInChrome(urlString)
         }
     }
 
