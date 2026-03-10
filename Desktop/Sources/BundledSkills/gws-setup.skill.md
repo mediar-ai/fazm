@@ -13,6 +13,20 @@ metadata:
 
 Interactive setup wizard that creates a personal Google Cloud OAuth app so the user can use the GWS CLI with their own credentials and quotas.
 
+## What to expect
+
+Before starting, set the user's expectations clearly:
+
+> **"I'm going to set up a personal Google Cloud OAuth app for you. Here's what that means:**
+>
+> - **It's yours alone** — this app lives in your own Google Cloud account. You're the only user. No one else can access it.
+> - **Stays on your computer** — credentials are stored locally in `~/.config/gws/` and never leave your machine.
+> - **One-time setup** — you'll only need to click through the Google sign-in once. After that, all GWS commands run silently without any browser prompts.
+> - **Hands-free after auth** — I'll handle all the Google Cloud Console steps automatically using browser automation. You just need to authenticate when I ask.
+> - **Takes ~5–10 minutes** — feel free to keep working in other windows while I set this up in the background."
+
+Wait for the user to confirm they're ready before proceeding.
+
 ## When to use
 
 - First-time GWS CLI setup (no `~/.config/gws/client_secret.json` exists)
