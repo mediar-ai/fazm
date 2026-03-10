@@ -564,8 +564,31 @@ struct BrowserExtensionSetup: View {
     }
 
     /// Open the extension status page in Chrome.
+    /// Uses AppleScript to navigate inside Chrome, since newer Chrome versions block
+    /// chrome-extension:// URLs opened via NSWorkspace/external apps.
     static func openExtensionInChrome() {
-        openURLInChrome("chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html")
+        let urlString = "chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html"
+        let script = """
+        tell application "Google Chrome"
+            activate
+            if (count of windows) = 0 then
+                make new window
+            end if
+            tell front window
+                set URL of active tab to "\(urlString)"
+            end tell
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+            if error != nil {
+                // Fallback: try NSWorkspace (may be blocked by newer Chrome)
+                openURLInChrome(urlString)
+            }
+        } else {
+            openURLInChrome(urlString)
+        }
     }
 
     private static let extensionId = "mmlmfjhmonkocbjadbfplnigmagldckm"
