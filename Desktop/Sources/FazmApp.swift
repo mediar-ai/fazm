@@ -800,7 +800,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         // Stop session recording
-        SessionRecordingManager.shared.stop()
+        SessionRecordingManager.shared.shutdown()
 
         // Stop session heartbeat and record final session duration
         AnalyticsManager.shared.stopSessionHeartbeat()
