@@ -418,6 +418,14 @@ class AcpError extends Error {
 
 /** Pre-warmed sessions keyed by sessionKey (e.g. "main", "floating", or model name for backward compat) */
 const sessions = new Map<string, { sessionId: string; cwd: string; model?: string }>();
+/**
+ * Tracks how many image-bearing turns each session key has had.
+ * Claude's API enforces a stricter 2000px/image limit once a session has many images.
+ * Resetting this counter on session delete ensures a fresh session starts clean.
+ */
+const imageTurnCounts = new Map<string, number>();
+/** Max images per session before we stop sending screenshots to prevent API limit errors. */
+const MAX_IMAGE_TURNS = 20;
 /** The session currently being used by an active query (for interrupt) */
 let activeSessionId = "";
 let activeAbort: AbortController | null = null;
@@ -779,6 +787,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       if (existing.cwd !== requestedCwd) {
         logErr(`Cwd changed for ${sessionKey} (${existing.cwd} -> ${requestedCwd}), creating new session`);
         sessions.delete(sessionKey);
+        imageTurnCounts.delete(sessionKey);
       } else {
         sessionId = existing.sessionId;
       }
@@ -905,6 +914,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         authRetryCount++;
         logErr(`session/prompt failed with auth error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
         sessions.delete(sessionKey);
+        imageTurnCounts.delete(sessionKey);
         activeSessionId = "";
         msg.resume = undefined;
         await startAuthFlow();
@@ -947,6 +957,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
             // The session history itself contains oversized images — start a fresh session.
             logErr(`Retry without image also failed with image-too-large — session history poisoned, starting new session: ${retryErrMsg}`);
             sessions.delete(sessionKey);
+            imageTurnCounts.delete(sessionKey);
             activeSessionId = "";
             msg.resume = undefined;
             msg.imageBase64 = undefined;
@@ -970,6 +981,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         logErr(`session/prompt failed with existing session, retrying with session resume: ${err}`);
         const failedSessionId = sessionId;
         sessions.delete(sessionKey);
+        imageTurnCounts.delete(sessionKey);
         activeSessionId = "";
         // Attempt to resume the failed session — the ACP SDK can reload
         // conversation history from ~/.claude/projects/ session files.
@@ -1482,6 +1494,7 @@ async function main(): Promise<void> {
         const key = (msg as any).sessionKey;
         if (key && sessions.has(key)) {
           sessions.delete(key);
+          imageTurnCounts.delete(key);
           logErr(`Session reset: ${key} (will create new on next query)`);
         }
         break;
