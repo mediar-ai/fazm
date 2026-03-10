@@ -431,6 +431,26 @@ workflows:
           xcrun stapler staple "$APP_BUNDLE"
           echo "App stapled"
 
+      - name: Upload dSYMs to Sentry
+        script: |
+          set -e
+          # Install sentry-cli if not available
+          if ! command -v sentry-cli &>/dev/null; then
+            curl -sL https://sentry.io/get-cli/ | bash
+          fi
+          # SPM puts dSYMs next to the build artifacts
+          DSYM_DIR="Desktop/.build/arm64-apple-macosx/release"
+          DSYM_COUNT=$(find "$DSYM_DIR" -name "*.dSYM" -type d 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$DSYM_COUNT" -gt 0 ]; then
+            sentry-cli --auth-token "$SENTRY_AUTH_TOKEN" \
+              upload-dif --org mediar-n5 --project fazm \
+              "$DSYM_DIR" \
+              --include-sources
+            echo "Uploaded $DSYM_COUNT dSYM(s) to Sentry"
+          else
+            echo "WARNING: No dSYMs found in $DSYM_DIR"
+          fi
+
       - name: Create DMG installer
         script: |
           set -e
