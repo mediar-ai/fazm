@@ -791,10 +791,9 @@ struct ChatPrompts {
     5. Installed applications: SELECT filename FROM indexed_files WHERE folder = '/Applications' AND fileExtension = 'app' ORDER BY filename LIMIT 50
     6. Document types: SELECT fileExtension, COUNT(*) as count FROM indexed_files WHERE fileType IN ('document', 'spreadsheet', 'presentation') GROUP BY fileExtension ORDER BY count DESC LIMIT 15
 
-    **Activity data queries (may be empty for new users — skip if no results):**
-    7. Recent observations: SELECT appName, currentActivity, contextSummary FROM observations ORDER BY createdAt DESC LIMIT 10
-    8. Conversation topics: SELECT title, category FROM transcription_sessions WHERE title IS NOT NULL ORDER BY startedAt DESC LIMIT 10
-    9. Memories: SELECT content, category FROM memories WHERE deleted = 0 ORDER BY createdAt DESC LIMIT 15
+    **Knowledge graph queries:**
+    7. Knowledge graph nodes: SELECT id, name, nodeType FROM local_kg_nodes ORDER BY updatedAt DESC LIMIT 30
+    8. Knowledge graph edges: SELECT sourceNodeId, targetNodeId, edgeType FROM local_kg_edges ORDER BY updatedAt DESC LIMIT 30
 
     STEP 2 — BUILD KNOWLEDGE GRAPH (MANDATORY — 20-50 nodes)
     This is the entire purpose of this session. You MUST call `save_knowledge_graph` with a comprehensive graph.
@@ -855,10 +854,9 @@ struct ChatPrompts {
     5. Installed applications: SELECT filename FROM indexed_files WHERE folder = '/Applications' AND fileExtension = 'app' ORDER BY filename LIMIT 50
     6. Document types: SELECT fileExtension, COUNT(*) as count FROM indexed_files WHERE fileType IN ('document', 'spreadsheet', 'presentation') GROUP BY fileExtension ORDER BY count DESC LIMIT 15
 
-    **Activity data queries (may be empty for new users — skip if no results):**
-    7. Recent observations: SELECT appName, currentActivity, contextSummary FROM observations ORDER BY createdAt DESC LIMIT 10
-    8. Conversation topics: SELECT title, category FROM transcription_sessions WHERE title IS NOT NULL ORDER BY startedAt DESC LIMIT 10
-    9. Memories: SELECT content, category FROM memories WHERE deleted = 0 ORDER BY createdAt DESC LIMIT 15
+    **Knowledge graph queries:**
+    7. Knowledge graph nodes: SELECT id, name, nodeType FROM local_kg_nodes ORDER BY updatedAt DESC LIMIT 30
+    8. Knowledge graph edges: SELECT sourceNodeId, targetNodeId, edgeType FROM local_kg_edges ORDER BY updatedAt DESC LIMIT 30
 
     STEP 2 — PROFILE SUMMARY
     After gathering data, write a 3-5 paragraph profile summary. Cover:
@@ -922,9 +920,7 @@ struct ChatPrompts {
     static let excludedTablePrefixes = ["sqlite_", "grdb_"]
     /// Any table whose name contains "_fts" is an FTS virtual or internal table — exclude all.
     /// Specific infra tables also excluded.
-    static let excludedTables: Set<String> = [
-        "goals", "memories",
-    ]
+    static let excludedTables: Set<String> = []
 
     /// Infrastructure columns to strip from schema — file paths, binary blobs, sync state, internal flags.
     /// New migrations are still picked up automatically; only these specific names are hidden.
