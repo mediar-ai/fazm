@@ -84,13 +84,12 @@ class PostHogManager {
     func identifyAuthUser(userId: String, properties: [String: Any]) {
         guard isInitialized else { return }
 
-        // Create an alias from the anonymous device UUID to the Firebase UID.
-        // This merges the anonymous person with the authenticated person in PostHog.
+        // Use identify() directly — PostHog merges the anonymous person with the
+        // authenticated person automatically. Do NOT use alias() because it silently
+        // fails when the target distinct_id already belongs to another person (e.g.
+        // same Firebase UID used on both dev and prod builds), leaving the device
+        // permanently anonymous.
         let currentDistinctId = PostHogSDK.shared.getDistinctId()
-        if currentDistinctId != userId {
-            PostHogSDK.shared.alias(userId)
-        }
-
         PostHogSDK.shared.identify(userId, userProperties: properties)
         log("PostHog: Identified auth user \(userId) (was: \(currentDistinctId))")
     }
