@@ -30,10 +30,6 @@ class PostHogManager {
         config.captureApplicationLifecycleEvents = false
         config.captureScreenViews = true
         config.preloadFeatureFlags = true
-        // Keep the anonymous ID across reset() so that identifyAuthUser() can properly
-        // merge the anonymous person with the authenticated person. Without this, reset()
-        // generates a new anonymous ID and the old events become orphaned.
-        config.reuseAnonymousId = true
 
         PostHogSDK.shared.setup(config)
 
@@ -88,6 +84,7 @@ class PostHogManager {
 
     /// Identify an authenticated user (links device to Firebase user).
     /// This is the ONLY method that should call PostHogSDK.identify().
+    /// No other code path should call PostHogSDK.identify() — use capture("$set") instead.
     func identifyAuthUser(userId: String, properties: [String: Any]) {
         guard isInitialized else { return }
 
@@ -100,11 +97,11 @@ class PostHogManager {
             return
         }
 
-        // Reset the SDK's isIdentified flag so identify() can change the distinct_id.
-        // Without this, PostHog SDK silently ignores identify() calls once isIdentified=true
-        // (set by any prior identify() call, including accidental ones from setUserProperty).
-        // reset() clears the persisted state, allowing the anonymous→authenticated merge.
-        PostHogSDK.shared.reset()
+        // Call identify() directly — the SDK sets $anon_distinct_id = currentDistinctId
+        // in the $identify event, which tells PostHog to merge the anonymous person
+        // into the authenticated person. No reset() needed because we never call
+        // PostHogSDK.identify() elsewhere (setUserProperty and identify() use $set),
+        // so isIdentified stays false until this call.
         PostHogSDK.shared.identify(userId, userProperties: properties)
         log("PostHog: Identified auth user \(userId) (was: \(currentDistinctId))")
     }
