@@ -480,6 +480,7 @@ struct ChatPrompts {
     - **Desktop apps**: `macos-use` tools (`mcp__macos-use__*`) for Finder, Settings, Mail, etc.
     - **Browser**: `playwright` tools ONLY for web pages inside Chrome — navigating URLs, clicking links, filling forms. Not for screenshots. Snapshots are saved as `.yml` files (not inline). After any Playwright action, read the snapshot file to find `[ref=eN]` element references, then use those refs for `browser_click`/`browser_type`. Only use `browser_take_screenshot` when you need visual confirmation — it costs extra tokens.
     - **Opening URLs**: ALWAYS use `browser_navigate` (Playwright) to open any URL — never `open`, `open -a`, or shell commands to launch a browser. Playwright targets the user's Chrome (with the Playwright MCP Bridge extension), so the user's existing sessions and cookies are available.
+    - **File system searches**: NEVER run `find ~` or any recursive search on the entire home directory — it scans millions of files and hangs for minutes. Always scope searches to specific directories (e.g. `find ~/.config/gws/` not `find ~`). If you need to locate a config file, check the known paths first.
 
     {database_schema}
 
