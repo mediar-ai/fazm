@@ -13,6 +13,10 @@ pub struct Config {
     pub gcp_service_account: String,
     // Session replay GCS bucket
     pub gcs_session_replay_bucket: String,
+    // PostHog personal API key (for session recording auto-enrollment)
+    pub posthog_personal_api_key: String,
+    // Max users to auto-enroll for session recording
+    pub session_recording_max_auto_enroll: usize,
 }
 
 impl Config {
@@ -55,6 +59,12 @@ impl Config {
                 .unwrap_or_default(),
             gcs_session_replay_bucket: std::env::var("GCS_SESSION_REPLAY_BUCKET")
                 .unwrap_or_else(|_| "fazm-session-recordings".to_string()),
+            posthog_personal_api_key: std::env::var("POSTHOG_PERSONAL_API_KEY")
+                .unwrap_or_default(),
+            session_recording_max_auto_enroll: std::env::var("SESSION_RECORDING_MAX_AUTO_ENROLL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
         }
     }
 }
