@@ -107,9 +107,15 @@ class ChatToolExecutor {
 
         case "save_knowledge_graph":
             let result = await executeSaveKnowledgeGraph(toolCall.arguments)
-            let nodeCount = (toolCall.arguments["nodes"] as? [[String: Any]])?.count ?? 0
+            let nodes = toolCall.arguments["nodes"] as? [[String: Any]] ?? []
+            let nodeCount = nodes.count
             let edgeCount = (toolCall.arguments["edges"] as? [[String: Any]])?.count ?? 0
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "save_knowledge_graph", properties: ["nodes": nodeCount, "edges": edgeCount])
+            // Fire discovery source event if the AI saved the deterministic discovery nodes
+            if let platform = nodes.first(where: { $0["id"] as? String == "discovery_platform" })?["label"] as? String,
+               let detail = nodes.first(where: { $0["id"] as? String == "discovery_detail" })?["label"] as? String {
+                AnalyticsManager.shared.onboardingDiscoverySource(platform: platform, detail: detail)
+            }
             return result
 
         default:
