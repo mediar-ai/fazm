@@ -685,10 +685,14 @@ class AuthService: NSObject {
 
     /// Link authenticated user to PostHog for analytics attribution.
     func setPostHogUserContext() {
-        guard let userId = userId else { return }
+        guard let userId = userId else {
+            log("AuthService: setPostHogUserContext skipped — userId is nil")
+            return
+        }
         var properties: [String: Any] = ["firebase_uid": userId]
         if let email = userEmail { properties["email"] = email }
         if !displayName.isEmpty { properties["name"] = displayName }
+        log("AuthService: setPostHogUserContext — userId=\(userId), email=\(userEmail ?? "nil")")
         PostHogManager.shared.identifyAuthUser(userId: userId, properties: properties)
     }
 
