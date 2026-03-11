@@ -107,6 +107,13 @@ class AnalyticsManager {
         PostHogManager.shared.track("Onboarding Chat Tool Used", properties: props)
     }
 
+    func onboardingDiscoverySource(platform: String, detail: String) {
+        PostHogManager.shared.track("Onboarding Discovery Source", properties: [
+            "platform": platform,
+            "detail": detail
+        ])
+    }
+
     func onboardingChatMessage(role: String, step: String) {
         let props: [String: Any] = ["role": role, "step": step]
         PostHogManager.shared.track("Onboarding Chat Message", properties: props)
