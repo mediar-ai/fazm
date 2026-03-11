@@ -239,6 +239,7 @@ struct AnimatedGIFView: NSViewRepresentable {
 
 struct OnboardingPrivacySheet: View {
     @Binding var isPresented: Bool
+    var showSessionRecordingSection: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -339,7 +340,8 @@ struct OnboardingPrivacySheet: View {
                         }
                     }
 
-                    // 4. Beta Program — Extended Analytics
+                    // 4. Beta Program — Extended Analytics (only shown to enrolled users)
+                    if showSessionRecordingSection {
                     privacyCard {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 8) {
@@ -379,6 +381,7 @@ struct OnboardingPrivacySheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    } // end if showSessionRecordingSection
 
                     // 5. Data Sharing
                     privacyCard {
