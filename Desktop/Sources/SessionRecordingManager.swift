@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SessionReplay
 
@@ -56,10 +57,38 @@ class SessionRecordingManager {
         log("SessionRecording: feature flag session-recording-enabled = \(enabled)")
 
         if enabled && !isStarted {
+            // Show privacy notice on first enrollment, then start recording
+            if !UserDefaults.standard.bool(forKey: "sessionRecordingPrivacyShown") {
+                UserDefaults.standard.set(true, forKey: "sessionRecordingPrivacyShown")
+                showSessionRecordingPrivacyNotice()
+            }
             startRecording()
         } else if !enabled && isStarted {
             log("SessionRecording: flag turned off remotely, stopping")
             stop()
+        }
+    }
+
+    /// Show a one-time privacy notice when session recording is first enabled.
+    private func showSessionRecordingPrivacyNotice() {
+        log("SessionRecording: showing privacy notice for first-time enrollment")
+        let alert = NSAlert()
+        alert.messageText = "Beta Analytics Enabled"
+        alert.informativeText = """
+        As a beta user, Fazm collects extended analytics — including session recordings of your screen while using the app — to help us build the best possible experience.
+
+        Recordings are encrypted, stored securely, and automatically deleted after 30 days. They are only used internally to improve the product and are never shared with third parties.
+
+        You can opt out at any time by switching to the stable update channel in Settings.
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Got It")
+        alert.addButton(withTitle: "View Privacy Policy")
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            if let url = URL(string: "https://fazm.ai/privacy") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 
