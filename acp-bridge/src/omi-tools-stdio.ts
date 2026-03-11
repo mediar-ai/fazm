@@ -582,9 +582,14 @@ async function handleJsonRpc(
       } else if (toolName === "load_skill") {
         const name = (args.name as string || "").trim();
         const workspace = process.env.OMI_WORKSPACE || "";
+        // Resolve app bundle's BundledSkills directory
+        // At runtime: __dirname = Contents/Resources/acp-bridge/dist/
+        // BundledSkills = Contents/Resources/Fazm_Fazm.bundle/BundledSkills/
+        const bundledSkillsDir = join(__dirname, "..", "..", "Fazm_Fazm.bundle", "BundledSkills");
         const candidates = [
           workspace ? join(workspace, ".claude", "skills", name, "SKILL.md") : "",
           join(homedir(), ".claude", "skills", name, "SKILL.md"),
+          join(bundledSkillsDir, `${name}.skill.md`),
         ].filter(Boolean);
 
         let content: string | null = null;
