@@ -34,7 +34,7 @@ class AuthState: ObservableObject {
 
     // UserDefaults keys
     private static let kAuthUserEmail = "auth_userEmail"
-    private static let kAuthUserId = "auth_userId"
+    private static let kAuthUserId = "auth_tokenUserId"
     private static let kAuthIsSignedIn = "auth_isSignedIn"
 
     @Published var isSignedIn: Bool = false
@@ -229,7 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Set per-user database path before any async tasks can trigger DB initialization.
         // This is synchronous and must happen before TierManager / TranscriptionRetryService.
-        let userId = UserDefaults.standard.string(forKey: "auth_userId")
+        let userId = UserDefaults.standard.string(forKey: "auth_tokenUserId")
         AppDatabase.currentUserId = (userId?.isEmpty == false) ? userId : "anonymous"
 
         // Start resource monitoring (memory, CPU, disk)

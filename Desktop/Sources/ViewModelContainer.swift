@@ -23,7 +23,7 @@ class ViewModelContainer: ObservableObject {
         logPerf("DATA LOAD: Starting data load", cpu: true)
 
         // Configure database for the current user before initialization
-        let userId = UserDefaults.standard.string(forKey: "auth_userId")
+        let userId = UserDefaults.standard.string(forKey: "auth_tokenUserId")
         await AppDatabase.shared.configure(userId: userId)
 
         // Pre-initialize database
