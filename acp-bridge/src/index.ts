@@ -414,6 +414,18 @@ class AcpError extends Error {
   }
 }
 
+/** Detect ACP auth errors: explicit -32000 OR -32603 wrapping a 401/auth failure */
+function isAcpAuthError(err: unknown): boolean {
+  if (!(err instanceof AcpError)) return false;
+  if (err.code === -32000) return true;
+  // ACP sometimes wraps 401 as a generic -32603 internal error
+  if (err.code === -32603) {
+    const msg = err.message || "";
+    return /401|failed to authenticate/i.test(msg);
+  }
+  return false;
+}
+
 // --- Screenshot auto-resize ---
 // Playwright on Retina Macs produces screenshots >2000px which hit Claude's
 // multi-image dimension limit. Watch /tmp/playwright-mcp/ and resize in-place.
@@ -603,9 +615,9 @@ async function initializeAcp(): Promise<void> {
 
     isInitialized = true;
   } catch (err) {
-    if (err instanceof AcpError && err.code === -32000) {
-      // AUTH_REQUIRED
-      const data = err.data as {
+    if (isAcpAuthError(err)) {
+      // AUTH_REQUIRED (or 401 wrapped as -32603)
+      const data = (err as AcpError).data as {
         authMethods?: Array<{
           id: string;
           name: string;
@@ -775,8 +787,8 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
           sessions.set(cfg.key, { sessionId, cwd: warmCwd, model: cfg.model });
           await acpRequest("session/set_model", { sessionId, modelId: cfg.model });
         } catch (err) {
-          if (err instanceof AcpError && err.code === -32000) {
-            logErr(`Pre-warm failed with auth error (code=${err.code}), starting OAuth flow`);
+          if (isAcpAuthError(err)) {
+            logErr(`Pre-warm failed with auth error (code=${(err as AcpError).code}), starting OAuth flow`);
             await startAuthFlow();
             return;
           }
@@ -965,16 +977,15 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         }
         return;
       }
-      // Only -32000 is AUTH_REQUIRED in the new ACP protocol.
-      // -32603 is a generic internal error (API error, rate limit, etc.) — do NOT start OAuth for it.
-      if (err instanceof AcpError && err.code === -32000) {
+      // AUTH_REQUIRED: -32000 explicitly, or -32603 wrapping a 401
+      if (isAcpAuthError(err)) {
         if (authRetryCount >= MAX_AUTH_RETRIES) {
           logErr(`session/prompt auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
           send({ type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
           return;
         }
         authRetryCount++;
-        logErr(`session/prompt failed with auth error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
+        logErr(`session/prompt failed with auth error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
         sessions.delete(sessionKey);
         imageTurnCounts.delete(sessionKey);
         activeSessionId = "";
@@ -1066,9 +1077,8 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       }
       return;
     }
-    // Only -32000 is AUTH_REQUIRED in the new ACP protocol.
-    // -32603 is a generic internal error — surface it as a real error, not auth.
-    if (err instanceof AcpError && err.code === -32000) {
+    // AUTH_REQUIRED: -32000 explicitly, or -32603 wrapping a 401
+    if (isAcpAuthError(err)) {
       if (authRetryCount >= MAX_AUTH_RETRIES) {
         logErr(`Query auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
         send({ type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
