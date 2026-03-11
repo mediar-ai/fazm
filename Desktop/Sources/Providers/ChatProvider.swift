@@ -2624,6 +2624,15 @@ class ChatProvider: ObservableObject {
                 }
                 showCreditExhaustedAlert = true
                 errorMessage = bridgeError.errorDescription
+            } else if bridgeMode == "builtin",
+                      let bridgeError = error as? BridgeError,
+                      case .agentError(let msg) = bridgeError,
+                      Self.isAuthRelatedError(msg) {
+                // Builtin API key auth failed — switch to personal mode and prompt sign-in
+                log("ChatProvider: auth-related error in builtin mode, switching to personal: \(msg)")
+                await switchBridgeMode(to: "personal")
+                isClaudeAuthRequired = true
+                errorMessage = nil
             } else if bridgeMode == "personal",
                       let bridgeError = error as? BridgeError,
                       case .agentError(let msg) = bridgeError,
