@@ -636,6 +636,7 @@ async function handleJsonRpc(
         toolName === "scan_files" ||
         toolName === "set_user_preferences" ||
         toolName === "ask_followup" ||
+        toolName === "setup_browser_extension" ||
         toolName === "complete_onboarding" ||
         toolName === "save_knowledge_graph"
       ) {
