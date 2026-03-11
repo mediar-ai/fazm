@@ -27,13 +27,13 @@
  * 6. On interrupt: cancel the session
  */
 
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, execSync, type ChildProcess } from "child_process";
 import { createInterface } from "readline";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createServer as createNetServer, type Socket } from "net";
 import { tmpdir } from "os";
-import { unlinkSync, appendFileSync, existsSync } from "fs";
+import { unlinkSync, appendFileSync, existsSync, watch, mkdirSync } from "fs";
 import type {
   InboundMessage,
   OutboundMessage,
@@ -412,6 +412,57 @@ class AcpError extends Error {
     this.code = code;
     this.data = data;
   }
+}
+
+// --- Screenshot auto-resize ---
+// Playwright on Retina Macs produces screenshots >2000px which hit Claude's
+// multi-image dimension limit. Watch /tmp/playwright-mcp/ and resize in-place.
+const PLAYWRIGHT_OUTPUT_DIR = "/tmp/playwright-mcp";
+const MAX_SCREENSHOT_DIM = 1920; // stay under 2000px API limit
+
+function startScreenshotResizeWatcher(): void {
+
+  try {
+    mkdirSync(PLAYWRIGHT_OUTPUT_DIR, { recursive: true });
+  } catch { /* ignore */ }
+
+  // Track files we've already resized to avoid double-processing
+  const resized = new Set<string>();
+
+  watch(PLAYWRIGHT_OUTPUT_DIR, (eventType, filename) => {
+    if (!filename || (!filename.endsWith(".png") && !filename.endsWith(".jpeg"))) return;
+    const filepath = join(PLAYWRIGHT_OUTPUT_DIR, filename);
+    if (resized.has(filepath)) return;
+
+    // Small delay to ensure the file is fully written
+    setTimeout(() => {
+      try {
+        if (!existsSync(filepath)) return;
+        // sips is built into macOS — no dependencies needed
+        const info = execSync(`sips -g pixelWidth -g pixelHeight "${filepath}" 2>/dev/null`, { encoding: "utf8" });
+        const wMatch = info.match(/pixelWidth:\s+(\d+)/);
+        const hMatch = info.match(/pixelHeight:\s+(\d+)/);
+        if (!wMatch || !hMatch) return;
+        const w = parseInt(wMatch[1], 10);
+        const h = parseInt(hMatch[1], 10);
+        if (w > MAX_SCREENSHOT_DIM || h > MAX_SCREENSHOT_DIM) {
+          execSync(`sips --resampleHeightWidthMax ${MAX_SCREENSHOT_DIM} "${filepath}" 2>/dev/null`);
+          logErr(`Screenshot resized: ${filename} from ${w}x${h} to fit ${MAX_SCREENSHOT_DIM}px`);
+        }
+        resized.add(filepath);
+        // Prevent unbounded growth — purge entries older than 100
+        if (resized.size > 100) {
+          const first = resized.values().next().value;
+          if (first) resized.delete(first);
+        }
+      } catch (err) {
+        // Non-critical — worst case Claude hits the error and retries without image
+        logErr(`Screenshot resize failed for ${filename}: ${err}`);
+      }
+    }, 200);
+  });
+
+  logErr(`Screenshot resize watcher started on ${PLAYWRIGHT_OUTPUT_DIR} (max ${MAX_SCREENSHOT_DIM}px)`);
 }
 
 // --- State ---
@@ -1427,6 +1478,9 @@ async function main(): Promise<void> {
   } catch (err) {
     logErr(`Browser diagnostics failed: ${err}`);
   }
+
+  // 0. Start screenshot resize watcher (prevents 2000px API limit errors)
+  startScreenshotResizeWatcher();
 
   // 1. Start Unix socket for omi-tools relay
   omiToolsPipePath = await startOmiToolsRelay();
