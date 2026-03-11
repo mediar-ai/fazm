@@ -18,6 +18,7 @@ struct GoogleIcon: View {
 struct SignInView: View {
     @ObservedObject var authState: AuthState
     @State private var isHoveringGoogle = false
+    @State private var showPrivacySheet = false
 
     var body: some View {
         ZStack {
@@ -103,15 +104,42 @@ struct SignInView: View {
                 Spacer()
 
                 // Footer
-                Text("By signing in, you agree to the Terms of Service and Privacy Policy.")
-                    .scaledFont(size: 11, weight: .regular)
-                    .foregroundColor(FazmColors.textQuaternary)
-                    .multilineTextAlignment(.center)
-                    .padding(.bottom, 24)
+                HStack(spacing: 0) {
+                    Text("By signing in, you agree to the ")
+                        .scaledFont(size: 11, weight: .regular)
+                        .foregroundColor(FazmColors.textQuaternary)
+                    Button(action: {
+                        if let url = URL(string: "https://fazm.ai/terms") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Text("Terms of Service")
+                            .scaledFont(size: 11, weight: .medium)
+                            .foregroundColor(FazmColors.purplePrimary)
+                    }
+                    .buttonStyle(.plain)
+                    Text(" and ")
+                        .scaledFont(size: 11, weight: .regular)
+                        .foregroundColor(FazmColors.textQuaternary)
+                    Button(action: { showPrivacySheet = true }) {
+                        Text("Privacy Policy")
+                            .scaledFont(size: 11, weight: .medium)
+                            .foregroundColor(FazmColors.purplePrimary)
+                    }
+                    .buttonStyle(.plain)
+                    Text(".")
+                        .scaledFont(size: 11, weight: .regular)
+                        .foregroundColor(FazmColors.textQuaternary)
+                }
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 24)
             }
             .padding(.horizontal, 40)
         }
         .frame(minWidth: 400, minHeight: 500)
+        .sheet(isPresented: $showPrivacySheet) {
+            OnboardingPrivacySheet(isPresented: $showPrivacySheet)
+        }
     }
 
     // MARK: - Sign In Methods
