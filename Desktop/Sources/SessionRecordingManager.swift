@@ -90,12 +90,17 @@ class SessionRecordingManager {
         let storageDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("session-recordings")
 
+        guard let deviceId = getDeviceId() else {
+            log("SessionRecording: no Firebase UID yet, deferring until sign-in")
+            return
+        }
+
         let config = SessionRecorder.Configuration(
             framesPerSecond: 5.0,
             chunkDurationSeconds: 60.0,
             ffmpegPath: ffmpegPath,
             storageBaseURL: storageDir,
-            deviceId: getDeviceId(),
+            deviceId: deviceId,
             backendURL: backendURL,
             backendSecret: backendSecret
         )
@@ -142,17 +147,12 @@ class SessionRecordingManager {
         return ""
     }
 
-    private func getDeviceId() -> String {
-        // Prefer Firebase UID (stable across sessions) over random device UUID
+    private func getDeviceId() -> String? {
+        // Require Firebase UID so recordings are always tagged with the user's identity.
+        // If auth hasn't completed yet, return nil to defer recording start.
         if let firebaseUid = AuthService.shared.userId, !firebaseUid.isEmpty {
             return firebaseUid
         }
-        let key = "analytics_device_id"
-        if let existing = UserDefaults.standard.string(forKey: key) {
-            return existing
-        }
-        let newId = UUID().uuidString
-        UserDefaults.standard.set(newId, forKey: key)
-        return newId
+        return nil
     }
 }
