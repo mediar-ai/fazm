@@ -88,10 +88,56 @@ actor AppDatabase {
     /// initialize() will detect the user mismatch and reopen if needed.
     func configure(userId: String?) {
         let resolvedId = (userId?.isEmpty == false) ? userId! : "anonymous"
+        migrateFromLegacyUserDirectory(to: resolvedId)
         configuredUserId = resolvedId
         AppDatabase.currentUserId = resolvedId
         AppDatabase.configureGeneration += 1
         log("RewindDatabase: Configured for user \(resolvedId) (generation \(AppDatabase.configureGeneration))")
+    }
+
+    /// Migrate database from a legacy user directory (device UUID or "anonymous") to the
+    /// correct Firebase UID directory. This handles the auth_userId → auth_tokenUserId rename.
+    /// Finds the most recently modified directory that has a fazm.db and renames it.
+    private func migrateFromLegacyUserDirectory(to newUserId: String) {
+        let fm = FileManager.default
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let usersDir = appSupport
+            .appendingPathComponent("Fazm", isDirectory: true)
+            .appendingPathComponent("users", isDirectory: true)
+        let targetDir = usersDir.appendingPathComponent(newUserId, isDirectory: true)
+        let targetDB = targetDir.appendingPathComponent("fazm.db")
+
+        // Already has a database at the correct path — no migration needed
+        if fm.fileExists(atPath: targetDB.path) { return }
+
+        // Find all user directories that have a fazm.db, excluding the target
+        guard let contents = try? fm.contentsOfDirectory(
+            at: usersDir,
+            includingPropertiesForKeys: nil
+        ) else { return }
+
+        let candidates: [(url: URL, modified: Date)] = contents.compactMap { dir in
+            guard dir.lastPathComponent != newUserId else { return nil }
+            let dbFile = dir.appendingPathComponent("fazm.db")
+            guard fm.fileExists(atPath: dbFile.path),
+                  let attrs = try? fm.attributesOfItem(atPath: dbFile.path),
+                  let modified = attrs[.modificationDate] as? Date else { return nil }
+            return (dir, modified)
+        }
+
+        // Pick the most recently modified database
+        guard let source = candidates.max(by: { $0.modified < $1.modified }) else { return }
+
+        do {
+            // Remove empty target directory if it exists (moveItem fails if target exists)
+            if fm.fileExists(atPath: targetDir.path) {
+                try fm.removeItem(at: targetDir)
+            }
+            try fm.moveItem(at: source.url, to: targetDir)
+            log("RewindDatabase: Migrated database from \(source.url.lastPathComponent) to \(newUserId)")
+        } catch {
+            log("RewindDatabase: Failed to migrate database from \(source.url.lastPathComponent): \(error)")
+        }
     }
 
     /// Close the database only if no new session has started (configure() not called since).
