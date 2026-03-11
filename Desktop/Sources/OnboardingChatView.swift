@@ -180,7 +180,10 @@ struct OnboardingChatView: View {
 
                 Spacer()
 
-                Button(action: { showPrivacySheet = true }) {
+                Button(action: {
+                    PostHogManager.shared.track("privacy_policy_clicked", properties: ["source": "onboarding"])
+                    showPrivacySheet = true
+                }) {
                     Text("Privacy Policy")
                         .font(.system(size: 13))
                         .foregroundColor(FazmColors.textQuaternary)
