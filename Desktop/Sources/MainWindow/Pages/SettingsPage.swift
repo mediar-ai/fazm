@@ -1863,6 +1863,8 @@ struct SettingsContentView: View {
 
     private func linkRow(title: String, url: String) -> some View {
         Button(action: {
+            let eventName = title.lowercased().replacingOccurrences(of: " ", with: "_") + "_clicked"
+            PostHogManager.shared.track(eventName, properties: ["source": "settings", "url": url])
             if let url = URL(string: url) {
                 NSWorkspace.shared.open(url)
             }
