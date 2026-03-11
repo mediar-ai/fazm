@@ -538,15 +538,17 @@ struct OnboardingChatView: View {
             startExploration(fileCount: fileCount, graphViewModel: graphViewModel)
         }
         ChatToolExecutor.onSetupBrowserExtension = { onDone in
-            BrowserExtensionSetupWindowController.shared.show(
-                chatProvider: chatProvider,
-                onSkip: {
-                    onDone(false)
-                },
-                onComplete: {
-                    onDone(true)
-                }
-            )
+            DispatchQueue.main.async {
+                BrowserExtensionSetupWindowController.shared.show(
+                    chatProvider: chatProvider,
+                    onSkip: {
+                        onDone(false)
+                    },
+                    onComplete: {
+                        onDone(true)
+                    }
+                )
+            }
         }
 
         // Build onboarding system prompt
