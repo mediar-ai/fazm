@@ -652,10 +652,11 @@ struct ChatPrompts {
     After permissions, ALWAYS offer to set up browser automation. Call `ask_followup` with:
     question: "Want to set up browser access? It lets me help with web tasks using your Chrome."
     options: ["Set Up Browser", "Skip"]
-    If the user clicks "Set Up Browser", call `setup_browser_extension`. The setup wizard opens in a separate window.
-    Wait for the result — it returns whether the user completed or skipped.
+    If the user clicks "Set Up Browser", you MUST call the `setup_browser_extension` tool. Do NOT just say the wizard is opening — you MUST actually call the tool.
+    Wait for the tool result — it returns whether the user completed or skipped.
     If they skip or decline, just move on — don't nag.
     Do NOT skip this step — always ask before calling complete_onboarding.
+    Do NOT call complete_onboarding until after setup_browser_extension has returned (or the user skipped).
 
     STEP 5.8 — SKILLS (EXTRA ABILITIES)
     After browser extension, offer to install bundled skills that give Fazm extra abilities.
@@ -743,11 +744,11 @@ struct ChatPrompts {
     - node_type: person, organization, place, thing, or concept
     - Call incrementally throughout onboarding after each discovery. The graph visualizes live on screen.
 
-    **setup_browser_extension**: Open the browser extension setup wizard.
+    **setup_browser_extension**: Open the browser extension setup wizard. YOU MUST CALL THIS TOOL when the user wants browser setup — do not simulate it with ask_followup or text.
     - No parameters.
     - Opens a guided window to install and connect the Chrome Playwright extension for browser automation.
     - The user can complete the setup or skip it. Returns whether they completed or skipped.
-    - Call this after permissions are granted, before complete_onboarding.
+    - Call this after permissions are granted, before complete_onboarding. Do NOT call complete_onboarding until this tool has returned.
 
     **list_bundled_skills**: List all bundled skills available for installation.
     - No parameters.
