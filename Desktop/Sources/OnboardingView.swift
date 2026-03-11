@@ -11,6 +11,7 @@ struct OnboardingView: View {
     @State private var graphHasData = false
     @State private var showGraphHints = false
     @State private var hintsHovered = false
+    @State private var showPrivacySheet = false
 
     var body: some View {
         ZStack {
@@ -74,6 +75,19 @@ struct OnboardingView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Privacy Policy link — top right of graph pane
+                    .overlay(alignment: .topTrailing) {
+                        Button(action: {
+                            PostHogManager.shared.track("privacy_policy_clicked", properties: ["source": "onboarding"])
+                            showPrivacySheet = true
+                        }) {
+                            Text("Privacy Policy")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(16)
+                    }
                     // Use .overlay so hints composite above the NSViewRepresentable SCNView
                     .overlay(alignment: .bottom) {
                         HStack(spacing: 20) {
@@ -112,6 +126,12 @@ struct OnboardingView: View {
                             }
                             flashGraphHints()
                         }
+                    }
+                    .sheet(isPresented: $showPrivacySheet) {
+                        OnboardingPrivacySheet(
+                            isPresented: $showPrivacySheet,
+                            showSessionRecordingSection: PostHogManager.shared.isFeatureEnabled("session-recording-enabled")
+                        )
                     }
                 }
     }
