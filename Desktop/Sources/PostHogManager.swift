@@ -39,28 +39,27 @@ class PostHogManager {
 
     // MARK: - User Identification
 
-    /// Identify the current device (anonymous only — skips if auth user will identify shortly)
+    /// Set device properties without triggering identification.
+    /// Never call PostHogSDK.identify() here — it sets isIdentified=true permanently,
+    /// which blocks identifyAuthUser() from changing the distinct_id to the Firebase UID.
+    /// The only place that should call PostHogSDK.identify() is identifyAuthUser().
     func identify() {
         guard isInitialized else { return }
 
-        // Don't identify with device UUID if user is authenticated — identifyAuthUser()
-        // will be called right after with the Firebase UID. Calling identify() with a device
-        // UUID first prevents PostHog from properly aliasing the anonymous → authenticated
-        // transition, leaving users as "anonymous" in the dashboard.
+        // If user is authenticated, identifyAuthUser() will be called shortly — skip.
         if UserDefaults.standard.string(forKey: "auth_tokenUserId")?.isEmpty == false {
             log("PostHog: Skipping device identify — authenticated user will be identified via identifyAuthUser()")
             return
         }
 
-        let uid = getOrCreateDeviceId()
-
+        // For anonymous users, just set device properties without calling identify().
+        // PostHog's auto-generated anonymous ID is sufficient for pre-auth tracking.
         let properties: [String: Any] = [
             "platform": "macos",
             "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         ]
-
-        PostHogSDK.shared.identify(uid, userProperties: properties)
-        log("PostHog: Identified device \(uid)")
+        PostHogSDK.shared.capture("$set", properties: ["$set": properties])
+        log("PostHog: Set device properties (anonymous)")
     }
 
     /// Get or create a stable device identifier
@@ -74,22 +73,34 @@ class PostHogManager {
         return newId
     }
 
-    /// Set a specific user property
+    /// Set a specific user property without triggering identification.
+    /// Uses capture($set) instead of identify() because the PostHog SDK's identify()
+    /// sets isIdentified=true, which permanently locks the distinct_id and prevents
+    /// the real identifyAuthUser() call from changing it to the Firebase UID.
     func setUserProperty(key: String, value: Any) {
         guard isInitialized else { return }
-        PostHogSDK.shared.identify(PostHogSDK.shared.getDistinctId(), userProperties: [key: value])
+        PostHogSDK.shared.capture("$set", properties: ["$set": [key: value]])
     }
 
-    /// Identify an authenticated user (links device to Firebase user)
+    /// Identify an authenticated user (links device to Firebase user).
+    /// This is the ONLY method that should call PostHogSDK.identify().
     func identifyAuthUser(userId: String, properties: [String: Any]) {
         guard isInitialized else { return }
 
-        // Use identify() directly — PostHog merges the anonymous person with the
-        // authenticated person automatically. Do NOT use alias() because it silently
-        // fails when the target distinct_id already belongs to another person (e.g.
-        // same Firebase UID used on both dev and prod builds), leaving the device
-        // permanently anonymous.
         let currentDistinctId = PostHogSDK.shared.getDistinctId()
+
+        // If already identified as this user, just update properties.
+        if currentDistinctId == userId {
+            PostHogSDK.shared.capture("$set", properties: ["$set": properties])
+            log("PostHog: Updated auth user properties for \(userId)")
+            return
+        }
+
+        // Reset the SDK's isIdentified flag so identify() can change the distinct_id.
+        // Without this, PostHog SDK silently ignores identify() calls once isIdentified=true
+        // (set by any prior identify() call, including accidental ones from setUserProperty).
+        // reset() clears the persisted state, allowing the anonymous→authenticated merge.
+        PostHogSDK.shared.reset()
         PostHogSDK.shared.identify(userId, userProperties: properties)
         log("PostHog: Identified auth user \(userId) (was: \(currentDistinctId))")
     }
