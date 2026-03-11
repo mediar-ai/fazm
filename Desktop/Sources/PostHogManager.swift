@@ -30,6 +30,10 @@ class PostHogManager {
         config.captureApplicationLifecycleEvents = false
         config.captureScreenViews = true
         config.preloadFeatureFlags = true
+        // Keep the anonymous ID across reset() so that identifyAuthUser() can properly
+        // merge the anonymous person with the authenticated person. Without this, reset()
+        // generates a new anonymous ID and the old events become orphaned.
+        config.reuseAnonymousId = true
 
         PostHogSDK.shared.setup(config)
 
