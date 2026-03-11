@@ -165,6 +165,8 @@ struct OnboardingChatView: View {
     @State private var explorationTask: Task<Void, Never>?
     @State private var graphTask: Task<Void, Never>?
 
+    @State private var showPrivacySheet = false
+
     // Timer to periodically check permission status
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
@@ -406,6 +408,21 @@ struct OnboardingChatView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
+
+            // Privacy link
+            Button(action: { showPrivacySheet = true }) {
+                Text("Privacy Policy")
+                    .font(.system(size: 11))
+                    .foregroundColor(FazmColors.textQuaternary)
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 8)
+        }
+        .sheet(isPresented: $showPrivacySheet) {
+            OnboardingPrivacySheet(
+                isPresented: $showPrivacySheet,
+                showSessionRecordingSection: PostHogManager.shared.isFeatureEnabled("session-recording-enabled")
+            )
         }
         .onAppear {
             startChat()
