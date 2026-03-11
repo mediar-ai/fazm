@@ -180,6 +180,13 @@ struct OnboardingChatView: View {
 
                 Spacer()
 
+                Button(action: { showPrivacySheet = true }) {
+                    Text("Privacy Policy")
+                        .font(.system(size: 13))
+                        .foregroundColor(FazmColors.textQuaternary)
+                }
+                .buttonStyle(.plain)
+
                 Button(action: onSkip) {
                     Text("Skip")
                         .font(.system(size: 13))
@@ -408,15 +415,6 @@ struct OnboardingChatView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-
-            // Privacy link
-            Button(action: { showPrivacySheet = true }) {
-                Text("Privacy Policy")
-                    .font(.system(size: 11))
-                    .foregroundColor(FazmColors.textQuaternary)
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 8)
         }
         .sheet(isPresented: $showPrivacySheet) {
             OnboardingPrivacySheet(
