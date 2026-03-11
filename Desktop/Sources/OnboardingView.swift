@@ -248,7 +248,7 @@ struct OnboardingPrivacySheet: View {
                     .scaledFont(size: 16)
                     .foregroundColor(FazmColors.purplePrimary)
 
-                Text("Data & Privacy")
+                Text("Privacy Policy")
                     .scaledFont(size: 16, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
 
@@ -267,10 +267,30 @@ struct OnboardingPrivacySheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Encryption
+                    // Introduction
+                    Text("Fazm is committed to protecting your privacy. This policy explains what data we collect, how we use it, and the choices you have.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // 1. Local-First Architecture
                     privacyCard {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Encryption", systemImage: "lock.shield")
+                            Label("Local-First Architecture", systemImage: "desktopcomputer")
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+
+                            Text("Fazm runs primarily on your machine. Transcripts, conversations, memories, and indexed files are stored locally in a SQLite database on your device. We do not upload or store your personal content on our servers unless you explicitly use a cloud feature.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    // 2. Encryption & Security
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Encryption & Security", systemImage: "lock.shield")
                                 .scaledFont(size: 13, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
 
@@ -290,58 +310,148 @@ struct OnboardingPrivacySheet: View {
                                     .cornerRadius(3)
                             }
 
-                            Text("Your data is encrypted and stored securely with Google Cloud infrastructure.")
+                            Text("All data transmitted to our servers is encrypted in transit (TLS) and at rest using Google Cloud infrastructure. Authentication is handled via Google Sign-In and Firebase — we never see or store your Google password.")
                                 .scaledFont(size: 11)
                                 .foregroundColor(FazmColors.textTertiary)
-                                .padding(.top, 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
 
-                    // What We Track
+                    // 3. Analytics & Telemetry
                     privacyCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("What We Track", systemImage: "list.bullet")
+                            Label("Analytics & Telemetry", systemImage: "chart.bar")
                                 .scaledFont(size: 13, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
+
+                            Text("We collect anonymized usage events to understand how the app is used and to fix bugs. These events do not contain the content of your conversations, files, or personal data.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
 
                             VStack(alignment: .leading, spacing: 4) {
                                 sheetTrackingItem("Onboarding steps completed")
                                 sheetTrackingItem("Settings changes")
-                                sheetTrackingItem("App installations and usage")
-                                sheetTrackingItem("Device connection status")
-                                sheetTrackingItem("Transcript processing events")
-                                sheetTrackingItem("Conversation creation and updates")
-                                sheetTrackingItem("Memory extraction events")
-                                sheetTrackingItem("Chat interactions")
-                                sheetTrackingItem("Speech profile creation")
-                                sheetTrackingItem("Focus session events")
-                                sheetTrackingItem("App open/close events")
+                                sheetTrackingItem("Feature usage (chat, focus sessions, memories)")
+                                sheetTrackingItem("App open/close and session duration")
+                                sheetTrackingItem("Error and crash reports")
                             }
                         }
                     }
 
-                    // Privacy Guarantees
+                    // 4. Beta Program — Extended Analytics
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                Label("Beta Program", systemImage: "testtube.2")
+                                    .scaledFont(size: 13, weight: .semibold)
+                                    .foregroundColor(FazmColors.textPrimary)
+
+                                Text("Beta")
+                                    .scaledFont(size: 10, weight: .semibold)
+                                    .foregroundColor(FazmColors.purplePrimary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(FazmColors.purplePrimary.opacity(0.15))
+                                    .cornerRadius(4)
+                            }
+
+                            Text("As a beta user, you agree that we may collect extended analytics to help us build the best possible experience. This includes:")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                sheetTrackingItem("Session recordings of app usage (screen capture)")
+                                sheetTrackingItem("Detailed interaction patterns and navigation flows")
+                                sheetTrackingItem("Performance metrics and resource usage")
+                                sheetTrackingItem("Feature adoption and workflow analytics")
+                            }
+
+                            Text("Session recordings are encrypted, stored securely on Google Cloud, and automatically deleted after 30 days. They are only used internally by the Fazm team to identify UX issues and improve the product. Recordings are never shared with third parties.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text("You may opt out of the beta channel at any time in Settings, which will stop extended data collection.")
+                                .scaledFont(size: 11, weight: .medium)
+                                .foregroundColor(FazmColors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    // 5. Data Sharing
                     privacyCard {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Privacy Guarantees", systemImage: "hand.raised.fill")
+                            Label("Data Sharing", systemImage: "person.2.slash")
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+
+                            Text("We do not sell, rent, or share your personal data with third parties. Analytics data is processed by PostHog (our analytics provider) and Sentry (error tracking). These services receive only anonymized event data, not your personal content.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    // 6. Your Rights & Choices
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Your Rights & Choices", systemImage: "hand.raised.fill")
                                 .scaledFont(size: 13, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
 
                             VStack(alignment: .leading, spacing: 5) {
                                 sheetBullet("Fully open source — verify everything on GitHub")
-                                sheetBullet("Local-first: all data stays on your machine by default")
-                                sheetBullet("Anonymous tracking with randomly generated IDs")
-                                sheetBullet("No personal info stored in analytics")
+                                sheetBullet("Local-first: your data stays on your machine")
+                                sheetBullet("Delete your account and all associated data at any time")
+                                sheetBullet("Switch from beta to stable to stop extended analytics")
                                 sheetBullet("Data is never sold or shared with third parties")
-                                sheetBullet("Opt out of tracking at any time")
+                                sheetBullet("Contact us at support@fazm.ai for any privacy questions")
                             }
                         }
                     }
+
+                    // 7. Open Source
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Open Source Transparency", systemImage: "chevron.left.forwardslash.chevron.right")
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+
+                            Text("Fazm is fully open source. You can inspect exactly what data is collected and how it is processed by reviewing our source code on GitHub.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Button(action: {
+                                if let url = URL(string: "https://github.com/m13v/fazm") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.up.right.square")
+                                        .scaledFont(size: 10)
+                                    Text("View on GitHub")
+                                        .scaledFont(size: 11, weight: .medium)
+                                }
+                                .foregroundColor(FazmColors.purplePrimary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    // Footer
+                    Text("Last updated: March 2026")
+                        .scaledFont(size: 10)
+                        .foregroundColor(FazmColors.textQuaternary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 8)
                 }
                 .padding(20)
             }
         }
-        .frame(width: 400, height: 480)
+        .frame(width: 460, height: 600)
         .background(FazmColors.backgroundSecondary)
     }
 
