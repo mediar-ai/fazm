@@ -724,6 +724,13 @@ class ChatProvider: ObservableObject {
     /// Ensures the bridge is started (restarting if needed to pick up new token),
     /// then sends a lightweight test query that triggers a browser_snapshot tool call.
     func testPlaywrightConnection() async throws -> Bool {
+        // If a query is in progress (e.g. onboarding calling setup_browser_extension),
+        // skip the bridge restart — it would kill the in-flight query. The token is
+        // already saved in UserDefaults and will be picked up on the next bridge restart.
+        guard !isSending else {
+            log("ChatProvider: Skipping Playwright connection test — query in progress, token saved for next restart")
+            return true
+        }
         // Restart bridge to pick up new extension token
         acpBridgeStarted = false
         do {
