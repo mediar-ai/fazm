@@ -31,12 +31,13 @@ class SessionRecordingManager {
     func recheckAfterSignIn() {
         log("SessionRecording: re-checking flag after sign-in")
 
-        // Try auto-enrollment first, then reload flags
-        requestAutoEnroll()
-
-        PostHogManager.shared.reloadFeatureFlags()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            self?.checkFlagAndUpdate()
+        // Try auto-enrollment first, then reload flags after enrollment completes.
+        // The completion handler reloads flags with a delay to let PostHog propagate.
+        requestAutoEnroll { [weak self] in
+            PostHogManager.shared.reloadFeatureFlags()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                self?.checkFlagAndUpdate()
+            }
         }
     }
 
@@ -149,15 +150,25 @@ class SessionRecordingManager {
 
     /// Ask the backend to auto-enroll this device for session recording.
     /// Only enrolls beta channel users, up to a server-side cap.
-    private func requestAutoEnroll() {
+    /// Calls completion on the main queue when done (or on failure).
+    private func requestAutoEnroll(completion: @escaping () -> Void) {
         let backendURL = env("FAZM_BACKEND_URL")
         let backendSecret = env("FAZM_BACKEND_SECRET")
-        guard !backendURL.isEmpty, !backendSecret.isEmpty else { return }
-        guard let deviceId = getDeviceId() else { return }
+        guard !backendURL.isEmpty, !backendSecret.isEmpty else {
+            completion()
+            return
+        }
+        guard let deviceId = getDeviceId() else {
+            completion()
+            return
+        }
 
         let channel = UserDefaults.standard.string(forKey: "update_channel") ?? "beta"
 
-        guard let url = URL(string: "\(backendURL)/api/session-recording/auto-enroll") else { return }
+        guard let url = URL(string: "\(backendURL)/api/session-recording/auto-enroll") else {
+            completion()
+            return
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(backendSecret)", forHTTPHeaderField: "Authorization")
@@ -168,6 +179,8 @@ class SessionRecordingManager {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { data, _, error in
+            defer { DispatchQueue.main.async { completion() } }
+
             if let error = error {
                 log("SessionRecording: auto-enroll request failed: \(error.localizedDescription)")
                 return
