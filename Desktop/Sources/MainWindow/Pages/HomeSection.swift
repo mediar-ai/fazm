@@ -42,7 +42,7 @@ struct HomeSection: View {
                             .scaledFont(size: 15, weight: .semibold)
                             .foregroundColor(FazmColors.textPrimary)
 
-                        Text("Hold **\(shortcutSettings.pttKey.symbol)** to speak, release to send")
+                        (Text("Hold ") + Text(shortcutSettings.pttKey.symbol).bold() + Text(" to speak, release to send"))
                             .scaledFont(size: 13)
                             .foregroundColor(FazmColors.textSecondary)
                     }
@@ -64,7 +64,7 @@ struct HomeSection: View {
                                 .scaledFont(size: 15, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
 
-                            Text("Double-tap **\(shortcutSettings.pttKey.symbol)** to lock, tap again when done")
+                            (Text("Double-tap ") + Text(shortcutSettings.pttKey.symbol).bold() + Text(" to lock, tap again when done"))
                                 .scaledFont(size: 13)
                                 .foregroundColor(FazmColors.textSecondary)
                         }
