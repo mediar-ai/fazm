@@ -7,13 +7,14 @@ final class BrowserExtensionSetupWindowController {
     private var window: NSWindow?
     private var hostingView: NSHostingView<AnyView>?
 
-    func show(chatProvider: ChatProvider?, onSkip: (() -> Void)? = nil, onComplete: @escaping () -> Void) {
+    func show(chatProvider: ChatProvider?, onSkip: (() -> Void)? = nil, onComplete: @escaping () -> Void, source: String = "unknown") {
         // If already showing, just bring to front
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             return
         }
 
+        AnalyticsManager.shared.browserExtensionSetupOpened(source: source)
         let controller = self
         var setupView = BrowserExtensionSetup(
             onComplete: {
@@ -643,6 +644,7 @@ struct BrowserExtensionSetup: View {
     }
 
     private func dismissSheet() {
+        AnalyticsManager.shared.browserExtensionSetupSkipped(phase: "\(phase)")
         if let onDismiss = onDismiss {
             onDismiss()
         } else {
@@ -707,6 +709,7 @@ struct BrowserExtensionSetup: View {
             }
             UserDefaults.standard.set(token, forKey: "playwrightExtensionToken")
             log("BrowserExtensionSetup: Token saved (\(token.prefix(8))...)")
+            AnalyticsManager.shared.browserExtensionTokenSaved()
 
             if chatProvider != nil {
                 let next = Phase.verify
@@ -737,6 +740,7 @@ struct BrowserExtensionSetup: View {
             }
 
         case .done:
+            AnalyticsManager.shared.browserExtensionSetupCompleted()
             onComplete()
         }
     }
@@ -755,9 +759,11 @@ struct BrowserExtensionSetup: View {
                     if connected {
                         verifySuccess = true
                         log("BrowserExtensionSetup: Connection test succeeded")
+                        AnalyticsManager.shared.browserExtensionConnectionTested(success: true)
                     } else {
                         verifyError = "Could not connect to the Chrome extension. Make sure Chrome is open and try again."
                         log("BrowserExtensionSetup: Connection test returned false")
+                        AnalyticsManager.shared.browserExtensionConnectionTested(success: false, error: "not_connected")
                     }
                 }
             } catch {
@@ -770,6 +776,7 @@ struct BrowserExtensionSetup: View {
                         verifyError = msg
                     }
                     log("BrowserExtensionSetup: Connection test error: \(error)")
+                    AnalyticsManager.shared.browserExtensionConnectionTested(success: false, error: error.localizedDescription)
                 }
             }
         }
