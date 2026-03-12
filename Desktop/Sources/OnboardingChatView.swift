@@ -528,7 +528,8 @@ struct OnboardingChatView: View {
                     },
                     onComplete: {
                         onDone(true)
-                    }
+                    },
+                    source: "onboarding"
                 )
             }
         }
