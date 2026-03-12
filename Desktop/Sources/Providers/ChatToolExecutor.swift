@@ -19,8 +19,6 @@ class ChatToolExecutor {
     static var onKnowledgeGraphUpdated: (() -> Void)?
     /// Called when scan_files completes — used to kick off parallel exploration
     static var onScanFilesCompleted: ((_ fileCount: Int) -> Void)?
-    /// Called when AI invokes setup_browser_extension — opens the setup wizard, calls back on completion/skip
-    static var onSetupBrowserExtension: ((_ onDone: @escaping (_ completed: Bool) -> Void) -> Void)?
     /// Called to programmatically send a follow-up message (e.g. after OAuth completes)
     static var onSendFollowUp: ((_ message: String) -> Void)?
 
@@ -81,11 +79,6 @@ class ChatToolExecutor {
             let question = toolCall.arguments["question"] as? String ?? ""
             let optionCount = (toolCall.arguments["options"] as? [String])?.count ?? 0
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "ask_followup", properties: ["question_length": question.count, "option_count": optionCount])
-            return result
-
-        case "setup_browser_extension":
-            let result = await executeSetupBrowserExtension(toolCall.arguments)
-            AnalyticsManager.shared.onboardingChatToolUsed(tool: "setup_browser_extension")
             return result
 
         case "complete_onboarding":
@@ -790,25 +783,6 @@ class ChatToolExecutor {
         return "Presented to user: \"\(question)\" with options: \(options.joined(separator: ", "))"
     }
 
-    /// Complete the onboarding process
-    private static func executeSetupBrowserExtension(_ args: [String: Any]) async -> String {
-        guard let handler = onSetupBrowserExtension else {
-            return "Error: browser extension setup handler not configured"
-        }
-
-        let completed = await withCheckedContinuation { continuation in
-            handler { didComplete in
-                continuation.resume(returning: didComplete)
-            }
-        }
-
-        if completed {
-            return "Browser extension setup completed successfully. The user can now use browser automation."
-        } else {
-            return "Browser extension setup was skipped by the user. They can set it up later from Settings."
-        }
-    }
-
     // MARK: - Google Workspace
 
     /// Path to the gws binary (bundled or system-installed)
@@ -1260,7 +1234,6 @@ class ChatToolExecutor {
         onQuickReplyOptions = nil
         onKnowledgeGraphUpdated = nil
         onScanFilesCompleted = nil
-        onSetupBrowserExtension = nil
         onSendFollowUp = nil
         fileScanFileCount = 0
 
