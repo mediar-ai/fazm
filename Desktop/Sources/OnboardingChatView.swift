@@ -519,21 +519,6 @@ struct OnboardingChatView: View {
             guard fileCount > 0 else { return }
             startExploration(fileCount: fileCount, graphViewModel: graphViewModel)
         }
-        ChatToolExecutor.onSetupBrowserExtension = { onDone in
-            DispatchQueue.main.async {
-                BrowserExtensionSetupWindowController.shared.show(
-                    chatProvider: chatProvider,
-                    onSkip: {
-                        onDone(false)
-                    },
-                    onComplete: {
-                        onDone(true)
-                    },
-                    source: "onboarding"
-                )
-            }
-        }
-
         // Build onboarding system prompt
         let userName = AuthService.shared.displayName
         let givenName = AuthService.shared.givenName.isEmpty ? userName : AuthService.shared.givenName
