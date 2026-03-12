@@ -119,6 +119,36 @@ class AnalyticsManager {
         PostHogManager.shared.track("Onboarding Chat Message", properties: props)
     }
 
+    // MARK: - Browser Extension Events
+
+    func browserExtensionSetupOpened(source: String) {
+        PostHogManager.shared.track("Browser Extension Setup Opened", properties: ["source": source])
+    }
+
+    func browserExtensionTokenSaved() {
+        PostHogManager.shared.track("Browser Extension Token Saved")
+    }
+
+    func browserExtensionConnectionTested(success: Bool, error: String? = nil, skipped: Bool = false) {
+        var props: [String: Any] = ["success": success, "skipped": skipped]
+        if let error = error { props["error"] = String(error.prefix(200)) }
+        PostHogManager.shared.track("Browser Extension Connection Tested", properties: props)
+    }
+
+    func browserExtensionSetupCompleted() {
+        PostHogManager.shared.track("Browser Extension Setup Completed")
+    }
+
+    func browserExtensionSetupSkipped(phase: String) {
+        PostHogManager.shared.track("Browser Extension Setup Skipped", properties: ["phase": phase])
+    }
+
+    func browserToolFirstUse(toolName: String, success: Bool, error: String? = nil) {
+        var props: [String: Any] = ["tool_name": toolName, "success": success]
+        if let error = error { props["error"] = String(error.prefix(200)) }
+        PostHogManager.shared.track("Browser Tool First Use", properties: props)
+    }
+
     // MARK: - Authentication Events
 
     func signInStarted(provider: String) {
