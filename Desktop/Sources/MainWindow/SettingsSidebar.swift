@@ -95,8 +95,8 @@ struct SettingsSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Settings title
-            Text("Settings")
+            // Title
+            Text("Fazm")
                 .scaledFont(size: 22, weight: .bold)
                 .foregroundColor(FazmColors.textPrimary)
                 .padding(.horizontal, 16)
@@ -239,6 +239,7 @@ struct SettingsSidebarItem: View {
 
     private var icon: String {
         switch section {
+        case .home: return "house"
         case .general: return "gearshape"
         case .shortcuts: return "keyboard"
         case .dictionary: return "character.book.closed"
