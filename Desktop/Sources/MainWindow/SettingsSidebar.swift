@@ -165,7 +165,7 @@ struct SettingsSidebar: View {
                 .foregroundColor(isSearchFocused ? FazmColors.purplePrimary : FazmColors.textTertiary)
                 .animation(.easeInOut(duration: 0.15), value: isSearchFocused)
 
-            TextField("Search settings...", text: $searchQuery)
+            TextField("Search...", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .scaledFont(size: 13)
                 .foregroundColor(FazmColors.textPrimary)
