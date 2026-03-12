@@ -11,6 +11,9 @@ struct HomeSection: View {
     // Recent messages
     @State private var recentMessages: [(text: String, date: Date)] = []
 
+    // Timer to refresh data periodically
+    private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+
     var body: some View {
         VStack(spacing: 20) {
             howToUseCard
@@ -18,6 +21,9 @@ struct HomeSection: View {
             recentMessagesCard
         }
         .onAppear {
+            loadData()
+        }
+        .onReceive(refreshTimer) { _ in
             loadData()
         }
     }
@@ -33,7 +39,7 @@ struct HomeSection: View {
                     .scaledFont(size: 15, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
 
-                (Text("Hold ") + Text(shortcutSettings.pttKey.symbol).bold() + Text(" to speak, release to send"))
+                (Text("Hold ") + Text(shortcutSettings.pttKey.rawValue).bold() + Text(" to speak, release to send"))
                     .scaledFont(size: 13)
                     .foregroundColor(FazmColors.textSecondary)
             }
