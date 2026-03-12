@@ -14,7 +14,7 @@ final class BrowserExtensionSetupWindowController {
             return
         }
 
-        AnalyticsManager.shared.browserExtensionSetupOpened(source: source)
+        Task { @MainActor in AnalyticsManager.shared.browserExtensionSetupOpened(source: source) }
         let controller = self
         var setupView = BrowserExtensionSetup(
             onComplete: {
