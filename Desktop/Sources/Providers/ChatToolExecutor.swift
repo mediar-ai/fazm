@@ -59,6 +59,10 @@ class ChatToolExecutor {
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "check_permission_status")
             return result
 
+        case "extract_user_memories":
+            AnalyticsManager.shared.onboardingChatToolUsed(tool: "extract_user_memories")
+            return await executeExtractUserMemories(toolCall.arguments)
+
         case "scan_files", "start_file_scan":
             AnalyticsManager.shared.onboardingChatToolUsed(tool: "scan_files")
             return await executeScanFiles(toolCall.arguments)
@@ -561,6 +565,112 @@ class ChatToolExecutor {
         onScanFilesCompleted?(count)
 
         return out
+    }
+
+    // MARK: - User Memories Extraction
+
+    /// Extract user memories from browser data using the user-memories Python package.
+    /// Runs the fast extraction steps (autofill, history, bookmarks, logins, Notion) + cleanup,
+    /// then returns the interim profile. WhatsApp contacts and embeddings continue in the background.
+    private static func executeExtractUserMemories(_ args: [String: Any]) async -> String {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let userMemoriesDir = homeDir.appendingPathComponent("user-memories")
+        let python = userMemoriesDir.appendingPathComponent(".venv/bin/python").path
+        let extractScript = userMemoriesDir.appendingPathComponent("extract.py").path
+
+        // Check if user-memories is installed
+        guard FileManager.default.fileExists(atPath: python),
+              FileManager.default.fileExists(atPath: extractScript) else {
+            // Try to install via npx
+            log("user-memories not found, installing via npx...")
+            let installResult = await Task.detached(priority: .userInitiated) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["npx", "user-memories", "init"]
+                process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    return (process.terminationStatus == 0, String(data: data, encoding: .utf8) ?? "")
+                } catch {
+                    return (false, "Failed to run npx: \(error.localizedDescription)")
+                }
+            }.value
+
+            if !installResult.0 {
+                return "Failed to install user-memories: \(installResult.1)\nUser can install manually: npx user-memories init"
+            }
+
+            // Also install embeddings
+            let _ = await Task.detached(priority: .userInitiated) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["npx", "user-memories", "install-embeddings"]
+                process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
+                try? process.run()
+                process.waitUntilExit()
+            }.value
+        }
+
+        // Run extraction — the Python script prints an interim profile after the fast steps
+        let result = await Task.detached(priority: .userInitiated) { () -> String in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: python)
+            process.arguments = [extractScript]
+            process.currentDirectoryURL = userMemoriesDir
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? ""
+
+                // Extract the interim profile from the log output
+                if let profileStart = output.range(of: "Interim profile ready (WhatsApp + embeddings still running):\n") {
+                    let afterMarker = output[profileStart.upperBound...]
+                    // Profile ends at the next log line (starts with timestamp like "HH:MM:SS INFO:")
+                    if let nextLogLine = afterMarker.range(of: #"\n\d{2}:\d{2}:\d{2} "#, options: .regularExpression) {
+                        return String(afterMarker[..<nextLogLine.lowerBound])
+                    }
+                    return String(afterMarker)
+                }
+
+                // Fallback: run profile query directly
+                let profileProcess = Process()
+                profileProcess.executableURL = URL(fileURLWithPath: python)
+                profileProcess.arguments = ["-c", """
+                    import sys, os
+                    sys.path.insert(0, os.path.expanduser("~/user-memories"))
+                    from user_memories import MemoryDB
+                    mem = MemoryDB(os.path.expanduser("~/user-memories/memories.db"))
+                    print(mem.profile_text())
+                    mem.close()
+                    """]
+                profileProcess.currentDirectoryURL = userMemoriesDir
+                let profilePipe = Pipe()
+                profileProcess.standardOutput = profilePipe
+                profileProcess.standardError = profilePipe
+                try profileProcess.run()
+                profileProcess.waitUntilExit()
+                let profileData = profilePipe.fileHandleForReading.readDataToEndOfFile()
+                return String(data: profileData, encoding: .utf8) ?? "Extraction complete but could not read profile."
+            } catch {
+                return "Failed to run extraction: \(error.localizedDescription)"
+            }
+        }.value
+
+        OnboardingChatPersistence.markStepCompleted("user_memories")
+        log("User memories extraction completed")
+        return result
     }
 
     /// Get file scan results from the database
