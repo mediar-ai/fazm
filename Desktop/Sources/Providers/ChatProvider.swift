@@ -729,6 +729,7 @@ class ChatProvider: ObservableObject {
         // already saved in UserDefaults and will be picked up on the next bridge restart.
         guard !isSending else {
             log("ChatProvider: Skipping Playwright connection test — query in progress, token saved for next restart")
+            AnalyticsManager.shared.browserExtensionConnectionTested(success: true, skipped: true)
             return true
         }
         // Restart bridge to pick up new extension token
@@ -2308,6 +2309,15 @@ class ChatProvider: ObservableObject {
                             activeBrowserToolCount = max(0, activeBrowserToolCount - 1)
                             if activeBrowserToolCount == 0 {
                                 FloatingControlBarManager.shared.setSuppressClickOutsideDismiss(false)
+                            }
+                            // Track first successful browser tool use after extension setup
+                            if !UserDefaults.standard.bool(forKey: "browserToolFirstUseTracked") {
+                                UserDefaults.standard.set(true, forKey: "browserToolFirstUseTracked")
+                                AnalyticsManager.shared.browserToolFirstUse(
+                                    toolName: name,
+                                    success: !isError,
+                                    error: isError ? result : nil
+                                )
                             }
                         }
                         // Track completed onboarding steps for restart recovery
