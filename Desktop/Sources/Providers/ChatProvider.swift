@@ -822,13 +822,13 @@ class ChatProvider: ObservableObject {
     }
 
     /// Reset a named ACP session so the next query starts fresh (no history).
+    /// Messages are kept in the DB for history — only the in-memory and ACP state is cleared.
     func resetSession(key: String) async {
         await acpBridge.resetSession(key: key)
         if key == "floating" {
             UserDefaults.standard.removeObject(forKey: floatingSessionIdKey)
             pendingFloatingResume = nil
             messages = []
-            await ChatMessageStore.clearMessages(context: "__floating__")
         }
     }
 
