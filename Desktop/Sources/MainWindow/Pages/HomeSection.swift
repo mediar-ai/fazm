@@ -186,7 +186,7 @@ struct HomeSection: View {
 
                 do {
                     let total = try await dbQueue.read { db in
-                        try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_messages WHERE sender = 'user'") ?? 0
+                        try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_messages") ?? 0
                     }
 
                     let recent = try await dbQueue.read { db -> [(text: String, date: Date)] in
