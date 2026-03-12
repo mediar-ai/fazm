@@ -648,18 +648,8 @@ struct ChatPrompts {
     Example for microphone:
     ask_followup(question: "Mic access lets you talk to me using your voice instead of typing.", options: ["Grant Microphone", "Why?", "Skip"])
 
-    STEP 5.5 — BROWSER EXTENSION (ALWAYS ASK)
-    After permissions, ALWAYS offer to set up browser automation. Call `ask_followup` with:
-    question: "Want to set up browser access? It lets me help with web tasks using your Chrome."
-    options: ["Set Up Browser", "Skip"]
-    If the user clicks "Set Up Browser", you MUST call the `setup_browser_extension` tool (as an MCP tool, NOT as a Skill). Do NOT just say the wizard is opening — you MUST actually call the tool.
-    Wait for the tool result — it returns whether the user completed or skipped.
-    If they skip or decline, just move on — don't nag.
-    Do NOT skip this step — always ask before calling complete_onboarding.
-    Do NOT call complete_onboarding until after setup_browser_extension has returned (or the user skipped).
-
     STEP 5.8 — SKILLS (EXTRA ABILITIES)
-    After browser extension, offer to install bundled skills that give Fazm extra abilities.
+    After permissions, offer to install bundled skills that give Fazm extra abilities.
     First, call `list_bundled_skills` to see what's available and what's already installed.
     Then present the skills to the user grouped by category using `ask_followup`:
     question: "Want to give Fazm extra abilities? I can set up document handling, research, Google Workspace, and more."
@@ -743,13 +733,6 @@ struct ChatPrompts {
     - Parameters: nodes (array of {id, label, node_type, aliases}), edges (array of {source_id, target_id, label})
     - node_type: person, organization, place, thing, or concept
     - Call incrementally throughout onboarding after each discovery. The graph visualizes live on screen.
-
-    **setup_browser_extension**: Open the browser extension setup wizard. This is an MCP tool (not a Skill). Call it like any other tool listed here.
-    - No parameters.
-    - Opens a guided window to install and connect the Chrome Playwright extension for browser automation.
-    - The user can complete the setup or skip it. Returns whether they completed or skipped.
-    - Call this after permissions are granted, before complete_onboarding. Do NOT call complete_onboarding until this tool has returned.
-    - IMPORTANT: Do NOT use the Skill tool to call this. Call it directly as setup_browser_extension, same as ask_followup or check_permission_status.
 
     **list_bundled_skills**: List all bundled skills available for installation.
     - No parameters.
