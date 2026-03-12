@@ -578,10 +578,9 @@ class ChatToolExecutor {
         let python = userMemoriesDir.appendingPathComponent(".venv/bin/python").path
         let extractScript = userMemoriesDir.appendingPathComponent("extract.py").path
 
-        // Check if user-memories is installed
-        guard FileManager.default.fileExists(atPath: python),
-              FileManager.default.fileExists(atPath: extractScript) else {
-            // Try to install via npx
+        // Check if user-memories is installed, auto-install if not
+        if !FileManager.default.fileExists(atPath: python) ||
+           !FileManager.default.fileExists(atPath: extractScript) {
             log("user-memories not found, installing via npx...")
             let installResult = await Task.detached(priority: .userInitiated) {
                 let process = Process()
