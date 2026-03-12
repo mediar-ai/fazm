@@ -833,13 +833,13 @@ class ChatProvider: ObservableObject {
     }
 
     /// Start Claude OAuth authentication
-    /// Opens the OAuth URL (provided by the bridge) in the default browser.
+    /// Opens the OAuth URL (provided by the bridge) in Chrome (where the user's sessions live).
     /// The bridge handles the full OAuth flow: local callback server, token exchange,
     /// credential storage, and ACP subprocess restart.
     func startClaudeAuth() {
         if let urlString = claudeAuthUrl, let url = URL(string: urlString) {
-            log("ChatProvider: Opening Claude OAuth URL in browser")
-            NSWorkspace.shared.open(url)
+            log("ChatProvider: Opening Claude OAuth URL in Chrome")
+            BrowserExtensionSetup.openURLInChrome(urlString)
         } else {
             logError("ChatProvider: No auth URL available from bridge")
             isClaudeAuthRequired = false
