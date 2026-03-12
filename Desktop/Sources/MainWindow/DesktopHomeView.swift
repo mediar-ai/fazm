@@ -41,6 +41,12 @@ struct DesktopHomeView: View {
                         // Set up push-to-talk voice input
                         if let barState = FloatingControlBarManager.shared.barState {
                             PushToTalkManager.shared.setup(barState: barState)
+
+                            // Wire session recording pause/resume to user interaction signals
+                            SessionRecordingManager.shared.observeActivity(
+                                barState: barState,
+                                chatProvider: viewModelContainer.chatProvider
+                            )
                         }
 
                         // After onboarding or sign-in, close the main window — just show floating bar
