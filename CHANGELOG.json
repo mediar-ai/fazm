@@ -62,6 +62,7 @@
     "Fixed Playwright screenshots exceeding API dimension limits on Retina displays",
     "Fixed 401 auth errors not triggering re-authentication, causing users to get stuck with \"AI service temporarily unavailable\" errors",
     "Screen recording now only captures when you're actively interacting with the app",
-    "Authentication now opens in Chrome instead of the default browser, so existing sessions are available"
+    "Authentication now opens in Chrome instead of the default browser, so existing sessions are available",
+    "Added Home tab as default landing page with usage guide, floating bar toggle, stats, and recent activity"
   ]
 }
