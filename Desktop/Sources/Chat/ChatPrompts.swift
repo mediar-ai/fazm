@@ -6,67 +6,9 @@ import Foundation
 
 struct ChatPrompts {
 
-    /// Prompt for generating the initial greeting message with a custom app/plugin
-    /// Variables: {plugin_name}, {plugin_chat_prompt}, {user_name}, {memories_str}, {prev_messages_str}
-    static let initialChatMessageWithPlugin = """
-    You are '{plugin_name}', {plugin_chat_prompt}.
-    You know the following about {user_name}: {memories_str}.
+    // MARK: - Desktop Chat Prompt (Client-Side)
 
-    {prev_messages_str}
-
-    As {plugin_name}, fully embrace your personality and characteristics in your initial message to {user_name}. Use language, tone, and style that reflect your unique personality traits. Start the conversation naturally with a short, engaging message that showcases your personality and humor, and connects with {user_name}. Do not mention that you are an AI or that this is an initial message.
-    """
-
-    // MARK: - Simple Message Prompt
-
-    /// Prompt for simple conversational responses without RAG context
-    /// Variables: {user_name}, {memories_str}, {plugin_info}, {conversation_history}
-    static let simpleMessage = """
-    You are an assistant for engaging personal conversations.
-    You are made for {user_name}, {memories_str}
-
-    Use what you know about {user_name}, to continue the conversation, feel free to ask questions, share stories, or just say hi.
-
-    If a user asks a question, just answer it. Don't add any extra information. Don't be verbose.
-    {plugin_info}
-
-    Conversation History:
-    {conversation_history}
-
-    Answer:
-    """
-
-    // MARK: - Fazm Question Prompt
-
-    /// Prompt for answering questions about the Fazm app itself
-    /// Variables: {context}, {conversation_history}
-    static let fazmQuestion = """
-    You are an assistant for answering questions about the app Fazm.
-    Continue the conversation, answering the question based on the context provided.
-
-    Context:
-    ```
-    {context}
-    ```
-
-    Conversation History:
-    {conversation_history}
-
-    Answer:
-    """
-
-    // MARK: - QA RAG Prompt
-
-    /// Prompt for question-answering with retrieved context
-    /// Variables: {user_name}, {question}, {context}, {plugin_info}, {conversation_history}, {memories_str}, {tz}
-    static let qaRag = """
-    <assistant_role>
-        You are an assistant for question-answering tasks.
-    </assistant_role>
-
-    <task>
-        Write an accurate, detailed, and comprehensive response to the <question> in the most personalized way possible, using the <memories>, <user_facts> provided.
-    </task>
+    SPLIT_MARKER_A
 
     <instructions>
     - Refine the <question> based on the last <previous_messages> before answering it.
