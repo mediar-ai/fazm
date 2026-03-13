@@ -670,7 +670,9 @@ class ChatProvider: ObservableObject {
                 }
             }
 
-        // Observe changes to Playwright extension token — restart bridge to pick up new token
+        // Observe changes to Playwright extension token — restart bridge to pick up new token.
+        // If the token changed because of browser extension setup (stoppedForBrowserSetup),
+        // skip the restart — retryPendingQuery() will handle it with proper session resume.
         playwrightTokenObserver = UserDefaults.standard.publisher(for: \.playwrightExtensionToken)
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -679,6 +681,10 @@ class ChatProvider: ObservableObject {
                     guard let self = self else { return }
                     guard !self.isSending else {
                         log("ChatProvider: Skipping bridge restart for token change — query in progress")
+                        return
+                    }
+                    if self.pendingRetryMessage != nil {
+                        log("ChatProvider: Skipping bridge restart for token change — retry pending (will restart with session resume)")
                         return
                     }
                     guard self.acpBridgeStarted else { return }
@@ -2024,19 +2030,16 @@ class ChatProvider: ObservableObject {
         Task { await sendMessage(text) }
     }
 
-    /// Restart the ACP bridge so it picks up the new Playwright extension token.
-    /// Called after browser extension setup completes and before retrying the query.
+    /// Stop the ACP bridge so it picks up the new Playwright extension token on next start.
+    /// Does NOT restart — leaves `acpBridgeStarted = false` so the next `sendMessage` call
+    /// goes through `ensureBridgeStarted()` which does a full warmup with session resume.
+    /// This preserves conversation history across the browser extension setup flow.
     func restartBridgeForNewToken() async {
         guard acpBridgeStarted else { return }
-        log("ChatProvider: Restarting bridge to pick up new Playwright token")
+        log("ChatProvider: Stopping bridge to pick up new Playwright token (will restart with session resume on next query)")
+        await acpBridge.stop()
         acpBridgeStarted = false
-        do {
-            try await acpBridge.restart()
-            acpBridgeStarted = true
-            log("ChatProvider: Bridge restarted with new Playwright token")
-        } catch {
-            logError("Failed to restart bridge for new Playwright token", error: error)
-        }
+        floatingChatRestored = false  // Allow restoreFloatingChatIfNeeded to reload session ID
     }
 
     /// Send a follow-up message while the agent is still running.
