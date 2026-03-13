@@ -556,11 +556,9 @@ actor ACPBridge {
         throw BridgeError.agentError(message)
 
       case .authRequired(let methods, let authUrl):
-        log("ACPBridge: query loop received auth_required (authUrl=\(authUrl != nil ? "present" : "nil"))")
         onAuthRequired(methods, authUrl)
 
       case .authSuccess:
-        log("ACPBridge: query loop received auth_success")
         onAuthSuccess()
 
       case .authTimeout:
@@ -764,10 +762,8 @@ actor ACPBridge {
     // Handle auth messages immediately via global handlers (even outside query)
     switch message {
     case .authRequired(let methods, let authUrl):
-      log("ACPBridge: deliverMessage auth_required (continuation=\(messageContinuation != nil), globalHandler=\(onAuthRequiredGlobal != nil), authUrl=\(authUrl != nil ? "present" : "nil"))")
       if messageContinuation == nil, let handler = onAuthRequiredGlobal {
         // No active query waiting — fire the global handler immediately
-        log("ACPBridge: routing auth_required to global handler")
         handler(methods, authUrl)
         return
       }
