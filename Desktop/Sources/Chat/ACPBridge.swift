@@ -299,7 +299,7 @@ actor ACPBridge {
     try? stdinPipe?.fileHandleForWriting.close()
 
     // Kill the entire process group to prevent orphaned child processes.
-    // The bridge spawns ACP which spawns MCP servers (omi-tools, playwright, macos-use);
+    // The bridge spawns ACP which spawns MCP servers (fazm-tools, playwright, macos-use);
     // terminate() only signals the top process, leaving grandchildren alive.
     if let proc = process, proc.isRunning {
       let pid = proc.processIdentifier
