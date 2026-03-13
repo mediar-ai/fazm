@@ -415,7 +415,7 @@ class ChatProvider: ObservableObject {
     // MARK: - Built-in API Key Usage Cap ($10)
 
     /// Maximum spend allowed on the built-in API key before auto-switching to personal mode
-    static let builtinCostCapUsd: Double = 0.01  // TEMP: testing
+    static let builtinCostCapUsd: Double = 10.0
 
     /// Cumulative cost tracked locally (seeded from Firestore on startup)
     @AppStorage("builtinCumulativeCostUsd") var builtinCumulativeCostUsd: Double = 0.0
