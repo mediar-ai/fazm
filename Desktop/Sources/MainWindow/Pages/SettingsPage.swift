@@ -379,7 +379,9 @@ struct SettingsContentView: View {
 
                     Text(bridgeMode == "builtin"
                          ? "Using Fazm's built-in Claude account. No sign-in required."
-                         : "Using your personal Claude account via OAuth. Sign in to connect.")
+                         : chatProvider?.isClaudeConnected == true
+                            ? "Connected to your personal Claude account."
+                            : "Using your personal Claude account via OAuth. Sign in to connect.")
                         .scaledFont(size: 12)
                         .foregroundColor(FazmColors.textTertiary)
 
