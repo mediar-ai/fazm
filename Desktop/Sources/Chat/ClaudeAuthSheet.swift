@@ -217,7 +217,16 @@ final class ClaudeAuthWindowController {
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.appearance = NSAppearance(named: .darkAqua)
-        window.center()
+        // Center on the main screen (not the last-used screen, which may be off-screen)
+        if let screen = NSScreen.main {
+            let screenFrame = screen.visibleFrame
+            let windowSize = window.frame.size
+            let x = screenFrame.midX - windowSize.width / 2
+            let y = screenFrame.midY - windowSize.height / 2
+            window.setFrameOrigin(NSPoint(x: x, y: y))
+        } else {
+            window.center()
+        }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
