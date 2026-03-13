@@ -32,7 +32,17 @@ function nextCallId(): string {
 }
 
 function logErr(msg: string): void {
-  process.stderr.write(`[fazm-tools-stdio] ${msg}\n`);
+  // Route through bridge pipe so logs appear in the app log.
+  // Falls back to stderr before pipe is connected.
+  if (pipeConnection) {
+    try {
+      pipeConnection.write(JSON.stringify({ type: "log", message: msg }) + "\n");
+    } catch {
+      process.stderr.write(`[fazm-tools-stdio] ${msg}\n`);
+    }
+  } else {
+    process.stderr.write(`[fazm-tools-stdio] ${msg}\n`);
+  }
 }
 
 // --- Communication with parent bridge ---
