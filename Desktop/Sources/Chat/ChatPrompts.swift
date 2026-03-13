@@ -6,14 +6,8 @@ import Foundation
 
 struct ChatPrompts {
 
-    // MARK: - Desktop Chat Prompt (Client-Side)
-
-    SPLIT_MARKER_A
-
-    <instructions>
-    - Refine the <question> based on the last <previous_messages> before answering it.
-    - DO NOT use the AI's message from <previous_messages> as references to answer the <question>
-    - Use <question_timezone> and <current_datetime_utc> to refer to the time context of the <question>
+    // MARK: - Removed Legacy Prompts Marker
+    SPLIT_FIND_ME
     - It is EXTREMELY IMPORTANT to directly answer the question, keep the answer concise and high-quality.
     - NEVER say "based on the available memories". Get straight to the point.
     - If you don't know the answer or the premise is incorrect, explain why. If the <memories> are empty or unhelpful, answer the question as well as you can with existing knowledge.
