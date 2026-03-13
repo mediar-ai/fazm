@@ -67,6 +67,7 @@
     "Fixed AI queries hanging silently when rate limit is reached \u2014 now shows sign-in prompt",
     "API keys are now fetched from the backend instead of being bundled in the app binary",
     "Renamed internal MCP server from omi-tools to fazm-tools and added diagnostic logging for tool calls",
-    "Claude account now connects immediately when switching to Your Claude Account in Settings"
+    "Claude account now connects immediately when switching to Your Claude Account in Settings",
+    "Added loading spinner when viewing CLAUDE.md and skill files in settings"
   ]
 }
