@@ -1,5 +1,5 @@
 /**
- * HTTP-based MCP server that exposes omi tools (execute_sql, semantic_search)
+ * HTTP-based MCP server that exposes Fazm tools (execute_sql, semantic_search)
  * to the ACP agent. Tool calls are forwarded to Swift via stdout using the
  * same protocol as agent-bridge.
  *
@@ -26,7 +26,7 @@ const pendingToolCalls = new Map<
 let callIdCounter = 0;
 
 function nextCallId(): string {
-  return `omi-${++callIdCounter}-${Date.now()}`;
+  return `fazm-${++callIdCounter}-${Date.now()}`;
 }
 
 /** Send a JSON line to stdout (back to Swift) */
@@ -70,7 +70,7 @@ export function resolveToolCall(msg: ToolResultMessage): void {
 const TOOLS = [
   {
     name: "execute_sql",
-    description: `Run SQL on the local omi.db database.
+    description: `Run SQL on the local fazm.db database.
 Supports: SELECT, INSERT, UPDATE, DELETE.
 SELECT auto-limits to 200 rows. UPDATE/DELETE require WHERE. DROP/ALTER/CREATE blocked.
 Use for: app usage stats, time queries, task management, aggregations, anything structured.`,
@@ -154,7 +154,7 @@ async function handleJsonRpc(
         result: {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: { name: "omi-tools", version: "1.0.0" },
+          serverInfo: { name: "fazm-tools", version: "1.0.0" },
         },
       };
 
@@ -267,7 +267,7 @@ function readBody(req: IncomingMessage): Promise<string> {
  * Start the HTTP MCP server on a random localhost port.
  * Returns the URL to connect to.
  */
-export async function startOmiToolsServer(): Promise<string> {
+export async function startFazmToolsServer(): Promise<string> {
   return new Promise((resolve, reject) => {
     const server = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
@@ -291,7 +291,7 @@ export async function startOmiToolsServer(): Promise<string> {
         } else if (req.method === "GET") {
           // Health check / SSE endpoint (not used but keep for compatibility)
           res.writeHead(200, { "Content-Type": "text/plain" });
-          res.end("omi-tools MCP server");
+          res.end("fazm-tools MCP server");
         } else {
           res.writeHead(405);
           res.end();
@@ -303,7 +303,7 @@ export async function startOmiToolsServer(): Promise<string> {
       const addr = server.address();
       if (addr && typeof addr === "object") {
         const url = `http://127.0.0.1:${addr.port}/`;
-        process.stderr.write(`[acp-bridge] omi-tools HTTP MCP server on ${url}\n`);
+        process.stderr.write(`[acp-bridge] fazm-tools HTTP MCP server on ${url}\n`);
         resolve(url);
       } else {
         reject(new Error("Failed to get server address"));
