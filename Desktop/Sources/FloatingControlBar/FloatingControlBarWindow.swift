@@ -1300,11 +1300,10 @@ class FloatingControlBarManager {
         window.showAIConversation()
         window.orderFrontRegardless()
 
-        // Stop the bridge so ensureBridgeStarted() restarts with session resume.
+        // The bridge was already restarted with session resume by testPlaywrightConnection().
         // Send a continuation message — the AI already has the original prompt in session history.
         let continuationMessage = "The browser extension is now connected and ready. Please continue with the task."
         Task { @MainActor in
-            await provider.restartBridgeForNewToken()
             await self.sendAIQuery(continuationMessage, barWindow: window, provider: provider)
         }
     }
