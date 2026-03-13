@@ -238,8 +238,19 @@ struct SettingsContentView: View {
                         }
                         .pickerStyle(.menu)
 
-                        AudioLevelBarsSettingsView(level: audioDeviceManager.currentAudioLevel)
+                        if audioDeviceManager.noMicrophoneAvailable {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .scaledFont(size: 11)
+                                Text("No microphone detected")
+                                    .scaledFont(size: 12)
+                            }
+                            .foregroundColor(FazmColors.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            AudioLevelBarsSettingsView(level: audioDeviceManager.currentAudioLevel)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
