@@ -135,7 +135,10 @@ function startFazmToolsRelay(): Promise<string> {
               input: Record<string, unknown>;
             };
 
-            if (msg.type === "tool_use") {
+            if (msg.type === "log") {
+              // Forward log from fazm-tools subprocess to bridge stderr
+              logErr(`[fazm-tools] ${(msg as Record<string, unknown>).message ?? ""}`);
+            } else if (msg.type === "tool_use") {
               // Forward tool call to Swift via stdout
               send({
                 type: "tool_use",
