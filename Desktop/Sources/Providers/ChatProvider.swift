@@ -855,12 +855,22 @@ class ChatProvider: ObservableObject {
     /// The bridge handles the full OAuth flow: local callback server, token exchange,
     /// credential storage, and ACP subprocess restart.
     func startClaudeAuth() {
-        if let urlString = claudeAuthUrl, let url = URL(string: urlString) {
+        if let urlString = claudeAuthUrl, URL(string: urlString) != nil {
             log("ChatProvider: Opening Claude OAuth URL in Chrome")
             BrowserExtensionSetup.openURLInChrome(urlString)
         } else {
-            logError("ChatProvider: No auth URL available from bridge")
-            isClaudeAuthRequired = false
+            // No auth URL yet — restart the bridge to trigger a fresh OAuth flow.
+            // This happens when isClaudeAuthRequired was set by error-handling paths
+            // (credit exhaustion, auth errors) without an active OAuth flow.
+            log("ChatProvider: No auth URL available, restarting bridge to trigger OAuth")
+            Task {
+                acpBridgeStarted = false
+                await acpBridge.stop()
+                _ = await ensureBridgeStarted()
+                // After restart, the bridge will fire auth_required with a URL,
+                // which sets claudeAuthUrl and isClaudeAuthRequired via the handler.
+                // The auth sheet will re-appear with a working Connect button.
+            }
         }
     }
 
