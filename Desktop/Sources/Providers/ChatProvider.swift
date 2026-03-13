@@ -435,7 +435,7 @@ class ChatProvider: ObservableObject {
     private func createBridge() -> ACPBridge {
         if bridgeMode == "builtin" {
             // Bundled API key mode: direct Anthropic API (fastest path)
-            let apiKey = AnthropicKeyProvider.deobfuscate()
+            let apiKey = KeyService.shared.anthropicAPIKey ?? ""
             if !apiKey.isEmpty {
                 log("ChatProvider: Using bundled Anthropic API key (direct API)")
                 return ACPBridge(mode: .bundledKey(apiKey: apiKey))
@@ -756,7 +756,7 @@ class ChatProvider: ObservableObject {
         guard !acpBridgeStarted else { return true }
 
         // If builtin mode and bundled key isn't available, try Vertex setup
-        if bridgeMode == "builtin" && AnthropicKeyProvider.deobfuscate().isEmpty && vertexTokenManager == nil {
+        if bridgeMode == "builtin" && (KeyService.shared.anthropicAPIKey ?? "").isEmpty && vertexTokenManager == nil {
             let vtm = VertexTokenManager()
             if await vtm.isConfigured {
                 do {
