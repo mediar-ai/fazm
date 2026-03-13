@@ -231,8 +231,9 @@ struct OnboardingChatView: View {
                                     .padding(.leading, 44)
                             }
 
-                            // Show the question text from ask_followup above the buttons
-                            if !quickReplyQuestion.isEmpty {
+                            // Show the question text from ask_followup above the buttons,
+                            // but only if the AI didn't already write the question as chat text
+                            if !quickReplyQuestion.isEmpty && !lastAIMessageHasText {
                                 Text(quickReplyQuestion)
                                     .font(.system(size: 14))
                                     .foregroundColor(.white.opacity(0.9))
@@ -644,6 +645,22 @@ struct OnboardingChatView: View {
 
     private func stopAgent() {
         chatProvider.stopAgent()
+    }
+
+    /// Whether the last AI message already contains visible text (so we don't duplicate the question)
+    private var lastAIMessageHasText: Bool {
+        guard let lastAI = chatProvider.messages.last(where: { $0.sender == .ai }) else { return false }
+        // Check contentBlocks for non-empty text blocks
+        if !lastAI.contentBlocks.isEmpty {
+            return lastAI.contentBlocks.contains { block in
+                if case .text(_, let text) = block {
+                    return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+                return false
+            }
+        }
+        // Fallback for messages without contentBlocks
+        return !lastAI.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func sendMessage() {
