@@ -106,6 +106,7 @@ struct SettingsContentView: View {
     @State private var showFileViewer = false
     @State private var fileViewerContent = ""
     @State private var fileViewerTitle = ""
+    @State private var fileViewerLoading = false
     @State private var skillSearchQuery = ""
     @State private var newDictionaryTerm = ""
 
@@ -535,8 +536,13 @@ struct SettingsContentView: View {
                             if aiChatClaudeMdContent != nil {
                                 Button("View") {
                                     fileViewerTitle = "Global CLAUDE.md"
-                                    fileViewerContent = aiChatClaudeMdContent ?? ""
+                                    fileViewerContent = ""
+                                    fileViewerLoading = true
                                     showFileViewer = true
+                                    DispatchQueue.main.async {
+                                        fileViewerContent = aiChatClaudeMdContent ?? ""
+                                        fileViewerLoading = false
+                                    }
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
@@ -583,8 +589,13 @@ struct SettingsContentView: View {
                                 if aiChatProjectClaudeMdContent != nil {
                                     Button("View") {
                                         fileViewerTitle = "Project CLAUDE.md"
-                                        fileViewerContent = aiChatProjectClaudeMdContent ?? ""
+                                        fileViewerContent = ""
+                                        fileViewerLoading = true
                                         showFileViewer = true
+                                        DispatchQueue.main.async {
+                                            fileViewerContent = aiChatProjectClaudeMdContent ?? ""
+                                            fileViewerLoading = false
+                                        }
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
