@@ -39,7 +39,7 @@ struct FloatingControlBarView: View {
             controlBarView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottomLeading) {
+        .overlay(alignment: .topLeading) {
             if state.showingAIConversation {
                 Button {
                     onCloseAI()
@@ -57,7 +57,7 @@ struct FloatingControlBarView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 8)
-                .padding(.bottom, 8)
+                .padding(.top, 8)
                 .transition(.opacity)
             }
         }
