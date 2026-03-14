@@ -231,9 +231,8 @@ struct OnboardingChatView: View {
                                     .padding(.leading, 44)
                             }
 
-                            // Show the question text from ask_followup above the buttons,
-                            // but only if the AI didn't already write the question as chat text
-                            if !quickReplyQuestion.isEmpty && !lastAIMessageHasText {
+                            // Show the question text from ask_followup above the buttons
+                            if !quickReplyQuestion.isEmpty {
                                 Text(quickReplyQuestion)
                                     .font(.system(size: 14))
                                     .foregroundColor(.white.opacity(0.9))
