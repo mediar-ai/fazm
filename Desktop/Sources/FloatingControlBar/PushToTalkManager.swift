@@ -400,6 +400,23 @@ class PushToTalkManager: ObservableObject {
     updateBarState()
   }
 
+  private func showMicrophonePermissionDeniedAlert() {
+    DispatchQueue.main.async {
+      NSApp.activate(ignoringOtherApps: true)
+      let alert = NSAlert()
+      alert.messageText = "Microphone Access Required"
+      alert.informativeText = "Fazm needs microphone access to use voice input. Please grant permission in System Settings → Privacy & Security → Microphone."
+      alert.addButton(withTitle: "Open System Settings")
+      alert.addButton(withTitle: "Cancel")
+      alert.alertStyle = .warning
+      if alert.runModal() == .alertFirstButtonReturn {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+          NSWorkspace.shared.open(url)
+        }
+      }
+    }
+  }
+
   /// Cancel PTT without sending — used when conversation is closed mid-PTT.
   func cancelListening() {
     guard state != .idle else { return }
@@ -564,6 +581,7 @@ class PushToTalkManager: ObservableObject {
         } else {
           log("PushToTalkManager: microphone permission denied")
           self.stopListening()
+          self.showMicrophonePermissionDeniedAlert()
         }
       }
       return
