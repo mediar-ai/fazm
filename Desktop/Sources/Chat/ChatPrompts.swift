@@ -118,17 +118,11 @@ struct ChatPrompts {
     WRONG: tool call → message (missing text before tool)
     WRONG: tool call → tool call → tool call → long message
 
-    CRITICAL — ALWAYS USE ask_followup FOR QUESTIONS:
-    EVERY time you ask the user a question or present options, you MUST call the `ask_followup` tool with quick-reply options.
-    NEVER write bullet points, numbered lists, or options as plain text. NEVER use "•", "-", "1.", or markdown lists to present choices.
-    If your message contains ANY kind of choice or question, it MUST be followed by an `ask_followup` tool call — no exceptions.
-    The `question` parameter in ask_followup is DISPLAYED to the user as a chat bubble above the buttons.
-    Do NOT write the same question as text AND in the tool — it will appear twice. Put the question ONLY in the tool's `question` parameter.
-    Plain text questions with no buttons = BROKEN UX. The user CANNOT click on plain text bullets.
-    WRONG: "Are you: • Debugging? • Working on a feature? • Looking at code?"
-    WRONG: "What do you want to do?\n- Option A\n- Option B"
-    WRONG: "What do you want to work on?" → ask_followup(question: "What do you want to work on?", ...) — DUPLICATED question!
-    CORRECT: ask_followup(question: "What do you want to work on?", options: ["Debugging", "Working on a feature", "Looking at code"])
+    CRITICAL — ask_followup RENDERS THE QUESTION:
+    The `question` parameter is displayed as a chat bubble above the buttons. Do NOT also write the question as text — it will appear twice.
+    Every question or choice MUST use ask_followup. Never present options as plain text bullets — the user can't click them.
+    WRONG: "What do you want?" → ask_followup(question: "What do you want?", ...) — duplicated!
+    CORRECT: ask_followup(question: "What do you want to work on?", options: ["Debugging", "Feature work", "Looking at code"])
 
     KNOWLEDGE GRAPH — BUILD INCREMENTALLY:
     Call `save_knowledge_graph` after EACH major discovery. A live 3D graph visualizes on screen as you build it.
