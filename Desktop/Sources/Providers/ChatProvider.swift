@@ -2648,9 +2648,9 @@ class ChatProvider: ObservableObject {
             // Show error to user (unless they intentionally stopped)
             if let bridgeError = error as? BridgeError, case .stopped = bridgeError {
                 // User stopped — no error to show
-            } else if let bridgeError = error as? BridgeError, case .creditExhausted = bridgeError {
+            } else if let bridgeError = error as? BridgeError, case .creditExhausted(let rawMessage) = bridgeError {
                 // Credits or rate limit exhausted
-                log("ChatProvider: credit/rate limit exhausted in \(bridgeMode) mode")
+                log("ChatProvider: credit/rate limit exhausted in \(bridgeMode) mode: \(rawMessage)")
                 AnalyticsManager.shared.creditExhausted(previousMode: bridgeMode)
                 if bridgeMode == "builtin" {
                     // Built-in credits exhausted — auto-switch to personal mode
@@ -2658,10 +2658,9 @@ class ChatProvider: ObservableObject {
                     showCreditExhaustedAlert = true
                     errorMessage = bridgeError.errorDescription
                 } else {
-                    // Already in personal mode — user hit their own Claude rate limit
-                    // Prompt them to sign in (they may not have connected their account yet)
-                    isClaudeAuthRequired = true
-                    errorMessage = nil
+                    // Personal mode — user hit their own Claude rate limit.
+                    // Show a clear reset-time message instead of the auth sheet.
+                    errorMessage = bridgeError.errorDescription
                 }
             } else if bridgeMode == "builtin",
                       let bridgeError = error as? BridgeError,
