@@ -1554,6 +1554,15 @@ async function main(): Promise<void> {
         }
         break;
 
+      case "cancel_auth":
+        logErr("Cancel auth requested by user");
+        if (activeOAuthFlow) {
+          activeOAuthFlow.cancel();
+          activeOAuthFlow = null;
+        }
+        activeAuthPromise = null;
+        break;
+
       case "authenticate": {
         // Legacy fallback: OAuth flow now handles auth internally.
         // This handler is kept for backward compatibility.
