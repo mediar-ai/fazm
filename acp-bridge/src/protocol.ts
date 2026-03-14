@@ -57,6 +57,10 @@ export interface ResetSessionMessage {
   sessionKey?: string;
 }
 
+export interface CancelAuthMessage {
+  type: "cancel_auth";
+}
+
 export type InboundMessage =
   | QueryMessage
   | ToolResultMessage
@@ -64,7 +68,8 @@ export type InboundMessage =
   | InterruptMessage
   | AuthenticateMessage
   | WarmupMessage
-  | ResetSessionMessage;
+  | ResetSessionMessage
+  | CancelAuthMessage;
 
 // === Bridge → Swift (stdout) ===
 
