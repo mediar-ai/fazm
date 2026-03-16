@@ -1409,9 +1409,17 @@ class FloatingControlBarManager {
             }
         }
 
-        // Use pre-captured screenshot (taken when the bar opened), then clear it
-        let screenshotPath = self.pendingScreenshotPath
+        // Use pre-captured screenshot if available, otherwise capture now (e.g. follow-up in open bar)
+        var screenshotPath = self.pendingScreenshotPath
         self.pendingScreenshotPath = nil
+        if screenshotPath == nil {
+            let targetPID = self.lastActiveAppPID
+            screenshotPath = await Task.detached {
+                targetPID != 0
+                    ? ScreenCaptureManager.captureAppWindow(pid: targetPID)
+                    : ScreenCaptureManager.captureScreen()
+            }.value
+        }
 
         AnalyticsManager.shared.floatingBarQuerySent(messageLength: message.count, hasScreenshot: screenshotPath != nil, queryText: message)
 
