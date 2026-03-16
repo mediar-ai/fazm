@@ -113,45 +113,48 @@ struct HomeSection: View {
                 }
                 .padding(.vertical, 20)
             } else {
-                VStack(spacing: 8) {
-                    ForEach(Array(recentMessages.enumerated()), id: \.offset) { _, message in
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "person.fill")
-                                .scaledFont(size: 10)
-                                .foregroundColor(FazmColors.purplePrimary)
-                                .padding(.top, 3)
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(Array(recentMessages.enumerated()), id: \.offset) { _, message in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "person.fill")
+                                    .scaledFont(size: 10)
+                                    .foregroundColor(FazmColors.purplePrimary)
+                                    .padding(.top, 3)
 
-                            Text(message.text)
-                                .scaledFont(size: 13, weight: .medium)
-                                .foregroundColor(FazmColors.textPrimary)
-                                .fixedSize(horizontal: false, vertical: true)
+                                Text(message.text)
+                                    .scaledFont(size: 13, weight: .medium)
+                                    .foregroundColor(FazmColors.textPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
 
-                            Spacer()
+                                Spacer()
 
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(timeAgo(message.date))
-                                    .scaledFont(size: 11)
-                                    .foregroundColor(FazmColors.textQuaternary)
-
-                                Button {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(message.text, forType: .string)
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
+                                HStack(spacing: 8) {
+                                    Text(timeAgo(message.date))
                                         .scaledFont(size: 11)
                                         .foregroundColor(FazmColors.textQuaternary)
+
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(message.text, forType: .string)
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                            .scaledFont(size: 11)
+                                            .foregroundColor(FazmColors.textQuaternary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Copy to clipboard")
                                 }
-                                .buttonStyle(.plain)
-                                .help("Copy to clipboard")
                             }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(FazmColors.backgroundTertiary.opacity(0.3))
+                            )
                         }
-                        .padding(12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(FazmColors.backgroundTertiary.opacity(0.3))
-                        )
                     }
                 }
+                .frame(maxHeight: 400)
             }
         }
         .padding(20)
@@ -215,7 +218,7 @@ struct HomeSection: View {
                             FROM chat_messages
                             WHERE sender = 'user'
                             ORDER BY createdAt DESC
-                            LIMIT 5
+                            LIMIT 100
                         """)
                         return rows.map { row in
                             (
