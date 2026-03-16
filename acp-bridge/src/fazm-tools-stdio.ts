@@ -200,52 +200,6 @@ Pass the task's backendId.`,
     },
   },
   {
-    name: "google_workspace",
-    description: `Interact with Google Workspace (Gmail, Calendar, Drive, Sheets, Docs). Supports multiple Google accounts.
-Actions:
-- "status": Check connection status and list connected accounts. ALWAYS call this first.
-- "accounts": List all connected Google accounts and which is the default.
-- "login": Start OAuth login for a new account. Optionally pass "account" (email) to associate.
-  Opens the Google sign-in page in the user's default browser automatically.
-  After calling login, tell the user a sign-in page opened and they need to approve permissions.
-  Then call ask_followup with options like ["I've signed in", "Cancel"].
-  Do NOT use Playwright or try to automate the OAuth flow — the user completes it themselves.
-  When the user confirms they signed in, call this tool with action "auth_callback" to verify.
-- "auth_callback": Check if the OAuth flow completed. Call AFTER the user confirms they signed in.
-- "exec": Run a gws CLI command. Optionally pass "account" (email) to target a specific account.
-  Pass the full command string (everything after "gws ").
-  Examples: exec "gmail users messages list --params '{\\"userId\\": \\"me\\", \\"maxResults\\": 5}'"
-            exec "calendar events list --params '{\\"calendarId\\": \\"primary\\", \\"timeMin\\": \\"2026-03-05T00:00:00Z\\"}'"
-            exec "drive files list --params '{\\"pageSize\\": 10}'"
-
-Flow: status → login (if needed, opens browser for user) → ask_followup → user confirms → auth_callback → exec.
-
-Account selection:
-- 0 accounts connected → call login. The user picks during OAuth.
-- 1 account connected → just use it.
-- Multiple accounts → look at the user's AI profile (in your system prompt) for email addresses and preferences. Match the account to the request context (e.g. work-related → work email). If still ambiguous, ask concisely: "Which account? [email1] / [email2]"
-- When logging in a new account, check the AI profile for the user's known email addresses to pass as the "account" param.`,
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        action: {
-          type: "string" as const,
-          enum: ["status", "accounts", "login", "auth_callback", "exec"],
-          description: "The action to perform",
-        },
-        command: {
-          type: "string" as const,
-          description: "The gws command to run (only for action 'exec'). Everything after 'gws '.",
-        },
-        account: {
-          type: "string" as const,
-          description: "Google account email to use (for login/exec). If omitted, uses the default account.",
-        },
-      },
-      required: ["action"],
-    },
-  },
-  {
     name: "load_skill",
     description: `Load the full instructions for a named skill. Call this when you decide to use a skill listed in <available_skills>. Returns the complete SKILL.md content with step-by-step instructions and workflows.`,
     inputSchema: {
@@ -536,18 +490,6 @@ async function handleJsonRpc(
       } else if (toolName === "delete_task") {
         const taskId = args.task_id as string;
         const result = await requestSwiftTool("delete_task", { task_id: taskId });
-        if (!isNotification) {
-          send({
-            jsonrpc: "2.0",
-            id,
-            result: { content: [{ type: "text", text: result }] },
-          });
-        }
-      } else if (toolName === "google_workspace") {
-        const action = args.action as string;
-        const command = args.command as string | undefined;
-        const account = args.account as string | undefined;
-        const result = await requestSwiftTool("google_workspace", { action, command, account });
         if (!isNotification) {
           send({
             jsonrpc: "2.0",
