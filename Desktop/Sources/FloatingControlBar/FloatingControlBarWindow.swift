@@ -1048,6 +1048,17 @@ class FloatingControlBarManager {
                 )
             }
 
+        // Clear the "Connect Claude" button when auth succeeds
+        authCancellable = chatProvider.$isClaudeConnected
+            .receive(on: DispatchQueue.main)
+            .sink { [weak barWindow] connected in
+                if connected {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        barWindow?.state.showConnectClaudeButton = false
+                    }
+                }
+            }
+
         self.window = barWindow
 
         // Debug: replay post-onboarding tutorial via distributed notification
