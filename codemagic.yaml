@@ -303,11 +303,7 @@ workflows:
               /tmp/google_workspace_mcp/ "$GWS_MCP_BUNDLE/"
             if command -v uv &>/dev/null; then
               uv venv "$GWS_MCP_BUNDLE/.venv" --python python3.12 --quiet || true
-              GWS_DEPS=$(python3 -c "
-import tomllib
-with open('/tmp/google_workspace_mcp/pyproject.toml', 'rb') as f:
-    print(' '.join(tomllib.load(f)['project']['dependencies']))
-")
+              GWS_DEPS=$(python3 -c 'import tomllib; f=open("/tmp/google_workspace_mcp/pyproject.toml","rb"); print(" ".join(tomllib.load(f)["project"]["dependencies"]))')
               uv pip install --python "$GWS_MCP_BUNDLE/.venv/bin/python3" $GWS_DEPS --quiet || true
               echo "Bundled Google Workspace MCP with venv"
             else
