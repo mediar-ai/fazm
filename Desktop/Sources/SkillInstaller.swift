@@ -58,6 +58,13 @@ enum SkillInstaller {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Skills that were previously bundled but have since been removed.
+    /// These will be deleted from ~/.claude/skills/ on every app launch.
+    private static let obsoleteSkills = [
+        "gws-calendar", "gws-docs", "gws-docs-write",
+        "gws-drive", "gws-gmail", "gws-setup", "gws-sheets",
+    ]
+
     /// Install specified skills (by name). Returns a summary of what was done.
     /// Installs missing skills and updates existing ones when the bundled content has changed.
     /// - Parameter names: skill names to install. If nil or empty, installs all bundled skills.
@@ -68,6 +75,15 @@ enum SkillInstaller {
 
         // Ensure ~/.claude/skills/ exists
         try? fm.createDirectory(atPath: skillsDir, withIntermediateDirectories: true)
+
+        // Remove skills that are no longer bundled
+        for name in obsoleteSkills {
+            let skillDir = "\(skillsDir)/\(name)"
+            if fm.fileExists(atPath: skillDir) {
+                try? fm.removeItem(atPath: skillDir)
+                log("SkillInstaller: removed obsolete skill '\(name)'")
+            }
+        }
 
         let toInstall: [String]
         if let names = names, !names.isEmpty {
