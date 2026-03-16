@@ -10,6 +10,9 @@ final class KeyService {
     private(set) var deepgramAPIKey: String?
     private var hasFetched = false
 
+    /// Task that represents the in-flight fetchKeys() call, so callers can await it.
+    private var fetchTask: Task<Void, Never>?
+
     private let backendUrl: String
     private let deviceId: String
 
@@ -18,8 +21,56 @@ final class KeyService {
         self.deviceId = Self.getDeviceId()
     }
 
-    /// Fetch keys from the backend. Safe to call multiple times — only fetches once per launch.
+    /// Kick off key fetching. Called fire-and-forget from AuthService; the returned Task
+    /// is stored so that `ensureKeys()` can await it later.
     func fetchKeys() async {
+        guard !hasFetched else { return }
+
+        // If a fetch is already in flight, just await it
+        if let existing = fetchTask {
+            await existing.value
+            return
+        }
+
+        let task = Task { [self] in
+            await _doFetch()
+        }
+        fetchTask = task
+        await task.value
+    }
+
+    /// Wait for keys to be available (up to `timeout` seconds).
+    /// Call this before using `deepgramAPIKey` or `anthropicAPIKey`.
+    func ensureKeys(timeout: TimeInterval = 10) async {
+        if hasFetched { return }
+
+        // Await the in-flight fetch, or start one if none exists
+        if let task = fetchTask {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await task.value }
+                group.addTask { try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) }
+                // Return as soon as either completes
+                await group.next()
+                group.cancelAll()
+            }
+        } else {
+            // No fetch in flight — kick one off and await it with timeout
+            let task = Task { [self] in await _doFetch() }
+            fetchTask = task
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await task.value }
+                group.addTask { try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) }
+                await group.next()
+                group.cancelAll()
+            }
+        }
+
+        if !hasFetched {
+            log("KeyService: ensureKeys timed out after \(timeout)s")
+        }
+    }
+
+    private func _doFetch() async {
         guard !hasFetched else { return }
         guard !backendUrl.isEmpty else {
             log("KeyService: missing FAZM_BACKEND_URL, skipping key fetch")
@@ -45,6 +96,7 @@ final class KeyService {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? -1
                 let body = String(data: data, encoding: .utf8) ?? ""
                 log("KeyService: fetch failed with status \(status): \(body)")
+                hasFetched = true
                 return
             }
 
@@ -64,6 +116,7 @@ final class KeyService {
             log("KeyService: fetched keys (anthropic=\(anthropicAPIKey != nil), deepgram=\(deepgramAPIKey != nil))")
         } catch {
             log("KeyService: fetch error: \(error.localizedDescription)")
+            hasFetched = true
         }
     }
 
