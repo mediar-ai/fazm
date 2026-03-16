@@ -82,6 +82,7 @@
     "Made recent messages scrollable with inline timestamps",
     "Optimized AI response rendering to prevent app hangs during complex responses",
     "Fixed crash when copying plain text from AI responses",
-    "Fixed voice input failing when API keys are not yet loaded on startup"
+    "Fixed voice input failing when API keys are not yet loaded on startup",
+    "Added Connect Claude button in floating bar when credits run out or auth is needed"
   ]
 }
