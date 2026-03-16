@@ -91,6 +91,7 @@
     "Improved browser extension setup window layout",
     "Fixed Chrome opening to use the active profile instead of a new window",
     "Fixed model not being applied correctly after resuming a previous session",
-    "Fixed false auth error detection causing unnecessary sign-in prompts"
+    "Fixed false auth error detection causing unnecessary sign-in prompts",
+    "Reset Onboarding now also signs out, disconnects browser extension, Claude account, and Google Workspace"
   ]
 }

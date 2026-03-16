@@ -892,8 +892,20 @@ class AppState: ObservableObject {
         for key in onboardingKeys {
             UserDefaults.standard.removeObject(forKey: key)
         }
+
+        // Clear browser extension setup
+        UserDefaults.standard.removeObject(forKey: "playwrightExtensionToken")
+        UserDefaults.standard.removeObject(forKey: "playwrightUseExtension")
+        log("Cleared browser extension setup")
+
         UserDefaults.standard.synchronize()
         log("Cleared onboarding UserDefaults keys")
+
+        // Sign out of Fazm account (Firebase, tokens, Sentry)
+        DispatchQueue.main.async {
+            AuthService.shared.signOut()
+            log("Signed out of Fazm account")
+        }
 
         // Clear mid-onboarding chat persistence (session ID, completed steps, messages)
         OnboardingChatPersistence.clear()
@@ -948,7 +960,29 @@ class AppState: ObservableObject {
             // 6. Also clean user TCC database directly via sqlite3
             self.cleanUserTCCDatabase()
 
-            // 7. Restart the app
+            // 7. Clear Google Workspace MCP auth
+            let homeDir2 = FileManager.default.homeDirectoryForCurrentUser.path
+            let gwsMcpAuthDir = "\(homeDir2)/google_workspace_mcp/auth"
+            let gwsMcpClientSecret = "\(homeDir2)/google_workspace_mcp/client_secret.json"
+            let oldGwsConfigDir = "\(homeDir2)/.config/gws"
+            for path in [gwsMcpAuthDir, gwsMcpClientSecret, oldGwsConfigDir] {
+                if FileManager.default.fileExists(atPath: path) {
+                    try? FileManager.default.removeItem(atPath: path)
+                    log("Removed: \(path)")
+                }
+            }
+
+            // 8. Delete Claude personal account credentials from Keychain
+            let keychainProcess = Process()
+            keychainProcess.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+            keychainProcess.arguments = ["delete-generic-password", "-s", "Claude Code-credentials"]
+            keychainProcess.standardOutput = FileHandle.nullDevice
+            keychainProcess.standardError = FileHandle.nullDevice
+            try? keychainProcess.run()
+            keychainProcess.waitUntilExit()
+            log("Cleared Claude personal account credentials (exit: \(keychainProcess.terminationStatus))")
+
+            // 9. Restart the app
             self.restartApp()
         }
     }
