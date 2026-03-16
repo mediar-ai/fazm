@@ -174,7 +174,7 @@ struct BrowserExtensionSetup: View {
             .padding(.horizontal, 40)
             .padding(.bottom, 24)
         }
-        .frame(width: phase == .connect ? 880 : 480, height: phase == .connect ? 520 : 420)
+        .frame(width: phase == .connect ? 880 : 480, height: phase == .connect ? 520 : 500)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(FazmColors.backgroundSecondary)
@@ -656,7 +656,7 @@ struct BrowserExtensionSetup: View {
     // MARK: - Window Size
 
     private func windowSize(for p: Phase) -> NSSize {
-        p == .connect ? NSSize(width: 880, height: 520) : NSSize(width: 480, height: 420)
+        p == .connect ? NSSize(width: 880, height: 520) : NSSize(width: 480, height: 500)
     }
 
     // MARK: - Button Logic
