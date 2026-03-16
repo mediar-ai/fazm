@@ -786,6 +786,9 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
               });
               sessionId = cfg.resume;
               logErr(`Pre-warm resumed session: ${sessionId} (key=${cfg.key}, model=${cfg.model})`);
+              // Set model after resume — without this the session uses the SDK default (possibly Haiku)
+              await acpRequest("session/set_model", { sessionId, modelId: cfg.model });
+              logErr(`Pre-warm set_model after resume: ${cfg.model}`);
             } catch (resumeErr) {
               logErr(`Pre-warm session/resume failed for ${cfg.key}, falling back to session/new: ${resumeErr}`);
               const result = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
@@ -891,7 +894,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         sessionId = msg.resume;
         sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
         isNewSession = false;
-        logErr(`ACP session resumed: ${sessionId} (key=${sessionKey})`);
+        // Set model after resume — without this the session uses the SDK default (possibly Haiku)
+        await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
+        logErr(`ACP session resumed: ${sessionId} (key=${sessionKey}, model=${requestedModel})`);
       } catch (resumeErr) {
         logErr(`ACP session resume failed (will create new session): ${resumeErr}`);
         // Fall through to session/new below
