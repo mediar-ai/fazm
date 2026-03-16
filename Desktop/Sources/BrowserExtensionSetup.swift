@@ -59,9 +59,10 @@ final class BrowserExtensionSetupWindowController {
         window.isMovableByWindowBackground = true
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
-        window.level = .normal
+        window.level = .floating
         window.appearance = NSAppearance(named: .darkAqua)
         window.center()
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
 
         self.window = window
