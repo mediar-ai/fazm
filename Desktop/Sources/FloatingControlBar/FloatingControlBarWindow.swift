@@ -67,6 +67,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onInterruptAndFollowUp: ((String) -> Void)?
     var onStopAgent: (() -> Void)?
     var onResetSession: (() -> Void)?
+    var onConnectClaude: (() -> Void)?
 
     override init(
         contentRect: NSRect, styleMask style: NSWindow.StyleMask,
@@ -149,7 +150,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onCloseAI: { [weak self] in self?.closeAIConversation() },
             onNewChat: { [weak self] in self?.startNewChat() },
             onInterruptAndFollowUp: { [weak self] message in self?.onInterruptAndFollowUp?(message) },
-            onStopAgent: { [weak self] in self?.onStopAgent?() }
+            onStopAgent: { [weak self] in self?.onStopAgent?() },
+            onConnectClaude: { [weak self] in self?.onConnectClaude?() }
         ).environmentObject(state)
 
         hostingView = NSHostingView(rootView: AnyView(
@@ -894,6 +896,7 @@ class FloatingControlBarManager {
     private var durationCancellable: AnyCancellable?
     private var chatCancellable: AnyCancellable?
     private var compactCancellable: AnyCancellable?
+    private var authCancellable: AnyCancellable?
     private(set) var chatProvider: ChatProvider?
     private var workspaceObserver: Any?
 
@@ -1014,6 +1017,11 @@ class FloatingControlBarManager {
             Task { @MainActor in
                 await provider.resetSession(key: "floating")
             }
+        }
+
+        barWindow.onConnectClaude = { [weak chatProvider] in
+            guard let provider = chatProvider else { return }
+            ClaudeAuthWindowController.shared.show(chatProvider: provider)
         }
 
         // Observe recording state
@@ -1500,13 +1508,13 @@ class FloatingControlBarManager {
         guard barWindow.state.showingAIConversation else { return }
 
         if provider.isClaudeAuthRequired {
-            // Auth needed — the main window's auth sheet will appear via the observer.
-            // Show a helpful message in the floating bar instead of "Something went wrong."
-            barWindow.state.currentAIMessage = ChatMessage(text: "Please sign in to your Claude account in the window that appeared.", sender: .ai)
+            // Auth needed — show connect button in header and a helpful message
+            barWindow.state.showConnectClaudeButton = true
+            barWindow.state.currentAIMessage = ChatMessage(text: "Please connect your Claude account to continue.", sender: .ai)
         } else if provider.showCreditExhaustedAlert {
             provider.showCreditExhaustedAlert = false
-            let creditMsg = "Your free built-in credits have run out. Please connect your personal Claude account to continue.\n\nGo to Settings → Claude Account to sign in."
-            barWindow.state.currentAIMessage = ChatMessage(text: creditMsg, sender: .ai)
+            barWindow.state.showConnectClaudeButton = true
+            barWindow.state.currentAIMessage = ChatMessage(text: "Your free built-in credits have run out. Connect your Claude account to continue.", sender: .ai)
         } else if let errorText = provider.errorMessage {
             // Provider reported an error (timeout, bridge crash, etc.)
             // Show it even if there's partial content — append to existing or create new message
