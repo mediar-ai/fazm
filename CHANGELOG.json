@@ -75,6 +75,7 @@
     "Fixed chat messages disappearing and stale error button after browser extension setup",
     "Fixed security issue: API keys are no longer bundled in the app. Authentication now uses per-user Firebase tokens",
     "Floating bar is now draggable by default",
-    "Show full message text in recent messages instead of truncating, and added copy-to-clipboard button"
+    "Show full message text in recent messages instead of truncating, and added copy-to-clipboard button",
+    "Fixed phantom/ghost floating bar window appearing after closing with Esc"
   ]
 }
