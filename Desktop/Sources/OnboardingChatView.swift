@@ -346,16 +346,8 @@ struct OnboardingChatView: View {
                 .onChange(of: quickReplyOptions) { _, _ in
                     scrollToBottom(proxy: proxy, delay: 0.1)
                 }
-                .onChange(of: explorationRunning) { _, running in
-                    if running {
-                        scrollToBottom(proxy: proxy, delay: 0.2)
-                    }
-                }
-                .onChange(of: explorationCompleted) { _, completed in
-                    if completed {
-                        scrollToBottom(proxy: proxy, delay: 0.2)
-                    }
-                }
+                .onChange(of: explorationRunning) { _, _ in }
+                .onChange(of: explorationCompleted) { _, _ in }
             }
 
             // Exploration profile card — sticks above the input field
@@ -1386,6 +1378,8 @@ struct ExplorationProfileCard: View {
 
     @State private var isExpanded = false
     @State private var pulseScale: CGFloat = 1.0
+    @State private var glowOpacity: CGFloat = 0.3
+    @State private var shimmerOffset: CGFloat = -1.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1401,36 +1395,56 @@ struct ExplorationProfileCard: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 14))
-                            .foregroundColor(FazmColors.purplePrimary)
+                        // Completed: purple circle with checkmark
+                        ZStack {
+                            Circle()
+                                .fill(FazmColors.purplePrimary)
+                                .frame(width: 24, height: 24)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(isRunning ? "Learning about you..." : "Your Digital Profile")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(FazmColors.textPrimary)
+                        HStack(spacing: 6) {
+                            Text(isRunning ? "Learning about you..." : "Your Digital Profile")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(FazmColors.textPrimary)
 
-                        if !text.isEmpty {
+                            if isCompleted && !isExpanded {
+                                Text("Ready")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(FazmColors.purplePrimary)
+                                    )
+                            }
+                        }
+
+                        if !text.isEmpty && !isExpanded {
                             Text(String(text.prefix(100)).replacingOccurrences(of: "\n", with: " "))
                                 .font(.system(size: 12))
                                 .foregroundColor(FazmColors.textSecondary)
-                                .lineLimit(2)
+                                .lineLimit(1)
                         }
                     }
 
                     Spacer(minLength: 4)
 
                     if !text.isEmpty {
-                        // Larger, attention-grabbing toggle button
+                        // Toggle button with pulse animation
                         Image(systemName: isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                            .font(.system(size: 20))
+                            .font(.system(size: 22))
                             .foregroundColor(FazmColors.purplePrimary)
                             .scaleEffect(pulseScale)
                             .onAppear {
                                 if !isExpanded {
                                     withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                                        pulseScale = 1.2
+                                        pulseScale = 1.15
                                     }
                                 }
                             }
@@ -1441,7 +1455,7 @@ struct ExplorationProfileCard: View {
                                     }
                                 } else {
                                     withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                                        pulseScale = 1.2
+                                        pulseScale = 1.15
                                     }
                                 }
                             }
@@ -1475,12 +1489,61 @@ struct ExplorationProfileCard: View {
                 .frame(maxHeight: 300)
             }
         }
-        .background(FazmColors.backgroundTertiary.opacity(0.5))
+        .background(
+            ZStack {
+                FazmColors.backgroundTertiary.opacity(0.5)
+
+                // Shimmer effect when completed and not expanded
+                if isCompleted && !isExpanded {
+                    LinearGradient(
+                        colors: [
+                            .clear,
+                            FazmColors.purplePrimary.opacity(0.08),
+                            FazmColors.purplePrimary.opacity(0.15),
+                            FazmColors.purplePrimary.opacity(0.08),
+                            .clear
+                        ],
+                        startPoint: UnitPoint(x: shimmerOffset - 0.3, y: 0.5),
+                        endPoint: UnitPoint(x: shimmerOffset + 0.3, y: 0.5)
+                    )
+                }
+            }
+        )
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(FazmColors.purplePrimary.opacity(0.2), lineWidth: 1)
+                .stroke(
+                    isCompleted
+                        ? FazmColors.purplePrimary.opacity(glowOpacity)
+                        : FazmColors.purplePrimary.opacity(0.2),
+                    lineWidth: isCompleted ? 1.5 : 1
+                )
         )
+        .shadow(
+            color: isCompleted && !isExpanded ? FazmColors.purplePrimary.opacity(glowOpacity * 0.5) : .clear,
+            radius: 8, x: 0, y: 0
+        )
+        .onAppear {
+            if isCompleted {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    glowOpacity = 0.7
+                }
+                withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+                    shimmerOffset = 2.0
+                }
+            }
+        }
+        .onChange(of: isCompleted) { _, completed in
+            if completed {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    glowOpacity = 0.7
+                }
+                withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+                    shimmerOffset = 2.0
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isCompleted)
     }
 }
 
