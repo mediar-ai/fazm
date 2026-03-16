@@ -205,8 +205,8 @@ class MemoryGraphViewModel: ObservableObject {
                 simulation.runSync(ticks: 800)
             }.value
 
-            // Create scene nodes
-            createSceneNodes()
+            // Create scene nodes in batches to avoid blocking main thread
+            await createSceneNodes()
 
             // Brief animation to settle, then stop
             isAnimating = true
@@ -255,7 +255,7 @@ class MemoryGraphViewModel: ObservableObject {
         }.value
 
         // Create scene nodes for new entries, animate them in
-        addNewSceneNodes()
+        await addNewSceneNodes()
         autoFitCamera(animated: true)
 
         // Re-enable animation for settling
@@ -266,14 +266,14 @@ class MemoryGraphViewModel: ObservableObject {
         }
     }
 
-    /// Create scene nodes only for simulation nodes/edges not yet in the scene
-    private func addNewSceneNodes() {
+    /// Create scene nodes only for simulation nodes/edges not yet in the scene (batched to avoid app hangs)
+    private func addNewSceneNodes() async {
         let billboardConstraint = SCNBillboardConstraint()
         billboardConstraint.freeAxes = [.X, .Y]
 
-        // Add new edges
-        for edge in simulation.edges {
-            guard edgeSceneNodes[edge.id] == nil else { continue }
+        // Add new edges in batches
+        let newEdges = simulation.edges.filter { edgeSceneNodes[$0.id] == nil }
+        for (index, edge) in newEdges.enumerated() {
             guard let source = simulation.nodeMap[edge.sourceId],
                   let target = simulation.nodeMap[edge.targetId] else { continue }
 
@@ -289,26 +289,28 @@ class MemoryGraphViewModel: ObservableObject {
             scene.rootNode.addChildNode(edgeNode)
             edgeSceneNodes[edge.id] = edgeNode
 
-            // Fade in
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0.5
             edgeNode.opacity = 1
             SCNTransaction.commit()
+
+            // Yield every 20 edges to keep main thread responsive
+            if index > 0 && index % 20 == 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
         }
 
-        // Add new node spheres
-        for node in simulation.nodes {
-            guard nodeSceneNodes[node.id] == nil else { continue }
-
+        // Add new node spheres in batches
+        let newNodes = simulation.nodes.filter { nodeSceneNodes[$0.id] == nil }
+        for (index, node) in newNodes.enumerated() {
             let radius = nodeRadius(for: node)
             let containerNode = SCNNode()
             containerNode.position = SCNVector3(node.position)
             containerNode.name = node.id
-            containerNode.scale = SCNVector3(0.01, 0.01, 0.01) // Start tiny for scale-in
+            containerNode.scale = SCNVector3(0.01, 0.01, 0.01)
 
-            // Core sphere
             let sphere = SCNSphere(radius: radius)
-            sphere.segmentCount = node.isFixed ? 24 : 16
+            sphere.segmentCount = node.isFixed ? 24 : 12
             let mat = SCNMaterial()
             if node.isFixed {
                 mat.diffuse.contents = NSColor.white
@@ -319,13 +321,11 @@ class MemoryGraphViewModel: ObservableObject {
             }
             mat.lightingModel = .constant
             sphere.materials = [mat]
-            let sphereNode = SCNNode(geometry: sphere)
-            containerNode.addChildNode(sphereNode)
+            containerNode.addChildNode(SCNNode(geometry: sphere))
 
-            // Glow halo
             let glowRadius = radius * 2.5
             let glowSphere = SCNSphere(radius: glowRadius)
-            glowSphere.segmentCount = 48
+            glowSphere.segmentCount = 12
             let glowMat = SCNMaterial()
             let glowColor = node.isFixed ? NSColor.white : node.nodeType.nsColor
             glowMat.diffuse.contents = glowColor.withAlphaComponent(0.03)
@@ -334,10 +334,8 @@ class MemoryGraphViewModel: ObservableObject {
             glowMat.isDoubleSided = true
             glowMat.blendMode = .add
             glowSphere.materials = [glowMat]
-            let glowNode = SCNNode(geometry: glowSphere)
-            containerNode.addChildNode(glowNode)
+            containerNode.addChildNode(SCNNode(geometry: glowSphere))
 
-            // Text label
             let labelNode = createLabelNode(text: node.label, nodeRadius: radius, isFixed: node.isFixed)
             labelNode.constraints = [billboardConstraint]
             containerNode.addChildNode(labelNode)
@@ -345,11 +343,15 @@ class MemoryGraphViewModel: ObservableObject {
             scene.rootNode.addChildNode(containerNode)
             nodeSceneNodes[node.id] = containerNode
 
-            // Scale in from 0 with animation
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0.5
             containerNode.scale = SCNVector3(1, 1, 1)
             SCNTransaction.commit()
+
+            // Yield every 10 nodes (node creation is heavier due to SCNText)
+            if index > 0 && index % 10 == 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
         }
     }
 
@@ -363,7 +365,7 @@ class MemoryGraphViewModel: ObservableObject {
         return base + connectionBonus
     }
 
-    private func createSceneNodes() {
+    private func createSceneNodes() async {
         // Clear existing nodes
         for (_, node) in nodeSceneNodes { node.removeFromParentNode() }
         for (_, node) in edgeSceneNodes { node.removeFromParentNode() }
@@ -374,8 +376,8 @@ class MemoryGraphViewModel: ObservableObject {
         let billboardConstraint = SCNBillboardConstraint()
         billboardConstraint.freeAxes = [.X, .Y]
 
-        // Create edges first (behind nodes)
-        for edge in simulation.edges {
+        // Create edges in batches (behind nodes)
+        for (index, edge) in simulation.edges.enumerated() {
             guard let source = simulation.nodeMap[edge.sourceId],
                   let target = simulation.nodeMap[edge.targetId] else { continue }
 
@@ -389,10 +391,15 @@ class MemoryGraphViewModel: ObservableObject {
             edgeNode.name = edge.id
             scene.rootNode.addChildNode(edgeNode)
             edgeSceneNodes[edge.id] = edgeNode
+
+            // Yield every 20 edges to keep main thread responsive
+            if index > 0 && index % 20 == 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
         }
 
-        // Create node spheres with labels and glow halos
-        for node in simulation.nodes {
+        // Create node spheres with labels and glow halos in batches
+        for (index, node) in simulation.nodes.enumerated() {
             let radius = nodeRadius(for: node)
             let containerNode = SCNNode()
             containerNode.position = SCNVector3(node.position)
@@ -400,7 +407,7 @@ class MemoryGraphViewModel: ObservableObject {
 
             // Core sphere
             let sphere = SCNSphere(radius: radius)
-            sphere.segmentCount = node.isFixed ? 24 : 16
+            sphere.segmentCount = node.isFixed ? 24 : 12
             let mat = SCNMaterial()
             if node.isFixed {
                 mat.diffuse.contents = NSColor.white
@@ -411,13 +418,12 @@ class MemoryGraphViewModel: ObservableObject {
             }
             mat.lightingModel = .constant
             sphere.materials = [mat]
-            let sphereNode = SCNNode(geometry: sphere)
-            containerNode.addChildNode(sphereNode)
+            containerNode.addChildNode(SCNNode(geometry: sphere))
 
             // Glow halo (larger semi-transparent sphere around node)
             let glowRadius = radius * 2.5
             let glowSphere = SCNSphere(radius: glowRadius)
-            glowSphere.segmentCount = 48
+            glowSphere.segmentCount = 12
             let glowMat = SCNMaterial()
             let glowColor = node.isFixed ? NSColor.white : node.nodeType.nsColor
             glowMat.diffuse.contents = glowColor.withAlphaComponent(0.03)
@@ -426,8 +432,7 @@ class MemoryGraphViewModel: ObservableObject {
             glowMat.isDoubleSided = true
             glowMat.blendMode = .add
             glowSphere.materials = [glowMat]
-            let glowNode = SCNNode(geometry: glowSphere)
-            containerNode.addChildNode(glowNode)
+            containerNode.addChildNode(SCNNode(geometry: glowSphere))
 
             // Text label (billboard — always faces camera)
             let labelNode = createLabelNode(text: node.label, nodeRadius: radius, isFixed: node.isFixed)
@@ -436,6 +441,11 @@ class MemoryGraphViewModel: ObservableObject {
 
             scene.rootNode.addChildNode(containerNode)
             nodeSceneNodes[node.id] = containerNode
+
+            // Yield every 10 nodes (node creation is heavier due to SCNText)
+            if index > 0 && index % 10 == 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
         }
 
         // Auto-fit camera to graph bounds
@@ -448,7 +458,7 @@ class MemoryGraphViewModel: ObservableObject {
         let fontSize: CGFloat = isFixed ? 22 : 16
         let scnText = SCNText(string: truncated, extrusionDepth: 0.5)
         scnText.font = NSFont.systemFont(ofSize: fontSize, weight: isFixed ? .bold : .medium)
-        scnText.flatness = 0.3
+        scnText.flatness = 1.0
         scnText.alignmentMode = CATextLayerAlignmentMode.center.rawValue
 
         let textMat = SCNMaterial()
