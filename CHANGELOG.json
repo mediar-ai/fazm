@@ -86,6 +86,9 @@
     "Added Connect Claude button in floating bar when credits run out or auth is needed",
     "Added Connect Claude button to floating bar for quick sign-in when Claude account is disconnected",
     "Fixed app appearing unresponsive \u2014 now shows a \"not responding\" message and stops the agent after 60 seconds",
-    "Improved screenshot handling: captures screen earlier and stores more efficiently for better AI context"
+    "Improved screenshot handling: captures screen earlier and stores more efficiently for better AI context",
+    "Replaced Google Workspace integration with a native Python MCP server for more reliable Gmail, Calendar, and Drive access",
+    "Improved browser extension setup window layout",
+    "Fixed Chrome opening to use the active profile instead of a new window"
   ]
 }
