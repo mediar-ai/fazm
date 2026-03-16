@@ -104,9 +104,12 @@ class SessionRecordingManager {
         log("SessionRecording: using ffmpeg at \(ffmpegPath)")
 
         let backendURL = env("FAZM_BACKEND_URL")
-        let backendSecret = env("FAZM_BACKEND_SECRET")
-        guard !backendURL.isEmpty, !backendSecret.isEmpty else {
-            log("SessionRecording: missing FAZM_BACKEND_URL or FAZM_BACKEND_SECRET, skipping")
+        guard !backendURL.isEmpty else {
+            log("SessionRecording: missing FAZM_BACKEND_URL, skipping")
+            return
+        }
+        guard AuthService.shared.isSignedIn else {
+            log("SessionRecording: user not signed in, skipping")
             return
         }
 
@@ -118,21 +121,35 @@ class SessionRecordingManager {
             return
         }
 
-        let config = SessionRecorder.Configuration(
-            framesPerSecond: 5.0,
-            chunkDurationSeconds: 60.0,
-            ffmpegPath: ffmpegPath,
-            storageBaseURL: storageDir,
-            deviceId: deviceId,
-            backendURL: backendURL,
-            backendSecret: backendSecret
-        )
-
-        let recorder = SessionRecorder(configuration: config)
-        self.recorder = recorder
-        isStarted = true
-
         Task {
+            // Get the current Firebase ID token to pass to the session replay library.
+            // The library expects a static backendSecret string; we pass the current token
+            // as a temporary measure. The backend accepts both Firebase tokens and the old secret.
+            let currentToken: String
+            do {
+                let authHeader = try await AuthService.shared.getAuthHeader()
+                // Strip "Bearer " prefix — the library adds its own
+                let prefix = "Bearer "
+                currentToken = authHeader.hasPrefix(prefix) ? String(authHeader.dropFirst(prefix.count)) : authHeader
+            } catch {
+                log("SessionRecording: failed to get auth token, skipping: \(error.localizedDescription)")
+                return
+            }
+
+            let config = SessionRecorder.Configuration(
+                framesPerSecond: 5.0,
+                chunkDurationSeconds: 60.0,
+                ffmpegPath: ffmpegPath,
+                storageBaseURL: storageDir,
+                deviceId: deviceId,
+                backendURL: backendURL,
+                backendSecret: currentToken  // Temporary: passing Firebase ID token as secret
+            )
+
+            let recorder = SessionRecorder(configuration: config)
+            self.recorder = recorder
+            self.isStarted = true
+
             do {
                 try await recorder.start()
                 // Start paused — activity observers will resume when user interacts
@@ -292,8 +309,7 @@ class SessionRecordingManager {
     /// Calls completion on the main queue when done (or on failure).
     private func requestAutoEnroll(completion: @escaping () -> Void) {
         let backendURL = env("FAZM_BACKEND_URL")
-        let backendSecret = env("FAZM_BACKEND_SECRET")
-        guard !backendURL.isEmpty, !backendSecret.isEmpty else {
+        guard !backendURL.isEmpty, AuthService.shared.isSignedIn else {
             completion()
             return
         }
@@ -302,35 +318,35 @@ class SessionRecordingManager {
             return
         }
 
-        let channel = UserDefaults.standard.string(forKey: "update_channel") ?? "beta"
+        Task {
+            defer { completion() }
 
-        guard let url = URL(string: "\(backendURL)/api/session-recording/auto-enroll") else {
-            completion()
-            return
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(backendSecret)", forHTTPHeaderField: "Authorization")
-        request.setValue(deviceId, forHTTPHeaderField: "X-Device-ID")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            do {
+                let authHeader = try await AuthService.shared.getAuthHeader()
+                let channel = UserDefaults.standard.string(forKey: "update_channel") ?? "beta"
 
-        let body: [String: String] = ["update_channel": channel]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+                guard let url = URL(string: "\(backendURL)/api/session-recording/auto-enroll") else {
+                    return
+                }
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+                request.setValue(deviceId, forHTTPHeaderField: "X-Device-ID")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            defer { DispatchQueue.main.async { completion() } }
+                let body: [String: String] = ["update_channel": channel]
+                request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-            if let error = error {
+                let (data, _) = try await URLSession.shared.data(for: request)
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+
+                let enrolled = json["enrolled"] as? Bool ?? false
+                let reason = json["reason"] as? String ?? "unknown"
+                log("SessionRecording: auto-enroll result: enrolled=\(enrolled) reason=\(reason)")
+            } catch {
                 log("SessionRecording: auto-enroll request failed: \(error.localizedDescription)")
-                return
             }
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-
-            let enrolled = json["enrolled"] as? Bool ?? false
-            let reason = json["reason"] as? String ?? "unknown"
-            log("SessionRecording: auto-enroll result: enrolled=\(enrolled) reason=\(reason)")
-        }.resume()
+        }
     }
 
     // MARK: - Private
