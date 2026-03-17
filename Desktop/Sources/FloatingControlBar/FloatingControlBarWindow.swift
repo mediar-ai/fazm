@@ -1358,6 +1358,13 @@ class FloatingControlBarManager {
         }
     }
 
+    /// Open the AI conversation view and resize to fit response content.
+    func showAIConversationAndResize() {
+        guard let window else { return }
+        window.showAIConversation()
+        window.resizeToResponseHeightPublic(animated: true)
+    }
+
     /// Expand the floating bar from collapsed state (used by PTT when bar was collapsed).
     func expandFromCollapsed(instant: Bool = false) {
         guard let window else { return }
