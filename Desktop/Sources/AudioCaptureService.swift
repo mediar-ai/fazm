@@ -175,7 +175,27 @@ class AudioCaptureService: @unchecked Sendable {
                 throw AudioCaptureError.noInputAvailable
             }
         }
+        // Check if the default device is virtual (e.g. Wispr Flow, BlackHole, Loopback)
+        // and prefer a physical device instead
+        let transport = Self.getTransportType(for: inputDeviceID)
+        if transport == kAudioDeviceTransportTypeVirtual || transport == kAudioDeviceTransportTypeAggregate {
+            let deviceName = Self.getDeviceNameStatic(inputDeviceID) ?? "unknown"
+            log("AudioCapture: Default device '\(deviceName)' is virtual/aggregate (transport=\(transport)), looking for physical mic...")
+            if let physicalID = Self.findPreferredPhysicalInputDevice(excluding: inputDeviceID) {
+                let physName = Self.getDeviceNameStatic(physicalID) ?? "unknown"
+                log("AudioCapture: Using physical device '\(physName)' instead of virtual '\(deviceName)'")
+                inputDeviceID = physicalID
+            } else {
+                log("AudioCapture: No physical alternative found, using virtual device '\(deviceName)'")
+            }
+        }
+
         self.deviceID = inputDeviceID
+
+        // Log which device we're actually using for diagnostics
+        let actualName = Self.getDeviceNameStatic(deviceID) ?? "unknown"
+        let actualTransport = Self.getTransportType(for: deviceID)
+        log("AudioCapture: Using device '\(actualName)' (transport=\(actualTransport))")
 
         // 2. Get device stream format
         guard let streamFormat = getStreamFormat(for: deviceID) else {
@@ -337,6 +357,95 @@ class AudioCaptureService: @unchecked Sendable {
     }
 
     // MARK: - Private Methods
+
+    /// Get the transport type for a CoreAudio device.
+    /// Returns kAudioDeviceTransportTypeBuiltIn, kAudioDeviceTransportTypeUSB,
+    /// kAudioDeviceTransportTypeVirtual, kAudioDeviceTransportTypeAggregate, etc.
+    static func getTransportType(for deviceID: AudioDeviceID) -> UInt32 {
+        var transportType: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &transportType) == noErr else {
+            return 0
+        }
+        return transportType
+    }
+
+    /// Get device name (static version for use before instance setup).
+    static func getDeviceNameStatic(_ deviceID: AudioDeviceID) -> String? {
+        var name: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name) == noErr,
+              let cfName = name?.takeRetainedValue() else { return nil }
+        return cfName as String
+    }
+
+    /// Find the best physical (non-virtual, non-aggregate) input device.
+    /// Prefers built-in mic, then USB, then Bluetooth, then any non-virtual device.
+    static func findPreferredPhysicalInputDevice(excluding excludeID: AudioDeviceID = kAudioObjectUnknown) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size
+        ) == noErr, size > 0 else { return nil }
+
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        var deviceIDs = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceIDs
+        ) == noErr else { return nil }
+
+        // Filter to input devices that aren't virtual/aggregate
+        var candidates: [(id: AudioDeviceID, transport: UInt32)] = []
+        for devID in deviceIDs {
+            guard devID != excludeID else { continue }
+
+            // Check it has input streams
+            var streamAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioDevicePropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var streamSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(devID, &streamAddress, 0, nil, &streamSize) == noErr,
+                  streamSize > 0 else { continue }
+
+            let transport = getTransportType(for: devID)
+            // Skip virtual and aggregate devices
+            guard transport != kAudioDeviceTransportTypeVirtual,
+                  transport != kAudioDeviceTransportTypeAggregate else { continue }
+
+            candidates.append((id: devID, transport: transport))
+        }
+
+        // Priority: built-in > USB > Bluetooth > other
+        let priority: [UInt32] = [
+            kAudioDeviceTransportTypeBuiltIn,
+            kAudioDeviceTransportTypeUSB,
+            kAudioDeviceTransportTypeBluetooth,
+            kAudioDeviceTransportTypeBluetoothLE,
+        ]
+        for pTransport in priority {
+            if let match = candidates.first(where: { $0.transport == pTransport }) {
+                return match.id
+            }
+        }
+        // Fall back to any non-virtual candidate
+        return candidates.first?.id
+    }
 
     /// Look up an AudioDeviceID by its UID string by enumerating all devices.
     private static func deviceIDForUID(_ uid: String) -> AudioDeviceID {
