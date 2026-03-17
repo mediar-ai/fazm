@@ -12,6 +12,11 @@ struct FloatingControlBarView: View {
     var onCloseAI: () -> Void
     var onNewChat: () -> Void
     var onInterruptAndFollowUp: ((String) -> Void)?
+    var onEnqueueMessage: ((String) -> Void)?
+    var onSendNowQueued: ((QueuedMessage) -> Void)?
+    var onDeleteQueued: ((QueuedMessage) -> Void)?
+    var onClearQueue: (() -> Void)?
+    var onReorderQueue: ((IndexSet, Int) -> Void)?
     var onStopAgent: (() -> Void)?
     var onConnectClaude: (() -> Void)?
 
@@ -321,38 +326,54 @@ struct FloatingControlBarView: View {
             onNewChat: onNewChat,
             onSendFollowUp: { message in
                 state.suggestedReplies = []
-                let isStillGenerating = state.isAILoading || state.currentAIMessage?.isStreaming == true
-                if isStillGenerating {
-                    // AI is still working — archive partial exchange and interrupt
-                    let currentQuery = state.displayedQuery
-                    if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
-                        // Complete any still-running tool calls before archiving so spinners don't freeze in history
-                        currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
-                            if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
-                                return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
-                            }
-                            return block
-                        }
-                        state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
-                    }
-                    state.displayedQuery = message
+                // Archive current exchange to chat history
+                let currentQuery = state.displayedQuery
+                if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
+                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                }
+
+                state.displayedQuery = message
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     state.isAILoading = true
                     state.currentAIMessage = nil
-                    onInterruptAndFollowUp?(message)
-                } else {
-                    // Archive current exchange to chat history
-                    let currentQuery = state.displayedQuery
-                    if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
-                        state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
-                    }
-
-                    state.displayedQuery = message
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        state.isAILoading = true
-                        state.currentAIMessage = nil
-                    }
-                    onSendQuery(message)
                 }
+                onSendQuery(message)
+            },
+            onEnqueueMessage: { message in
+                guard state.messageQueue.count < FloatingControlBarState.maxQueueSize else { return }
+                state.enqueue(message)
+                onEnqueueMessage?(message)
+            },
+            onSendNow: { item in
+                // Remove from queue
+                state.dequeue(item.id)
+                // Archive partial exchange and interrupt
+                let currentQuery = state.displayedQuery
+                if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
+                    currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
+                        if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
+                            return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
+                        }
+                        return block
+                    }
+                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                }
+                state.displayedQuery = item.text
+                state.isAILoading = true
+                state.currentAIMessage = nil
+                onSendNowQueued?(item)
+            },
+            onDeleteQueued: { item in
+                state.dequeue(item.id)
+                onDeleteQueued?(item)
+            },
+            onClearQueue: {
+                state.clearQueue()
+                onClearQueue?()
+            },
+            onReorderQueue: { source, dest in
+                state.messageQueue.move(fromOffsets: source, toOffset: dest)
+                onReorderQueue?(source, dest)
             },
             onStopAgent: onStopAgent,
             onConnectClaude: onConnectClaude
