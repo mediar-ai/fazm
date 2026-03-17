@@ -2392,7 +2392,6 @@ class ChatProvider: ObservableObject {
                 mode: chatMode.rawValue,
                 model: model ?? modelOverride,
                 resume: resume,
-                imagePath: nil,
                 onTextDelta: textDeltaHandler,
                 onToolCall: toolCallHandler,
                 onToolActivity: toolActivityHandler,
