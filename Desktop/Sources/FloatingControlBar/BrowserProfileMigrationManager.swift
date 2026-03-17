@@ -48,6 +48,7 @@ class BrowserProfileMigrationManager {
         popupWindow.title = "Browser Profile Import"
         popupWindow.titlebarAppearsTransparent = true
         popupWindow.isMovableByWindowBackground = true
+        popupWindow.appearance = NSAppearance(named: .darkAqua)
         popupWindow.backgroundColor = NSColor(FazmColors.backgroundPrimary)
         popupWindow.minSize = NSSize(width: 420, height: 400)
         popupWindow.center()
