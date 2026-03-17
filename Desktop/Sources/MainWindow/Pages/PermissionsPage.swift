@@ -23,6 +23,22 @@ struct PermissionsPage: View {
                     Text("Fazm needs the following permissions to work properly.")
                         .scaledFont(size: 14)
                         .foregroundColor(FazmColors.textSecondary)
+
+                    Button(action: {
+                        if let url = URL(string: "https://fazm.ai/safety") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Text("Learn how your data stays safe")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.purplePrimary)
+                            Image(systemName: "arrow.up.right")
+                                .scaledFont(size: 10)
+                                .foregroundColor(FazmColors.purplePrimary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.bottom, 8)
 
