@@ -105,6 +105,7 @@
     "Fixed microphone conflict with Wispr Flow and other virtual audio devices by preferring physical mics",
     "Added 5-minute safety timeout to prevent stuck push-to-talk recordings",
     "Improved feedback when voice input captures no audio",
-    "Fixed Sparkle auto-update URL so app correctly checks for new versions"
+    "Fixed Sparkle auto-update URL so app correctly checks for new versions",
+    "Added browser profile import for existing users via floating bar dialog"
   ]
 }
