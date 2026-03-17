@@ -81,10 +81,15 @@ class ResourceMonitor {
 
     /// Get current resource snapshot
     func getCurrentResources() -> ResourceSnapshot {
+        return getCurrentResourcesSync()
+    }
+
+    /// Thread-safe resource collection (all mach kernel calls are safe to call from any thread)
+    nonisolated func getCurrentResourcesSync() -> ResourceSnapshot {
         return ResourceSnapshot(
             memoryUsageMB: getMemoryUsageMB(),
             memoryFootprintMB: getMemoryFootprintMB(),
-            peakMemoryMB: getPeakMemoryMB(),
+            peakMemoryMB: getMemoryFootprintMB(), // Use footprint directly (peak tracking requires MainActor state)
             memoryPercent: getMemoryPercentage(),
             totalSystemRAM_MB: getTotalSystemRAM(),
             systemMemoryPressure: getSystemMemoryPressure(),
@@ -114,7 +119,11 @@ class ResourceMonitor {
     // MARK: - Private Methods
 
     private func sampleResources() async {
-        let snapshot = getCurrentResources()
+        // Collect resource snapshot off the main thread to avoid blocking UI
+        // (mach kernel calls are thread-safe but can stall under memory pressure)
+        let snapshot = await Task.detached(priority: .utility) { [self] in
+            return self.getCurrentResourcesSync()
+        }.value
 
         // Store memory sample for trend analysis
         memorySamples.append((timestamp: snapshot.timestamp, memoryMB: snapshot.memoryFootprintMB))
@@ -514,10 +523,10 @@ class ResourceMonitor {
         }
     }
 
-    // MARK: - Resource Getters (macOS specific)
+    // MARK: - Resource Getters (macOS specific, all thread-safe)
 
     /// Get current memory usage in MB (resident set size)
-    private func getMemoryUsageMB() -> UInt64 {
+    private nonisolated func getMemoryUsageMB() -> UInt64 {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
 
@@ -534,7 +543,7 @@ class ResourceMonitor {
     }
 
     /// Get physical memory footprint in MB (more accurate for macOS)
-    private func getMemoryFootprintMB() -> UInt64 {
+    private nonisolated func getMemoryFootprintMB() -> UInt64 {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info>.size) / 4
 
@@ -560,7 +569,7 @@ class ResourceMonitor {
     }
 
     /// Get CPU usage percentage (0-100+, can exceed 100% on multi-core)
-    private func getCPUUsage() -> Double {
+    private nonisolated func getCPUUsage() -> Double {
         var threadList: thread_act_array_t?
         var threadCount: mach_msg_type_number_t = 0
 
@@ -594,7 +603,7 @@ class ResourceMonitor {
     }
 
     /// Get disk space used in GB
-    private func getDiskUsedGB() -> Double {
+    private nonisolated func getDiskUsedGB() -> Double {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         do {
             let values = try homeDir.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey])
@@ -607,7 +616,7 @@ class ResourceMonitor {
     }
 
     /// Get disk space free in GB
-    private func getDiskFreeGB() -> Double {
+    private nonisolated func getDiskFreeGB() -> Double {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         do {
             let values = try homeDir.resourceValues(forKeys: [.volumeAvailableCapacityKey])
@@ -618,7 +627,7 @@ class ResourceMonitor {
     }
 
     /// Get current thread count
-    private func getThreadCount() -> Int {
+    private nonisolated func getThreadCount() -> Int {
         var threadList: thread_act_array_t?
         var threadCount: mach_msg_type_number_t = 0
 
@@ -633,7 +642,7 @@ class ResourceMonitor {
     }
 
     /// Get total system RAM in MB
-    private func getTotalSystemRAM() -> UInt64 {
+    private nonisolated func getTotalSystemRAM() -> UInt64 {
         return UInt64(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
     }
 
