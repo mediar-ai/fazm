@@ -694,6 +694,78 @@ class ChatToolExecutor {
         }.value
     }
 
+    /// Delete or update a specific memory in the browser profile database.
+    private static func executeEditBrowserProfile(_ args: [String: Any]) async -> String {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let aiBrowserProfileDir = homeDir.appendingPathComponent("ai-browser-profile")
+        let python = aiBrowserProfileDir.appendingPathComponent(".venv/bin/python").path
+        let dbPath = aiBrowserProfileDir.appendingPathComponent("memories.db").path
+
+        guard FileManager.default.fileExists(atPath: python),
+              FileManager.default.fileExists(atPath: dbPath) else {
+            return "Browser profile not available."
+        }
+
+        let action = args["action"] as? String ?? "delete"
+        let query = args["query"] as? String ?? ""
+        let newValue = args["new_value"] as? String ?? ""
+        let queryLiteral = pythonStringLiteral(query)
+        let newValueLiteral = pythonStringLiteral(newValue)
+
+        let script: String
+        if action == "delete" {
+            script = """
+                import sys, os
+                sys.path.insert(0, os.path.expanduser("~/ai-browser-profile"))
+                from ai_browser_profile import MemoryDB
+                mem = MemoryDB(os.path.expanduser("~/ai-browser-profile/memories.db"))
+                q = \(queryLiteral).lower()
+                rows = mem.conn.execute("SELECT id, key, value FROM memories WHERE lower(value) LIKE ? OR lower(key) LIKE ?", (f'%{q}%', f'%{q}%')).fetchall()
+                if not rows:
+                    print(f"No memories found matching: \(queryLiteral)")
+                else:
+                    for row in rows:
+                        mem.delete(row[0])
+                        print(f"Deleted: {row[1]}: {row[2]}")
+                mem.close()
+                """
+        } else {
+            script = """
+                import sys, os
+                sys.path.insert(0, os.path.expanduser("~/ai-browser-profile"))
+                from ai_browser_profile import MemoryDB
+                mem = MemoryDB(os.path.expanduser("~/ai-browser-profile/memories.db"))
+                q = \(queryLiteral).lower()
+                rows = mem.conn.execute("SELECT id, key, value FROM memories WHERE lower(value) LIKE ? OR lower(key) LIKE ?", (f'%{q}%', f'%{q}%')).fetchall()
+                if not rows:
+                    print(f"No memories found matching: \(queryLiteral)")
+                else:
+                    for row in rows:
+                        mem.update_memory(row[0], value=\(newValueLiteral))
+                        print(f"Updated: {row[1]}: {row[2]} -> \(newValueLiteral)")
+                mem.close()
+                """
+        }
+
+        return await Task.detached(priority: .userInitiated) { () -> String in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: python)
+            process.arguments = ["-c", script]
+            process.currentDirectoryURL = aiBrowserProfileDir
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                return String(data: data, encoding: .utf8) ?? "Done."
+            } catch {
+                return "Failed to edit browser profile: \(error.localizedDescription)"
+            }
+        }.value
+    }
+
     private static func pythonStringLiteral(_ s: String) -> String {
         let escaped = s.replacingOccurrences(of: "\\", with: "\\\\")
                        .replacingOccurrences(of: "\"", with: "\\\"")
