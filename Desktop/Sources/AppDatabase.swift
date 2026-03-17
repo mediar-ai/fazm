@@ -955,6 +955,21 @@ actor AppDatabase {
             try db.execute(sql: "ALTER TABLE task_chat_messages RENAME TO chat_messages")
         }
 
+        // V4: Observer activity table — single table for all observer outputs (insights, cards, skill drafts, etc.)
+        migrator.registerMigration("fazmV4") { db in
+            try db.create(table: "observer_activity") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("type", .text).notNull()           // "card", "insight", "skill_created", "kg_update", "pattern"
+                t.column("content", .text).notNull()         // JSON blob: {title, body, options, draft_skill, ...}
+                t.column("status", .text).notNull().defaults(to: "pending") // "pending", "shown", "acted", "dismissed"
+                t.column("userResponse", .text)              // which button was tapped (for cards)
+                t.column("createdAt", .datetime).notNull()
+                t.column("actedAt", .datetime)
+            }
+            try db.create(index: "idx_observer_activity_status_type",
+                          on: "observer_activity", columns: ["status", "type"])
+        }
+
         try migrator.migrate(queue)
     }
 
