@@ -99,6 +99,10 @@ struct FazmApp: App {
                 .onAppear {
                     log("FazmApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
                 }
+                .task {
+                    // Store openWindow action globally so AppDelegate can reopen the window
+                    WindowOpener.shared.openWindow = openWindow
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
