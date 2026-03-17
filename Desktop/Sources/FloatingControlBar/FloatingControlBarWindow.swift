@@ -528,6 +528,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         state.isAILoading = false
         state.showingAIResponse = false
         state.aiInputText = ""
+        state.clearQueue()
 
         // Clear persisted messages and reset ACP session so restart doesn't reload old chat
         onResetSession?()
@@ -1074,6 +1075,20 @@ class FloatingControlBarManager {
             if let idx = state.messageQueue.firstIndex(where: { $0.text == text }) {
                 state.messageQueue.remove(at: idx)
             }
+            // Archive current exchange and set up for the new query
+            let currentQuery = state.displayedQuery
+            if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
+                currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
+                    if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
+                        return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
+                    }
+                    return block
+                }
+                state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+            }
+            state.displayedQuery = text
+            state.isAILoading = true
+            state.currentAIMessage = nil
         }
 
         // Observe recording state
