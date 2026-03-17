@@ -35,6 +35,7 @@ class BrowserProfileMigrationManager {
             return
         }
 
+        log("BrowserProfileMigration: Starting migration flow")
         barState.isBrowserMigrationActive = true
         barState.browserMigrationSystemPromptSuffix = ChatPrompts.browserProfileMigration
 
@@ -134,13 +135,14 @@ class BrowserProfileMigrationManager {
         barState.displayedQuery = ""
         barState.currentAIMessage = message
         barState.isAILoading = false
-        if !barState.showingAIConversation {
-            barState.showingAIConversation = true
-        }
+
         if !barState.showingAIResponse {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                 barState.showingAIResponse = true
             }
         }
+
+        // Expand the floating bar window to show the conversation and resize
+        FloatingControlBarManager.shared.showAIConversationAndResize()
     }
 }
