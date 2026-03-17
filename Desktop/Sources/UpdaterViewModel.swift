@@ -136,16 +136,32 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
                     alert.informativeText = "macOS blocked the update because Fazm needs App Management permission. To enable auto-updates:\n\n1. Open System Settings → Privacy & Security → App Management\n2. Toggle Fazm on\n\nFazm will retry the update automatically when you return."
                     alert.addButton(withTitle: "Open Settings")
                     alert.addButton(withTitle: "Download Manually")
-                    let response = alert.runModal()
-                    if response == .alertFirstButtonReturn {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
-                            NSWorkspace.shared.open(url)
+                    // Use window-modal sheet instead of app-modal runModal() to avoid blocking the main thread
+                    if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+                        alert.beginSheetModal(for: window) { [weak self] response in
+                            if response == .alertFirstButtonReturn {
+                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                                self?.viewModel?.scheduleRetryAfterAppManagementGrant()
+                            } else {
+                                if let url = URL(string: "https://github.com/m13v/fazm/releases") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
                         }
-                        // Retry the update automatically when the user returns from System Settings
-                        self.viewModel?.scheduleRetryAfterAppManagementGrant()
                     } else {
-                        if let url = URL(string: "https://github.com/m13v/fazm/releases") {
-                            NSWorkspace.shared.open(url)
+                        // No window available — fall back to runModal
+                        let response = alert.runModal()
+                        if response == .alertFirstButtonReturn {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            self.viewModel?.scheduleRetryAfterAppManagementGrant()
+                        } else {
+                            if let url = URL(string: "https://github.com/m13v/fazm/releases") {
+                                NSWorkspace.shared.open(url)
+                            }
                         }
                     }
                 }
