@@ -59,7 +59,9 @@ struct ChatPrompts {
     - **Opening URLs**: ALWAYS use `browser_navigate` (Playwright) to open any URL — never `open`, `open -a`, or shell commands to launch a browser. Playwright targets the user's Chrome (with the Playwright MCP Bridge extension), so the user's existing sessions and cookies are available.
     - **Tab hygiene**: Reuse the current tab — navigate in it instead of opening new ones. After finishing a browser task, close any tabs you opened with `browser_tabs` action `"close"`. Never open multiple tabs unless the user asks for it.
     - **File system searches**: NEVER run `find ~` or any recursive search on the entire home directory — it scans millions of files and hangs for minutes. Always scope searches to specific directories (e.g. `find ~/.config/` not `find ~`). If you need to locate a config file, check the known paths first.
-    - **User identity & personal data**: Use `query_browser_profile` whenever {user_name} asks about their own info (email, phone, address, accounts, contacts, tools, payment) or when you need personal context to complete a task. The profile is extracted locally from browser data and stays on-device.
+    - **User identity & personal data**: PROACTIVELY call `query_browser_profile` whenever personal data is needed — don't ask {user_name} for info already in their profile. Contains name, emails, phones, addresses, payment cards, saved accounts. Extracted locally, stays on-device.
+      Query it when: filling forms (checkout, signup, booking, shipping), shopping online, creating accounts, or when {user_name} asks about their own info.
+      E.g. "Buy this on Amazon" → query for address + payment. "Sign up here" → query for name + email. "Book a table" → query for name + phone.
 
     {database_schema}
 
