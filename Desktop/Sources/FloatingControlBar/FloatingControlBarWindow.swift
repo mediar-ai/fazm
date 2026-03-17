@@ -140,6 +140,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         super.keyDown(with: event)
     }
 
+    var onEnqueueMessage: ((String) -> Void)?
+    var onSendNowQueued: ((QueuedMessage) -> Void)?
+    var onDeleteQueued: ((QueuedMessage) -> Void)?
+    var onClearQueue: (() -> Void)?
+    var onReorderQueue: ((IndexSet, Int) -> Void)?
+
     private func setupViews() {
         let swiftUIView = FloatingControlBarView(
             window: self,
@@ -150,6 +156,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onCloseAI: { [weak self] in self?.closeAIConversation() },
             onNewChat: { [weak self] in self?.startNewChat() },
             onInterruptAndFollowUp: { [weak self] message in self?.onInterruptAndFollowUp?(message) },
+            onEnqueueMessage: { [weak self] message in self?.onEnqueueMessage?(message) },
+            onSendNowQueued: { [weak self] item in self?.onSendNowQueued?(item) },
+            onDeleteQueued: { [weak self] item in self?.onDeleteQueued?(item) },
+            onClearQueue: { [weak self] in self?.onClearQueue?() },
+            onReorderQueue: { [weak self] source, dest in self?.onReorderQueue?(source, dest) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() }
         ).environmentObject(state)
@@ -1005,8 +1016,35 @@ class FloatingControlBarManager {
         barWindow.onInterruptAndFollowUp = { [weak chatProvider] message in
             guard let provider = chatProvider else { return }
             Task { @MainActor in
-                await provider.sendFollowUp(message)
+                await provider.interruptAndSend(message)
             }
+        }
+
+        barWindow.onEnqueueMessage = { [weak chatProvider] message in
+            chatProvider?.enqueueMessage(message)
+        }
+
+        barWindow.onSendNowQueued = { [weak chatProvider] item in
+            guard let provider = chatProvider else { return }
+            Task { @MainActor in
+                await provider.interruptAndSend(item.text)
+            }
+        }
+
+        barWindow.onDeleteQueued = { [weak chatProvider] item in
+            // Find and remove the matching pending message in ChatProvider
+            guard let provider = chatProvider else { return }
+            if let idx = provider.pendingMessageTexts.firstIndex(of: item.text) {
+                provider.removePendingMessage(at: idx)
+            }
+        }
+
+        barWindow.onClearQueue = { [weak chatProvider] in
+            chatProvider?.clearPendingMessages()
+        }
+
+        barWindow.onReorderQueue = { [weak chatProvider] source, dest in
+            chatProvider?.reorderPendingMessages(from: source, to: dest)
         }
 
         barWindow.onStopAgent = { [weak chatProvider] in
