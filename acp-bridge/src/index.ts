@@ -678,6 +678,9 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   if (sessionKey === "onboarding" || sessionKey === "browser-migration") {
     fazmToolsEnv.push({ name: "FAZM_ONBOARDING", value: "true" });
   }
+  if (sessionKey === "observer") {
+    fazmToolsEnv.push({ name: "FAZM_OBSERVER", value: "true" });
+  }
   servers.push({
     name: "fazm-tools",
     command: process.execPath,
@@ -727,6 +730,54 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   }
 
   return servers;
+}
+
+// --- Observer session: conversation batching ---
+
+const observerBuffer: Array<{ role: string; text: string }> = [];
+let observerBatchTimer: ReturnType<typeof setTimeout> | null = null;
+const OBSERVER_BATCH_SIZE = 5;        // Send batch every N turn pairs
+const OBSERVER_IDLE_TIMEOUT_MS = 30000; // Or after 30s of idle
+
+function bufferObserverTurn(role: string, text: string): void {
+  observerBuffer.push({ role, text });
+  // Reset idle timer
+  if (observerBatchTimer) clearTimeout(observerBatchTimer);
+  observerBatchTimer = setTimeout(() => flushObserverBatch(), OBSERVER_IDLE_TIMEOUT_MS);
+  // Flush if we hit batch size (count turn pairs, not individual messages)
+  const turnPairs = Math.floor(observerBuffer.length / 2);
+  if (turnPairs >= OBSERVER_BATCH_SIZE) {
+    flushObserverBatch();
+  }
+}
+
+async function flushObserverBatch(): Promise<void> {
+  if (observerBuffer.length === 0) return;
+  if (observerBatchTimer) {
+    clearTimeout(observerBatchTimer);
+    observerBatchTimer = null;
+  }
+
+  const observerSession = sessions.get("observer");
+  if (!observerSession) {
+    logErr("Observer: no session found, skipping batch");
+    return;
+  }
+
+  const batch = observerBuffer.splice(0);
+  const batchText = batch.map(t => `[${t.role}]: ${t.text}`).join("\n\n");
+  const prompt = `Here are the latest conversation turns from the main session:\n\n${batchText}\n\nAnalyze these turns. Update the knowledge graph with any new entities, preferences, or relationships you detect. Use Hindsight retain for nuanced observations. If you detect a repeated workflow or integration opportunity, draft a skill and surface a card for user confirmation.`;
+
+  try {
+    logErr(`Observer: sending batch of ${batch.length} messages`);
+    await acpRequest("session/prompt", {
+      sessionId: observerSession.sessionId,
+      prompt: [{ type: "text", text: prompt }],
+    });
+    logErr("Observer: batch processed");
+  } catch (err) {
+    logErr(`Observer: batch failed: ${err}`);
+  }
 }
 
 // --- Session pre-warming ---
@@ -969,6 +1020,14 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         send({ type: "tool_activity", name, status: "completed" });
       }
       pendingTools.length = 0;
+
+      // Buffer conversation turns for the observer session (skip if this IS the observer)
+      if (sessionKey !== "observer" && sessions.has("observer")) {
+        bufferObserverTurn("user", fullPrompt);
+        if (fullText.trim()) {
+          bufferObserverTurn("assistant", fullText);
+        }
+      }
 
       const inputTokens = promptResult.usage?.inputTokens ?? Math.ceil(fullPrompt.length / 4);
       const outputTokens = promptResult.usage?.outputTokens ?? Math.ceil(fullText.length / 4);
