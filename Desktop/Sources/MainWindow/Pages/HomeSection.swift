@@ -63,7 +63,7 @@ struct HomeSection: View {
     private var exploreCards: some View {
         let cards: [(icon: String, title: String, subtitle: String, url: String)] = [
             ("play.rectangle.fill", "Watch Demos", "See Fazm in action", "https://fazm.ai#use-cases"),
-            ("shield.checkmark.fill", "Safety & Privacy", "How your data stays safe", "https://fazm.ai/safety"),
+            ("lock.shield.fill", "Safety & Privacy", "How your data stays safe", "https://fazm.ai/safety"),
             ("sparkles", "Use Cases", "Ideas and inspiration", "https://fazm.ai/blog"),
             ("arrow.left.arrow.right", "Compare Features", "See how Fazm stacks up", "https://fazm.ai/compare"),
         ]
