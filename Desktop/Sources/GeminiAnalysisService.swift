@@ -52,9 +52,18 @@ actor GeminiAnalysisService {
         let chunksAnalyzed: Int
     }
 
+    /// Chunk info passed from SessionRecordingManager when a chunk is finalized.
+    /// TODO: Replace with SessionRecorder.ChunkInfo once macos-session-replay exposes it.
+    struct ChunkInfo: Sendable {
+        let localURL: URL
+        let chunkIndex: Int
+        let startTimestamp: Date
+        let endTimestamp: Date
+    }
+
     /// Called by SessionRecordingManager when a chunk is finalized.
     /// Reads the file into memory immediately (before upload deletes it), then buffers it.
-    func handleChunk(_ info: SessionRecorder.ChunkInfo) {
+    func handleChunk(_ info: ChunkInfo) {
         // Read file data now, before upload deletes the local file
         guard let data = try? Data(contentsOf: info.localURL) else {
             log("GeminiAnalysis: failed to read chunk at \(info.localURL.path)")
