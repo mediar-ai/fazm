@@ -120,6 +120,26 @@ async function requestSwiftTool(
 const isOnboarding = (process.env.FAZM_ONBOARDING || process.env.OMI_ONBOARDING) === "true";
 const isObserver = process.env.FAZM_OBSERVER === "true";
 
+/** Human-readable summary of a write SQL query for approval cards */
+function describeSqlWrite(query: string): string {
+  const trimmed = query.trim();
+  const upper = trimmed.toUpperCase();
+  if (upper.startsWith("INSERT")) {
+    const tableMatch = trimmed.match(/INSERT\s+INTO\s+(\w+)/i);
+    const table = tableMatch?.[1] || "unknown table";
+    return `Insert into ${table}:\n${trimmed.substring(0, 500)}${trimmed.length > 500 ? "..." : ""}`;
+  } else if (upper.startsWith("UPDATE")) {
+    const tableMatch = trimmed.match(/UPDATE\s+(\w+)/i);
+    const table = tableMatch?.[1] || "unknown table";
+    return `Update ${table}:\n${trimmed.substring(0, 500)}${trimmed.length > 500 ? "..." : ""}`;
+  } else if (upper.startsWith("DELETE")) {
+    const tableMatch = trimmed.match(/DELETE\s+FROM\s+(\w+)/i);
+    const table = tableMatch?.[1] || "unknown table";
+    return `Delete from ${table}:\n${trimmed.substring(0, 500)}${trimmed.length > 500 ? "..." : ""}`;
+  }
+  return trimmed.substring(0, 500);
+}
+
 const ONBOARDING_TOOL_NAMES = new Set([
   "check_permission_status",
   "request_permission",
