@@ -3029,14 +3029,16 @@ class ChatProvider: ObservableObject {
                                 ObserverCardButton(id: "\(activityId)-approve", label: "Create skill", action: "approve"),
                                 ObserverCardButton(id: "\(activityId)-dismiss", label: "Skip", action: "dismiss"),
                             ]
-                        } else if type == "insight" || type == "card" {
+                        } else if type == "insight" || type == "card" || type == "summary" || type == "kg_update" || type == "pattern" {
                             buttons = [
-                                ObserverCardButton(id: "\(activityId)-dismiss", label: "Got it", action: "dismiss"),
+                                ObserverCardButton(id: "\(activityId)-approve", label: "Useful", action: "approve"),
+                                ObserverCardButton(id: "\(activityId)-dismiss", label: "Dismiss", action: "dismiss"),
                             ]
                         }
                     }
 
-                    // Inject card into the most recent AI message (or floating bar state)
+                    // Inject card as a standalone observer message in chat history
+                    // so it persists even when the current AI response changes
                     let block = ChatContentBlock.observerCard(
                         id: "observer-\(activityId)",
                         activityId: activityId,
@@ -3046,22 +3048,24 @@ class ChatProvider: ObservableObject {
                     )
 
                     await MainActor.run {
+                        var observerMsg = ChatMessage(text: "", sender: .ai)
+                        observerMsg.contentBlocks = [block]
+
                         if let barState = FloatingControlBarManager.shared.barState {
-                            if var msg = barState.currentAIMessage {
-                                // Append to the currently visible AI response
-                                msg.contentBlocks.append(block)
-                                barState.currentAIMessage = msg
-                            } else {
-                                // No active response — create a standalone observer message
-                                var observerMsg = ChatMessage(text: "", sender: .ai)
-                                observerMsg.contentBlocks = [block]
-                                barState.currentAIMessage = observerMsg
+                            // Add as a standalone exchange in chat history (no question, just the observer card)
+                            // This ensures it stays visible even when new queries come in
+                            barState.chatHistory.append(
+                                FloatingChatExchange(question: "", aiMessage: observerMsg)
+                            )
+                            // Make sure conversation is visible
+                            if !barState.showingAIConversation {
                                 barState.showingAIConversation = true
                                 barState.showingAIResponse = true
                                 barState.isAILoading = false
                             }
-                        } else if !self.messages.isEmpty, let lastAI = self.messages.lastIndex(where: { $0.sender == .ai }) {
-                            self.messages[lastAI].contentBlocks.append(block)
+                        } else if !self.messages.isEmpty {
+                            // Main chat — append as a standalone message
+                            self.messages.append(observerMsg)
                         }
                     }
 
@@ -3090,6 +3094,17 @@ class ChatProvider: ObservableObject {
                     """, arguments: [action, activityId])
                 }
                 log("ChatProvider: Observer card action — id=\(activityId) action=\(action)")
+
+                // Track the user's response to the observer card
+                // Fetch the card type for richer analytics
+                let cardType: String? = try await dbQueue.read { db in
+                    try String.fetchOne(db, sql: "SELECT type FROM observer_activity WHERE id = ?", arguments: [activityId])
+                }
+                PostHogManager.shared.track("observer_card_action", properties: [
+                    "activity_id": activityId,
+                    "action": action,
+                    "card_type": cardType ?? "unknown",
+                ])
 
                 // If approved a skill draft, trigger skill creation
                 if action == "approve" {
