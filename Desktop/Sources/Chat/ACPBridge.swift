@@ -217,6 +217,22 @@ actor ACPBridge {
       env["CLOUD_ML_REGION"] = region
     }
 
+    // Always pass Vertex ADC credentials for Hindsight Memory MCP (uses Gemini Pro via Vertex AI).
+    // The ADC file is written by VertexTokenManager regardless of chat mode.
+    if env["GOOGLE_APPLICATION_CREDENTIALS"] == nil {
+      let tmpDir = NSTemporaryDirectory()
+      let adcPath = (tmpDir as NSString).appendingPathComponent("fazm-vertex-adc.json")
+      if FileManager.default.fileExists(atPath: adcPath) {
+        env["GOOGLE_APPLICATION_CREDENTIALS"] = adcPath
+      }
+    }
+    if env["VERTEX_PROJECT_ID"] == nil {
+      if let p = getenv("VERTEX_PROJECT_ID") { env["VERTEX_PROJECT_ID"] = String(cString: p) }
+    }
+    if env["VERTEX_REGION"] == nil {
+      if let r = getenv("VERTEX_REGION") { env["VERTEX_REGION"] = String(cString: r) }
+    }
+
     // Ensure the directory containing node is in PATH
     let nodeDir = (nodePath as NSString).deletingLastPathComponent
     let existingPath = env["PATH"] ?? "/usr/bin:/bin"
