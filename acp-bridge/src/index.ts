@@ -165,7 +165,7 @@ async function startHindsight(): Promise<boolean> {
     return false;
   }
 
-  logErr(`Hindsight: starting server (vertexai, project=${vertexProject}, region=${vertexRegion})...`);
+  logErr(`Hindsight: starting server (vertexai, project=${vertexProject}, region=${vertexRegion}, adc=${adcPath})...`);
   hindsightProcess = spawn(hindsightPython, [
     "-m", "hindsight_api.main",
     "--host", "127.0.0.1",
