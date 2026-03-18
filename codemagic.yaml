@@ -319,6 +319,12 @@ workflows:
             echo "WARNING: Google Workspace MCP not cloned — skipping"
           fi
 
+          # Bundle Hindsight Memory MCP (Python) — venv created at runtime
+          HINDSIGHT_BUNDLE="$APP_BUNDLE/Contents/Resources/hindsight"
+          mkdir -p "$HINDSIGHT_BUNDLE"
+          echo 'hindsight-api-slim[embedded-db]' > "$HINDSIGHT_BUNDLE/requirements.txt"
+          echo "Bundled Hindsight Memory MCP (venv will be created at runtime)"
+
           # Update Info.plist metadata
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable   $BINARY_NAME"  "$APP_BUNDLE/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier   $BUNDLE_ID"    "$APP_BUNDLE/Contents/Info.plist"
@@ -417,6 +423,24 @@ workflows:
             # Sign the venv Python binary itself
             if [ -f "$GWS_MCP_BUNDLE/.venv/bin/python3" ]; then
               REAL_PYTHON=$(readlink -f "$GWS_MCP_BUNDLE/.venv/bin/python3" 2>/dev/null || echo "$GWS_MCP_BUNDLE/.venv/bin/python3")
+              if file "$REAL_PYTHON" 2>/dev/null | grep -q "Mach-O"; then
+                codesign --force --options runtime --timestamp \
+                  --sign "$SIGN_IDENTITY" "$REAL_PYTHON"
+              fi
+            fi
+          fi
+
+          # Sign Hindsight Memory MCP native binaries (.so/.dylib in venv)
+          HINDSIGHT_BUNDLE="$APP_BUNDLE/Contents/Resources/hindsight"
+          if [ -d "$HINDSIGHT_BUNDLE/.venv" ]; then
+            find "$HINDSIGHT_BUNDLE/.venv" -type f \
+              \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
+              file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
+                codesign --force --options runtime --timestamp \
+                  --sign "$SIGN_IDENTITY" "$native_bin"
+            done
+            if [ -f "$HINDSIGHT_BUNDLE/.venv/bin/python3" ]; then
+              REAL_PYTHON=$(readlink -f "$HINDSIGHT_BUNDLE/.venv/bin/python3" 2>/dev/null || echo "$HINDSIGHT_BUNDLE/.venv/bin/python3")
               if file "$REAL_PYTHON" 2>/dev/null | grep -q "Mach-O"; then
                 codesign --force --options runtime --timestamp \
                   --sign "$SIGN_IDENTITY" "$REAL_PYTHON"
