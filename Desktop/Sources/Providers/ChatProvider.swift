@@ -3158,13 +3158,15 @@ class ChatProvider: ObservableObject {
                             try db.execute(sql: query)
                         }
                     } else if tool == "save_knowledge_graph" {
-                        // Forward to the existing KG save handler
+                        // Forward to the existing KG save handler via the tool executor
+                        // The observer may use different field names (name/label/id, type/node_type)
                         log("ChatProvider: Executing approved KG save")
                         if let nodesArray = opArgs["nodes"] as? [[String: Any]] {
                             for node in nodesArray {
-                                guard let name = node["name"] as? String,
-                                      let nodeType = node["type"] as? String else { continue }
-                                let description = node["description"] as? String ?? ""
+                                let name = (node["name"] as? String) ?? (node["label"] as? String) ?? (node["id"] as? String) ?? ""
+                                let nodeType = (node["type"] as? String) ?? (node["node_type"] as? String) ?? "entity"
+                                let description = (node["description"] as? String) ?? (node["aliases"] as? [String])?.joined(separator: ", ") ?? ""
+                                guard !name.isEmpty else { continue }
                                 try await dbQueue.write { db in
                                     try db.execute(sql: """
                                         INSERT OR REPLACE INTO local_kg_nodes (name, type, description, updatedAt)
@@ -3175,9 +3177,10 @@ class ChatProvider: ObservableObject {
                         }
                         if let edgesArray = opArgs["edges"] as? [[String: Any]] {
                             for edge in edgesArray {
-                                guard let source = edge["source"] as? String,
-                                      let target = edge["target"] as? String,
-                                      let relation = edge["relation"] as? String else { continue }
+                                let source = (edge["source"] as? String) ?? (edge["source_id"] as? String) ?? ""
+                                let target = (edge["target"] as? String) ?? (edge["target_id"] as? String) ?? ""
+                                let relation = (edge["relation"] as? String) ?? (edge["label"] as? String) ?? ""
+                                guard !source.isEmpty, !target.isEmpty else { continue }
                                 try await dbQueue.write { db in
                                     try db.execute(sql: """
                                         INSERT OR REPLACE INTO local_kg_edges (source, target, relation, updatedAt)
