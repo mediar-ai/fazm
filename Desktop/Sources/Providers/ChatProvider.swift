@@ -832,11 +832,9 @@ class ChatProvider: ObservableObject {
             )
             // Set up observer poll handler — when the observer finishes a batch,
             // poll observer_activity for new pending cards and inject them into the chat
-            await MainActor.run {
-                acpBridge.onObserverPoll = { [weak self] in
-                    Task { @MainActor [weak self] in
-                        self?.pollObserverCards()
-                    }
+            await acpBridge.setObserverPollHandler { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.pollObserverCards()
                 }
             }
             // Pre-warm ACP sessions with their respective system prompts.
@@ -2975,114 +2973,118 @@ class ChatProvider: ObservableObject {
 
     /// Poll observer_activity table for pending cards and inject them into the current chat
     private func pollObserverCards() {
-        guard let db = AppDatabase.shared else { return }
-        do {
-            let rows = try db.reader.read { db in
-                try Row.fetchAll(db, sql: """
-                    SELECT id, type, content, status, createdAt
-                    FROM observer_activity
-                    WHERE status = 'pending'
-                    ORDER BY createdAt ASC
-                """)
-            }
+        Task {
+            guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
+            do {
+                let rows = try await dbQueue.read { db in
+                    try Row.fetchAll(db, sql: """
+                        SELECT id, type, content, status, createdAt
+                        FROM observer_activity
+                        WHERE status = 'pending'
+                        ORDER BY createdAt ASC
+                    """)
+                }
 
-            for row in rows {
-                let activityId: Int64 = row["id"]
-                let type: String = row["type"]
-                let contentJson: String = row["content"]
+                for row in rows {
+                    let activityId: Int64 = row["id"]
+                    let type: String = row["type"]
+                    let contentJson: String = row["content"]
 
-                // Parse the content JSON for display text and buttons
-                var displayText = contentJson
-                var buttons: [ObserverCardButton] = []
+                    // Parse the content JSON for display text and buttons
+                    var displayText = contentJson
+                    var buttons: [ObserverCardButton] = []
 
-                if let data = contentJson.data(using: .utf8),
-                   let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    displayText = parsed["message"] as? String ?? parsed["summary"] as? String ?? contentJson
-                    if let buttonDefs = parsed["buttons"] as? [[String: String]] {
-                        buttons = buttonDefs.compactMap { def in
-                            guard let label = def["label"], let action = def["action"] else { return nil }
-                            return ObserverCardButton(id: "\(activityId)-\(action)", label: label, action: action)
+                    if let jsonData = contentJson.data(using: .utf8),
+                       let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                        displayText = (parsed["message"] as? String) ?? (parsed["summary"] as? String) ?? contentJson
+                        if let buttonDefs = parsed["buttons"] as? [[String: String]] {
+                            buttons = buttonDefs.compactMap { def in
+                                guard let label = def["label"], let action = def["action"] else { return nil }
+                                return ObserverCardButton(id: "\(activityId)-\(action)", label: label, action: action)
+                            }
                         }
                     }
-                }
 
-                // Default buttons if none specified
-                if buttons.isEmpty {
-                    if type == "skill_draft" {
-                        buttons = [
-                            ObserverCardButton(id: "\(activityId)-approve", label: "Create skill", action: "approve"),
-                            ObserverCardButton(id: "\(activityId)-dismiss", label: "Skip", action: "dismiss"),
-                        ]
-                    } else if type == "insight" || type == "card" {
-                        buttons = [
-                            ObserverCardButton(id: "\(activityId)-dismiss", label: "Got it", action: "dismiss"),
-                        ]
+                    // Default buttons if none specified
+                    if buttons.isEmpty {
+                        if type == "skill_draft" {
+                            buttons = [
+                                ObserverCardButton(id: "\(activityId)-approve", label: "Create skill", action: "approve"),
+                                ObserverCardButton(id: "\(activityId)-dismiss", label: "Skip", action: "dismiss"),
+                            ]
+                        } else if type == "insight" || type == "card" {
+                            buttons = [
+                                ObserverCardButton(id: "\(activityId)-dismiss", label: "Got it", action: "dismiss"),
+                            ]
+                        }
                     }
+
+                    // Inject card into the most recent AI message (or floating bar state)
+                    let block = ChatContentBlock.observerCard(
+                        id: "observer-\(activityId)",
+                        activityId: activityId,
+                        type: type,
+                        content: displayText,
+                        buttons: buttons
+                    )
+
+                    await MainActor.run {
+                        // Add to current floating bar message or most recent AI message
+                        if let barState = FloatingControlBarManager.shared.barState,
+                           var msg = barState.currentAIMessage {
+                            msg.contentBlocks.append(block)
+                            barState.currentAIMessage = msg
+                        } else if !self.messages.isEmpty, let lastAI = self.messages.lastIndex(where: { $0.sender == .ai }) {
+                            self.messages[lastAI].contentBlocks.append(block)
+                        }
+                    }
+
+                    // Mark as shown
+                    try await dbQueue.write { db in
+                        try db.execute(sql: "UPDATE observer_activity SET status = 'shown' WHERE id = ?", arguments: [activityId])
+                    }
+
+                    log("ChatProvider: Observer card shown — id=\(activityId) type=\(type)")
                 }
-
-                // Inject card into the most recent AI message (or floating bar state)
-                let block = ChatContentBlock.observerCard(
-                    id: "observer-\(activityId)",
-                    activityId: activityId,
-                    type: type,
-                    content: displayText,
-                    buttons: buttons
-                )
-
-                // Add to current floating bar message or most recent AI message
-                if let barState = FloatingControlBarManager.shared.barState,
-                   var msg = barState.currentAIMessage {
-                    msg.contentBlocks.append(block)
-                    barState.currentAIMessage = msg
-                } else if !messages.isEmpty, let lastAI = messages.lastIndex(where: { $0.sender == .ai }) {
-                    messages[lastAI].contentBlocks.append(block)
-                }
-
-                // Mark as shown
-                try db.writer.write { db in
-                    try db.execute(sql: "UPDATE observer_activity SET status = 'shown' WHERE id = ?", arguments: [activityId])
-                }
-
-                log("ChatProvider: Observer card shown — id=\(activityId) type=\(type)")
+            } catch {
+                log("ChatProvider: Failed to poll observer cards: \(error)")
             }
-        } catch {
-            log("ChatProvider: Failed to poll observer cards: \(error)")
         }
     }
 
     /// Handle user action on an observer card (approve, dismiss, edit)
     func handleObserverCardAction(activityId: Int64, action: String) {
-        guard let db = AppDatabase.shared else { return }
-        do {
-            try db.writer.write { db in
-                try db.execute(sql: """
-                    UPDATE observer_activity SET status = 'acted', userResponse = ?, actedAt = datetime('now')
-                    WHERE id = ?
-                """, arguments: [action, activityId])
-            }
-            log("ChatProvider: Observer card action — id=\(activityId) action=\(action)")
+        Task {
+            guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
+            do {
+                try await dbQueue.write { db in
+                    try db.execute(sql: """
+                        UPDATE observer_activity SET status = 'acted', userResponse = ?, actedAt = datetime('now')
+                        WHERE id = ?
+                    """, arguments: [action, activityId])
+                }
+                log("ChatProvider: Observer card action — id=\(activityId) action=\(action)")
 
-            // If approved a skill draft, trigger skill creation
-            if action == "approve" {
-                Task {
+                // If approved a skill draft, trigger skill creation
+                if action == "approve" {
                     await createSkillFromObserverDraft(activityId: activityId)
                 }
+            } catch {
+                log("ChatProvider: Failed to update observer card: \(error)")
             }
-        } catch {
-            log("ChatProvider: Failed to update observer card: \(error)")
         }
     }
 
     /// Create a skill file from an approved observer draft
     private func createSkillFromObserverDraft(activityId: Int64) async {
-        guard let db = AppDatabase.shared else { return }
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         do {
-            let row = try db.reader.read { db in
+            let row = try await dbQueue.read { db in
                 try Row.fetchOne(db, sql: "SELECT content FROM observer_activity WHERE id = ?", arguments: [activityId])
             }
-            guard let contentJson = row?["content"] as? String,
-                  let data = contentJson.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            guard let contentJson: String = row?["content"],
+                  let jsonData = contentJson.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   let draftSkill = parsed["draft_skill"] as? [String: Any],
                   let skillName = draftSkill["name"] as? String,
                   let skillContent = draftSkill["content"] as? String else {
