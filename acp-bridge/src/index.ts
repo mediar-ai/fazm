@@ -298,6 +298,10 @@ function startFazmToolsRelay(): Promise<string> {
             if (msg.type === "log") {
               // Forward log from fazm-tools subprocess to bridge stderr
               logErr(`[fazm-tools] ${(msg as Record<string, unknown>).message ?? ""}`);
+            } else if (msg.type === "observer_card_ready") {
+              // fazm-tools created an approval card mid-batch — poll immediately
+              logErr("[fazm-tools] Observer card ready, triggering immediate poll");
+              send({ type: "observer_poll" as any } as any);
             } else if (msg.type === "tool_use") {
               // Forward tool call to Swift via stdout
               send({
