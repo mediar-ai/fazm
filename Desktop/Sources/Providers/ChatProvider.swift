@@ -3030,9 +3030,10 @@ class ChatProvider: ObservableObject {
                 )
 
                 // Add to current floating bar message or most recent AI message
-                if let floatingState = floatingBarState, var msg = floatingState.currentAIMessage {
+                if let barState = FloatingControlBarManager.shared.barState,
+                   var msg = barState.currentAIMessage {
                     msg.contentBlocks.append(block)
-                    floatingState.currentAIMessage = msg
+                    barState.currentAIMessage = msg
                 } else if !messages.isEmpty, let lastAI = messages.lastIndex(where: { $0.sender == .ai }) {
                     messages[lastAI].contentBlocks.append(block)
                 }
