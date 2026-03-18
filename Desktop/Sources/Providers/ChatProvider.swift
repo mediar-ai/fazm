@@ -837,6 +837,14 @@ class ChatProvider: ObservableObject {
                     self?.pollObserverCards()
                 }
             }
+            // Set up background tool call handler for observer session tool calls
+            // (execute_sql, etc.) that arrive when no main query is active
+            await acpBridge.setBackgroundToolCallHandler { callId, name, input in
+                let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
+                let result = await ChatToolExecutor.execute(toolCall)
+                log("Background tool \(name) executed for callId=\(callId)")
+                return result
+            }
             // Pre-warm ACP sessions with their respective system prompts.
             // This is the only place the system prompt is built and applied.
             let mainSystemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
