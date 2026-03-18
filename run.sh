@@ -243,7 +243,7 @@ if command -v uv &>/dev/null; then
     if [ ! -d "$HINDSIGHT_BUNDLE/.venv" ]; then
         uv venv "$HINDSIGHT_BUNDLE/.venv" --python python3.12 --quiet 2>&1 | tail -1 || true
         uv pip install --python "$HINDSIGHT_BUNDLE/.venv/bin/python3" \
-            'hindsight-api-slim[embedded-db]' --quiet 2>&1 | tail -3 || true
+            'hindsight-api-slim[embedded-db]' sentence-transformers --quiet 2>&1 | tail -3 || true
         # Remove claude_agent_sdk (195MB) — only needed for claude_code LLM provider, we use anthropic
         uv pip uninstall --python "$HINDSIGHT_BUNDLE/.venv/bin/python3" claude-agent-sdk --quiet 2>/dev/null || true
         substep "Bundled Hindsight Memory MCP with venv"
