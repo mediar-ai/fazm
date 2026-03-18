@@ -87,6 +87,7 @@ actor ACPBridge {
     case taskNotification(taskId: String, status: String, summary: String)
     case toolProgress(toolUseId: String, toolName: String, elapsedTimeSeconds: Double)
     case toolUseSummary(summary: String)
+    case observerPoll
   }
 
   // MARK: - Configuration
@@ -109,6 +110,8 @@ actor ACPBridge {
   var onAuthSuccessGlobal: AuthSuccessHandler?
   /// Persistent auth timeout handler called whenever auth_timeout arrives (even outside query)
   var onAuthTimeoutGlobal: AuthTimeoutHandler?
+  /// Called when the observer session completes a batch and new cards may be available
+  var onObserverPoll: (() -> Void)?
 
   func setGlobalAuthHandlers(
     onAuthRequired: AuthRequiredHandler?,
@@ -753,6 +756,9 @@ actor ACPBridge {
       let summary = dict["summary"] as? String ?? ""
       return .toolUseSummary(summary: summary)
 
+    case "observer_poll":
+      return .observerPoll
+
     default:
       log("ACPBridge: unknown message type: \(type)")
       return nil
@@ -778,6 +784,10 @@ actor ACPBridge {
         handler(reason)
         return
       }
+    case .observerPoll:
+      // Always handle immediately — observer runs independently of any active query
+      onObserverPoll?()
+      return
     default:
       break
     }
