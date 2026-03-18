@@ -79,6 +79,13 @@ struct ToolCallInput {
     let details: String?
 }
 
+/// Button for observer cards
+struct ObserverCardButton: Identifiable {
+    let id: String
+    let label: String
+    let action: String  // "approve", "dismiss", "edit"
+}
+
 /// A block of content within an AI message (text or tool call indicator)
 enum ChatContentBlock: Identifiable {
     case text(id: String, text: String)
@@ -89,6 +96,8 @@ enum ChatContentBlock: Identifiable {
     case thinking(id: String, text: String)
     /// Collapsible card showing a summary with expandable full text (used for AI profile/discovery)
     case discoveryCard(id: String, title: String, summary: String, fullText: String)
+    /// Observer session card — button-only inline element for user interaction
+    case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton])
 
     var id: String {
         switch self {
@@ -96,6 +105,7 @@ enum ChatContentBlock: Identifiable {
         case .toolCall(let id, _, _, _, _, _): return id
         case .thinking(let id, _): return id
         case .discoveryCard(let id, _, _, _): return id
+        case .observerCard(let id, _, _, _, _): return id
         }
     }
 
