@@ -14,7 +14,7 @@ let package = Package(
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "11.0.0"),
         .package(url: "https://github.com/m13v/macos-session-replay.git", from: "0.4.0"),
-        .package(path: "LocalPackages/Highlightr"),
+        .package(url: "https://github.com/raspu/Highlightr.git", from: "2.2.1"),
     ],
     targets: [
         .target(

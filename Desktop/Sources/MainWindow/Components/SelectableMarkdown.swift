@@ -117,6 +117,7 @@ struct PlainCopyText: NSViewRepresentable {
 // MARK: - Syntax Highlighting
 
 /// Shared Highlightr instance for syntax-highlighted code blocks.
+/// Uses a dark theme that works well on the Fazm dark background.
 private let sharedHighlightr: Highlightr? = {
     guard let h = Highlightr() else { return nil }
     h.setTheme(to: "atom-one-dark")
@@ -132,6 +133,7 @@ func highlightedCode(_ code: String, language: String?, fontSize: CGFloat) -> NS
             return result
         }
     }
+    // Fallback: plain monospaced
     return NSAttributedString(
         string: code,
         attributes: [
@@ -267,7 +269,7 @@ struct SelectableMarkdown: View {
             let codeFontSize = round(13 * fontScale)
             let bgColor = sender == .user
                 ? Color.white.opacity(0.15)
-                : Color(hex: 0x282C34)
+                : Color(hex: 0x282C34) // atom-one-dark background
             let codeAttr: NSAttributedString = sender == .user
                 ? NSAttributedString(
                     string: code,
@@ -500,7 +502,7 @@ struct CollapsibleCodeBlockView: View {
         let codeFontSize = round(13 * fontScale)
         let bgColor = sender == .user
             ? Color.white.opacity(0.15)
-            : Color(hex: 0x282C34)
+            : Color(hex: 0x282C34) // atom-one-dark background
 
         VStack(alignment: .leading, spacing: 0) {
             let codeAttr: NSAttributedString = sender == .user

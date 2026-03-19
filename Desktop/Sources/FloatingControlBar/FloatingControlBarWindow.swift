@@ -1397,8 +1397,8 @@ class FloatingControlBarManager {
             show()
         }
 
-        // Restore floating chat from DB before showing conversation so history is visible immediately.
-        // Must await the DB load before showAIConversation() checks chatHistory.isEmpty.
+        // Eagerly restore floating chat messages from local DB before showing the conversation.
+        // This must complete before showAIConversation() so the history check on line 491 works.
         if let provider = self.chatProvider {
             Task { @MainActor in
                 await provider.restoreFloatingChatIfNeeded()
@@ -1505,19 +1505,36 @@ class FloatingControlBarManager {
         // center instead of where it was before the chat opened.
         window.savePreChatCenterIfNeeded()
 
+<<<<<<< Updated upstream
         // Restore floating chat from DB before showing conversation so history is visible immediately.
+=======
+        // Eagerly restore floating chat messages from local DB before showing conversation.
+        // Must complete before showAIConversation() so the history check works.
+>>>>>>> Stashed changes
         Task { @MainActor in
             await provider.restoreFloatingChatIfNeeded()
             if window.state.chatHistory.isEmpty && !provider.messages.isEmpty {
                 window.state.loadHistory(from: provider.messages)
             }
 
+<<<<<<< Updated upstream
             window.state.clearLastConversation()
             window.state.aiInputText = query
             window.showAIConversation()
             window.state.aiInputText = query
             window.orderFrontRegardless()
 
+=======
+            // Show the input view with the transcription pre-filled (user can edit before sending)
+            window.state.clearLastConversation()
+            window.state.aiInputText = query
+            window.showAIConversation()
+            // Override the empty text that showAIConversation sets
+            window.state.aiInputText = query
+            window.orderFrontRegardless()
+
+            // Focus the input field so user can immediately edit or press Enter to send
+>>>>>>> Stashed changes
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 window.focusInputField()
             }

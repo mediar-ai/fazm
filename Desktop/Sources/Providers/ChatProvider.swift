@@ -643,10 +643,8 @@ class ChatProvider: ObservableObject {
             forName: NSApplication.willTerminateNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.acpBridge.stop()
-            }
+            guard let self else { return }
+            Task { await self.acpBridge.stop() }
         }
     }
 
