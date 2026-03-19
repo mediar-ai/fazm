@@ -356,17 +356,19 @@ final class UpdaterViewModel: ObservableObject {
 
     /// After the user grants App Management permission in System Settings and returns to Fazm,
     /// automatically retry the update so they don't have to trigger it manually again.
+    private var appManagementRetryObserver: NSObjectProtocol?
+
     func scheduleRetryAfterAppManagementGrant() {
-        // Use nonisolated(unsafe) to allow capture in the notification closure
-        // while avoiding Sendable warnings. The token is only accessed on .main queue.
-        nonisolated(unsafe) var token: NSObjectProtocol?
-        token = NotificationCenter.default.addObserver(
+        appManagementRetryObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            if let token { NotificationCenter.default.removeObserver(token) }
             guard let self else { return }
+            if let observer = self.appManagementRetryObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.appManagementRetryObserver = nil
+            }
             logSync("Sparkle: Retrying update after App Management permission grant")
             // Small delay to let the TCC change take effect
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
