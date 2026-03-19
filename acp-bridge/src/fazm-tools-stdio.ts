@@ -131,6 +131,22 @@ async function requestSwiftTool(
 const isOnboarding = (process.env.FAZM_ONBOARDING || process.env.OMI_ONBOARDING) === "true";
 const isObserver = process.env.FAZM_OBSERVER === "true";
 
+/** Escape a string for use inside a SQL single-quoted literal.
+ *  Handles both single quotes (doubled for SQL) and ensures the
+ *  result is safe for embedding in a SQL string.  */
+function sqlStringEscape(s: string): string {
+  // Replace single quotes with doubled single quotes (SQL standard escaping)
+  return s.replace(/'/g, "''");
+}
+
+/** Build a safe INSERT for observer_activity with JSON content.
+ *  Uses X'...' hex literal to avoid all quoting issues with embedded JSON. */
+function buildObserverInsert(type: string, contentObj: Record<string, unknown>): string {
+  const json = JSON.stringify(contentObj);
+  const hex = Buffer.from(json, "utf-8").toString("hex");
+  return `INSERT INTO observer_activity (id, type, content, status, createdAt) VALUES (abs(random()), '${type}', X'${hex}', 'pending', datetime('now'))`;
+}
+
 /** Human-readable summary of a write SQL query for approval cards */
 function describeSqlWrite(query: string): string {
   const trimmed = query.trim();
@@ -509,8 +525,8 @@ async function handleJsonRpc(
             // Use the observer's description if provided, fall back to programmatic summary
             const observerDescription = args.description as string | undefined;
             const body = observerDescription || describeSqlWrite(query);
-            // Store the pending write operation in an approval card
-            const cardContent = JSON.stringify({
+            // Store the pending write operation in an approval card (hex-encoded to avoid SQL quoting issues)
+            const insertCard = buildObserverInsert("approval_request", {
               title: "Database update",
               body,
               pending_operations: [{ tool: "execute_sql", args: { query } }],
@@ -519,7 +535,6 @@ async function handleJsonRpc(
                 { label: "Dismiss", action: "dismiss" },
               ],
             });
-            const insertCard = `INSERT INTO observer_activity (id, type, content, status, createdAt) VALUES (abs(random()), 'approval_request', '${cardContent.replace(/'/g, "''")}', 'pending', datetime('now'))`;
             await requestSwiftTool("execute_sql", { query: insertCard });
             notifyObserverCardReady();
             if (!isNotification) {
