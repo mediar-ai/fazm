@@ -578,11 +578,13 @@ class ChatToolExecutor {
             let interimMarker = "Interim profile ready (WhatsApp + embeddings still running):\n"
 
             return await withCheckedContinuation { continuation in
-                var hasResumed = false
+                // nonisolated(unsafe) silences Swift 6 Sendable warnings for these vars
+                // that are safely guarded by the NSLock below.
+                nonisolated(unsafe) var hasResumed = false
                 let lock = NSLock()
-                var accumulatedOutput = ""
+                nonisolated(unsafe) var accumulatedOutput = ""
 
-                func tryResumeWithInterim() {
+                @Sendable func tryResumeWithInterim() {
                     lock.lock()
                     defer { lock.unlock() }
                     guard !hasResumed else { return }
