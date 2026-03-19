@@ -584,7 +584,6 @@ workflows:
           fi
 
           # Hindsight Memory MCP is signed in the tarball build step above (not in app bundle)
-          fi
 
           # Sign Sparkle components — innermost first
           SPARKLE_FW="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
@@ -911,6 +910,13 @@ workflows:
           # Upload arch-specific ZIPs
           gcloud storage cp "$ARCH_ARM64_ZIP"  "gs://$BUCKET/$PREFIX/Fazm-arm64.zip"
           gcloud storage cp "$ARCH_X86_64_ZIP" "gs://$BUCKET/$PREFIX/Fazm-x86_64.zip"
+
+          # Upload Hindsight Memory MCP tarball (downloaded by app on first launch)
+          HINDSIGHT_TARBALL="/tmp/hindsight-venv.tar.gz"
+          if [ -f "$HINDSIGHT_TARBALL" ]; then
+            gcloud storage cp "$HINDSIGHT_TARBALL" "gs://$BUCKET/hindsight/hindsight-venv.tar.gz"
+            echo "Uploaded Hindsight tarball to gs://$BUCKET/hindsight/hindsight-venv.tar.gz"
+          fi
 
           # Compute SHA256 and sizes
           ARM64_SHA256=$(shasum -a 256 "$ARCH_ARM64_ZIP" | awk '{print $1}')
