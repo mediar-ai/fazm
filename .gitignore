@@ -18,7 +18,6 @@ DerivedData/
 **/google-credentials.json
 **/vertex-ai-sa-key.json
 **/service-account*.json
-Desktop/Sources/Resources/gws_client_secret.json
 
 # Claude (user-local config, skills, memory)
 .claude/
