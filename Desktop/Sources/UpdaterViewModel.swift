@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import SwiftUI
 import Sparkle
 
@@ -357,7 +357,9 @@ final class UpdaterViewModel: ObservableObject {
     /// After the user grants App Management permission in System Settings and returns to Fazm,
     /// automatically retry the update so they don't have to trigger it manually again.
     func scheduleRetryAfterAppManagementGrant() {
-        var token: NSObjectProtocol?
+        // Use nonisolated(unsafe) to allow capture in the notification closure
+        // while avoiding Sendable warnings. The token is only accessed on .main queue.
+        nonisolated(unsafe) var token: NSObjectProtocol?
         token = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
