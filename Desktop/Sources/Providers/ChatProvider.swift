@@ -48,7 +48,7 @@ enum ChatContentBlock: Identifiable {
     /// Collapsible card showing a summary with expandable full text (used for AI profile/discovery)
     case discoveryCard(id: String, title: String, summary: String, fullText: String)
     /// Observer session card — button-only inline element for user interaction
-    case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton])
+    case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String? = nil)
 
     var id: String {
         switch self {
