@@ -116,6 +116,7 @@
     "Fixed floating bar not being draggable despite setting being enabled",
     "Fixed crash caused by browser profile migration popup not properly cleaning up memory on dismiss",
     "Smoother floating bar animations when expanding, collapsing, and switching between states",
-    "Added always-on screen observer for Gemini analysis that persists across app restarts"
+    "Added always-on screen observer for Gemini analysis that persists across app restarts",
+    "Fixed Google Workspace MCP not working for release-build users by creating venv at runtime"
   ]
 }
