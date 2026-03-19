@@ -178,33 +178,34 @@ class AudioDeviceManager: ObservableObject {
             // Synchronously stop old capture so the device is fully released
             oldCapture?.stopCapture(sync: true)
 
+            let capturedSelf = self
             await MainActor.run {
-                guard let self else { return }
-                guard !self.isMonitoringLevel else { return }
-                self.isMonitoringLevel = true
+                guard let strongSelf = capturedSelf else { return }
+                guard !strongSelf.isMonitoringLevel else { return }
+                strongSelf.isMonitoringLevel = true
 
                 let capture = AudioCaptureService()
-                self.levelCaptureService = capture
+                strongSelf.levelCaptureService = capture
 
-                Task { @MainActor in
+                Task { @MainActor [weak capturedSelf] in
                     do {
                         try await capture.startCapture(
                             deviceUID: newDeviceUID,
                             onAudioChunk: { _ in },
-                            onAudioLevel: { [weak self] level in
+                            onAudioLevel: { [weak capturedSelf] level in
                                 Task { @MainActor in
-                                    self?.currentAudioLevel = level
+                                    capturedSelf?.currentAudioLevel = level
                                 }
                             }
                         )
                     } catch let error as AudioCaptureService.AudioCaptureError where error.isNoInput {
                         log("AudioDeviceManager: no microphone available after restart")
-                        self.isMonitoringLevel = false
-                        self.noMicrophoneAvailable = true
-                        self.scheduleLevelMonitorRetry()
+                        capturedSelf?.isMonitoringLevel = false
+                        capturedSelf?.noMicrophoneAvailable = true
+                        capturedSelf?.scheduleLevelMonitorRetry()
                     } catch {
                         log("AudioDeviceManager: level monitoring restart failed: \(error.localizedDescription)")
-                        self.isMonitoringLevel = false
+                        capturedSelf?.isMonitoringLevel = false
                     }
                 }
             }
