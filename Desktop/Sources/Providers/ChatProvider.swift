@@ -532,6 +532,14 @@ class ChatProvider: ObservableObject {
         }
     }
 
+    /// Apply a deferred bridge mode switch that was requested while a query was in-flight.
+    private func applyPendingBridgeModeSwitch() async {
+        guard let pending = pendingBridgeModeSwitch else { return }
+        pendingBridgeModeSwitch = nil
+        log("ChatProvider: applying deferred bridge mode switch to \(pending)")
+        await switchBridgeMode(to: pending)
+    }
+
     private func setupBridgeAuthHandlers() {
         Task {
             await acpBridge.setGlobalAuthHandlers(
