@@ -2643,11 +2643,14 @@ class ChatProvider: ObservableObject {
                         observerMsg.contentBlocks = [block]
 
                         if let barState = FloatingControlBarManager.shared.barState {
-                            // Add as a standalone exchange in chat history (no question, just the observer card)
-                            // This ensures it stays visible even when new queries come in
-                            barState.chatHistory.append(
-                                FloatingChatExchange(question: "", aiMessage: observerMsg)
-                            )
+                            let exchange = FloatingChatExchange(question: "", aiMessage: observerMsg)
+                            // If a query is actively streaming, queue the card so it renders
+                            // below the current response instead of above it.
+                            if barState.currentAIMessage != nil || barState.isAILoading {
+                                barState.pendingObserverExchanges.append(exchange)
+                            } else {
+                                barState.chatHistory.append(exchange)
+                            }
                             // Make sure conversation is visible
                             if !barState.showingAIConversation {
                                 barState.showingAIConversation = true
