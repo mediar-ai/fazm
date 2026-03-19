@@ -941,268 +941,6 @@ class ChatProvider: ObservableObject {
         return false
     }
 
-    // MARK: - Session Management
-
-    /// Fetch all chat sessions for the current app (retries up to 3 times on failure)
-    func fetchSessions() async {
-        isLoadingSessions = true
-        defer { isLoadingSessions = false }
-
-        let maxAttempts = 3
-        let delays: [UInt64] = [1_000_000_000, 2_000_000_000] // 1s, 2s
-        var lastError: Error?
-
-        for attempt in 1...maxAttempts {
-            do {
-                sessions = try await APIClient.shared.getChatSessions(
-                    appId: selectedAppId,
-                    starred: showStarredOnly ? true : nil
-                )
-                log("ChatProvider loaded \(sessions.count) sessions (starred filter: \(showStarredOnly))")
-                sessionsLoadError = nil
-
-                // If we have sessions and no current session, select the most recent
-                if currentSession == nil, let mostRecent = sessions.first {
-                    await selectSession(mostRecent)
-                }
-                return
-            } catch {
-                lastError = error
-                logError("Failed to load chat sessions (attempt \(attempt)/\(maxAttempts))", error: error)
-                if attempt < maxAttempts {
-                    try? await Task.sleep(nanoseconds: delays[attempt - 1])
-                }
-            }
-        }
-
-        sessions = []
-        sessionsLoadError = lastError?.localizedDescription ?? "Unknown error"
-    }
-
-    /// Toggle the starred filter and reload sessions
-    func toggleStarredFilter() async {
-        showStarredOnly.toggle()
-        log("Toggled starred filter: \(showStarredOnly)")
-        AnalyticsManager.shared.chatStarredFilterToggled(enabled: showStarredOnly)
-        await fetchSessions()
-    }
-
-    /// Create a new chat session
-    /// - Parameters:
-    ///   - title: Optional session title
-    ///   - skipGreeting: Skip the initial AI greeting message
-    ///   - appId: Override app ID (e.g. "task-chat" to isolate task sessions from default chat)
-    func createNewSession(title: String? = nil, skipGreeting: Bool = false, appId: String? = nil) async -> ChatSession? {
-        do {
-            let session = try await APIClient.shared.createChatSession(title: title, appId: appId ?? selectedAppId)
-            sessions.insert(session, at: 0)
-            currentSession = session
-            isInDefaultChat = false
-            messages = []
-            hasMoreMessages = false
-            log("Created new chat session: \(session.id)")
-            AnalyticsManager.shared.chatSessionCreated()
-
-            // Generate initial greeting message (skip for task chats that send their own context)
-            if !skipGreeting {
-                await fetchInitialMessage(for: session)
-            }
-
-            return session
-        } catch {
-            logError("Failed to create chat session", error: error)
-            errorMessage = "Failed to create new chat"
-            return nil
-        }
-    }
-
-    /// Fetch and display an initial greeting message for a new session
-    private func fetchInitialMessage(for session: ChatSession) async {
-        do {
-            let response = try await APIClient.shared.getInitialMessage(
-                sessionId: session.id,
-                appId: selectedAppId
-            )
-
-            // Add the AI greeting to messages (already has server ID)
-            let greetingMessage = ChatMessage(
-                id: response.messageId,
-                text: response.message,
-                createdAt: Date(),
-                sender: .ai,
-                isStreaming: false,
-                rating: nil,
-                isSynced: true
-            )
-            messages.append(greetingMessage)
-
-            // Update session preview
-            if let index = sessions.firstIndex(where: { $0.id == session.id }) {
-                sessions[index].preview = response.message
-            }
-
-            // Track analytics
-            AnalyticsManager.shared.initialMessageGenerated(hasApp: selectedAppId != nil)
-
-            log("Added initial greeting message for session \(session.id)")
-        } catch {
-            // Non-fatal: session still works without greeting
-            logError("Failed to fetch initial message", error: error)
-        }
-    }
-
-    /// Select a session and load its messages
-    func selectSession(_ session: ChatSession, force: Bool = false) async {
-        guard force || currentSession?.id != session.id || isInDefaultChat else { return }
-
-        currentSession = session
-        isInDefaultChat = false
-        isLoading = true
-        errorMessage = nil
-        hasMoreMessages = false
-
-        do {
-            let persistedMessages = try await APIClient.shared.getMessages(
-                sessionId: session.id,
-                limit: messagesPageSize
-            )
-            messages = persistedMessages.map(ChatMessage.init(from:))
-                .sorted(by: { $0.createdAt < $1.createdAt })
-            // If we got a full page, there might be more messages
-            hasMoreMessages = persistedMessages.count == messagesPageSize
-            log("ChatProvider loaded \(messages.count) messages for session \(session.id), hasMore: \(hasMoreMessages)")
-        } catch {
-            logError("Failed to load messages for session", error: error)
-            messages = []
-        }
-
-        isLoading = false
-    }
-
-    /// Load more (older) messages for the current session
-    func loadMoreMessages() async {
-        guard hasMoreMessages,
-              !isLoadingMoreMessages else { return }
-
-        isLoadingMoreMessages = true
-
-        do {
-            let offset = messages.count
-            let olderMessages: [ChatMessageDB]
-            if let sessionId = currentSessionId {
-                olderMessages = try await APIClient.shared.getMessages(
-                    sessionId: sessionId,
-                    limit: messagesPageSize,
-                    offset: offset
-                )
-            } else {
-                olderMessages = try await APIClient.shared.getMessages(
-                    appId: selectedAppId,
-                    limit: messagesPageSize,
-                    offset: offset
-                )
-            }
-
-            let newMessages = olderMessages.map(ChatMessage.init(from:))
-
-            // Append older messages and re-sort to ensure correct chronological order
-            messages.append(contentsOf: newMessages)
-            messages.sort(by: { $0.createdAt < $1.createdAt })
-
-            // Cap memory usage: keep only the most recent messages
-            if messages.count > maxMessagesInMemory {
-                messages.removeFirst(messages.count - maxMessagesInMemory)
-            }
-
-            // Check if there are more
-            hasMoreMessages = olderMessages.count == messagesPageSize
-            log("Loaded \(newMessages.count) more messages, total: \(messages.count), hasMore: \(hasMoreMessages)")
-        } catch {
-            logError("Failed to load more messages", error: error)
-        }
-
-        isLoadingMoreMessages = false
-    }
-
-    /// Track which sessions are currently being deleted
-    @Published var deletingSessionIds: Set<String> = []
-
-    /// Delete a chat session
-    func deleteSession(_ session: ChatSession) async {
-        deletingSessionIds.insert(session.id)
-        do {
-            try await APIClient.shared.deleteChatSession(sessionId: session.id)
-            deletingSessionIds.remove(session.id)
-            sessions.removeAll { $0.id == session.id }
-
-            // If deleted the current session, select another or clear
-            if currentSession?.id == session.id {
-                if let nextSession = sessions.first {
-                    await selectSession(nextSession)
-                } else {
-                    currentSession = nil
-                    messages = []
-                }
-            }
-
-            log("Deleted chat session: \(session.id)")
-            AnalyticsManager.shared.chatSessionDeleted()
-        } catch {
-            deletingSessionIds.remove(session.id)
-            logError("Failed to delete chat session", error: error)
-            errorMessage = "Failed to delete chat"
-        }
-    }
-
-    /// Toggle starred status for a session
-    func toggleStarred(_ session: ChatSession) async {
-        do {
-            let updated = try await APIClient.shared.updateChatSession(
-                sessionId: session.id,
-                starred: !session.starred
-            )
-
-            // Update in sessions list
-            if let index = sessions.firstIndex(where: { $0.id == session.id }) {
-                sessions[index] = updated
-            }
-
-            // Update current session if it's the same
-            if currentSession?.id == session.id {
-                currentSession = updated
-            }
-
-            log("Toggled starred for session \(session.id): \(updated.starred)")
-        } catch {
-            logError("Failed to toggle starred", error: error)
-        }
-    }
-
-    /// Update session title (user-initiated rename)
-    func updateSessionTitle(_ session: ChatSession, title: String) async {
-        do {
-            let updated = try await APIClient.shared.updateChatSession(
-                sessionId: session.id,
-                title: title
-            )
-
-            // Update in sessions list
-            if let index = sessions.firstIndex(where: { $0.id == session.id }) {
-                sessions[index] = updated
-            }
-
-            // Update current session if it's the same
-            if currentSession?.id == session.id {
-                currentSession = updated
-            }
-
-            log("Updated title for session \(session.id): \(title)")
-            AnalyticsManager.shared.sessionRenamed()
-        } catch {
-            logError("Failed to update session title", error: error)
-        }
-    }
-
     // MARK: - Load Context (Memories)
 
     /// Loads user memories from local SQLite for use in prompts
@@ -1644,16 +1382,8 @@ class ChatProvider: ObservableObject {
             }
         }
 
-        if multiChatEnabled {
-            // Multi-chat mode: load sessions, default to default chat
-            await fetchSessions()
-            // Start in default chat mode
-            await switchToDefaultChat()
-        } else {
-            // Single chat mode: just load default chat messages (syncs with Flutter)
-            isLoadingSessions = false
-            await loadDefaultChatMessages()
-        }
+        // Load default chat messages (syncs with Flutter mobile app)
+        await loadDefaultChatMessages()
         await loadMemoriesIfNeeded()
         await loadGoalsIfNeeded()
         await loadTasksIfNeeded()
@@ -1672,9 +1402,7 @@ class ChatProvider: ObservableObject {
 
     /// Reinitialize after settings change
     func reinitialize() async {
-        sessions = []
         messages = []
-        currentSession = nil
         isInDefaultChat = true
         await initialize()
     }
@@ -1861,13 +1589,6 @@ class ChatProvider: ObservableObject {
     }
 
     /// Switch to the default chat (messages without session_id, syncs with Flutter app)
-    func switchToDefaultChat() async {
-        currentSession = nil
-        isInDefaultChat = true
-        await loadDefaultChatMessages()
-        log("Switched to default chat")
-    }
-
     /// Load messages for the default chat (no session filter - compatible with Flutter)
     /// Retries up to 3 times on failure.
     func loadDefaultChatMessages() async {
@@ -1916,28 +1637,17 @@ class ChatProvider: ObservableObject {
         // Skip if we're actively sending. Note: isSending is released *before* the AI
         // message is saved to the backend (to unblock the next query). This means the
         // poll can run while saveMessage() is still in-flight — see the race note below.
-        guard !isSending, !isLoading, !isLoadingSessions else { return }
+        guard !isSending, !isLoading else { return }
         // Skip if messages haven't been loaded yet (initial load not done)
         guard !messages.isEmpty || sessionsLoadError != nil else { return }
         // Skip if there's an active streaming message
         guard !messages.contains(where: { $0.isStreaming }) else { return }
 
         do {
-            let persistedMessages: [ChatMessageDB]
-
-            if let session = currentSession {
-                // Multi-chat: fetch for current session
-                persistedMessages = try await APIClient.shared.getMessages(
-                    sessionId: session.id,
-                    limit: messagesPageSize
-                )
-            } else {
-                // Default chat
-                persistedMessages = try await APIClient.shared.getMessages(
-                    appId: selectedAppId,
-                    limit: messagesPageSize
-                )
-            }
+            let persistedMessages = try await APIClient.shared.getMessages(
+                appId: selectedAppId,
+                limit: messagesPageSize
+            )
 
             // Build a lookup of existing IDs for fast O(1) checks.
             let existingIds = Set(messages.map(\.id))
@@ -3264,47 +2974,19 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Clear Chat
 
-    /// Clear current session messages (delete and create new)
+    /// Clear chat messages
     func clearChat() async {
         isClearing = true
         defer { isClearing = false }
 
-        if isInDefaultChat {
-            // Default chat mode: clear UI immediately, delete in background
-            messages = []
-            log("Cleared default chat messages")
-            Task {
-                do {
-                    _ = try await APIClient.shared.deleteMessages(appId: selectedAppId)
-                } catch {
-                    logError("Failed to clear default chat messages", error: error)
-                }
+        messages = []
+        log("Cleared default chat messages")
+        Task {
+            do {
+                _ = try await APIClient.shared.deleteMessages(appId: selectedAppId)
+            } catch {
+                logError("Failed to clear default chat messages", error: error)
             }
-        } else {
-            // Session mode: clear UI immediately, delete old session in background, create new
-            let sessionToDelete = currentSession
-
-            // Immediately clear UI state
-            if let session = sessionToDelete {
-                sessions.removeAll { $0.id == session.id }
-            }
-            currentSession = nil
-            messages = []
-
-            // Delete old session in background (don't await — backend is slow)
-            if let session = sessionToDelete {
-                Task {
-                    do {
-                        try await APIClient.shared.deleteChatSession(sessionId: session.id)
-                        log("Background deleted chat session: \(session.id)")
-                    } catch {
-                        logError("Failed to background delete chat session", error: error)
-                    }
-                }
-            }
-
-            // Create a fresh session immediately
-            _ = await createNewSession()
         }
 
         log("Chat cleared")
@@ -3313,24 +2995,14 @@ class ChatProvider: ObservableObject {
 
     // MARK: - App Selection
 
-    /// Select a chat app and load its sessions
+    /// Select a chat app and load its messages
     func selectApp(_ appId: String?) async {
         guard selectedAppId != appId else { return }
         selectedAppId = appId
-        currentSession = nil
         messages = []
-        sessions = []
         errorMessage = nil
         isInDefaultChat = true
-
-        if multiChatEnabled {
-            // Multi-chat mode: load sessions, then switch to default chat
-            await fetchSessions()
-            await switchToDefaultChat()
-        } else {
-            // Single chat mode: just load default chat messages
-            await loadDefaultChatMessages()
-        }
+        await loadDefaultChatMessages()
     }
 
     // MARK: - Session Grouping Helpers
