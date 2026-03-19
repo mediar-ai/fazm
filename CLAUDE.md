@@ -94,7 +94,7 @@ Bundled skills live in `Desktop/Sources/Resources/BundledSkills/` as `{name}.ski
 
 Category display for onboarding is in `categoryMap` inside `SkillInstaller.swift`.
 
-Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for publishing GWS skills to skillhu.bz/skills.sh and is unrelated to the app bundle.
+Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for publishing skills to skillhu.bz/skills.sh and is unrelated to the app bundle.
 
 ## Development Workflow
 
