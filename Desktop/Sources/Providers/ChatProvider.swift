@@ -341,10 +341,6 @@ class ChatProvider: ObservableObject {
     /// e.g. "claude-sonnet-4-6" for faster floating bar responses.
     var modelOverride: String?
 
-    /// Multi-chat mode setting - when false, only default chat is shown (syncs with Flutter)
-    /// When true, user can create multiple chat sessions
-    @AppStorage("multiChatEnabled") var multiChatEnabled = false
-
     /// Bridge mode: "personal" (user's Claude OAuth), "builtin" (Vertex AI built-in account)
     @AppStorage("bridgeMode") var bridgeMode: String = "builtin"
 
@@ -377,10 +373,8 @@ class ChatProvider: ObservableObject {
 
     private let messagesPageSize = 50
     private let maxMessagesInMemory = 200
-    private var multiChatObserver: AnyCancellable?
     private var playwrightExtensionObserver: AnyCancellable?
     private var playwrightTokenObserver: AnyCancellable?
-    private var sessionGroupingObserver: AnyCancellable?
 
     // MARK: - Claude Session Detection
 
@@ -583,16 +577,6 @@ class ChatProvider: ObservableObject {
         // switch from within the completion — not from a synchronous read of isClaudeConnected.
         checkClaudeConnectionStatus(autoSwitchToPersonal: true)
 
-        // Observe changes to multiChatEnabled setting
-        multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
-            .dropFirst() // Skip initial value
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                Task { @MainActor in
-                    await self?.reinitialize()
-                }
-            }
-
         // Poll for new messages from other platforms (mobile) every 15 seconds
         messagePollTimer = Timer.publish(every: Self.messagePollInterval, on: .main, in: .common)
             .autoconnect()
@@ -654,14 +638,6 @@ class ChatProvider: ObservableObject {
                         logError("Failed to restart ACP bridge after Playwright token change", error: error)
                     }
                 }
-            }
-
-        // Keep groupedSessions in sync — runs off the hot path so SwiftUI body never recomputes it
-        sessionGroupingObserver = Publishers.CombineLatest3($sessions, $searchQuery, $currentSession)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _, _, _ in
-                guard let self else { return }
-                self.groupedSessions = self.computeGroupedSessions()
             }
 
         // Kill ACP bridge subprocess on app quit to prevent orphaned Node.js processes.
