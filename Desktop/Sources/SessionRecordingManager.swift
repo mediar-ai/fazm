@@ -14,6 +14,7 @@ import SessionReplay
 class SessionRecordingManager {
     static let shared = SessionRecordingManager()
 
+    // MARK: - GCS Upload Recorder (flag-gated, for user research)
     private var recorder: SessionRecorder?
     private var isStarted = false
     private var pollTimer: Timer?
@@ -30,6 +31,10 @@ class SessionRecordingManager {
     private var pauseWorkItem: DispatchWorkItem?
     private let pauseDelay: TimeInterval = 30
 
+    // MARK: - Gemini Analysis Recorder (always-on, local-only, no feature flag)
+    private var observerRecorder: SessionRecorder?
+    private var isObserverStarted = false
+
     private init() {}
 
     /// Check the feature flag and start/stop recording accordingly.
@@ -41,6 +46,86 @@ class SessionRecordingManager {
             self?.checkFlagAndUpdate()
             self?.startPolling()
         }
+    }
+
+    // MARK: - Gemini Observer (always-on, local-only)
+
+    /// Start the local-only observer recorder for Gemini analysis.
+    /// Runs continuously while the app is open, no feature flag needed.
+    /// Only requires screen recording permission and a Gemini API key.
+    func startObserver() {
+        guard !isObserverStarted else { return }
+
+        guard ScreenCaptureService.checkPermission() else {
+            log("Observer: no screen recording permission, skipping")
+            return
+        }
+
+        guard let ffmpegPath = findFfmpeg() else {
+            log("Observer: ffmpeg not found, skipping")
+            return
+        }
+
+        let storageDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("observer-recordings")
+
+        // Use a stable device identifier (hardware UUID) — no auth required
+        let deviceId = getHardwareUUID() ?? "unknown"
+
+        Task {
+            let config = SessionRecorder.Configuration(
+                framesPerSecond: 2.0,  // Lower FPS than research recorder to save CPU
+                chunkDurationSeconds: 60.0,
+                ffmpegPath: ffmpegPath,
+                storageBaseURL: storageDir,
+                deviceId: deviceId
+                // No backendURL/backendSecret → local-only mode
+            )
+
+            let recorder = SessionRecorder(configuration: config)
+            self.observerRecorder = recorder
+            self.isObserverStarted = true
+
+            // Wire up Gemini analysis
+            await recorder.setOnChunkReady { info in
+                let chunkInfo = GeminiAnalysisService.ChunkInfo(
+                    localURL: info.localURL,
+                    chunkIndex: info.chunkIndex,
+                    startTimestamp: info.startTimestamp,
+                    endTimestamp: info.endTimestamp
+                )
+                await GeminiAnalysisService.shared.handleChunk(chunkInfo)
+            }
+
+            do {
+                try await recorder.start()
+                log("Observer: started (local-only, 2 FPS)")
+            } catch {
+                logError("Observer: failed to start", error: error)
+                self.isObserverStarted = false
+                self.observerRecorder = nil
+            }
+        }
+    }
+
+    /// Stop the observer recorder.
+    func stopObserver() {
+        guard isObserverStarted, let recorder = observerRecorder else { return }
+        isObserverStarted = false
+        Task {
+            await recorder.stop()
+            log("Observer: stopped")
+        }
+        self.observerRecorder = nil
+    }
+
+    private func getHardwareUUID() -> String? {
+        let service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        let key = kIOPlatformUUIDKey as CFString
+        guard let uuid = IORegistryEntryCreateCFProperty(service, key, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String else { return nil }
+        return uuid
     }
 
     /// Re-check the feature flag after sign-in (distinct_id changes to Firebase UID).
@@ -82,6 +167,15 @@ class SessionRecordingManager {
         }
     }
 
+    private func findFfmpeg() -> String? {
+        let bundledPath = Bundle.main.resourceURL?
+            .appendingPathComponent("Fazm_Fazm.bundle/ffmpeg").path
+        var paths = [String]()
+        if let bp = bundledPath { paths.append(bp) }
+        paths += ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
+        return paths.first(where: { FileManager.default.fileExists(atPath: $0) })
+    }
+
     private func startRecording() {
 
         guard ScreenCaptureService.checkPermission() else {
@@ -89,17 +183,7 @@ class SessionRecordingManager {
             return
         }
 
-        // Check bundled ffmpeg first, then fall back to system paths
-        let bundledPath = Bundle.main.resourceURL?
-            .appendingPathComponent("Fazm_Fazm.bundle/ffmpeg").path
-        var ffmpegPaths = [String]()
-        if let bp = bundledPath { ffmpegPaths.append(bp) }
-        ffmpegPaths += [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-        ]
-        guard let ffmpegPath = ffmpegPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        guard let ffmpegPath = findFfmpeg() else {
             log("SessionRecording: ffmpeg not found (checked bundled + system paths), skipping")
             return
         }
