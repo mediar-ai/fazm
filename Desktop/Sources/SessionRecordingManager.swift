@@ -236,17 +236,6 @@ class SessionRecordingManager {
             self.recorder = recorder
             self.isStarted = true
 
-            // Wire up Gemini analysis: copy each chunk before upload deletes it
-            await recorder.setOnChunkReady { info in
-                let chunkInfo = GeminiAnalysisService.ChunkInfo(
-                    localURL: info.localURL,
-                    chunkIndex: info.chunkIndex,
-                    startTimestamp: info.startTimestamp,
-                    endTimestamp: info.endTimestamp
-                )
-                await GeminiAnalysisService.shared.handleChunk(chunkInfo)
-            }
-
             do {
                 try await recorder.start()
                 // Start paused — activity observers will resume when user interacts
@@ -401,6 +390,7 @@ class SessionRecordingManager {
         if let obs = appActiveObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = appResignObserver { NotificationCenter.default.removeObserver(obs) }
         stop()
+        stopObserver()
     }
 
     // MARK: - Auto-enrollment
