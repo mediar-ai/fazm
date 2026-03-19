@@ -61,9 +61,11 @@ class SessionRecordingManager {
     private func startPolling() {
         guard pollTimer == nil else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            PostHogManager.shared.reloadFeatureFlags()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                self?.checkFlagAndUpdate()
+            Task { @MainActor in
+                PostHogManager.shared.reloadFeatureFlags()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    self?.checkFlagAndUpdate()
+                }
             }
         }
     }
@@ -230,8 +232,10 @@ class SessionRecordingManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.isMainWindowActive = true
-            self?.resumeRecording(reason: "app became active")
+            Task { @MainActor in
+                self?.isMainWindowActive = true
+                self?.resumeRecording(reason: "app became active")
+            }
         }
 
         appResignObserver = NotificationCenter.default.addObserver(
@@ -239,8 +243,10 @@ class SessionRecordingManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.isMainWindowActive = false
-            self?.evaluatePauseState()
+            Task { @MainActor in
+                self?.isMainWindowActive = false
+                self?.evaluatePauseState()
+            }
         }
 
         log("SessionRecording: activity observers installed")
