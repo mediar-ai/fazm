@@ -368,12 +368,18 @@ workflows:
             echo "WARNING: Google Workspace MCP not cloned — skipping"
           fi
 
-          # Bundle Hindsight Memory MCP (Python) — venv created at runtime
-          # (bundling a venv with absolute symlinks breaks Gatekeeper on other machines)
+          # Bundle Hindsight Memory MCP (Python) — full venv created at build time
+          # End users don't have uv/python3 installed, so we must ship the venv.
+          # Gatekeeper is handled by code-signing all Mach-O binaries below.
           HINDSIGHT_BUNDLE="$APP_BUNDLE/Contents/Resources/hindsight"
           mkdir -p "$HINDSIGHT_BUNDLE"
-          printf 'hindsight-api-slim[embedded-db]\nsentence-transformers\n' > "$HINDSIGHT_BUNDLE/requirements.txt"
-          echo "Bundled Hindsight Memory MCP (venv will be created at runtime)"
+          echo "Creating Hindsight venv..."
+          uv venv "$HINDSIGHT_BUNDLE/.venv" --python python3.12 --quiet 2>&1 | tail -1 || true
+          uv pip install --python "$HINDSIGHT_BUNDLE/.venv/bin/python3" \
+            'hindsight-api-slim[embedded-db]' sentence-transformers --quiet 2>&1 | tail -3 || true
+          # Remove claude_agent_sdk (195MB) — only needed for claude_code LLM provider, we use gemini
+          uv pip uninstall --python "$HINDSIGHT_BUNDLE/.venv/bin/python3" claude-agent-sdk --quiet 2>/dev/null || true
+          echo "Bundled Hindsight Memory MCP with venv"
 
           # Update Info.plist metadata
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable   $BINARY_NAME"  "$APP_BUNDLE/Contents/Info.plist"
