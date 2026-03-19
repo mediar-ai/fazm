@@ -342,16 +342,6 @@ struct ObserverCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Icon + label
-            HStack(spacing: 6) {
-                Image(systemName: iconName)
-                    .scaledFont(size: 12)
-                    .foregroundColor(iconColor)
-                Text(typeLabel)
-                    .scaledFont(size: 11, weight: .medium)
-                    .foregroundColor(.secondary)
-            }
-
             // Content
             SelectableMarkdown(text: content, sender: .ai)
                 .fixedSize(horizontal: false, vertical: true)
@@ -402,37 +392,6 @@ struct ObserverCardView: View {
                         .stroke(FazmColors.purplePrimary.opacity(0.2), lineWidth: 1)
                 )
         )
-    }
-
-    private var iconName: String {
-        switch type {
-        case "skill_draft": return "wand.and.stars"
-        case "insight": return "lightbulb"
-        case "kg_update": return "brain"
-        case "pattern": return "arrow.triangle.branch"
-        case "approval_request": return "checkmark.shield"
-        default: return "sparkles"
-        }
-    }
-
-    private var iconColor: Color {
-        switch type {
-        case "skill_draft": return .orange
-        case "insight": return .yellow
-        case "approval_request": return .blue
-        default: return FazmColors.purplePrimary
-        }
-    }
-
-    private var typeLabel: String {
-        switch type {
-        case "skill_draft": return "New Skill"
-        case "insight": return "Insight"
-        case "kg_update": return "Updated Knowledge"
-        case "pattern": return "Pattern Detected"
-        case "approval_request": return "Needs Approval"
-        default: return "Observer"
-        }
     }
 
     private func buttonConfirmLabel(for action: String) -> String {
