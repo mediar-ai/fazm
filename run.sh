@@ -205,7 +205,7 @@ fi
 HIGHLIGHTR_BUNDLE="Desktop/.build/arm64-apple-macosx/debug/Highlightr_Highlightr.bundle"
 if [ -d "$HIGHLIGHTR_BUNDLE" ]; then
     substep "Copying Highlightr bundle"
-    cp -Rf "$HIGHLIGHTR_BUNDLE" "$APP_BUNDLE/"
+    cp -Rf "$HIGHLIGHTR_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
 fi
 
 substep "Copying acp-bridge"
