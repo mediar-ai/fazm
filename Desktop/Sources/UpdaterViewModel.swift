@@ -404,35 +404,17 @@ final class UpdaterViewModel: ObservableObject {
 
         logSync("Sparkle: Showing App Management permission guide for v\(version)")
 
-        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? "Fazm"
-
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Update v\(version) is available"
-        alert.informativeText = "Before \(appName) can install updates, macOS requires you to allow App Management permission. This is a one-time step.\n\n1. Click \"Open Settings\" below\n2. Find \(appName) in the list and toggle it on\n3. Come back here — the update will install automatically"
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "Not Now")
-
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-            alert.beginSheetModal(for: window) { [weak self] response in
-                if response == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
-                        NSWorkspace.shared.open(url)
-                    }
-                    self?.scheduleRetryAfterAppManagementGrant()
-                }
+        AppManagementSetupWindowController.shared.show(
+            version: version,
+            onDone: { [weak self] in
+                logSync("Sparkle: User granted App Management, retrying update")
+                UserDefaults.standard.set(true, forKey: "hasSuccessfullyInstalledSparkleUpdate")
+                self?.checkForUpdatesInBackground()
+            },
+            onDismiss: {
+                logSync("Sparkle: User dismissed App Management guide")
             }
-        } else {
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppManagement") {
-                    NSWorkspace.shared.open(url)
-                }
-                scheduleRetryAfterAppManagementGrant()
-            }
-        }
+        )
     }
 
     /// Background update check (no UI). Used after channel changes.
