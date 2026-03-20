@@ -322,7 +322,7 @@ workflows:
           # Copy Highlightr resource bundle (required — missing bundle causes fatal crash on launch)
           HIGHLIGHTR_BUNDLE="$SWIFT_BUILD_DIR/Highlightr_Highlightr.bundle"
           if [ -d "$HIGHLIGHTR_BUNDLE" ]; then
-            cp -R "$HIGHLIGHTR_BUNDLE" "$APP_BUNDLE/"
+            cp -R "$HIGHLIGHTR_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
             echo "Bundled Highlightr_Highlightr.bundle"
           else
             echo "ERROR: Highlightr_Highlightr.bundle not found at $HIGHLIGHTR_BUNDLE — build will produce a crashing app"
