@@ -125,20 +125,33 @@ actor GeminiAnalysisService {
 
         // Trigger analysis when we have enough chunks
         if chunkBuffer.count >= maxChunks && !isAnalyzing {
-            let chunks = Array(chunkBuffer)
-            chunkBuffer.removeAll()
-            persistBufferIndex()
-            Task { await runAnalysis(chunks: chunks) }
+            Task { await triggerAnalysis() }
         }
     }
 
     /// Force analysis with whatever chunks are buffered (e.g., on app quit or manual trigger).
     func analyzeNow() async -> AnalysisResult? {
         guard !chunkBuffer.isEmpty, !isAnalyzing else { return nil }
-        let chunks = chunkBuffer
-        chunkBuffer.removeAll()
-        persistBufferIndex()
-        return await runAnalysis(chunks: chunks)
+        return await triggerAnalysis()
+    }
+
+    /// Run analysis on the current buffer. Only clears buffer and deletes files on success.
+    private func triggerAnalysis() async -> AnalysisResult? {
+        let chunks = Array(chunkBuffer)
+        let analyzedCount = chunks.count
+        let result = await runAnalysis(chunks: chunks)
+        if result != nil {
+            // Success — remove only the chunks we analyzed (new ones may have arrived during analysis)
+            let analyzedURLs = Set(chunks.map { $0.localURL })
+            chunkBuffer.removeAll { analyzedURLs.contains($0.localURL) }
+            persistBufferIndex()
+            cleanupChunkFiles(chunks: chunks)
+            log("GeminiAnalysis: cleared \(analyzedCount) chunks after successful analysis, \(chunkBuffer.count) new chunks kept")
+        } else {
+            // Failed — keep buffer intact so we retry next time
+            log("GeminiAnalysis: analysis failed, keeping \(chunks.count) chunks for retry")
+        }
+        return result
     }
 
     var bufferedChunkCount: Int { chunkBuffer.count }
@@ -207,22 +220,22 @@ actor GeminiAnalysisService {
         // Call generateContent
         let result = await callGenerateContent(parts: parts, apiKey: apiKey)
 
-        // Cleanup: delete uploaded files from Gemini and local chunk copies
+        // Cleanup uploaded Gemini File API files (these are remote, always safe to delete)
         for fileName in uploadedFileNames {
             Task { await deleteFile(fileName: fileName, apiKey: apiKey) }
         }
-        cleanupTempFiles(chunks: chunks)
 
-        if let raw = result {
-            let parsed = parseResult(raw, chunksAnalyzed: chunks.count)
-            log("GeminiAnalysis: \(parsed.verdict) (\(chunks.count) chunks)")
-            if let task = parsed.task {
-                log("GeminiAnalysis: task=\(task) confidence=\(parsed.confidence ?? "?")")
-            }
-            return parsed
+        guard let raw = result else {
+            log("GeminiAnalysis: generateContent returned no result")
+            return nil
         }
 
-        return nil
+        let parsed = parseResult(raw, chunksAnalyzed: chunks.count)
+        log("GeminiAnalysis: \(parsed.verdict) (\(chunks.count) chunks)")
+        if let task = parsed.task {
+            log("GeminiAnalysis: task=\(task) confidence=\(parsed.confidence ?? "?")")
+        }
+        return parsed
     }
 
     private func resolveAPIKey() async -> String? {
@@ -386,7 +399,7 @@ actor GeminiAnalysisService {
         return AnalysisResult(verdict: verdict, task: task, confidence: confidence, raw: raw, chunksAnalyzed: chunksAnalyzed)
     }
 
-    private func cleanupTempFiles(chunks: [ChunkEntry]) {
+    private func cleanupChunkFiles(chunks: [ChunkEntry]) {
         for chunk in chunks {
             try? FileManager.default.removeItem(at: chunk.localURL)
         }
