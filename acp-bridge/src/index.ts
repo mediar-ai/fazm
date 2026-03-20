@@ -75,10 +75,9 @@ const whatsappMcpBinary = join(
 );
 
 // Google Workspace MCP — Python server bundled under Contents/Resources/google-workspace-mcp/
-// Source code + requirements.txt live in the app bundle (read-only).
-// The venv is created in ~/Library/Application Support/Fazm/google-workspace-mcp/ (writable)
-// to avoid breaking the code signature and triggering Gatekeeper warnings.
-// Dev builds: run.sh creates a venv inside the bundle; we use that if it exists.
+// Source code lives in the app bundle (read-only). The venv is either:
+// - In the bundle (dev builds, created by run.sh)
+// - In ~/Library/Application Support/Fazm/google-workspace-mcp/ (release builds, downloaded from GCS)
 const gwsMcpBundleDir = join(
   dirname(process.execPath),
   "..",
@@ -99,57 +98,49 @@ const gwsMcpDir = existsSync(join(gwsMcpBundleDir, ".venv", "bin", "python3"))
   : gwsMcpAppSupportDir;
 const gwsMcpPython = join(gwsMcpDir, ".venv", "bin", "python3");
 const gwsMcpMain = join(gwsMcpBundleDir, "main.py");
+const GWS_MCP_TARBALL_URL = "https://storage.googleapis.com/fazm-prod-releases/google-workspace-mcp/gws-mcp-venv.tar.gz";
+let gwsMcpDownloading = false;
 
 async function ensureGwsVenv(): Promise<boolean> {
+  if (gwsMcpDownloading) return false;
   if (existsSync(gwsMcpPython)) return true;
 
-  const requirementsPath = join(gwsMcpBundleDir, "requirements.txt");
-  if (!existsSync(requirementsPath)) {
-    logErr("Google Workspace MCP: requirements.txt not found, skipping venv creation");
+  // Check that the source code is bundled (main.py must exist)
+  if (!existsSync(gwsMcpMain)) {
+    logErr("Google Workspace MCP: main.py not found in bundle, skipping");
     return false;
   }
 
-  logErr("Google Workspace MCP: creating venv from requirements.txt (first launch)...");
-  mkdirSync(gwsMcpAppSupportDir, { recursive: true });
-  const venvDir = join(gwsMcpAppSupportDir, ".venv");
-  // App bundles launched via LaunchServices have a minimal PATH; add Homebrew dirs
-  const envWithPath = {
-    ...process.env,
-    PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || "/usr/bin:/bin"}`,
-  };
-
+  // Download pre-built venv tarball from GCS (first launch, ~38 MB)
+  gwsMcpDownloading = true;
+  logErr("Google Workspace MCP: downloading venv tarball (first launch)...");
   try {
-    // Try uv first (faster, handles dependency resolution better)
-    try {
-      execSync(`uv venv "${venvDir}"`, { stdio: ["ignore", "pipe", "pipe"], timeout: 30000, env: envWithPath });
-      execSync(`uv pip install -r "${requirementsPath}" --python "${join(venvDir, "bin", "python3")}"`, {
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 120000,
-        env: envWithPath,
-      });
-      logErr("Google Workspace MCP: venv created successfully (uv)");
-      return existsSync(gwsMcpPython);
-    } catch (uvErr) {
-      logErr(`Google Workspace MCP: uv failed (${uvErr}), trying pip fallback...`);
-    }
+    mkdirSync(gwsMcpAppSupportDir, { recursive: true });
+    const tarballPath = join(gwsMcpAppSupportDir, "gws-mcp-venv.tar.gz");
 
-    execSync(`python3 -m venv "${venvDir}"`, { stdio: ["ignore", "pipe", "pipe"], timeout: 30000, env: envWithPath });
-    // Upgrade pip first — system python may bundle an ancient version that can't resolve modern packages
-    execSync(`"${join(venvDir, "bin", "pip")}" install --upgrade pip`, {
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 60000,
-      env: envWithPath,
-    });
-    execSync(`"${join(venvDir, "bin", "pip")}" install -r "${requirementsPath}"`, {
+    const res = await fetch(GWS_MCP_TARBALL_URL);
+    if (!res.ok) {
+      logErr(`Google Workspace MCP: tarball download failed: ${res.status} ${res.statusText}`);
+      return false;
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+    writeFileSync(tarballPath, buffer);
+    logErr(`Google Workspace MCP: tarball downloaded (${Math.round(buffer.length / 1024 / 1024)} MB)`);
+
+    execSync(`tar -xzf "${tarballPath}" -C "${gwsMcpAppSupportDir}"`, {
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 120000,
-      env: envWithPath,
     });
-    logErr("Google Workspace MCP: venv created successfully (pip)");
-    return existsSync(gwsMcpPython);
+
+    try { unlinkSync(tarballPath); } catch {}
+
+    logErr("Google Workspace MCP: venv extracted successfully");
+    return existsSync(join(gwsMcpAppSupportDir, ".venv", "bin", "python3"));
   } catch (err) {
-    logErr(`Google Workspace MCP: venv creation failed: ${err}`);
+    logErr(`Google Workspace MCP: venv download/extract failed: ${err}`);
     return false;
+  } finally {
+    gwsMcpDownloading = false;
   }
 }
 
