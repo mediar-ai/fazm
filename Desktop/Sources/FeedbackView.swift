@@ -12,6 +12,14 @@ class FeedbackWindow {
         let sentryMessage = "User Report (logs only)"
 
         SentrySDK.capture(message: sentryMessage) { scope in
+            // Ensure user context is on this event (global setUser can be missed)
+            if let email = AuthState.shared.userEmail {
+                let user = User()
+                user.email = email
+                user.userId = AuthService.shared.userId
+                user.username = AuthService.shared.displayName.isEmpty ? nil : AuthService.shared.displayName
+                scope.setUser(user)
+            }
             let isDev = Bundle.main.bundleIdentifier?.hasSuffix("-dev") == true
             let logPath = isDev ? "/tmp/fazm-dev.log" : "/tmp/fazm.log"
             let logFilename = isDev ? "fazm-dev.log" : "fazm.log"
@@ -152,6 +160,13 @@ struct FeedbackView: View {
         let sentryMessage = message.isEmpty ? "User Report (logs only)" : "User Report: \(message)"
 
         let eventId = SentrySDK.capture(message: sentryMessage) { scope in
+            // Ensure user context is on this event (global setUser can be missed)
+            let user = User()
+            user.email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            user.userId = AuthService.shared.userId
+            user.username = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name.trimmingCharacters(in: .whitespacesAndNewlines)
+            scope.setUser(user)
+
             let isDev = Bundle.main.bundleIdentifier?.hasSuffix("-dev") == true
             let logPath = isDev ? "/tmp/fazm-dev.log" : "/tmp/fazm.log"
             let logFilename = isDev ? "fazm-dev.log" : "fazm.log"
