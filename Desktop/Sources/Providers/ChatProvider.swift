@@ -1279,15 +1279,10 @@ class ChatProvider: ObservableObject {
         return prompt
     }
 
-    /// Builds system prompt using cached memories only (for simple messages)
+    /// Builds a minimal system prompt (for simple messages)
     private func buildSystemPromptSimple() -> String {
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
-        let memoriesSection = formatMemoriesSection()
-
-        return ChatPromptBuilder.buildDesktopChat(
-            userName: userName,
-            memoriesSection: memoriesSection
-        )
+        return ChatPromptBuilder.buildDesktopChat(userName: userName)
     }
 
 
@@ -1355,7 +1350,6 @@ class ChatProvider: ObservableObject {
 
         // Load default chat messages (syncs with Flutter mobile app)
         await loadDefaultChatMessages()
-        await loadMemoriesIfNeeded()
         await loadGoalsIfNeeded()
         await loadTasksIfNeeded()
         await loadAIProfileIfNeeded()
