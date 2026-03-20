@@ -124,12 +124,19 @@ async function startHindsight(): Promise<boolean> {
 
   // Use a clean environment to avoid conflicting Google auth vars
   // (e.g. CLOUD_ML_REGION, ANTHROPIC_VERTEX_PROJECT_ID) from the parent
+  // OpenSSL dylibs are bundled in Contents/Frameworks/ for pg0's PostgreSQL binary
+  const frameworksDir = join(
+    dirname(process.execPath), "..", "..", "Frameworks"
+  );
   const hindsightEnv: Record<string, string> = {
     PATH: process.env.PATH || "/usr/bin:/bin",
     HOME: home,
     TMPDIR: process.env.TMPDIR || "/tmp",
     LANG: process.env.LANG || "en_US.UTF-8",
     PYTHONHOME: join(hindsightDir, ".venv"),
+    // pg0's extracted postgres binary links to /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib
+    // which doesn't exist on clean Macs — DYLD_LIBRARY_PATH makes dyld find our bundled copies
+    DYLD_LIBRARY_PATH: frameworksDir,
     HINDSIGHT_API_LLM_PROVIDER: "gemini",
     HINDSIGHT_API_LLM_MODEL: "gemini-pro-latest",
     HINDSIGHT_API_LLM_API_KEY: geminiApiKey,
