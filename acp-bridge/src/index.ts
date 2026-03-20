@@ -223,6 +223,7 @@ async function startHindsight(): Promise<boolean> {
     HINDSIGHT_API_EMBEDDINGS_PROVIDER: "litellm-sdk",
     HINDSIGHT_API_EMBEDDINGS_LITELLM_SDK_API_KEY: geminiApiKey,
     HINDSIGHT_API_EMBEDDINGS_LITELLM_SDK_MODEL: "gemini/text-embedding-004",
+    GEMINI_API_KEY: geminiApiKey,
     HINDSIGHT_API_RERANKER_PROVIDER: "rrf",
     HINDSIGHT_API_DATABASE_URL: "pg0://fazm",
     HINDSIGHT_API_SKIP_LLM_VERIFICATION: "true",
