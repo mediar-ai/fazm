@@ -364,6 +364,26 @@ final class UpdaterViewModel: ObservableObject {
         }
 
         isInitialized = true
+
+        // On launch, probe App Management permission if we previously showed the guide.
+        // This handles the "Quit & Reopen" flow: user grants permission → app restarts →
+        // we detect permission is now granted and let Sparkle proceed normally.
+        if !UserDefaults.standard.bool(forKey: "hasSuccessfullyInstalledSparkleUpdate"),
+           UserDefaults.standard.string(forKey: "appManagementGuideLastShownVersion") != nil {
+            probeAndUnlockAppManagement()
+        }
+    }
+
+    /// Try writing a temp file inside the app bundle to detect if App Management permission is granted.
+    /// If granted, set the success flag so shouldProceedWithUpdate lets Sparkle through.
+    private func probeAndUnlockAppManagement() {
+        let testPath = Bundle.main.bundlePath + "/Contents/.fazm-permission-test"
+        let fm = FileManager.default
+        if fm.createFile(atPath: testPath, contents: Data("test".utf8)) {
+            try? fm.removeItem(atPath: testPath)
+            logSync("UpdaterViewModel: App Management permission detected on launch — unlocking updates")
+            UserDefaults.standard.set(true, forKey: "hasSuccessfullyInstalledSparkleUpdate")
+        }
     }
 
     /// Quick check if Sparkle is mid-update (safe to call from anywhere)
