@@ -397,12 +397,7 @@ workflows:
                 rsync -a --ignore-existing "$GWS_MANAGED_DIR/lib/python3.12/" "$WORKSPACE_MCP_BUNDLE/.venv/lib/python3.12/"
               fi
               # Rewrite pyvenv.cfg so Python finds stdlib relative to venv, not the managed install
-              cat > "$WORKSPACE_MCP_BUNDLE/.venv/pyvenv.cfg" <<PYVENV
-home = bin
-implementation = CPython
-version_info = 3.12
-include-system-site-packages = false
-PYVENV
+              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$WORKSPACE_MCP_BUNDLE/.venv/pyvenv.cfg"
             fi
             echo "Google Workspace MCP venv created in app bundle"
           else
