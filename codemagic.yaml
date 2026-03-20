@@ -375,20 +375,28 @@ workflows:
           mkdir -p "$GWS_MCP_BUILD"
           if [ -f "$WORKSPACE_MCP_BUNDLE/requirements.txt" ]; then
             echo "Creating Google Workspace MCP venv for tarball..."
-            uv venv "$GWS_MCP_BUILD/.venv" --python python3.12 --relocatable --quiet 2>&1 | tail -1 || true
+            # Use uv-managed standalone python (python-build-standalone) for full portability.
+            # The resulting binary uses @executable_path/../lib/libpython3.12.dylib (relative),
+            # so it works on any Mac without needing system Python or Xcode CLT installed.
+            uv python install 3.12 2>&1 | tail -1 || true
+            uv venv "$GWS_MCP_BUILD/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1
             uv pip install --python "$GWS_MCP_BUILD/.venv/bin/python3" \
               -r "$WORKSPACE_MCP_BUNDLE/requirements.txt" --quiet 2>&1 | tail -3 || true
-            # Strip __pycache__ and .dist-info to save space
+            # Strip __pycache__ to save space (keep .dist-info — needed by importlib.metadata)
             find "$GWS_MCP_BUILD/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-            find "$GWS_MCP_BUILD/.venv" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-            # Replace absolute Python symlink with a copy so the venv works on other machines
+            # Replace absolute Python symlink with a copy + bundle libpython for portability
             GWS_REAL_PYTHON=$(readlink -f "$GWS_MCP_BUILD/.venv/bin/python" 2>/dev/null)
+            GWS_MANAGED_DIR=$(dirname "$(dirname "$GWS_REAL_PYTHON")")
             if [ -n "$GWS_REAL_PYTHON" ] && [ -f "$GWS_REAL_PYTHON" ]; then
               rm -f "$GWS_MCP_BUILD/.venv/bin/python"
               cp "$GWS_REAL_PYTHON" "$GWS_MCP_BUILD/.venv/bin/python"
               rm -f "$GWS_MCP_BUILD/.venv/bin/python3" "$GWS_MCP_BUILD/.venv/bin/python3.12"
               ln -s python "$GWS_MCP_BUILD/.venv/bin/python3"
               ln -s python "$GWS_MCP_BUILD/.venv/bin/python3.12"
+              # Copy libpython so @executable_path/../lib/libpython3.12.dylib resolves
+              if [ -f "$GWS_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
+                cp "$GWS_MANAGED_DIR/lib/libpython3.12.dylib" "$GWS_MCP_BUILD/.venv/lib/libpython3.12.dylib"
+              fi
             fi
             # Sign all Mach-O binaries in the venv before tarballing
             find "$GWS_MCP_BUILD/.venv" -type f 2>/dev/null | while read bin; do
