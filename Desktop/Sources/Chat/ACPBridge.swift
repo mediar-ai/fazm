@@ -336,6 +336,44 @@ actor ACPBridge {
     messageContinuation = nil
   }
 
+  /// Recursively kill a process and all its descendants (children, grandchildren, etc.)
+  /// using `pgrep -P` to walk the process tree. This ensures MCP servers spawned by
+  /// intermediate processes (which may create their own process groups) are cleaned up.
+  static func killProcessTree(_ pid: Int32) {
+    // Collect all descendant PIDs depth-first before sending any signals,
+    // so we don't miss children that get re-parented to PID 1.
+    var allPids: [Int32] = []
+
+    func collectDescendants(of parentPid: Int32) {
+      let pipe = Pipe()
+      let proc = Process()
+      proc.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+      proc.arguments = ["-P", "\(parentPid)"]
+      proc.standardOutput = pipe
+      proc.standardError = FileHandle.nullDevice
+      try? proc.run()
+      proc.waitUntilExit()
+
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      for line in output.split(separator: "\n") {
+        if let childPid = Int32(line.trimmingCharacters(in: .whitespaces)) {
+          collectDescendants(of: childPid)
+          allPids.append(childPid)
+        }
+      }
+    }
+
+    collectDescendants(of: pid)
+
+    // Kill descendants bottom-up (children last, grandchildren first)
+    for descendantPid in allPids {
+      kill(descendantPid, SIGTERM)
+    }
+    // Kill the root process itself
+    kill(pid, SIGTERM)
+  }
+
   // MARK: - Authentication
 
   /// Tell the bridge which auth method the user chose
