@@ -523,8 +523,6 @@ class ChatProvider: ObservableObject {
     private var forceNewTextBlock: Bool = false
 
     // MARK: - Cached Context for Prompts
-    private var cachedMemories: [ServerMemory] = []
-    private var memoriesLoaded = false
     private var cachedGoals: [Goal] = []
     private var goalsLoaded = false
     private var cachedTasks: [TaskActionItem] = []
@@ -944,36 +942,7 @@ class ChatProvider: ObservableObject {
         return false
     }
 
-    // MARK: - Load Context (Memories)
-
-    /// Loads user memories from local SQLite for use in prompts
-    private func loadMemoriesIfNeeded() async {
-        guard !memoriesLoaded else { return }
-
-        do {
-            cachedMemories = try await MemoryStorage.shared.getLocalMemories(limit: 50)
-            memoriesLoaded = true
-            log("ChatProvider loaded \(cachedMemories.count) memories from local DB")
-        } catch {
-            logError("Failed to load memories from local DB", error: error)
-            // Continue without memories - non-critical
-        }
-    }
-
-    /// Formats cached memories into a string for the prompt
-    private func formatMemoriesSection() -> String {
-        guard !cachedMemories.isEmpty else { return "" }
-
-        let userName = AuthService.shared.displayName.isEmpty ? "the user" : AuthService.shared.givenName
-
-        var lines: [String] = ["<user_facts>", "Facts about \(userName):"]
-        for memory in cachedMemories.prefix(30) {  // Limit to 30 most relevant
-            lines.append("- \(memory.content)")
-        }
-        lines.append("</user_facts>")
-
-        return lines.joined(separator: "\n")
-    }
+    // MARK: - Load Context
 
     // MARK: - Load Goals
 
