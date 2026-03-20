@@ -339,6 +339,13 @@ struct ObserverCardView: View {
     var onAction: ((Int64, String) -> Void)?
 
     @State private var selectedAction: String? = nil
+    @State private var countdown: Int = 5
+    @State private var countdownTimer: Timer? = nil
+
+    /// Whether this card has an approve button and should auto-approve
+    private var hasApproveButton: Bool {
+        buttons.contains { $0.action == "approve" }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -352,6 +359,8 @@ struct ObserverCardView: View {
                     ForEach(buttons) { button in
                         Button {
                             guard selectedAction == nil else { return }
+                            countdownTimer?.invalidate()
+                            countdownTimer = nil
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 selectedAction = button.action
                             }
@@ -362,8 +371,13 @@ struct ObserverCardView: View {
                                     Image(systemName: button.action == "dismiss" ? "xmark" : "checkmark")
                                         .scaledFont(size: 10, weight: .bold)
                                 }
-                                Text(selectedAction == button.action ? buttonConfirmLabel(for: button.action) : button.label)
-                                    .scaledFont(size: 12, weight: .medium)
+                                if button.action == "approve" && selectedAction == nil && hasApproveButton {
+                                    Text("\(button.label) (\(countdown))")
+                                        .scaledFont(size: 12, weight: .medium)
+                                } else {
+                                    Text(selectedAction == button.action ? buttonConfirmLabel(for: button.action) : button.label)
+                                        .scaledFont(size: 12, weight: .medium)
+                                }
                             }
                             .foregroundColor(buttonForeground(for: button.action))
                             .padding(.horizontal, 12)
@@ -382,7 +396,13 @@ struct ObserverCardView: View {
         .onAppear {
             if selectedAction == nil, let acted = actedAction {
                 selectedAction = acted
+            } else if selectedAction == nil && hasApproveButton {
+                startCountdown()
             }
+        }
+        .onDisappear {
+            countdownTimer?.invalidate()
+            countdownTimer = nil
         }
         .background(
             RoundedRectangle(cornerRadius: 10)
@@ -411,6 +431,25 @@ struct ObserverCardView: View {
             }
         }
         return .white
+    }
+
+    private func startCountdown() {
+        countdown = 5
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            DispatchQueue.main.async {
+                if countdown <= 1 {
+                    timer.invalidate()
+                    countdownTimer = nil
+                    guard selectedAction == nil else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedAction = "approve"
+                    }
+                    onAction?(activityId, "approve")
+                } else {
+                    countdown -= 1
+                }
+            }
+        }
     }
 
     private func buttonBackgroundResolved(for action: String) -> Color {
