@@ -768,10 +768,14 @@ class ChatToolExecutor {
             process.currentDirectoryURL = aiBrowserProfileDir
 
             // Set PYTHONPATH for bundled module
+            // Set PYTHONHOME so python-build-standalone finds its stdlib
             var env = ProcessInfo.processInfo.environment
             if let pp = pythonPath {
                 let existing = env["PYTHONPATH"] ?? ""
                 env["PYTHONPATH"] = existing.isEmpty ? pp : "\(pp):\(existing)"
+                if let ph = bundledPythonHome {
+                    env["PYTHONHOME"] = ph
+                }
             } else {
                 // Fallback: add user-installed dir to PYTHONPATH
                 env["PYTHONPATH"] = aiBrowserProfileDir.path
