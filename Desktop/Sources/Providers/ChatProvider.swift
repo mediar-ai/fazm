@@ -2595,6 +2595,9 @@ class ChatProvider: ObservableObject {
 
                 log("ChatProvider: pollObserverCards — found \(rows.count) pending cards")
 
+                // Build all card blocks, then inject as a single stacked exchange
+                var blocks: [ChatContentBlock] = []
+
                 for row in rows {
                     let activityId: Int64 = row["id"]
                     let type: String = row["type"]
@@ -2627,7 +2630,7 @@ class ChatProvider: ObservableObject {
                                 ObserverCardButton(id: "\(activityId)-approve", label: "Approve", action: "approve"),
                                 ObserverCardButton(id: "\(activityId)-dismiss", label: "Reject", action: "dismiss"),
                             ]
-                        } else if type == "insight" || type == "card" || type == "summary" || type == "kg_update" || type == "pattern" {
+                        } else {
                             buttons = [
                                 ObserverCardButton(id: "\(activityId)-approve", label: "OK", action: "approve"),
                                 ObserverCardButton(id: "\(activityId)-dismiss", label: "Deny", action: "dismiss"),
@@ -2635,40 +2638,13 @@ class ChatProvider: ObservableObject {
                         }
                     }
 
-                    // Inject card as a standalone observer message in chat history
-                    // so it persists even when the current AI response changes
-                    let block = ChatContentBlock.observerCard(
+                    blocks.append(.observerCard(
                         id: "observer-\(activityId)",
                         activityId: activityId,
                         type: type,
                         content: displayText,
                         buttons: buttons
-                    )
-
-                    await MainActor.run {
-                        var observerMsg = ChatMessage(text: displayText, sender: .ai)
-                        observerMsg.contentBlocks = [block]
-
-                        if let barState = FloatingControlBarManager.shared.barState {
-                            let exchange = FloatingChatExchange(question: "", aiMessage: observerMsg)
-                            // If a query is actively streaming, queue the card so it renders
-                            // below the current response instead of above it.
-                            if barState.currentAIMessage != nil || barState.isAILoading {
-                                barState.pendingObserverExchanges.append(exchange)
-                            } else {
-                                barState.chatHistory.append(exchange)
-                            }
-                            // Make sure conversation is visible
-                            if !barState.showingAIConversation {
-                                barState.showingAIConversation = true
-                                barState.showingAIResponse = true
-                                barState.isAILoading = false
-                            }
-                        } else if !self.messages.isEmpty {
-                            // Main chat — append as a standalone message
-                            self.messages.append(observerMsg)
-                        }
-                    }
+                    ))
 
                     // Mark as shown
                     try await dbQueue.write { db in
@@ -2681,6 +2657,30 @@ class ChatProvider: ObservableObject {
                         "card_type": type,
                         "content_preview": String(displayText.prefix(500)),
                     ])
+                }
+
+                guard !blocks.isEmpty else { return }
+
+                // Inject all cards as a single grouped exchange
+                await MainActor.run {
+                    var observerMsg = ChatMessage(text: "", sender: .ai)
+                    observerMsg.contentBlocks = blocks
+
+                    if let barState = FloatingControlBarManager.shared.barState {
+                        let exchange = FloatingChatExchange(question: "", aiMessage: observerMsg)
+                        if barState.currentAIMessage != nil || barState.isAILoading {
+                            barState.pendingObserverExchanges.append(exchange)
+                        } else {
+                            barState.chatHistory.append(exchange)
+                        }
+                        if !barState.showingAIConversation {
+                            barState.showingAIConversation = true
+                            barState.showingAIResponse = true
+                            barState.isAILoading = false
+                        }
+                    } else if !self.messages.isEmpty {
+                        self.messages.append(observerMsg)
+                    }
                 }
             } catch {
                 log("ChatProvider: Failed to poll observer cards: \(error)")
