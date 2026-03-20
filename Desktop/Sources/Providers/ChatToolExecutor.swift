@@ -875,6 +875,9 @@ class ChatToolExecutor {
             if let pp = pythonPath {
                 let existing = env["PYTHONPATH"] ?? ""
                 env["PYTHONPATH"] = existing.isEmpty ? pp : "\(pp):\(existing)"
+                if let ph = bundledPythonHome {
+                    env["PYTHONHOME"] = ph
+                }
             } else {
                 env["PYTHONPATH"] = aiBrowserProfileDir.path
             }
