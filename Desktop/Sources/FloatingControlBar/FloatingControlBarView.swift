@@ -26,8 +26,19 @@ struct FloatingControlBarView: View {
     @State private var updateButtonPulse = false
     @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
 
+    @ObservedObject private var smartTVSettings = ShortcutSettings.shared
+
     var body: some View {
         VStack(spacing: 0) {
+            // Smart TV: YouTube Shorts above the chat
+            if smartTVSettings.smartTVEnabled {
+                SmartTVView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+            }
+
             // AI conversation view - conditionally visible (expands upward above the bar)
             if state.showingAIConversation {
                 Group {
