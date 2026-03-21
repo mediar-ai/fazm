@@ -185,8 +185,8 @@ struct AIResponseView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: state.messageQueue.count)
             }
 
-            // Observer thinking indicator — shown near input, not per-message
-            if state.isObserverRunning {
+            // Observer thinking indicator — only when no cards have arrived yet
+            if state.isObserverRunning && !hasAnyObserverCards {
                 observerThinkingIndicator
             }
 
@@ -408,7 +408,7 @@ struct AIResponseView: View {
                 }
             }
 
-            // Render observer cards as a compact stack (thinking state shown separately near input)
+            // Render observer cards as a compact stack (thinking-only state shown near input)
             if !observerCards.isEmpty {
                 ObserverCardStackView(
                     cards: observerCards.map { card in
@@ -421,6 +421,7 @@ struct AIResponseView: View {
                             actedAction: card.actedAction
                         )
                     },
+                    isObserverRunning: state.isObserverRunning,
                     onAction: { id, action in
                         handleObserverCardAction(activityId: id, action: action)
                     }
@@ -695,6 +696,23 @@ struct AIResponseView: View {
     }
 
     // MARK: - Observer Thinking Indicator
+
+    /// True when any observer cards exist in current message, history, or pending exchanges
+    private var hasAnyObserverCards: Bool {
+        let currentHas = currentMessage?.contentBlocks.contains(where: {
+            if case .observerCard = $0 { return true }
+            return false
+        }) ?? false
+        if currentHas { return true }
+
+        let pendingHas = state.pendingObserverExchanges.contains(where: { exchange in
+            exchange.aiMessage.contentBlocks.contains(where: {
+                if case .observerCard = $0 { return true }
+                return false
+            })
+        })
+        return pendingHas
+    }
 
     @State private var observerPulseOpacity: Double = 0.7
 
