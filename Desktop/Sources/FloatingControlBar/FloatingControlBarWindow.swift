@@ -496,8 +496,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         state.isCollapsed = true
         preCollapseHeight = frame.height
 
-        // Collapse to half height
-        let halfHeight = frame.height / 2
+        // Collapse to half height (subtract SmartTV height first, then halve the chat portion)
+        let tvHeight = smartTVExtraHeight
+        let chatHeight = frame.height - tvHeight
+        let halfHeight = chatHeight / 2
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.25
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
