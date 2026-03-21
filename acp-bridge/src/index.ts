@@ -1835,11 +1835,14 @@ async function main(): Promise<void> {
 
   // Start Hindsight Memory MCP server (HTTP, runs in background)
   // Don't block startup — start it concurrently and set hindsightReady when done
+  const hindsightStartTime = Date.now();
   startHindsight().then((ready) => {
     hindsightReady = ready;
-    logErr(`Hindsight: ${ready ? "ready" : "not available"}`);
+    const elapsed = ((Date.now() - hindsightStartTime) / 1000).toFixed(1);
+    logErr(`Hindsight: ${ready ? "ready" : "not available"} (startup_time=${elapsed}s)`);
   }).catch((err) => {
-    logErr(`Hindsight: startup failed: ${err}`);
+    const elapsed = ((Date.now() - hindsightStartTime) / 1000).toFixed(1);
+    logErr(`Hindsight: startup failed (startup_time=${elapsed}s): ${err}`);
   });
 
   // Check Google Workspace MCP availability (venv bundled in app)
