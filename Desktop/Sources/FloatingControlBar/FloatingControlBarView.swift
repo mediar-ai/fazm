@@ -275,9 +275,10 @@ struct FloatingControlBarView: View {
                     .controlSize(.small)
                     .tint(.white)
             } else {
-                // Animated audio level bars
-                AudioLevelBarsView(
-                    level: state.voiceAudioLevel,
+                // Animated audio level bars — uses ObservedObject to avoid
+                // re-rendering the conversation view on every level change.
+                ObservedAudioLevelBarsView(
+                    audioLevel: state.audioLevel,
                     barCount: 5,
                     barWidth: 3,
                     spacing: 2,
