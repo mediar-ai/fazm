@@ -765,10 +765,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         resizeWorkItem?.cancel()
         resizeWorkItem = nil
 
-        let baseExpanded = FloatingControlBarWindow.expandedBarSize
-        let updateExtra: CGFloat = UpdaterViewModel.shared.updateAvailable ? 24 : 0
-        let expandedSize = NSSize(width: baseExpanded.width, height: baseExpanded.height + updateExtra)
-        let targetSize = expanded ? expandedSize : FloatingControlBarWindow.minBarSize
+        let targetSize = expanded ? FloatingControlBarWindow.expandedBarSize : FloatingControlBarWindow.minBarSize
 
         let newOrigin = originForBottomCenterAnchor(newSize: targetSize)
         styleMask.remove(.resizable)
