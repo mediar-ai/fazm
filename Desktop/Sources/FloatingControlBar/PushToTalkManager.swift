@@ -682,6 +682,9 @@ class PushToTalkManager: ObservableObject {
           onAudioLevel: { [weak self] level in
             Task { @MainActor in
               self?.barState?.voiceAudioLevel = level
+              if level > 0.01 {
+                log("PushToTalkManager: audioLevel=\(String(format: "%.3f", level))")
+              }
             }
           }
         )
@@ -764,6 +767,7 @@ class PushToTalkManager: ObservableObject {
       (state == .listening || state == .lockedListening || state == .finalizing)
     barState.isVoiceLocked = (state == .lockedListening)
     barState.isVoiceFinalizing = (state == .finalizing)
+    log("PushToTalkManager: updateBarState — isVoiceListening=\(barState.isVoiceListening), showingAIConversation=\(barState.showingAIConversation), showingAIResponse=\(barState.showingAIResponse), chatWasOpenBeforePTT=\(chatWasOpenBeforePTT), pttOpenedChat=\(pttOpenedChat)")
     if state == .idle {
       barState.voiceTranscript = ""
       barState.voiceAudioLevel = 0.0
