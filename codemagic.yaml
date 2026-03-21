@@ -658,6 +658,14 @@ workflows:
             done
           fi
 
+          # Sign bundled OpenSSL dylibs (for pg0 PostgreSQL)
+          for ssl_lib in "$APP_BUNDLE/Contents/Frameworks/libssl.3.dylib" "$APP_BUNDLE/Contents/Frameworks/libcrypto.3.dylib"; do
+            if [ -f "$ssl_lib" ]; then
+              codesign --force --options runtime --timestamp \
+                --sign "$SIGN_IDENTITY" "$ssl_lib"
+            fi
+          done
+
           # Sign Sparkle components — innermost first
           SPARKLE_FW="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
           if [ -d "$SPARKLE_FW" ]; then
