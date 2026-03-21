@@ -120,6 +120,15 @@ struct SmartTVView: NSViewRepresentable {
                         configurable: true
                     });
 
+                    // Reset advancing flag when a new video source loads
+                    video.addEventListener('loadeddata', function() {
+                        console.log('[Fazm] new video loaded: duration=' + video.duration.toFixed(1));
+                        video.__fazmAdvancing = false;
+                    });
+                    video.addEventListener('playing', function() {
+                        video.__fazmAdvancing = false;
+                    });
+
                     // Use timeupdate as primary trigger — more reliable than 'ended'
                     video.addEventListener('timeupdate', function() {
                         if (video.duration > 0 && video.currentTime >= video.duration - 0.3) {
