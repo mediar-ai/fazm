@@ -184,7 +184,7 @@ struct SmartTVView: NSViewRepresentable {
                             """
                             webView.evaluateJavaScript(domJS) { result, _ in
                                 if let info = result as? String {
-                                    log("SmartTV DOM chain: \\(info)")
+                                    log("SmartTV DOM chain: " + info)
                                 }
                             }
                         }
