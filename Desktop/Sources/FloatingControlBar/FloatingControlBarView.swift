@@ -23,6 +23,7 @@ struct FloatingControlBarView: View {
 
     @State private var isHovering = false
     @State private var updatePulse = false
+    @State private var updateButtonPulse = false
     @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
 
     var body: some View {
@@ -196,10 +197,16 @@ struct FloatingControlBarView: View {
             Image(systemName: "arrow.down.circle.fill")
                 .font(.system(size: 16))
                 .foregroundColor(FazmColors.purplePrimary)
-                .shadow(color: FazmColors.purplePrimary.opacity(updatePulse ? 0.9 : 0.2), radius: updatePulse ? 6 : 2)
+                .opacity(updateButtonPulse ? 1.0 : 0.4)
+                .scaleEffect(updateButtonPulse ? 1.15 : 0.9)
+                .shadow(color: FazmColors.purplePrimary.opacity(updateButtonPulse ? 0.9 : 0.0), radius: updateButtonPulse ? 8 : 0)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: updateButtonPulse)
         }
         .buttonStyle(.plain)
         .help("Update available — v\(updaterViewModel.availableVersion)")
+        .onAppear {
+            updateButtonPulse = true
+        }
     }
 
     private func compactToggle(_ title: String, isOn: Binding<Bool>) -> some View {
