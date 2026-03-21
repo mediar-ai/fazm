@@ -463,9 +463,11 @@ struct ObserverCardItem: Identifiable {
 
 struct ObserverCardStackView: View {
     let cards: [ObserverCardItem]
+    var isObserverRunning: Bool = false
     var onAction: ((Int64, String) -> Void)?
 
     @State private var expanded: Bool = false
+    @State private var pulseOpacity: Double = 0.7
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -473,11 +475,24 @@ struct ObserverCardStackView: View {
             HStack(spacing: 6) {
                 Image(systemName: "eye.circle.fill")
                     .scaledFont(size: 11)
-                    .foregroundColor(FazmColors.purplePrimary.opacity(0.7))
+                    .foregroundColor(FazmColors.purplePrimary.opacity(isObserverRunning ? pulseOpacity : 0.7))
+                    .animation(isObserverRunning ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .default, value: pulseOpacity)
+                    .onAppear {
+                        if isObserverRunning { pulseOpacity = 0.3 }
+                    }
+                    .onChange(of: isObserverRunning) { running in
+                        pulseOpacity = running ? 0.3 : 0.7
+                    }
 
-                Text("Observer noted \(cards.count) thing\(cards.count == 1 ? "" : "s")")
-                    .scaledFont(size: 11, weight: .medium)
-                    .foregroundColor(.white.opacity(0.5))
+                if isObserverRunning && cards.isEmpty {
+                    Text("Observer is thinking...")
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundColor(.white.opacity(0.4))
+                } else {
+                    Text("Observer noted \(cards.count) thing\(cards.count == 1 ? "" : "s")")
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundColor(.white.opacity(0.5))
+                }
 
                 Spacer()
 
