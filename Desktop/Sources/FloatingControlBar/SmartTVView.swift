@@ -67,30 +67,45 @@ struct SmartTVView: NSViewRepresentable {
 
                 function advanceToNext() {
                     console.log('[Fazm] advancing to next Short');
-                    // YouTube Shorts uses a carousel with overflow:hidden and scroll-snap
+
+                    // Method 1: Click YouTube's "Next video" button
+                    var nextBtn = document.querySelector('button[aria-label*="Next video"]') ||
+                                  document.querySelector('a[aria-label*="Next video"]') ||
+                                  document.querySelector('[aria-label*="Next"]');
+                    if (nextBtn) {
+                        console.log('[Fazm] clicking Next button: ' + nextBtn.tagName + ' ' + nextBtn.getAttribute('aria-label'));
+                        nextBtn.click();
+                        return;
+                    }
+
+                    // Method 2: Programmatically scroll the carousel wrapper
                     var carousel = document.querySelector('#carousel-scrollable-wrapper');
                     if (carousel) {
                         var itemHeight = carousel.clientHeight;
-                        console.log('[Fazm] scrolling carousel by ' + itemHeight + 'px (scrollH=' + carousel.scrollHeight + ')');
-                        carousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
-                    } else {
-                        // Fallback: try other known containers
-                        var targets = ['#shorts-container', 'ytm-shorts-player'];
-                        var scrolled = false;
-                        for (var i = 0; i < targets.length; i++) {
-                            var t = document.querySelector(targets[i]);
-                            if (t && t.scrollHeight > t.clientHeight) {
-                                t.scrollBy({ top: t.clientHeight, behavior: 'smooth' });
-                                console.log('[Fazm] scrolled fallback: ' + targets[i]);
-                                scrolled = true;
-                                break;
-                            }
-                        }
-                        if (!scrolled) {
-                            window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
-                            console.log('[Fazm] scrolled window as last resort');
-                        }
+                        var newTop = carousel.scrollTop + itemHeight;
+                        console.log('[Fazm] setting carousel scrollTop from ' + carousel.scrollTop + ' to ' + newTop);
+                        carousel.scrollTop = newTop;
+                        return;
                     }
+
+                    // Method 3: Simulate a swipe via touch events
+                    console.log('[Fazm] trying touch swipe simulation');
+                    var target = document.querySelector('#shorts-video') || document.body;
+                    var rect = target.getBoundingClientRect();
+                    var startY = rect.top + rect.height * 0.7;
+                    var endY = rect.top + rect.height * 0.2;
+                    var centerX = rect.left + rect.width / 2;
+
+                    function fire(type, x, y) {
+                        var touch = new Touch({ identifier: 1, target: target, clientX: x, clientY: y });
+                        target.dispatchEvent(new TouchEvent(type, {
+                            bubbles: true, cancelable: true, touches: [touch],
+                            targetTouches: [touch], changedTouches: [touch]
+                        }));
+                    }
+                    fire('touchstart', centerX, startY);
+                    setTimeout(function() { fire('touchmove', centerX, endY); }, 50);
+                    setTimeout(function() { fire('touchend', centerX, endY); }, 100);
                 }
 
                 function attachListener(video) {
