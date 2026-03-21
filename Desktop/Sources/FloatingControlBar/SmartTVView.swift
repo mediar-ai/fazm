@@ -12,6 +12,20 @@ struct SmartTVView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
 
+        // Capture console.log from JS
+        let script = WKUserScript(source: """
+            (function() {
+                var origLog = console.log;
+                console.log = function() {
+                    var msg = Array.prototype.slice.call(arguments).join(' ');
+                    window.webkit.messageHandlers.fazmLog.postMessage(msg);
+                    origLog.apply(console, arguments);
+                };
+            })();
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        config.userContentController.addUserScript(script)
+        config.userContentController.add(context.coordinator, name: "fazmLog")
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         webView.allowsBackForwardNavigationGestures = true
@@ -36,7 +50,13 @@ struct SmartTVView: NSViewRepresentable {
         // No dynamic updates needed
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "fazmLog", let body = message.body as? String {
+                log("SmartTV JS: \(body)")
+            }
+        }
+
         /// JavaScript that disables video looping and auto-scrolls to the next Short when one ends.
         static let autoAdvanceJS = """
         (function() {
@@ -142,6 +162,10 @@ struct SmartTVView: NSViewRepresentable {
                         SmartTVController.shared.navigationFinished()
                         webView.evaluateJavaScript(Self.autoAdvanceJS)
                         log("SmartTV: injected auto-advance after search→shorts SPA nav")
+                        // Log diagnostics after a delay to see video state
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            SmartTVController.shared.logVideoDiagnostics()
+                        }
                     }
                 }
             } else if url.contains("/shorts/") {
