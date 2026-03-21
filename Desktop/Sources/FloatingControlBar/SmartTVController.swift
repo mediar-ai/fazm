@@ -65,7 +65,8 @@ class SmartTVController {
                 """]]]],
             "generationConfig": [
                 "temperature": 0.3,
-                "maxOutputTokens": 32
+                "maxOutputTokens": 32,
+                "thinkingConfig": ["thinkingBudget": 0]
             ]
         ]
 
