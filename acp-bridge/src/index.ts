@@ -133,7 +133,22 @@ async function startHindsight(): Promise<boolean> {
   const frameworksDir = join(
     dirname(process.execPath), "..", "..", "Frameworks"
   );
+  const pg0Binary = join(hindsightDir, ".venv", "lib", "python3.12", "site-packages", "pg0", "bin", "pg0");
   const pg0Base = join(home, ".pg0", "installation");
+
+  // On first launch, pg0 hasn't downloaded PostgreSQL yet. Trigger the download
+  // before starting Hindsight so we can wrap the binaries.
+  if (!existsSync(pg0Base) && existsSync(pg0Binary)) {
+    try {
+      logErr("Hindsight: pre-downloading PostgreSQL via pg0...");
+      execSync(`"${pg0Binary}" install 2>&1`, { timeout: 60000 });
+      logErr("Hindsight: PostgreSQL downloaded");
+    } catch (e) {
+      // pg0 install may fail but still download the binaries
+      logErr(`Hindsight: pg0 install completed (may have warnings)`);
+    }
+  }
+
   try {
     if (existsSync(pg0Base)) {
       for (const ver of readdirSync(pg0Base)) {
