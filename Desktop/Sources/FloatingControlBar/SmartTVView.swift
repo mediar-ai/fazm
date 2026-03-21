@@ -33,9 +33,27 @@ struct SmartTVView: NSViewRepresentable {
 
     class Coordinator: NSObject, WKNavigationDelegate {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Auto-play the first video after page loads
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                SmartTVController.shared.playVideo()
+            let url = webView.url?.absoluteString ?? ""
+
+            if url.contains("/results") {
+                // On search results page: click the first Shorts result to start playing
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    let js = """
+                    (function() {
+                        // Find the first Shorts link in search results
+                        var links = document.querySelectorAll('a[href*="/shorts/"]');
+                        if (links.length > 0) {
+                            links[0].click();
+                        }
+                    })();
+                    """
+                    webView.evaluateJavaScript(js)
+                }
+            } else {
+                // On Shorts player page: auto-play
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    SmartTVController.shared.playVideo()
+                }
             }
         }
     }
