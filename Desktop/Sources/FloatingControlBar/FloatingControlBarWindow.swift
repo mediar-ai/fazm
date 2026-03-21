@@ -435,20 +435,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Restore to Smart TV size or pill depending on setting.
-        let size: NSSize
-        let restoreOrigin: NSPoint
-        if ShortcutSettings.shared.smartTVEnabled {
-            let width = max(Self.expandedWidth, frame.width)
-            size = NSSize(width: width, height: Self.smartTVWindowHeight)
-            restoreOrigin = originForBottomCenterAnchor(newSize: size)
-        } else {
-            size = FloatingControlBarWindow.minBarSize
-            restoreOrigin = NSPoint(
-                x: defaultPillOrigin(followFocus: false).x,
-                y: canonicalBottomY + FloatingControlBarWindow.collapsedYOffset
-            )
-        }
+        // Always restore to pill — Smart TV only shows when dialog is open.
+        let size = FloatingControlBarWindow.minBarSize
+        let restoreOrigin = NSPoint(
+            x: defaultPillOrigin(followFocus: false).x,
+            y: canonicalBottomY + FloatingControlBarWindow.collapsedYOffset
+        )
         // NOTE: offset applied here because this path doesn't go through originForBottomCenterAnchor
 
         resizeWorkItem?.cancel()
@@ -825,34 +817,23 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     // MARK: - Smart TV
 
     private func handleSmartTVToggle(_ enabled: Bool) {
-        if enabled {
-            // Expand to show the Smart TV video area
-            let width = max(Self.expandedWidth, frame.width)
-            let size = NSSize(width: width, height: Self.smartTVWindowHeight)
-            resizeAnchored(to: size, makeResizable: false, animated: true)
-            makeKeyAndOrderFront(nil)
-        } else if !state.showingAIConversation {
-            // Collapse back to pill
-            let size = FloatingControlBarWindow.minBarSize
-            let newOrigin = NSPoint(
-                x: defaultPillOrigin(followFocus: false).x,
-                y: canonicalBottomY + FloatingControlBarWindow.collapsedYOffset
-            )
-            isResizingProgrammatically = true
-            NSAnimationContext.beginGrouping()
-            NSAnimationContext.current.duration = 0.35
-            NSAnimationContext.current.allowsImplicitAnimation = false
-            self.setFrame(NSRect(origin: newOrigin, size: size), display: true, animate: true)
-            NSAnimationContext.endGrouping()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.isResizingProgrammatically = false
-            }
+        // Smart TV only shows when the dialog is open, so toggling the setting
+        // while the dialog is open should resize to accommodate (or shrink).
+        guard state.showingAIConversation else { return }
+        if state.showingAIResponse {
+            resizeToResponseHeight(animated: true)
+        } else {
+            let savedWidth = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
+                .map(NSSizeFromString)?.width ?? 0
+            let inputWidth = max(FloatingControlBarWindow.expandedWidth, savedWidth)
+            let inputSize = NSSize(width: inputWidth, height: 146 + smartTVExtraHeight)
+            resizeAnchored(to: inputSize, makeResizable: false, animated: true)
         }
     }
 
     /// Resize for hover expand/collapse — anchored from bottom so the pill expands upward.
     func resizeForHover(expanded: Bool) {
-        guard !state.showingAIConversation, !state.isVoiceListening, !suppressHoverResize, !ShortcutSettings.shared.smartTVEnabled else { return }
+        guard !state.showingAIConversation, !state.isVoiceListening, !suppressHoverResize else { return }
         resizeWorkItem?.cancel()
         resizeWorkItem = nil
 
