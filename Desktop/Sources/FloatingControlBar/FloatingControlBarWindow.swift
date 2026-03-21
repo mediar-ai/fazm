@@ -43,7 +43,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// of frame.origin.y, making vertical drift structurally impossible.
     private var canonicalBottomY: CGFloat = 0
     private var inputHeightCancellable: AnyCancellable?
-    private var responseHeightCancellable: AnyCancellable?
     private var smartTVCancellable: AnyCancellable?
     private var smartTVPauseCancellables = Set<AnyCancellable>()
     /// Height of the Smart TV video area (9:16 aspect ratio based on window width).
@@ -386,10 +385,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Cancel any in-flight chat streaming to prevent re-expansion
         FloatingControlBarManager.shared.cancelChat()
 
-        // Cancel dynamic response-height observer and reset its state
-        responseHeightCancellable?.cancel()
-        responseHeightCancellable = nil
-        state.responseContentHeight = 0
 
         // Cancel PTT if in follow-up mode
         if state.isVoiceFollowUp {
@@ -896,45 +891,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     private func resizeToResponseHeight(animated: Bool = false) {
-        // Use user's saved preferred size if available, otherwise fall back to defaults.
         let savedSize = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
             .map(NSSizeFromString)
-        let preferredWidth = savedSize?.width ?? Self.expandedWidth
-        // The saved height is the user's chosen maximum. Start at half of it
-        // and auto-expand up to it as content streams in.
-        let tvExtra = smartTVExtraHeight
-        let maxHeight = max(savedSize?.height ?? Self.defaultBaseResponseHeight * 2, Self.defaultBaseResponseHeight * 2) + tvExtra
-        let startHeight = max(Self.minResponseHeight + tvExtra, max(maxHeight / 2, frame.height))
-        let startWidth = max(Self.expandedWidth, preferredWidth)
-        let initialSize = NSSize(width: startWidth, height: startHeight)
-        resizeAnchored(to: initialSize, makeResizable: true, animated: animated)
-        setupResponseHeightObserver(maxHeight: maxHeight)
-    }
-
-    /// Observes `state.responseContentHeight` and expands the window to fit content,
-    /// capped at `maxHeight`. Never shrinks automatically.
-    private func setupResponseHeightObserver(maxHeight: CGFloat) {
-        responseHeightCancellable?.cancel()
-        responseHeightCancellable = state.$responseContentHeight
-            .removeDuplicates()
-            .debounce(for: .milliseconds(150), scheduler: DispatchQueue.main)
-            .sink { [weak self] contentHeight in
-                guard let self = self,
-                      self.state.showingAIResponse,
-                      !self.isUserResizing,
-                      !self.isResizingProgrammatically,
-                      contentHeight > 0
-                else { return }
-                let targetHeight = (contentHeight + Self.responseViewOverhead).rounded()
-                let clampedHeight = min(max(targetHeight, Self.minResponseHeight), maxHeight)
-                // Only expand, never auto-shrink.
-                guard clampedHeight > self.frame.height + 2 else { return }
-                self.resizeAnchored(
-                    to: NSSize(width: self.frame.width, height: clampedHeight),
-                    makeResizable: true,
-                    animated: true
-                )
-            }
+        let width = max(Self.expandedWidth, savedSize?.width ?? Self.expandedWidth)
+        let height = max(Self.minResponseHeight, savedSize?.height ?? Self.defaultBaseResponseHeight) + smartTVExtraHeight
+        resizeAnchored(to: NSSize(width: width, height: height), makeResizable: true, animated: animated)
     }
 
     /// Compute the origin for the collapsed pill.
