@@ -401,6 +401,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         withAnimation(.easeOut(duration: 0.2)) {
             state.showingAIConversation = false
             state.showingAIResponse = false
+            state.smartTVVisible = false
             state.aiInputText = ""
             state.currentAIMessage = nil
             state.chatHistory = []
