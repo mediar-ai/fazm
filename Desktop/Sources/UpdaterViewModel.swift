@@ -245,7 +245,8 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         let saved = UserDefaults.standard.string(forKey: "update_channel") ?? "beta"
         if saved == "staging" {
-            return Set(["staging"])
+            // Staging users see both staging and beta releases (whichever is newer)
+            return Set(["staging", "beta"])
         }
         return Set(["beta"])
     }
