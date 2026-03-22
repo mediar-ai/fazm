@@ -10,6 +10,7 @@ struct ClaudeAuthSheet: View {
     let onRetry: () -> Void
 
     @State private var isConnecting = false
+    @State private var showRetryOption = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,6 +97,7 @@ struct ClaudeAuthSheet: View {
                 if hasTimedOut {
                     Button(action: {
                         isConnecting = false
+                        showRetryOption = false
                         onRetry()
                     }) {
                         Text("Try Again")
@@ -107,10 +109,44 @@ struct ClaudeAuthSheet: View {
                             .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
+                } else if isConnecting && showRetryOption {
+                    // User has been waiting — let them re-trigger or open browser again
+                    Button(action: {
+                        onConnect()
+                    }) {
+                        Text("Open Sign-in Again")
+                            .scaledFont(size: 14, weight: .semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.accentColor)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        isConnecting = false
+                        showRetryOption = false
+                        onRetry()
+                    }) {
+                        Text("Start Over")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
                 } else {
                     Button(action: {
                         isConnecting = true
+                        showRetryOption = false
                         onConnect()
+                        // After 10 seconds, show retry options so user isn't stuck
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                            if isConnecting && !hasTimedOut {
+                                withAnimation(.easeIn(duration: 0.2)) {
+                                    showRetryOption = true
+                                }
+                            }
+                        }
                     }) {
                         HStack(spacing: 8) {
                             if isConnecting {
@@ -145,6 +181,7 @@ struct ClaudeAuthSheet: View {
         .onChange(of: hasTimedOut) {
             if hasTimedOut {
                 isConnecting = false
+                showRetryOption = false
             }
         }
     }
