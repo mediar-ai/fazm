@@ -752,12 +752,12 @@ class ChatToolExecutor {
                 mem = MemoryDB(\(dbPathLiteral))
                 query = \(queryLiteral)
                 tags = \(tagsExpr)
-                if query in ("full profile", "profile"):
-                    print(mem.profile_text())
-                elif tags:
+                if tags:
                     results = mem.search(tags, limit=20)
                     for r in results:
                         print(f'{r["key"]}: {r["value"]}')
+                elif query in ("full profile", "profile"):
+                    print(mem.profile_text())
                 else:
                     results = mem.semantic_search(query, limit=15)
                     for r in results:
