@@ -17,7 +17,6 @@ pub struct Config {
     // PostHog personal API key (for session recording auto-enrollment)
     pub posthog_personal_api_key: String,
     // Max users to auto-enroll for session recording
-    pub session_recording_max_auto_enroll: usize,
     // API keys served to authenticated clients
     pub anthropic_api_key: String,
     pub deepgram_api_key: String,
@@ -67,10 +66,6 @@ impl Config {
                 .unwrap_or_else(|_| "fazm-session-recordings".to_string()),
             posthog_personal_api_key: std::env::var("POSTHOG_PERSONAL_API_KEY")
                 .unwrap_or_default(),
-            session_recording_max_auto_enroll: std::env::var("SESSION_RECORDING_MAX_AUTO_ENROLL")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(10),
             anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
                 .unwrap_or_default(),
             deepgram_api_key: std::env::var("DEEPGRAM_API_KEY")
