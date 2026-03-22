@@ -172,7 +172,7 @@ private struct ClaudeAuthWindowContent: View {
                 onDismiss()
             }
         )
-        .onReceive(chatProvider.$isClaudeAuthRequired) { required in
+        .onReceive(chatProvider.$isClaudeAuthRequired.dropFirst()) { required in
             if !required {
                 onDismiss()
             }
