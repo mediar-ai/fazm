@@ -111,10 +111,11 @@ class BrowserProfileMigrationManager {
     }
 
     private func dismissWindow() {
-        window?.close()
+        let w = window
         window = nil
         windowCloseDelegate = nil
         ChatToolExecutor.onQuickReplyOptions = nil
+        w?.close()
     }
 }
 
