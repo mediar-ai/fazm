@@ -148,14 +148,17 @@ async fn generate_appcast(
 
         let pub_date = format_rfc2822(&release.published_at);
 
-        // Sparkle channel tags:
+        // Sparkle channel tags — each release may appear on multiple channels:
         //   stable  → no tag (visible to everyone)
-        //   beta    → <sparkle:channel>beta</sparkle:channel> (beta + staging users)
-        //   staging → <sparkle:channel>staging</sparkle:channel> (staging users only)
-        let channel_tag = match channel.as_str() {
-            "staging" => "\n      <sparkle:channel>staging</sparkle:channel>".to_string(),
-            "beta" => "\n      <sparkle:channel>beta</sparkle:channel>".to_string(),
-            _ => String::new(), // stable = no tag
+        //   beta    → emitted on both "beta" and "staging" channels
+        //   staging → "staging" channel only
+        let channel_tags: Vec<String> = match channel.as_str() {
+            "staging" => vec!["\n      <sparkle:channel>staging</sparkle:channel>".to_string()],
+            "beta" => vec![
+                "\n      <sparkle:channel>beta</sparkle:channel>".to_string(),
+                "\n      <sparkle:channel>staging</sparkle:channel>".to_string(),
+            ],
+            _ => vec![String::new()], // stable = no tag
         };
 
         let mut enclosure_attrs = format!(r#"url="{}""#, zip_asset.browser_download_url);
@@ -168,8 +171,9 @@ async fn generate_appcast(
         enclosure_attrs.push_str(&format!("\n                 length=\"{}\"", zip_asset.size));
         enclosure_attrs.push_str("\n                 type=\"application/octet-stream\"");
 
-        items.push(format!(
-            r#"    <item>
+        for channel_tag in &channel_tags {
+            items.push(format!(
+                r#"    <item>
       <title>Version {version}</title>
       <pubDate>{pub_date}</pubDate>
       <sparkle:version>{build_number}</sparkle:version>
@@ -177,7 +181,8 @@ async fn generate_appcast(
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>{channel_tag}
       <enclosure {enclosure_attrs}/>
     </item>"#,
-        ));
+            ));
+        }
     }
 
     Ok(format!(
