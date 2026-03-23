@@ -8,10 +8,9 @@ The fastest AI computer agent. Controls your browser, writes code, handles docum
 
 ## Demos
 
-### Twitter Automation
-Fazm browses Twitter, engages with posts, and manages your social presence hands-free.
+### How Fazm Works
 
-https://github.com/user-attachments/assets/05276af7-6008-4f15-a5d2-4047852bee68
+https://github.com/user-attachments/assets/54fd52d2-c748-40ec-968b-eb0cd4b03d6c
 
 ### Smart Connections
 Automatically find and connect with the right people across platforms.
