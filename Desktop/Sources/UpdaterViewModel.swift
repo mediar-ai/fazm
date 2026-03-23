@@ -63,6 +63,18 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
         logSync("Sparkle: Found update v\(version)")
+
+        // If a different (newer) version is available, clear the rollback blocklist
+        if let blockedVersion = UpdateRollbackManager.blockedVersion,
+           version != blockedVersion {
+            logSync("Sparkle: Clearing rollback block — v\(version) available (was blocking v\(blockedVersion))")
+            PostHogManager.shared.track("update_rollback_block_cleared", properties: [
+                "previously_blocked_version": blockedVersion,
+                "new_version": version,
+            ])
+            UpdateRollbackManager.clearBlockedVersion()
+        }
+
         Task { @MainActor in
             AnalyticsManager.shared.updateAvailable(version: version)
             self.viewModel?.updateAvailable = true
@@ -75,6 +87,19 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     /// when the user hasn't granted permission yet.
     func updater(_ updater: SPUUpdater, shouldProceedWithUpdate updateItem: SUAppcastItem, updateCheck: SPUUpdateCheck) throws {
         let version = updateItem.displayVersionString
+
+        // Block versions that caused a crash loop and were rolled back
+        if let blockedVersion = UpdateRollbackManager.blockedVersion,
+           version == blockedVersion {
+            logSync("Sparkle: Blocking rolled-back version v\(blockedVersion)")
+            PostHogManager.shared.track("update_rollback_version_blocked", properties: ["blocked_version": blockedVersion])
+            throw NSError(
+                domain: "com.fazm.rollback",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Version \(blockedVersion) was rolled back due to crash loop"]
+            )
+        }
+
         if !UserDefaults.standard.bool(forKey: "hasSuccessfullyInstalledSparkleUpdate") {
             logSync("Sparkle: Blocking update dialog — showing App Management guide for v\(version)")
             // Delay slightly so the guide appears after the main window finishes loading
@@ -255,6 +280,10 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
         logSync("Sparkle: Installing update v\(version)")
+
+        // Back up the current app bundle before Sparkle replaces it.
+        // If the new version crash-loops, the rollback manager will restore this backup.
+        UpdateRollbackManager.backupCurrentApp()
         // Mark that App Management permission is working — don't show the guide again
         UserDefaults.standard.set(true, forKey: "hasSuccessfullyInstalledSparkleUpdate")
         Task { @MainActor in
