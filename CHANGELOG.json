@@ -139,6 +139,7 @@
     "Improved rate limit messaging \u2014 shows upgrade option when hitting Claude usage limits",
     "Fixed UI freezes during AI response streaming",
     "Fixed crash on macOS 26 (Tahoe) caused by 4K code signing page hashes \u2014 now uses 16K pages required by Apple Silicon on macOS 26",
-    "Fixed crash caused by leaked Swift task continuation in ACP bridge"
+    "Fixed crash caused by leaked Swift task continuation in ACP bridge",
+    "Added automatic rollback when an update crashes on launch \u2014 restores the previous version and blocks the bad update"
   ]
 }
