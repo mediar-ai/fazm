@@ -12,7 +12,6 @@ struct AIResponseView: View {
     @State private var followUpText: String = ""
     @State private var preVoiceFollowUpText: String = ""
     @State private var userHasScrolledUp: Bool = false
-    @State private var isAtBottom: Bool = true
     @State private var followUpTextHeight: CGFloat = 36
     @State private var isHanging = false
     @State private var hangTask: Task<Void, Never>?
@@ -79,28 +78,6 @@ struct AIResponseView: View {
 
                         // Anchor for auto-scroll
                         Color.clear.frame(height: 1).id("bottom")
-                            .background(
-                                GeometryReader { geo -> Color in
-                                    let bottomY = geo.frame(in: .named("chatScroll")).maxY
-                                    let scrollHeight = geo.frame(in: .named("chatScroll")).height
-                                    // Consider "at bottom" if the anchor is within 60pt of the visible area bottom
-                                    let atBottom = bottomY >= 0 && bottomY <= scrollHeight + 60
-                                    if let fh = FileHandle(forWritingAtPath: "/private/tmp/fazm-scroll.log") {
-                                        fh.seekToEndOfFile()
-                                        fh.write("[GEO] bottomY=\(Int(bottomY)) scrollH=\(Int(scrollHeight)) atBottom=\(atBottom) userScrolled=\(userHasScrolledUp)\n".data(using: .utf8)!)
-                                        fh.closeFile()
-                                    }
-                                    if atBottom != isAtBottom {
-                                        DispatchQueue.main.async {
-                                            isAtBottom = atBottom
-                                            if atBottom {
-                                                userHasScrolledUp = false
-                                            }
-                                        }
-                                    }
-                                    return Color.clear
-                                }
-                            )
                     }
                 }
                 .coordinateSpace(name: "chatScroll")
