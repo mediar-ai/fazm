@@ -206,6 +206,19 @@ export interface ToolUseSummaryMessage {
   precedingToolUseIds: string[];
 }
 
+/** Rate limit info from Claude API (forwarded from SDK rate_limit_event) */
+export interface RateLimitMessage {
+  type: "rate_limit";
+  status: "allowed" | "allowed_warning" | "rejected" | "unknown";
+  resetsAt: number | null;           // Unix timestamp (seconds)
+  rateLimitType: string | null;      // "five_hour" | "seven_day" | etc.
+  utilization: number | null;        // 0-1 float
+  overageStatus: string | null;      // "allowed" | "rejected"
+  overageDisabledReason: string | null;
+  isUsingOverage: boolean;
+  surpassedThreshold: number | null; // 0-1 float
+}
+
 /** Observer session completed a batch — Swift should poll observer_activity for new cards */
 export interface ObserverPollMessage {
   type: "observer_poll";
@@ -231,4 +244,5 @@ export type OutboundMessage =
   | TaskNotificationMessage
   | ToolProgressMessage
   | ToolUseSummaryMessage
+  | RateLimitMessage
   | ObserverPollMessage;
