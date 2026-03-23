@@ -859,6 +859,16 @@ class AnalyticsManager {
         PostHogManager.shared.track("credit_exhausted", properties: props)
     }
 
+    func rateLimitEvent(status: String, rateLimitType: String?, utilization: Double?, resetsAt: Double?) {
+        var props: [String: Any] = [
+            "status": status
+        ]
+        if let rateLimitType { props["rate_limit_type"] = rateLimitType }
+        if let utilization { props["utilization"] = utilization }
+        if let resetsAt { props["resets_at"] = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: resetsAt)) }
+        PostHogManager.shared.track("rate_limit_event", properties: props)
+    }
+
     func claudeDisconnected() {
         PostHogManager.shared.track("claude_disconnected")
     }
