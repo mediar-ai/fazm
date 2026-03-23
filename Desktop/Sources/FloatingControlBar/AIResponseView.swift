@@ -85,7 +85,11 @@ struct AIResponseView: View {
                                     let scrollHeight = geo.frame(in: .named("chatScroll")).height
                                     // Consider "at bottom" if the anchor is within 60pt of the visible area bottom
                                     let atBottom = bottomY >= 0 && bottomY <= scrollHeight + 60
-                                    NSLog("[SCROLL] bottomY=%d scrollH=%d atBottom=%d userScrolled=%d", Int(bottomY), Int(scrollHeight), atBottom ? 1 : 0, userHasScrolledUp ? 1 : 0)
+                                    if let fh = FileHandle(forWritingAtPath: "/private/tmp/fazm-scroll.log") {
+                                        fh.seekToEndOfFile()
+                                        fh.write("[GEO] bottomY=\(Int(bottomY)) scrollH=\(Int(scrollHeight)) atBottom=\(atBottom) userScrolled=\(userHasScrolledUp)\n".data(using: .utf8)!)
+                                        fh.closeFile()
+                                    }
                                     if atBottom != isAtBottom {
                                         DispatchQueue.main.async {
                                             isAtBottom = atBottom
@@ -102,12 +106,20 @@ struct AIResponseView: View {
                 .coordinateSpace(name: "chatScroll")
                 .background {
                     ScrollWheelDetector {
-                        NSLog("[SCROLL] wheel detected UP — setting userHasScrolledUp=true")
+                        if let fh = FileHandle(forWritingAtPath: "/private/tmp/fazm-scroll.log") {
+                            fh.seekToEndOfFile()
+                            fh.write("[WHEEL] scroll up detected\n".data(using: .utf8)!)
+                            fh.closeFile()
+                        }
                         userHasScrolledUp = true
                     }
                 }
                 .onChange(of: currentMessage?.text) {
-                    NSLog("[SCROLL] text changed — userScrolled=%d isAtBottom=%d", userHasScrolledUp ? 1 : 0, isAtBottom ? 1 : 0)
+                    if let fh = FileHandle(forWritingAtPath: "/private/tmp/fazm-scroll.log") {
+                        fh.seekToEndOfFile()
+                        fh.write("[TEXT] changed — userScrolled=\(userHasScrolledUp) isAtBottom=\(isAtBottom)\n".data(using: .utf8)!)
+                        fh.closeFile()
+                    }
                     if !userHasScrolledUp {
                         withAnimation(.easeOut(duration: 0.15)) {
                             proxy.scrollTo("bottom", anchor: .bottom)
