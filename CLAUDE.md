@@ -8,6 +8,8 @@ See `scripts/SESSION-RECORDING.md` for full guide — toggle per-user recording,
 
 ## Logs & Debugging
 
+**When investigating a user-reported bug**, always start by pulling their Sentry + PostHog logs (`user-logs` skill or `user-issue-triage` skill) before reading code.
+
 ### Local App Logs
 - **App log file**: `/private/tmp/fazm-dev.log` (dev builds) or `/private/tmp/fazm.log` (production)
 
