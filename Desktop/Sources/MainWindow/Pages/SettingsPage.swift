@@ -387,11 +387,14 @@ struct SettingsContentView: View {
                         Text("Your Claude Account").tag("personal")
                     }
                     .pickerStyle(.segmented)
+                    .disabled(chatProvider?.showCreditExhaustedAlert == true && bridgeMode == "personal")
                     .onChange(of: bridgeMode) { _, newValue in
                         Task { await chatProvider?.switchBridgeMode(to: newValue) }
                     }
 
-                    Text(bridgeMode == "builtin"
+                    Text(chatProvider?.showCreditExhaustedAlert == true
+                         ? "Built-in credits have been used up. Connect your Claude account to continue."
+                         : bridgeMode == "builtin"
                          ? "Using Fazm's built-in Claude account. No sign-in required."
                          : chatProvider?.isClaudeConnected == true
                             ? "Connected to your personal Claude account."
