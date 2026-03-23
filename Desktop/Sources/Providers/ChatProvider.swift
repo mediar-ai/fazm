@@ -435,9 +435,11 @@ class ChatProvider: ObservableObject {
         case "allowed_warning":
             let pct = utilization.map { Int($0 * 100) } ?? 0
             log("ChatProvider: Rate limit warning — \(pct)% of \(typeLabel) used")
+            AnalyticsManager.shared.rateLimitEvent(status: status, rateLimitType: limitType, utilization: utilization, resetsAt: resetsAt)
         case "rejected":
             let resetDesc = Self.formatResetTime(resetsAt)
             log("ChatProvider: Rate limit REJECTED — \(typeLabel), resets \(resetDesc)")
+            AnalyticsManager.shared.rateLimitEvent(status: status, rateLimitType: limitType, utilization: utilization, resetsAt: resetsAt)
         default:
             // "allowed" — clear any previous warning
             break
