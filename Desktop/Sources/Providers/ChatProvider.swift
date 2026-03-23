@@ -2370,8 +2370,9 @@ class ChatProvider: ObservableObject {
                     errorMessage = bridgeError.errorDescription
                 } else {
                     // Personal mode — user hit their own Claude rate limit.
-                    // Show a clear reset-time message instead of the auth sheet.
-                    errorMessage = bridgeError.errorDescription
+                    // Show a clear message with upgrade suggestion.
+                    let base = bridgeError.errorDescription ?? "You've hit Claude's usage limit."
+                    errorMessage = "\(base)\n\nYou can get higher limits by upgrading your Claude plan at [claude.ai/upgrade](https://claude.ai/upgrade)."
                 }
             } else if bridgeMode == "builtin",
                       let bridgeError = error as? BridgeError,
