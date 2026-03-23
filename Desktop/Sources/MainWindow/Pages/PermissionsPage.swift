@@ -531,11 +531,11 @@ struct ScreenRecordingPermissionSection: View {
         )
     }
 
-    // Content for STALE state - developer signing changed, user must remove and re-add
+    // Content for STALE state - permission expired or TCC entry corrupted, user must remove and re-add
     private var stalePermissionContent: some View {
         let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Fazm"
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Screen recording needs to be re-enabled after an app update.")
+            Text("macOS has revoked screen recording access. This can happen after an app update or when macOS periodically re-checks permissions. To fix it, remove and re-add \(appName):")
                 .scaledFont(size: 14, weight: .medium)
                 .foregroundColor(FazmColors.textPrimary)
 
@@ -574,37 +574,32 @@ struct ScreenRecordingPermissionSection: View {
                     }
                 }
 
-                instructionStep(number: 2, text: "Find \"\(appName)\" in the Screen Recording list")
-                instructionStep(number: 3, text: "Click on \"\(appName)\", then click the minus (−) button to remove it")
+                instructionStep(number: 2, text: "Select \"\(appName)\" in the list, then click the minus (−) button to remove it completely")
+                instructionStep(number: 3, text: "Click the plus (+) button, navigate to Applications, and select \"\(appName)\" to re-add it")
+                instructionStep(number: 4, text: "Quit and reopen \(appName) — macOS requires a restart to pick up the new permission")
 
-                // Step 4 — Grant button inline
+                // Step 5 — Quit & Reopen button
                 HStack(alignment: .top, spacing: 12) {
-                    Text("4")
+                    Text("5")
                         .scaledFont(size: 12, weight: .bold)
                         .foregroundColor(.white)
                         .frame(width: 22, height: 22)
                         .background(Circle().fill(FazmColors.purplePrimary))
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Come back to Fazm and grant the permission")
+                        Text("Or click below to quit now — reopen from your dock or Applications")
                             .scaledFont(size: 13)
                             .foregroundColor(FazmColors.textSecondary)
 
                         Button(action: {
-                            // Reset stale state so Grant flow works fresh
                             appState.isScreenRecordingStale = false
                             appState.screenRecordingGrantAttempts = 0
-                            // Open Settings FIRST so it's visible before system dialog
-                            ScreenCaptureService.openScreenRecordingPreferences()
-                            // Then request permission (may show system dialog)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                ScreenCaptureService.requestAllScreenCapturePermissions()
-                            }
+                            NSApp.terminate(nil)
                         }) {
                             HStack(spacing: 6) {
-                                Image(systemName: "checkmark.shield")
+                                Image(systemName: "arrow.clockwise")
                                     .scaledFont(size: 12)
-                                Text("Grant")
+                                Text("Quit Fazm")
                                     .scaledFont(size: 12, weight: .semibold)
                             }
                             .foregroundColor(.white)
@@ -612,7 +607,7 @@ struct ScreenRecordingPermissionSection: View {
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.green)
+                                    .fill(FazmColors.purplePrimary)
                             )
                         }
                         .buttonStyle(.plain)
