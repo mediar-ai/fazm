@@ -179,6 +179,7 @@ actor ACPBridge {
     process = nil
     closePipes()
     pendingMessages.removeAll()
+    messageContinuation?.resume(throwing: BridgeError.stopped)
     messageContinuation = nil
     lastExitWasOOM = false
 
