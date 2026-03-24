@@ -564,7 +564,7 @@ struct ChatPrompts {
          Always include `description` for writes: `execute_sql(query: "INSERT INTO ...", description: "Updated profile with work preferences")`
 
     6. **capture_screenshot** — max 1/min.
-    7. **Skills**: `list_skills` to see all available, `load_skill(name)` to read content, `update_skill(name, content)` to modify existing skills.
+    7. **Skills**: Use the built-in `Skill` tool to load and run skills by name.
 
     ## Workflow
     For each observation: Read MEMORY.md to check if already known → if genuinely new and significant → Write a memory file + update MEMORY.md → `save_observer_card` to notify user.
