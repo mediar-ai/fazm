@@ -86,196 +86,6 @@ const googleWorkspaceMcpDir = join(
 const googleWorkspaceMcpPython = join(googleWorkspaceMcpDir, ".venv", "bin", "python3");
 const googleWorkspaceMcpMain = join(googleWorkspaceMcpDir, "main.py");
 
-// Hindsight Memory MCP — Python HTTP server, venv bundled in app bundle
-const hindsightDir = join(dirname(process.execPath), "..", "..", "Resources", "hindsight");
-const hindsightPython = join(hindsightDir, ".venv", "bin", "python3");
-const HINDSIGHT_PORT = 18888;
-let hindsightProcess: ChildProcess | null = null;
-let hindsightReady = false;
-
-async function startHindsight(): Promise<boolean> {
-  // pg0's embedded PostgreSQL binaries are architecture-specific.
-  // On Intel Macs (x86_64), the ARM-only binaries fail with EBADARCH (error -86).
-  if (process.arch !== "arm64") {
-    logErr(`Hindsight: skipping on ${process.arch} (PostgreSQL binaries require arm64)`);
-    return false;
-  }
-
-  if (!existsSync(hindsightPython)) {
-    logErr("Hindsight: python not found in app bundle, skipping");
-    return false;
-  }
-
-  // Check if already running AND healthy (user's own instance or previous launch)
-  try {
-    const res = await fetch(`http://127.0.0.1:${HINDSIGHT_PORT}/health`);
-    if (res.ok) {
-      const body = await res.json() as { status?: string };
-      if (body.status === "healthy") {
-        logErr("Hindsight: already running and healthy, reusing existing instance");
-        return true;
-      }
-      logErr(`Hindsight: existing instance unhealthy (${body.status}), will restart`);
-    }
-  } catch {}
-
-  // Hindsight uses Gemini API (generativelanguage) with gemini-pro-latest
-  const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!geminiApiKey) {
-    logErr("Hindsight: no GEMINI_API_KEY — skipping");
-    return false;
-  }
-
-  logErr("Hindsight: starting server (gemini, model=gemini-pro-latest)...");
-
-  // Pre-create pg0 data directory to avoid first-launch permission issues
-  const home = process.env.HOME || "";
-  const pg0DataDir = join(home, ".pg0", "instances", "fazm");
-  try { mkdirSync(pg0DataDir, { recursive: true }); } catch {}
-
-  // pg0's extracted postgres/initdb binaries link to /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib
-  // which doesn't exist on clean Macs without Homebrew. We copy our bundled OpenSSL dylibs to
-  // that exact path so the hardcoded references resolve without modifying the binaries.
-  // (DYLD_LIBRARY_PATH wrapper approach causes SIGKILL on macOS Tahoe due to code signing enforcement.)
-  const frameworksDir = join(
-    dirname(process.execPath), "..", "..", "Frameworks"
-  );
-  const opensslTargetDir = "/opt/homebrew/opt/openssl@3/lib";
-  const bundledSsl = join(frameworksDir, "libssl.3.dylib");
-  const bundledCrypto = join(frameworksDir, "libcrypto.3.dylib");
-  const targetSsl = join(opensslTargetDir, "libssl.3.dylib");
-  const targetCrypto = join(opensslTargetDir, "libcrypto.3.dylib");
-
-  if (existsSync(bundledSsl) && existsSync(bundledCrypto) && !existsSync(targetSsl)) {
-    // The shell command to create the directory and copy dylibs
-    const copyCmd = `mkdir -p "${opensslTargetDir}" && cp "${bundledSsl}" "${targetSsl}" && cp "${bundledCrypto}" "${targetCrypto}"`;
-    try {
-      // Try without privileges first (works if /opt/homebrew exists and is user-owned)
-      execSync(copyCmd, { timeout: 10000, stdio: "pipe" });
-      logErr(`Hindsight: copied bundled OpenSSL dylibs to ${opensslTargetDir}`);
-    } catch {
-      // Need admin privileges — use osascript to show macOS auth dialog
-      try {
-        // Write command to temp script to avoid quoting issues with osascript
-        const tmpScript = join(tmpdir(), "fazm-openssl-setup.sh");
-        writeFileSync(tmpScript, `#!/bin/bash\n${copyCmd}\n`, { mode: 0o755 });
-        execSync(`osascript -e 'do shell script "${tmpScript}" with administrator privileges'`, { timeout: 60000, stdio: "pipe" });
-        logErr(`Hindsight: copied bundled OpenSSL dylibs to ${opensslTargetDir} (with admin privileges)`);
-        try { unlinkSync(tmpScript); } catch {}
-      } catch (e) {
-        logErr(`Hindsight: could not copy OpenSSL to ${opensslTargetDir} (user may have denied admin prompt): ${e}`);
-      }
-    }
-  }
-
-  // Unwrap any previously-wrapped pg0 binaries (from the old DYLD_LIBRARY_PATH approach).
-  // Restore the original binary from .real if a wrapper script was in place.
-  const pg0Base = join(home, ".pg0", "installation");
-  try {
-    if (existsSync(pg0Base)) {
-      for (const ver of readdirSync(pg0Base)) {
-        const pg0Bin = join(pg0Base, ver, "bin");
-        if (!existsSync(pg0Bin)) continue;
-        for (const bin of ["postgres", "initdb", "psql", "pg_dump"]) {
-          const orig = join(pg0Bin, bin);
-          const real = join(pg0Bin, `${bin}.real`);
-          if (existsSync(real)) {
-            try {
-              copyFileSync(real, orig);
-              chmodSync(orig, 0o755);
-              logErr(`Hindsight: unwrapped ${bin} (restored original binary)`);
-            } catch (e) {
-              logErr(`Hindsight: failed to unwrap ${bin}: ${e}`);
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    logErr(`Hindsight: failed to unwrap pg0 binaries: ${e}`);
-  }
-
-  const pg0Binary = join(hindsightDir, ".venv", "lib", "python3.12", "site-packages", "pg0", "bin", "pg0");
-  // On first launch, pg0 hasn't downloaded PostgreSQL yet. Trigger a start attempt
-  // which downloads postgres binaries.
-  if (!existsSync(pg0Base) && existsSync(pg0Binary)) {
-    try {
-      logErr("Hindsight: pre-downloading PostgreSQL via pg0...");
-      execSync(`"${pg0Binary}" start --name _download 2>&1`, { timeout: 120000 });
-    } catch {
-      logErr("Hindsight: PostgreSQL binaries downloaded (start may have failed, continuing)");
-    }
-    // Clean up the attempt
-    try { execSync(`"${pg0Binary}" drop --name _download --force 2>&1`, { timeout: 10000 }); } catch {}
-  }
-
-  const hindsightEnv: Record<string, string> = {
-    PATH: process.env.PATH || "/usr/bin:/bin",
-    HOME: home,
-    TMPDIR: process.env.TMPDIR || "/tmp",
-    LANG: process.env.LANG || "en_US.UTF-8",
-    // python-build-standalone has compiled-in prefix /install — without PYTHONHOME
-    // it looks for stdlib at /install/lib/python3.12/ which doesn't exist.
-    // The stdlib IS bundled at .venv/lib/python3.12/ (rsync'd during build), so
-    // PYTHONHOME tells Python to find it there.
-    PYTHONHOME: join(hindsightDir, ".venv"),
-    HINDSIGHT_API_LLM_PROVIDER: "gemini",
-    HINDSIGHT_API_LLM_MODEL: "gemini-pro-latest",
-    HINDSIGHT_API_LLM_API_KEY: geminiApiKey,
-    HINDSIGHT_API_EMBEDDINGS_PROVIDER: "local",
-    HINDSIGHT_API_RERANKER_PROVIDER: "local",
-    HINDSIGHT_API_DATABASE_URL: "pg0://fazm",
-    HINDSIGHT_API_SKIP_LLM_VERIFICATION: "true",
-  };
-  hindsightProcess = spawn(hindsightPython, [
-    "-m", "hindsight_api.main",
-    "--host", "127.0.0.1",
-    "--port", String(HINDSIGHT_PORT),
-    "--log-level", "info",
-  ], {
-    env: hindsightEnv,
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
-  });
-
-  hindsightProcess.unref();
-
-  // Log stderr for diagnostics (also write to file for SSH debugging)
-  const hindsightLogPath = join(process.env.TMPDIR || "/tmp", "hindsight.log");
-  hindsightProcess.stderr?.on("data", (data: Buffer) => {
-    const msg = data.toString().trim();
-    logErr(`Hindsight: ${msg}`);
-    try { appendFileSync(hindsightLogPath, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
-  });
-
-  let processExited = false;
-  let exitCode: number | null = null;
-  hindsightProcess.on("exit", (code, signal) => {
-    logErr(`Hindsight: process exited with code ${code}, signal ${signal}`);
-    processExited = true;
-    exitCode = code;
-    hindsightProcess = null;
-  });
-
-  // Wait for health check (up to 90s — first launch loads models + initializes Postgres)
-  for (let i = 0; i < 180; i++) {
-    await new Promise(r => setTimeout(r, 500));
-    // Stop polling early if the process already died
-    if (processExited) {
-      logErr(`Hindsight: process died during startup (code=${exitCode}), aborting health check`);
-      return false;
-    }
-    try {
-      const res = await fetch(`http://127.0.0.1:${HINDSIGHT_PORT}/health`);
-      if (res.ok) {
-        logErr("Hindsight: server ready");
-        return true;
-      }
-    } catch {}
-  }
-  logErr("Hindsight: health check timed out after 90s");
-  return false;
-}
 
 // --- Helpers ---
 
@@ -411,14 +221,6 @@ function startFazmToolsRelay(): Promise<string> {
         unlinkSync(pipePath);
       } catch {
         // ignore
-      }
-      // Kill Hindsight server if we spawned it
-      if (hindsightProcess) {
-        try {
-          hindsightProcess.kill();
-        } catch {
-          // ignore
-        }
       }
     });
   });
@@ -997,23 +799,9 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   return servers;
 }
 
-// HTTP MCP servers (passed via _meta to bypass stdio-only validation on the mcpServers array)
-function getHttpMcpServers(): Record<string, { type: string; url: string }> {
-  const servers: Record<string, { type: string; url: string }> = {};
-  if (hindsightReady) {
-    servers.hindsight = {
-      type: "http",
-      url: `http://127.0.0.1:${HINDSIGHT_PORT}/mcp/default/`,
-    };
-  }
-  return servers;
-}
-
 function buildMeta(systemPrompt?: string, sessionKey?: string): Record<string, unknown> {
-  // All sessions get Hindsight — observer uses retain/reflect for writing,
-  // main session uses recall for reading context
   const meta: Record<string, unknown> = {
-    claudeCode: { options: { mcpServers: getHttpMcpServers() } },
+    claudeCode: { options: {} },
   };
   if (systemPrompt) {
     meta.systemPrompt = systemPrompt;
@@ -1053,10 +841,7 @@ async function flushObserverBatch(): Promise<void> {
   observerRunning = true;
   const batch = observerBuffer.splice(0);
   const batchText = batch.map(t => `[${t.role}]: ${t.text}`).join("\n\n");
-  const hindsightInstruction = hindsightReady
-    ? "Always recall first to check what's already known. Use Hindsight retain for each truly new and important observation."
-    : "Hindsight memory is NOT available in this session. Do NOT attempt to use retain, recall, or write SQL to any hindsight tables. Use save_observer_card to surface important observations to the user instead.";
-  const prompt = `Here are the latest conversation turns from the main session:\n\n${batchText}\n\nAnalyze these turns. Be conservative — only save things that are genuinely significant and useful for future conversations. Skip routine queries, transient context, and near-duplicates of things already saved. Each observation in this batch must cover a distinct topic — no overlapping or closely related saves. ${hindsightInstruction} If you detect a repeated workflow (3+ times), draft a skill.`;
+  const prompt = `Here are the latest conversation turns from the main session:\n\n${batchText}\n\nAnalyze these turns. Be conservative — only save things that are genuinely significant and useful for future conversations. Skip routine queries, transient context, and near-duplicates of things already saved. Each observation in this batch must cover a distinct topic — no overlapping or closely related saves. Use recall_memory first to check what's already known, then save_memory for each truly new and important observation. Use save_observer_card to surface important observations to the user. If you detect a repeated workflow (3+ times), draft a skill.`;
 
   // Register a per-session notification handler so observer notifications
   // don't get swallowed by the main query's handler or vice versa.
