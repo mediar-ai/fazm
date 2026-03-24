@@ -9,6 +9,7 @@ mod firestore;
 mod routes;
 
 use config::Config;
+use routes::relay;
 
 #[tokio::main]
 async fn main() {
@@ -25,6 +26,7 @@ async fn main() {
 
     let config = Arc::new(Config::from_env());
     let port = config.port;
+    let tunnel_registry = relay::new_tunnel_registry();
 
     // Authed routes (require shared secret)
     let authed_routes = Router::new()
@@ -52,6 +54,18 @@ async fn main() {
             "/api/releases/promote",
             axum::routing::patch(routes::releases::promote),
         )
+        .route(
+            "/api/relay/register",
+            axum::routing::post(routes::relay::register),
+        )
+        .route(
+            "/api/relay/unregister",
+            axum::routing::post(routes::relay::unregister),
+        )
+        .route(
+            "/api/relay/discover",
+            axum::routing::get(routes::relay::discover),
+        )
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // Public routes
@@ -78,6 +92,7 @@ async fn main() {
         .merge(authed_routes)
         .merge(public_routes)
         .layer(Extension(jwks_cache))
+        .layer(Extension(tunnel_registry))
         .layer(Extension(config))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
