@@ -35,6 +35,7 @@ struct SettingsSearchItem: Identifiable {
         SettingsSearchItem(name: "Workspace", subtitle: "Set a project directory for AI chat context", keywords: ["workspace", "project", "directory", "folder", "working directory", "claude.md"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.workspace"),
         SettingsSearchItem(name: "AI Provider", subtitle: "Choose between Agent SDK and Claude Code for AI chat", keywords: ["provider", "agent sdk", "claude code", "acp", "bridge mode"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.provider"),
         SettingsSearchItem(name: "Dev Mode", subtitle: "Developer tools and debugging options", keywords: ["developer", "debug", "dev mode", "development"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.devmode"),
+        SettingsSearchItem(name: "Voice Response", subtitle: "AI speaks responses aloud using text-to-speech", keywords: ["voice", "tts", "text to speech", "speak", "audio", "sound"], section: .advanced, advancedSubsection: .aiChat, icon: "speaker.wave.2.fill", settingId: "aichat.voiceresponse"),
 
         // Permissions
         SettingsSearchItem(name: "Permissions", subtitle: "Manage screen recording, microphone, and accessibility permissions", keywords: ["permissions", "screen recording", "microphone", "accessibility", "privacy", "security"], section: .permissions, advancedSubsection: nil, icon: "lock.shield", settingId: "permissions.permissions"),
