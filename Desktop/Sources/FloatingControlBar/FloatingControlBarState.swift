@@ -66,7 +66,7 @@ class FloatingControlBarState: NSObject, ObservableObject {
     @Published var isVoiceListening: Bool = false
     @Published var isVoiceLocked: Bool = false
     @Published var isVoiceFinalizing: Bool = false
-    // voiceTranscript moved to audioLevel.transcript to avoid full view tree re-renders
+
 
     // Audio level for PTT visualization — uses a separate observable
     // to avoid re-rendering the entire conversation view on every level change.
