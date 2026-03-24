@@ -16,31 +16,8 @@ struct ShortcutsSettingsSection: View {
             pttTranscriptionModeCard
             doubleTapCard
             pttSoundsCard
-            smartTVCard
             referenceCard
         }
-    }
-
-    private var smartTVCard: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Smart TV Mode")
-                    .scaledFont(size: 16, weight: .semibold)
-                    .foregroundColor(FazmColors.textPrimary)
-                Text("Stream YouTube Shorts above the floating bar.")
-                    .scaledFont(size: 13)
-                    .foregroundColor(FazmColors.textSecondary)
-            }
-            Spacer()
-            Toggle("", isOn: $settings.smartTVEnabled)
-                .toggleStyle(.switch)
-                .tint(FazmColors.purplePrimary)
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(FazmColors.backgroundTertiary.opacity(0.5))
-        )
     }
 
     private var askFazmKeyCard: some View {
