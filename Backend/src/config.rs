@@ -21,6 +21,9 @@ pub struct Config {
     pub anthropic_api_key: String,
     pub deepgram_api_key: String,
     pub gemini_api_key: String,
+    // Comma-separated list of Firebase UIDs or device IDs that should NOT receive the builtin API key.
+    // Set to "*" to block ALL users (global kill switch).
+    pub builtin_key_blocklist: Vec<String>,
 }
 
 impl Config {
