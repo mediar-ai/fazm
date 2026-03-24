@@ -41,12 +41,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// of frame.origin.y, making vertical drift structurally impossible.
     private var canonicalBottomY: CGFloat = 0
     private var inputHeightCancellable: AnyCancellable?
-    private var smartTVCancellable: AnyCancellable?
-    private var smartTVPauseCancellables = Set<AnyCancellable>()
-    /// Height of the Smart TV video area (9:16 aspect ratio based on window width).
-    private static let smartTVHeight: CGFloat = 640
-    /// Total window height when Smart TV is active (video + control bar).
-    private static let smartTVWindowHeight: CGFloat = 700
     private var resizeWorkItem: DispatchWorkItem?
     /// Token incremented each time a windowDidResignKey dismiss animation starts.
     /// Checked in the completion block so a new PTT query can cancel a stale close.
@@ -139,45 +133,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             centerOnMainScreen()
         }
 
-        // Observe Smart TV toggle and resize accordingly
-        smartTVCancellable = ShortcutSettings.shared.$smartTVEnabled
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] enabled in
-                self?.handleSmartTVToggle(enabled)
-            }
-
-        // Resize window when SmartTV visibility changes (e.g. user hides TV via X button)
-        state.$smartTVVisible
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] visible in
-                guard let self, self.state.showingAIConversation, !self.state.isCollapsed else { return }
-                // Shrink or grow the window by the TV height delta
-                let tvHeight = Self.smartTVHeight
-                let currentHeight = self.frame.height
-                let newHeight: CGFloat
-                if visible {
-                    newHeight = currentHeight + tvHeight
-                } else {
-                    newHeight = max(currentHeight - tvHeight, Self.minBarSize.height)
-                }
-                let newSize = NSSize(width: self.frame.width, height: newHeight)
-                self.resizeAnchored(to: newSize, makeResizable: self.styleMask.contains(.resizable), animated: true)
-            }
-            .store(in: &smartTVPauseCancellables)
-
-        // Pause Smart TV video when PTT starts
-        state.$isVoiceListening
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { listening in
-                guard ShortcutSettings.shared.smartTVEnabled else { return }
-                if listening {
-                    SmartTVController.shared.pauseVideo(source: "ptt_start")
-                }
-            }
-            .store(in: &smartTVPauseCancellables)
     }
 
     override var canBecomeKey: Bool { true }
@@ -414,7 +369,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         withAnimation(.easeOut(duration: 0.2)) {
             state.showingAIConversation = false
             state.showingAIResponse = false
-            state.smartTVVisible = false
             state.aiInputText = ""
             state.currentAIMessage = nil
             state.chatHistory = []
@@ -507,14 +461,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
 
         resignKeyAnimationToken += 1
-        // Save chat-only height (excluding SmartTV) for restore
-        let tvHeight = smartTVExtraHeight
-        preCollapseHeight = frame.height - tvHeight
+        preCollapseHeight = frame.height
 
-        // Hide SmartTV before collapsing
-        state.smartTVVisible = false
-        let chatHeight = frame.height - tvHeight
-        let halfHeight = chatHeight / 2
+        let halfHeight = frame.height / 2
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.25
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -527,7 +476,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     /// Height of the window before it was collapsed (used to restore on focus).
-    /// This stores only the chat portion height (SmartTV height is excluded).
     private var preCollapseHeight: CGFloat = 0
 
     /// Expand back from collapsed state when the window regains focus.
@@ -547,10 +495,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
 
         if preCollapseHeight > 0 {
-            // Restore chat height + current SmartTV extra (TV may have been visible before collapse
-            // but is hidden now — smartTVExtraHeight reflects current visibility)
-            let restoreHeight = preCollapseHeight + smartTVExtraHeight
-            resizeAnchored(to: NSSize(width: frame.width, height: restoreHeight), makeResizable: true, animated: true)
+            resizeAnchored(to: NSSize(width: frame.width, height: preCollapseHeight), makeResizable: true, animated: true)
         }
 
         makeKeyAndOrderFront(nil)
@@ -570,11 +515,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         state.isInitialising = isInitialising
     }
 
-    /// Extra height to add when Smart TV is showing, so the video sits above the chat.
-    private var smartTVExtraHeight: CGFloat {
-        (ShortcutSettings.shared.smartTVEnabled && state.smartTVVisible) ? Self.smartTVHeight : 0
-    }
-
     func showAIConversation() {
         // Check if we have existing conversation to restore — if so, skip the input-only
         // view and go straight to the response/chat view with history visible.
@@ -590,7 +530,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             let savedWidth = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
                 .map(NSSizeFromString)?.width ?? 0
             let inputWidth = max(FloatingControlBarWindow.expandedWidth, savedWidth)
-            let inputSize = NSSize(width: inputWidth, height: 146 + smartTVExtraHeight)
+            let inputSize = NSSize(width: inputWidth, height: 146)
             resizeAnchored(to: inputSize, makeResizable: false, animated: true)
         }
         // When shouldShowResponse is true, we skip the small resize and go straight
@@ -660,7 +600,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
 
         state.showingAIConversation = true
-        state.smartTVVisible = false
         state.chatHistory = []
         state.displayedQuery = ""
         state.currentAIMessage = nil
@@ -675,7 +614,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let savedWidth = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
             .map(NSSizeFromString)?.width ?? 0
         let inputWidth = max(FloatingControlBarWindow.expandedWidth, savedWidth)
-        let inputSize = NSSize(width: inputWidth, height: 146 + smartTVExtraHeight)
+        let inputSize = NSSize(width: inputWidth, height: 146)
         resizeAnchored(to: inputSize, makeResizable: false, animated: true)
         state.inputViewHeight = 146
         setupInputHeightObserver()
@@ -806,29 +745,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let savedWidth = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
             .map(NSSizeFromString)?.width ?? 0
         let width = max(FloatingControlBarWindow.expandedWidth, savedWidth)
-        let size = NSSize(width: width, height: height + smartTVExtraHeight)
+        let size = NSSize(width: width, height: height)
         resizeWorkItem = DispatchWorkItem { [weak self] in
             self?.resizeAnchored(to: size, makeResizable: false, animated: animated)
         }
         if let workItem = resizeWorkItem {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
-        }
-    }
-
-    // MARK: - Smart TV
-
-    private func handleSmartTVToggle(_ enabled: Bool) {
-        // Smart TV only shows when the dialog is open, so toggling the setting
-        // while the dialog is open should resize to accommodate (or shrink).
-        guard state.showingAIConversation else { return }
-        if state.showingAIResponse {
-            resizeToResponseHeight(animated: true)
-        } else {
-            let savedWidth = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
-                .map(NSSizeFromString)?.width ?? 0
-            let inputWidth = max(FloatingControlBarWindow.expandedWidth, savedWidth)
-            let inputSize = NSSize(width: inputWidth, height: 146 + smartTVExtraHeight)
-            resizeAnchored(to: inputSize, makeResizable: false, animated: true)
         }
     }
 
@@ -892,7 +814,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let savedSize = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
             .map(NSSizeFromString)
         let width = max(Self.expandedWidth, savedSize?.width ?? Self.expandedWidth)
-        let height = max(Self.minResponseHeight, savedSize?.height ?? Self.defaultBaseResponseHeight) + smartTVExtraHeight
+        let height = max(Self.minResponseHeight, savedSize?.height ?? Self.defaultBaseResponseHeight)
         resizeAnchored(to: NSSize(width: width, height: height), makeResizable: true, animated: animated)
     }
 
