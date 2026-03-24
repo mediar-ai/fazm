@@ -189,9 +189,13 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
 // The ACP PromptResponse supports usage (experimental) and _meta for extras.
 const originalPrompt = ClaudeAcpAgent.prototype.prompt;
 ClaudeAcpAgent.prototype.prompt = async function (params) {
+  debugLog(`[patched-acp] prompt() called for session ${params.sessionId}`);
   const result = await originalPrompt.call(this, params);
+  debugLog(`[patched-acp] prompt() returned. Keys: ${Object.keys(result).join(", ")}`);
+  debugLog(`[patched-acp] prompt() result: ${JSON.stringify(result).slice(0, 500)}`);
 
   const session = this.sessions?.[params.sessionId];
+  debugLog(`[patched-acp] session exists: ${!!session}, _lastCostUsd: ${session?._lastCostUsd}, _lastUsage: ${JSON.stringify(session?._lastUsage)}`);
   if (session?._lastCostUsd !== undefined) {
     // usage fields are snake_case (raw Anthropic API format)
     const u = session._lastUsage ?? {};
