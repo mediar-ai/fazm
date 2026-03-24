@@ -1074,6 +1074,7 @@ class FloatingControlBarManager {
     private var chatCancellable: AnyCancellable?
     private var compactCancellable: AnyCancellable?
     private var authCancellable: AnyCancellable?
+    private var authRequiredCancellable: AnyCancellable?
     private(set) var chatProvider: ChatProvider?
     private var workspaceObserver: Any?
     private var dequeueObserver: Any?
@@ -1308,11 +1309,26 @@ class FloatingControlBarManager {
                 )
             }
 
-        // Clear the "Connect Claude" button when auth succeeds
+        // Clear the "Connect Claude" button when auth succeeds.
+        // We observe both isClaudeConnected and isClaudeAuthRequired because
+        // @Published only fires on value *changes* — if isClaudeConnected was
+        // already true (from keychain check at startup), the auth_success handler
+        // setting it to true again won't trigger the subscriber.
         authCancellable = chatProvider.$isClaudeConnected
             .receive(on: DispatchQueue.main)
             .sink { [weak barWindow] connected in
                 if connected {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        barWindow?.state.showConnectClaudeButton = false
+                    }
+                }
+            }
+        // Also watch isClaudeAuthRequired going false (covers the case where
+        // isClaudeConnected was already true and doesn't emit a new value)
+        authRequiredCancellable = chatProvider.$isClaudeAuthRequired
+            .receive(on: DispatchQueue.main)
+            .sink { [weak barWindow] authRequired in
+                if !authRequired {
                     withAnimation(.easeOut(duration: 0.3)) {
                         barWindow?.state.showConnectClaudeButton = false
                     }
