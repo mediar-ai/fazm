@@ -26,57 +26,8 @@ struct FloatingControlBarView: View {
     @State private var updateButtonPulse = false
     @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
 
-    @ObservedObject private var smartTVSettings = ShortcutSettings.shared
-
     var body: some View {
         VStack(spacing: 0) {
-            // Smart TV: YouTube Shorts above the chat (visible after query sent, hidden during input/collapse)
-            if smartTVSettings.smartTVEnabled && state.smartTVVisible {
-                ZStack {
-                    SmartTVView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                    // Mute/unmute overlay
-                    Button {
-                        state.smartTVMuted.toggle()
-                        SmartTVController.shared.setMuted(state.smartTVMuted)
-                    } label: {
-                        Image(systemName: state.smartTVMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 64, height: 64)
-                            .background(Color.black.opacity(0.4))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 8)
-                .padding(.top, 8)
-
-                // Hide TV button — centered between TV and response area
-                Button {
-                    state.smartTVHiddenByUser = true
-                    state.smartTVVisible = false
-                    SmartTVController.shared.pauseVideo(source: "user_hide")
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "tv.slash")
-                            .font(.system(size: 10))
-                        Text("Hide TV")
-                            .scaledFont(size: 11)
-                    }
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.black)
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 6)
-            }
-
             // AI conversation view - conditionally visible (expands upward above the bar)
             if state.showingAIConversation {
                 Group {
