@@ -45,6 +45,9 @@ actor ACPBridge {
   /// Callback for auth timeout (reason string)
   typealias AuthTimeoutHandler = @Sendable (String) -> Void
 
+  /// Callback for auth failed (reason string, HTTP status code)
+  typealias AuthFailedHandler = @Sendable (String, Int?) -> Void
+
   /// Status events forwarded from the ACP SDK (compaction, tasks, tool progress)
   enum StatusEvent: Sendable {
     /// Agent is compacting context (true) or finished compacting (false)
@@ -82,6 +85,7 @@ actor ACPBridge {
     case authRequired(methods: [[String: Any]], authUrl: String?)
     case authSuccess
     case authTimeout(reason: String)
+    case authFailed(reason: String, httpStatus: Int?)
     case creditExhausted(message: String)
     case statusChange(status: String?)
     case compactBoundary(trigger: String, preTokens: Int)
@@ -114,6 +118,8 @@ actor ACPBridge {
   var onAuthSuccessGlobal: AuthSuccessHandler?
   /// Persistent auth timeout handler called whenever auth_timeout arrives (even outside query)
   var onAuthTimeoutGlobal: AuthTimeoutHandler?
+  /// Persistent auth failed handler called when token exchange is rejected (e.g. 403)
+  var onAuthFailedGlobal: AuthFailedHandler?
   /// Called when the observer session completes a batch and new cards may be available
   var onObserverPoll: (() -> Void)?
   /// Called when the observer starts or stops processing a batch
@@ -136,11 +142,13 @@ actor ACPBridge {
   func setGlobalAuthHandlers(
     onAuthRequired: AuthRequiredHandler?,
     onAuthSuccess: AuthSuccessHandler?,
-    onAuthTimeout: AuthTimeoutHandler? = nil
+    onAuthTimeout: AuthTimeoutHandler? = nil,
+    onAuthFailed: AuthFailedHandler? = nil
   ) {
     self.onAuthRequiredGlobal = onAuthRequired
     self.onAuthSuccessGlobal = onAuthSuccess
     self.onAuthTimeoutGlobal = onAuthTimeout
+    self.onAuthFailedGlobal = onAuthFailed
   }
 
   init(mode: BridgeMode = .personalOAuth) {
@@ -659,6 +667,10 @@ actor ACPBridge {
         // Handled via global handler in deliverMessage(); ignore inside query loop
         break
 
+      case .authFailed:
+        // Handled via global handler in deliverMessage(); ignore inside query loop
+        break
+
       case .creditExhausted(let message):
         log("ACPBridge: credit exhausted: \(message)")
         throw BridgeError.creditExhausted(message)
@@ -829,6 +841,11 @@ actor ACPBridge {
       let reason = dict["reason"] as? String ?? "unknown"
       return .authTimeout(reason: reason)
 
+    case "auth_failed":
+      let reason = dict["reason"] as? String ?? "unknown"
+      let httpStatus = dict["httpStatus"] as? Int
+      return .authFailed(reason: reason, httpStatus: httpStatus)
+
     case "credit_exhausted":
       let message = dict["message"] as? String ?? "Credit balance exhausted"
       return .creditExhausted(message: message)
@@ -902,6 +919,11 @@ actor ACPBridge {
     case .authTimeout(let reason):
       if messageContinuation == nil, let handler = onAuthTimeoutGlobal {
         handler(reason)
+        return
+      }
+    case .authFailed(let reason, let httpStatus):
+      if messageContinuation == nil, let handler = onAuthFailedGlobal {
+        handler(reason, httpStatus)
         return
       }
     case .observerPoll:
