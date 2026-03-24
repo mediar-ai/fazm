@@ -166,11 +166,15 @@ async function startHindsight(): Promise<boolean> {
         for (const bin of ["postgres", "initdb"]) {
           const orig = join(pg0Bin, bin);
           const real = join(pg0Bin, `${bin}.real`);
-          // Only wrap once (skip if already wrapped)
-          if (existsSync(real) || !existsSync(orig)) continue;
           try {
-            copyFileSync(orig, real);
-            chmodSync(real, 0o755);
+            if (!existsSync(real) && existsSync(orig)) {
+              // First wrap: move original binary to .real
+              copyFileSync(orig, real);
+              chmodSync(real, 0o755);
+            }
+            if (!existsSync(real)) continue;
+            // Always rewrite wrapper with current Frameworks path
+            // (path changes when app is updated, moved, or dev/prod switches)
             const wrapper = `#!/bin/bash\nexport DYLD_LIBRARY_PATH="${frameworksDir}:\${DYLD_LIBRARY_PATH:-}"\nexec "$(dirname "$0")/${bin}.real" "$@"\n`;
             writeFileSync(orig, wrapper, { mode: 0o755 });
             logErr(`Hindsight: wrapped ${bin} for OpenSSL dylib resolution`);
