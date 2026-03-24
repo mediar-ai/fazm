@@ -404,54 +404,6 @@ workflows:
             echo "WARNING: Google Workspace MCP requirements.txt not found — skipping venv"
           fi
 
-          # Bundle standalone Python venv for browser profile tools
-          # Uses uv-managed standalone Python for full portability (no system Python dependency).
-          PYTHON_VENV_BUNDLE="$APP_BUNDLE/Contents/Resources/python-venv"
-          mkdir -p "$PYTHON_VENV_BUNDLE"
-          echo "Creating standalone Python venv for browser profile..."
-          uv python install 3.12 2>&1 | tail -1 || true
-          uv venv "$PYTHON_VENV_BUNDLE" --python 3.12 --relocatable --python-preference only-managed 2>&1
-          echo "Standalone Python venv created"
-
-          # Bundle ai-browser-profile into the app
-          BROWSER_PROFILE_BUNDLE="$APP_BUNDLE/Contents/Resources/ai-browser-profile"
-          mkdir -p "$BROWSER_PROFILE_BUNDLE"
-          echo "Cloning ai-browser-profile..."
-          git clone --depth 1 https://github.com/m13v/ai-browser-profile.git /tmp/ai-browser-profile 2>&1 | tail -1 || true
-          if [ -d /tmp/ai-browser-profile ]; then
-            # Copy the Python package and extraction scripts
-            cp -r /tmp/ai-browser-profile/ai_browser_profile "$BROWSER_PROFILE_BUNDLE/"
-            cp /tmp/ai-browser-profile/extract.py "$BROWSER_PROFILE_BUNDLE/"
-            cp /tmp/ai-browser-profile/clean.py "$BROWSER_PROFILE_BUNDLE/" 2>/dev/null || true
-            # Copy ingestors (browser data extractors)
-            cp -r /tmp/ai-browser-profile/autofill "$BROWSER_PROFILE_BUNDLE/" 2>/dev/null || true
-            echo "Bundled ai-browser-profile into app"
-          else
-            echo "WARNING: Failed to clone ai-browser-profile — skipping"
-          fi
-          # Strip __pycache__ to save space
-          find "$PYTHON_VENV_BUNDLE" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          # Replace absolute Python symlink with a copy + bundle libpython for portability
-          VENV_REAL_PYTHON=$(readlink -f "$PYTHON_VENV_BUNDLE/bin/python" 2>/dev/null)
-          VENV_MANAGED_DIR=$(dirname "$(dirname "$VENV_REAL_PYTHON")")
-          if [ -n "$VENV_REAL_PYTHON" ] && [ -f "$VENV_REAL_PYTHON" ]; then
-            rm -f "$PYTHON_VENV_BUNDLE/bin/python"
-            cp "$VENV_REAL_PYTHON" "$PYTHON_VENV_BUNDLE/bin/python"
-            rm -f "$PYTHON_VENV_BUNDLE/bin/python3" "$PYTHON_VENV_BUNDLE/bin/python3.12"
-            ln -s python "$PYTHON_VENV_BUNDLE/bin/python3"
-            ln -s python "$PYTHON_VENV_BUNDLE/bin/python3.12"
-            # Copy libpython so @executable_path/../lib/libpython3.12.dylib resolves
-            if [ -f "$VENV_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
-              cp "$VENV_MANAGED_DIR/lib/libpython3.12.dylib" "$PYTHON_VENV_BUNDLE/lib/libpython3.12.dylib"
-            fi
-            # Copy stdlib so Python can find encodings, os, etc. on machines without uv
-            if [ -d "$VENV_MANAGED_DIR/lib/python3.12" ]; then
-              rsync -a --ignore-existing "$VENV_MANAGED_DIR/lib/python3.12/" "$PYTHON_VENV_BUNDLE/lib/python3.12/"
-            fi
-            # Rewrite pyvenv.cfg so Python finds stdlib relative to venv, not the managed install
-            printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$PYTHON_VENV_BUNDLE/pyvenv.cfg"
-          fi
-          echo "Bundled standalone Python venv for browser profile"
 
           # Update Info.plist metadata
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable   $BINARY_NAME"  "$APP_BUNDLE/Contents/Info.plist"
@@ -631,17 +583,6 @@ workflows:
             fi
           fi
 
-          # Sign bundled Python venv native binaries (.so/.dylib and executables)
-          PYTHON_VENV_BUNDLE="$APP_BUNDLE/Contents/Resources/python-venv"
-          PYTHON_ENTITLEMENTS="$CM_BUILD_DIR/Desktop/Python.entitlements"
-          if [ -d "$PYTHON_VENV_BUNDLE" ]; then
-            find "$PYTHON_VENV_BUNDLE" -type f 2>/dev/null | while read bin; do
-              file "$bin" 2>/dev/null | grep -q "Mach-O" && \
-                codesign --force --options runtime --timestamp $CS_PAGESIZE \
-                  --entitlements "$PYTHON_ENTITLEMENTS" \
-                  --sign "$SIGN_IDENTITY" "$bin" 2>/dev/null || true
-            done
-          fi
 
           # Sign Sparkle components — innermost first
           SPARKLE_FW="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
