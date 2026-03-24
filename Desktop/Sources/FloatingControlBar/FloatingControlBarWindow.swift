@@ -1415,6 +1415,25 @@ class FloatingControlBarManager {
             }
         }
 
+        // Debug: show the Claude auth sheet popup
+        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testClaudeAuth"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.fazm.testClaudeAuth"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                guard let provider = self?.chatProvider else { return }
+                log("FloatingControlBarManager: Test Claude auth sheet triggered")
+                let mode = notification.userInfo?["mode"] as? String ?? "initial"
+                if mode == "timeout" {
+                    provider.claudeAuthTimedOut = true
+                }
+                provider.isClaudeAuthRequired = true
+                ClaudeAuthWindowController.shared.show(chatProvider: provider)
+            }
+        }
+
     }
 
     /// Whether the floating bar window is currently visible.
