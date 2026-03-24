@@ -631,28 +631,17 @@ workflows:
             fi
           fi
 
-          # Sign Hindsight Memory MCP native binaries (.so/.dylib and executables in venv)
-          # All executables need DYLD entitlements because pg0's OpenSSL dylibs are
-          # loaded via DYLD_LIBRARY_PATH pointing to Contents/Frameworks/.
-          # Without the entitlement, hardened runtime strips DYLD_* from each process.
-          HINDSIGHT_BUNDLE="$APP_BUNDLE/Contents/Resources/hindsight"
+          # Sign bundled Python venv native binaries (.so/.dylib and executables)
+          PYTHON_VENV_BUNDLE="$APP_BUNDLE/Contents/Resources/python-venv"
           PYTHON_ENTITLEMENTS="$CM_BUILD_DIR/Desktop/Python.entitlements"
-          if [ -d "$HINDSIGHT_BUNDLE/.venv" ]; then
-            find "$HINDSIGHT_BUNDLE/.venv" -type f 2>/dev/null | while read bin; do
+          if [ -d "$PYTHON_VENV_BUNDLE" ]; then
+            find "$PYTHON_VENV_BUNDLE" -type f 2>/dev/null | while read bin; do
               file "$bin" 2>/dev/null | grep -q "Mach-O" && \
                 codesign --force --options runtime --timestamp $CS_PAGESIZE \
                   --entitlements "$PYTHON_ENTITLEMENTS" \
                   --sign "$SIGN_IDENTITY" "$bin" 2>/dev/null || true
             done
           fi
-
-          # Sign bundled OpenSSL dylibs (for pg0 PostgreSQL)
-          for ssl_lib in "$APP_BUNDLE/Contents/Frameworks/libssl.3.dylib" "$APP_BUNDLE/Contents/Frameworks/libcrypto.3.dylib"; do
-            if [ -f "$ssl_lib" ]; then
-              codesign --force --options runtime --timestamp $CS_PAGESIZE \
-                --sign "$SIGN_IDENTITY" "$ssl_lib"
-            fi
-          done
 
           # Sign Sparkle components — innermost first
           SPARKLE_FW="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
