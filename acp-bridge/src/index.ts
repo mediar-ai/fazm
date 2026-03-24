@@ -1420,7 +1420,10 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       // that falls back to session/new if the session file is gone or corrupt.
       // Guard: isNewSession check prevents retry after a fresh session, and sessionRetryCount
       // caps retries to 1 as a safety net against infinite loops.
-      if (!isNewSession && sessionId && sessionRetryCount === 0) {
+      // Skip retry for errors that are clearly not session-related (rate limits, usage errors,
+      // etc.) — retrying just wastes time and can trigger spurious OAuth flows.
+      const isNonRetryable = /usage|limit|resets\s|credit|quota|exhausted|rejected/i.test(errMsg);
+      if (!isNewSession && sessionId && sessionRetryCount === 0 && !isNonRetryable) {
         sessionRetryCount++;
         logErr(`session/prompt failed with existing session, retrying with session resume: ${err}`);
         const failedSessionId = sessionId;
@@ -1432,6 +1435,16 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         // If resume fails, the resume path falls back to session/new automatically.
         msg.resume = failedSessionId;
         return handleQuery(msg);
+      }
+      // For non-retryable errors, surface the raw message immediately
+      if (isNonRetryable) {
+        logErr(`Non-retryable error, surfacing to user: ${errMsg}`);
+        for (const name of pendingTools) {
+          send({ type: "tool_activity", name, status: "completed" });
+        }
+        pendingTools.length = 0;
+        send({ type: "credit_exhausted", message: errMsg });
+        return;
       }
       throw err;
     }
