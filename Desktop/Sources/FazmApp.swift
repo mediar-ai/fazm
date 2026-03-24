@@ -250,6 +250,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         log("Sentry initialized (environment: \(isDev ? "development" : "production"))")
 
+        // Log code signature and install origin for KERN_CODESIGN_ERROR debugging
+        logCodeSignatureStatus()
+
         // Initialize analytics (MixPanel + PostHog)
         AnalyticsManager.shared.initialize()
         AnalyticsManager.shared.appLaunched()
