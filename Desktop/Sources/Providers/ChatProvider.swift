@@ -353,6 +353,9 @@ class ChatProvider: ObservableObject {
     /// Bridge mode: "personal" (user's Claude OAuth), "builtin" (Vertex AI built-in account)
     @AppStorage("bridgeMode") var bridgeMode: String = "builtin"
 
+    // MARK: - Web Relay (phone → desktop tunnel)
+    let webRelay = WebRelay()
+
     // MARK: - Bridge (prefers user's Claude session, falls back to Vertex or bundled key)
     private lazy var acpBridge: ACPBridge = {
         return createBridge()
@@ -707,6 +710,9 @@ class ChatProvider: ObservableObject {
                 }
             }
 
+        // Start web relay for phone → desktop tunnel
+        setupWebRelay()
+
         // Kill ACP bridge subprocess on app quit to prevent orphaned Node.js processes.
         // This runs synchronously (stop() is sync) to ensure cleanup completes before exit.
         terminationObserver = NotificationCenter.default.addObserver(
@@ -714,12 +720,35 @@ class ChatProvider: ObservableObject {
             object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
+            self.webRelay.stop()
             let bridge = self.acpBridge
             Task.detached { await bridge.stop() }
         }
     }
 
     private var terminationObserver: NSObjectProtocol?
+
+    // MARK: - Web Relay Setup
+
+    private func setupWebRelay() {
+        webRelay.onQuery = { [weak self] text, sessionKey in
+            guard let self else { return }
+            await self.sendMessage(text, sessionKey: sessionKey)
+        }
+
+        webRelay.onHistoryRequest = { [weak self] in
+            guard let self else { return [] }
+            return self.messages.map { msg in
+                [
+                    "id": msg.id,
+                    "text": msg.text,
+                    "sender": msg.sender == .user ? "user" : "ai",
+                ] as [String: Any]
+            }
+        }
+
+        webRelay.start()
+    }
 
     /// Pre-start the active bridge so the first query doesn't wait for process launch
     func warmupBridge() async {
@@ -2015,6 +2044,8 @@ class ChatProvider: ObservableObject {
                         log("Chat TTFT: \(ttftMs)ms (session=\(sessionKey ?? "main"))")
                     }
                     self?.appendToMessage(id: aiMessageId, text: delta)
+                    // Forward to phone
+                    self?.webRelay.sendToPhone(["type": "text_delta", "text": delta])
                 }
             }
             let toolCallHandler: ACPBridge.ToolCallHandler = { callId, name, input in
@@ -2026,6 +2057,8 @@ class ChatProvider: ObservableObject {
             }
             let toolActivityHandler: ACPBridge.ToolActivityHandler = { [weak self] name, status, toolUseId, input in
                 Task { @MainActor [weak self] in
+                    // Forward to phone
+                    self?.webRelay.sendToPhone(["type": "tool_activity", "name": name, "status": status])
                     self?.addToolActivity(
                         messageId: aiMessageId,
                         toolName: name,
