@@ -15,6 +15,7 @@ let package = Package(
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "11.0.0"),
         .package(url: "https://github.com/m13v/macos-session-replay.git", from: "0.4.0"),
         .package(path: "LocalPackages/Highlightr"),
+        .package(path: "../../ai-browser-profile-swift-light"),
     ],
     targets: [
         .target(
@@ -35,6 +36,7 @@ let package = Package(
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
                 .product(name: "SessionReplay", package: "macos-session-replay"),
                 .product(name: "Highlightr", package: "Highlightr"),
+                .product(name: "BrowserProfileLight", package: "ai-browser-profile-swift-light"),
             ],
             path: "Sources",
             resources: [
