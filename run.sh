@@ -214,7 +214,7 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     cp -Rf "$ACP_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     cp -f "$ACP_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
-    # Copy Vertex AI service account key if present (for Hindsight MCP)
+    # Copy Vertex AI service account key if present
     if [ -f "$ACP_BRIDGE_DIR/vertex-ai-sa-key.json" ]; then
         cp -f "$ACP_BRIDGE_DIR/vertex-ai-sa-key.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     fi
@@ -250,40 +250,19 @@ else
     echo "Warning: Google Workspace MCP not found at $WORKSPACE_MCP_REPO — skipping"
 fi
 
-# Bundle Hindsight Memory MCP (Python)
-HINDSIGHT_BUNDLE="$APP_BUNDLE/Contents/Resources/hindsight"
+# Bundle standalone Python venv (for browser profile extraction)
+PYTHON_VENV_BUNDLE="$APP_BUNDLE/Contents/Resources/python-venv"
 if command -v uv &>/dev/null; then
-    substep "Bundling Hindsight Memory MCP"
-    mkdir -p "$HINDSIGHT_BUNDLE"
-    if [ ! -d "$HINDSIGHT_BUNDLE/.venv" ]; then
+    if [ ! -d "$PYTHON_VENV_BUNDLE" ]; then
+        substep "Creating standalone Python venv"
         uv python install 3.12 --quiet 2>&1 | tail -1 || true
-        uv venv "$HINDSIGHT_BUNDLE/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1 | tail -1 || true
-        uv pip install --python "$HINDSIGHT_BUNDLE/.venv/bin/python3" \
-            'hindsight-api-slim[embedded-db]' sentence-transformers --quiet 2>&1 | tail -3 || true
-        # Remove claude_agent_sdk (195MB) — only needed for claude_code LLM provider
-        uv pip uninstall --python "$HINDSIGHT_BUNDLE/.venv/bin/python3" claude-agent-sdk --quiet 2>/dev/null || true
-        substep "Bundled Hindsight Memory MCP with venv"
+        uv venv "$PYTHON_VENV_BUNDLE" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1 | tail -1 || true
+        substep "Bundled standalone Python venv"
     else
-        substep "Hindsight venv already exists, skipping install"
-    fi
-
-    # Bundle OpenSSL dylibs for pg0 PostgreSQL (matches codemagic.yaml)
-    OPENSSL_LIB="/opt/homebrew/opt/openssl@3/lib"
-    OPENSSL_DEST="$APP_BUNDLE/Contents/Frameworks"
-    if [ -f "$OPENSSL_LIB/libssl.3.dylib" ] && [ -f "$OPENSSL_LIB/libcrypto.3.dylib" ] && [ ! -f "$OPENSSL_DEST/libssl.3.dylib" ]; then
-        substep "Bundling OpenSSL dylibs for pg0"
-        cp "$OPENSSL_LIB/libssl.3.dylib" "$OPENSSL_DEST/"
-        cp "$OPENSSL_LIB/libcrypto.3.dylib" "$OPENSSL_DEST/"
-        chmod u+w "$OPENSSL_DEST/libssl.3.dylib" "$OPENSSL_DEST/libcrypto.3.dylib"
-        CELLAR_CRYPTO=$(otool -L "$OPENSSL_DEST/libssl.3.dylib" | grep libcrypto | awk '{print $1}')
-        if [ -n "$CELLAR_CRYPTO" ]; then
-            install_name_tool -change "$CELLAR_CRYPTO" "@loader_path/libcrypto.3.dylib" "$OPENSSL_DEST/libssl.3.dylib"
-        fi
-        install_name_tool -id "@loader_path/libssl.3.dylib" "$OPENSSL_DEST/libssl.3.dylib"
-        install_name_tool -id "@loader_path/libcrypto.3.dylib" "$OPENSSL_DEST/libcrypto.3.dylib"
+        substep "Python venv already exists, skipping"
     fi
 else
-    echo "Warning: uv not found — Hindsight Memory MCP will not be bundled"
+    echo "Warning: uv not found — Python venv will not be bundled"
 fi
 
 substep "Copying .env.app"
