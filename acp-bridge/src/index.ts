@@ -792,7 +792,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
       name: "google-workspace",
       command: googleWorkspaceMcpPython,
       args: [googleWorkspaceMcpMain, "--transport", "stdio"],
-      env: [{ name: "PYTHONHOME", value: join(googleWorkspaceMcpDir, ".venv") }],
+      env: [],
     });
   }
 
