@@ -407,13 +407,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Clean up old screenshots in the background
         Task.detached { ScreenCaptureManager.cleanupOldScreenshots() }
 
-        // Migrate existing KG data to Hindsight (one-time, best-effort)
-        // Delayed to give Hindsight time to start up
-        Task.detached(priority: .utility) {
-            try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s delay
-            await KnowledgeGraphMigration.migrateIfNeeded()
-        }
-
         // Mark successful launch — resets the crash-loop counter.
         // Must be at the END of applicationDidFinishLaunching so that crashes during
         // any of the above init still count toward the crash-loop threshold.
