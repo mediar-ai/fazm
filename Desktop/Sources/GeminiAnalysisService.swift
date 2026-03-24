@@ -163,7 +163,7 @@ actor GeminiAnalysisService {
 
             // Persist TASK_FOUND results to observer_activity and show overlay
             if result.verdict == "TASK_FOUND", let task = result.task {
-                await persistAndShowOverlay(task: task, result: result)
+                await persistAndShowOverlay(task: task, description: result.description, result: result)
             }
 
             // Success — remove only the chunks we analyzed (new ones may have arrived during analysis)
@@ -443,16 +443,17 @@ actor GeminiAnalysisService {
     // MARK: - Persistence & Overlay
 
     /// Insert the analysis result into observer_activity and show the overlay above the floating bar.
-    private func persistAndShowOverlay(task: String, result: AnalysisResult) async {
+    private func persistAndShowOverlay(task: String, description: String?, result: AnalysisResult) async {
         // 1. Persist to observer_activity
         var activityId: Int64 = 0
         if let dbQueue = await AppDatabase.shared.getDatabaseQueue() {
             do {
-                let contentJson: [String: Any] = [
+                var contentJson: [String: Any] = [
                     "task": task,
                     "chunks_analyzed": result.chunksAnalyzed,
                     "raw": result.raw,
                 ]
+                if let description { contentJson["description"] = description }
                 let contentString = String(data: try JSONSerialization.data(withJSONObject: contentJson), encoding: .utf8) ?? task
 
                 activityId = try await dbQueue.write { db -> Int64 in
@@ -473,9 +474,10 @@ actor GeminiAnalysisService {
 
         // 2. Show overlay on main thread
         let savedId = activityId
+        let desc = description
         await MainActor.run {
             if let barFrame = FloatingControlBarManager.shared.barWindowFrame {
-                AnalysisOverlayWindow.shared.show(below: barFrame, task: task, activityId: savedId)
+                AnalysisOverlayWindow.shared.show(below: barFrame, task: task, description: desc, activityId: savedId)
             } else {
                 log("GeminiAnalysis: no bar frame available, skipping overlay")
             }
