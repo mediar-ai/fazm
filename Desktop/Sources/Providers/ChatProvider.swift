@@ -621,6 +621,9 @@ class ChatProvider: ObservableObject {
     @Published var projectDiscoveredSkills: [(name: String, description: String, path: String)] = []
     @AppStorage("projectClaudeMdEnabled") var projectClaudeMdEnabled = true
 
+    // MARK: - Voice Response (TTS)
+    @AppStorage("voiceResponseEnabled") var voiceResponseEnabled = false
+
     // MARK: - Dev Mode
     @AppStorage("devModeEnabled") var devModeEnabled = false
     private var devModeContext: String?
@@ -1287,6 +1290,11 @@ class ChatProvider: ObservableObject {
             if !skillNames.isEmpty {
                 prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
             }
+        }
+
+        // Append voice response instructions if enabled
+        if voiceResponseEnabled {
+            prompt += "\n\n<voice_response>\nVoice response is enabled. On EVERY final response, you MUST call the speak_response tool with a short, natural spoken summary of your answer (1-3 sentences). This plays audio to the user through their speakers. Keep the spoken text conversational and concise — it complements your written response, not replaces it. Call speak_response BEFORE writing your final text response.\n</voice_response>"
         }
 
         // Log prompt context summary
