@@ -1384,7 +1384,7 @@ class ChatProvider: ObservableObject {
         }
 
         // Append enabled skills as available context (global + project)
-        // dev-mode is included in the list when devModeEnabled; full content loaded on demand via load_skill
+        // dev-mode is included in the list when devModeEnabled; full content loaded on demand via Skill tool
         let enabledSkillNames = getEnabledSkillNames()
         if !enabledSkillNames.isEmpty {
             let allSkills = discoveredSkills + projectDiscoveredSkills
@@ -1393,7 +1393,7 @@ class ChatProvider: ObservableObject {
                 .map { $0.name }
                 .joined(separator: ", ")
             if !skillNames.isEmpty {
-                prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
+                prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the Skill tool to load full instructions for any skill before using it.\n</available_skills>"
             }
         }
 
@@ -1462,7 +1462,7 @@ class ChatProvider: ObservableObject {
                 .map { $0.name }
                 .joined(separator: ", ")
             if !skillNames.isEmpty {
-                prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
+                prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the Skill tool to load full instructions for any skill before using it.\n</available_skills>"
             }
         }
 
