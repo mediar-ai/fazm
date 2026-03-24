@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * Custom ACP entry point that patches ClaudeAcpAgent to support:
- * - Model selection via session/new params (uses setModel() after session creation)
  * - Real token usage and USD cost from SDKResultSuccess (via query.next interception)
  * - Forward dropped SDK events (compaction, status, tasks, tool progress) as session updates
  *
@@ -14,53 +13,43 @@ console.info = console.error;
 console.warn = console.error;
 console.debug = console.error;
 
-import { appendFileSync } from "node:fs";
-function debugLog(msg) {
-  try { appendFileSync("/tmp/patched-acp-debug.log", `[${new Date().toISOString()}] ${msg}\n`); } catch {}
-  console.error(msg);
-}
-
 import { ClaudeAcpAgent, runAcp } from "@zed-industries/claude-agent-acp/dist/acp-agent.js";
 
-// Patch newSession to:
-// 1. Pass model via setModel() after session creation
-// 2. Wrap query.next() to capture real cost/usage from SDKResultSuccess messages
-// 3. Forward dropped SDK events (compaction, status, tasks, tool progress) as session updates
-const originalNewSession = ClaudeAcpAgent.prototype.newSession;
-ClaudeAcpAgent.prototype.newSession = async function (params) {
-  const result = await originalNewSession.call(this, params);
+// Patch createSession (called by newSession, resumeSession, loadSession, forkSession)
+// to wrap query.next() for cost/usage capture and SDK event forwarding.
+const originalCreateSession = ClaudeAcpAgent.prototype.createSession;
+ClaudeAcpAgent.prototype.createSession = async function (params, creationOpts) {
+  const result = await originalCreateSession.call(this, params, creationOpts);
 
-  const session = this.sessions?.[result.sessionId];
+  // Determine the session ID the same way the SDK does
+  const sid = creationOpts?.forkSession
+    ? result.sessionId
+    : creationOpts?.resume
+      ? creationOpts.resume
+      : result.sessionId;
+
+  const session = this.sessions?.[sid];
   const acpClient = this.client;
-  const sid = result.sessionId;
 
-  if (session?.query) {
+  console.error(`[patched-acp] createSession completed: sid=${sid}, resume=${!!creationOpts?.resume}, hasQuery=${!!session?.query}`);
+
+  if (session?.query && !session._queryPatched) {
+    session._queryPatched = true;
     const originalNext = session.query.next.bind(session.query);
     session.query.next = async function (...args) {
       const item = await originalNext(...args);
-
-      // Debug: log ALL items from the SDK iterator
-      if (item.value?.type) {
-        debugLog(`[patched-acp] SDK item: type=${item.value.type}, subtype=${item.value.subtype ?? "none"}, keys=${Object.keys(item.value).join(",")}`);
-      }
 
       // Capture cost/usage from SDKResultSuccess
       if (
         item.value?.type === "result" &&
         item.value?.subtype === "success"
       ) {
-        debugLog(`[patched-acp] SDKResultSuccess keys: ${Object.keys(item.value).join(", ")}`);
-        debugLog(`[patched-acp] total_cost_usd=${item.value.total_cost_usd}, usage=${JSON.stringify(item.value.usage)}, modelUsage keys=${item.value.modelUsage ? Object.keys(item.value.modelUsage).join(",") : "none"}`);
+        console.error(`[patched-acp] SDKResultSuccess: total_cost_usd=${item.value.total_cost_usd}, usage=${JSON.stringify(item.value.usage)}`);
         const prevSessionCost = session._sessionCostUsd ?? 0;
         session._lastCostUsd = item.value.total_cost_usd - prevSessionCost;
         session._sessionCostUsd = item.value.total_cost_usd;
         session._lastUsage = item.value.usage;
         session._lastModelUsage = item.value.modelUsage;
-      }
-
-      // Debug: log all result types to see what we get
-      if (item.value?.type === "result") {
-        debugLog(`[patched-acp] Result item: type=${item.value.type}, subtype=${item.value.subtype}, keys=${Object.keys(item.value).join(", ")}`);
       }
 
       // --- Forward dropped system messages ---
@@ -102,7 +91,7 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
             });
           }
         } catch (e) {
-          debugLog(`[patched-acp] Forward system/${subtype}: ${e}`);
+          console.error(`[patched-acp] Forward system/${subtype}: ${e}`);
         }
       }
 
@@ -125,7 +114,7 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
             },
           });
         } catch (e) {
-          debugLog(`[patched-acp] Forward rate_limit_event: ${e}`);
+          console.error(`[patched-acp] Forward rate_limit_event: ${e}`);
         }
       }
 
@@ -153,7 +142,7 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
           });
         }
       } catch (e) {
-        debugLog(`[patched-acp] Forward ${item.value?.type}: ${e}`);
+        console.error(`[patched-acp] Forward ${item.value?.type}: ${e}`);
       }
 
       // --- Forward compaction stream chunks ---
@@ -186,26 +175,18 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
 };
 
 // Patch prompt() to attach captured cost/usage to the return value.
-// The ACP PromptResponse supports usage (experimental) and _meta for extras.
 const originalPrompt = ClaudeAcpAgent.prototype.prompt;
 ClaudeAcpAgent.prototype.prompt = async function (params) {
-  debugLog(`[patched-acp] prompt() called for session ${params.sessionId}`);
   const result = await originalPrompt.call(this, params);
-  debugLog(`[patched-acp] prompt() returned. Keys: ${Object.keys(result).join(", ")}`);
-  debugLog(`[patched-acp] prompt() result: ${JSON.stringify(result).slice(0, 500)}`);
 
   const session = this.sessions?.[params.sessionId];
-  debugLog(`[patched-acp] session exists: ${!!session}, _lastCostUsd: ${session?._lastCostUsd}, _lastUsage: ${JSON.stringify(session?._lastUsage)}`);
   if (session?._lastCostUsd !== undefined) {
-    // usage fields are snake_case (raw Anthropic API format)
     const u = session._lastUsage ?? {};
     const inputTokens = u.input_tokens ?? 0;
     const outputTokens = u.output_tokens ?? 0;
     const cacheRead = u.cache_read_input_tokens ?? 0;
     const cacheWrite = u.cache_creation_input_tokens ?? 0;
     const costUsd = session._lastCostUsd;
-
-    // Total = new input + cache writes + cache reads + output
     const totalTokens = inputTokens + cacheWrite + cacheRead + outputTokens;
 
     const modelUsage = session._lastModelUsage ?? {};
@@ -216,10 +197,6 @@ ClaudeAcpAgent.prototype.prompt = async function (params) {
       `cacheWrite=${cacheWrite}, cacheRead=${cacheRead}, ` +
       `total=${totalTokens}`
     );
-    // Log per-model breakdown
-    for (const [model, usage] of Object.entries(modelUsage)) {
-      debugLog(`[patched-acp]   ${model}: input=${usage.input_tokens??0}, output=${usage.output_tokens??0}, cacheRead=${usage.cache_read_input_tokens??0}, cacheWrite=${usage.cache_creation_input_tokens??0}`);
-    }
 
     const augmented = {
       ...result,
@@ -238,6 +215,7 @@ ClaudeAcpAgent.prototype.prompt = async function (params) {
     return augmented;
   }
 
+  console.error(`[patched-acp] No usage data captured for session ${params.sessionId}`);
   return result;
 };
 
