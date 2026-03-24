@@ -170,16 +170,6 @@ else
     echo "Warning: Google Workspace MCP not found at $WORKSPACE_MCP_REPO — skipping"
 fi
 
-# Bundle standalone Python venv (for browser profile extraction)
-PYTHON_VENV_BUNDLE="$APP_BUNDLE/Contents/Resources/python-venv"
-if command -v uv &>/dev/null; then
-    echo "Creating standalone Python venv..."
-    uv python install 3.12 --quiet 2>&1 | tail -1 || true
-    uv venv "$PYTHON_VENV_BUNDLE" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1 | tail -1 || true
-    echo "Bundled standalone Python venv"
-else
-    echo "Warning: uv not found — Python venv will not be bundled"
-fi
 
 # Copy .env.app file (app runtime secrets only)
 if [ -f ".env.app" ]; then
