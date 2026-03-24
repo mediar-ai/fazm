@@ -44,7 +44,6 @@ ClaudeAcpAgent.prototype.createSession = async function (params, creationOpts) {
         item.value?.type === "result" &&
         item.value?.subtype === "success"
       ) {
-        console.error(`[patched-acp] SDKResultSuccess: total_cost_usd=${item.value.total_cost_usd}, usage=${JSON.stringify(item.value.usage)}`);
         const prevSessionCost = session._sessionCostUsd ?? 0;
         session._lastCostUsd = item.value.total_cost_usd - prevSessionCost;
         session._sessionCostUsd = item.value.total_cost_usd;
