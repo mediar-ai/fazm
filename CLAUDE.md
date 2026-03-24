@@ -105,13 +105,11 @@ Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for pu
 
 ### Building & Running
 - **No Xcode project** — this is a Swift Package Manager project
-- **Build command**: `xcrun swift build -c debug --package-path Desktop` (the `xcrun` prefix is required to match the SDK version)
-- **Full dev run**: `./run.sh` — builds Swift app, starts Rust backend, starts Cloudflare tunnel, launches app
-- **⚠️ ALWAYS use `./run.sh` to launch** — never `open`, never copy the binary manually. Both **crash the app immediately** (Sparkle and other frameworks are only set up by run.sh)
-- **Build only**: `./build.sh` — release build without running
-- **DO NOT** use bare `swift build` — it will fail with SDK version mismatch
+- **`./run.sh` is the ONLY way to build and run.** It handles everything: builds ACP bridge (npm), builds Swift app, creates app bundle, copies all resources, and launches. There is no reason to run any build command independently.
+- **DO NOT** run `npm run build`, `xcrun swift build`, `swift build`, or any other build command directly. `run.sh` does all of this. Running builds independently creates stale processes, orphaned locks, and wastes time duplicating work that `run.sh` already does.
 - **DO NOT** use `xcodebuild` — there is no `.xcodeproj`
-- **DO NOT** launch the app directly from `build/` — always use `./run.sh` or `./reset-and-run.sh`. These scripts install to `/Applications/Fazm Dev.app` and launch from there, which is required for macOS "Quit & Reopen" (after granting permissions) to find the correct binary. Launching from `build/` causes stale binaries to run after permission restarts.
+- **DO NOT** launch the app directly from `build/` or via `open` — always use `./run.sh` or `./reset-and-run.sh`. These scripts install to `/Applications/Fazm Dev.app` and launch from there, which is required for macOS permissions and Sparkle.
+- **Build only** (no launch): `./build.sh` — release build
 
 ### App Names & Build Artifacts
 - `./run.sh` builds **"Fazm Dev"** → installs to `/Applications/Fazm Dev.app` (bundle ID: `com.fazm.desktop-dev`)
