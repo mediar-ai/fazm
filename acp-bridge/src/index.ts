@@ -913,9 +913,9 @@ interface WarmupSessionConfig {
 
 // Stable default cwd for ACP sessions — ensures Claude Code's native memory system
 // (MEMORY.md, auto memory) persists across app launches at a consistent path under
-// ~/.claude/projects/. Using ~/Library/Application Support/Fazm avoids TCC/FileProvider
-// prompts (unlike $HOME which can trigger Dropbox/iCloud scanning).
-const DEFAULT_CWD = join(homedir(), "Library", "Application Support", "Fazm");
+// ~/.claude/projects/. Using $HOME gives the broadest memory coverage — shared with
+// CLI sessions started from home.
+const DEFAULT_CWD = homedir();
 
 async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[]): Promise<void> {
   const warmCwd = cwd || DEFAULT_CWD;
