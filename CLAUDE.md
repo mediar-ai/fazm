@@ -113,7 +113,7 @@ Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for pu
 - `run.sh` does ALL of this. Running builds independently creates stale processes, orphaned locks, and duplicate work.
 - **Build only** (no launch): `./build.sh` — for release builds only
 
-**`run.sh` manages its own locks.** It acquires a test lock (`/tmp/fazm-test.lock`) and a build lock (`/tmp/fazm-build.lock`) automatically. Do NOT create these locks manually.
+**`run.sh` manages ONE lock: `/tmp/fazm-build.lock`.** It acquires it automatically on start, releases on exit. Do NOT create locks manually.
 
 ### App Names & Build Artifacts
 - `./run.sh` builds **"Fazm Dev"** → installs to `/Applications/Fazm Dev.app` (bundle ID: `com.fazm.desktop-dev`)
@@ -125,23 +125,9 @@ Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for pu
 
 ### Before Running `run.sh` (Multi-Agent Safety)
 
-Multiple agents work on this codebase simultaneously. Before calling `run.sh`:
+Multiple agents work on this codebase simultaneously. `run.sh` handles locking automatically — it will wait if another `run.sh` is active, and detect stale locks from dead processes.
 
-```bash
-# Check if another agent's run.sh is active
-if [ -f /tmp/fazm-test.lock ]; then
-    lock_age=$(( $(date +%s) - $(stat -f %m /tmp/fazm-test.lock) ))
-    lock_holder=$(cat /tmp/fazm-test.lock 2>/dev/null)
-    if [ "$lock_age" -lt 600 ]; then
-        echo "BLOCKED: $lock_holder (${lock_age}s ago)"
-        # STOP — do not run run.sh, do not kill the app
-    fi
-fi
-```
-
-- **If the lock is held (< 600s old), STOP.** Ask the user for guidance.
-- **If the lock is stale (> 600s), remove it** and proceed.
-- **If no lock exists**, just run `./run.sh` — it creates and releases locks itself.
+- **Just run `./run.sh`** — it handles everything. If another agent holds the lock, it waits (up to 5 min).
 - **If you only need to test with distributed notifications** (e.g., `com.fazm.testQuery`) and the app is already running, you do NOT need to run `run.sh`. Just send the notification.
 
 ### Monitoring `run.sh`
@@ -155,7 +141,7 @@ tail -1 /private/tmp/fazm-dev.log  # should show recent activity
 
 If no new log lines appear for **60 seconds**, `run.sh` is stalled. Kill it and retry:
 ```bash
-rm -f /tmp/fazm-test.lock /tmp/fazm-build.lock
+rm -rf /tmp/fazm-build.lock
 pkill -f "run\.sh"; pkill -f "swift-build"
 # Then run ./run.sh again
 ```
