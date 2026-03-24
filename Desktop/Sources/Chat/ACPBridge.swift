@@ -1208,24 +1208,9 @@ enum BridgeError: LocalizedError {
       }
       return "Built-in credits are exhausted. Please switch to your personal Claude account in Settings."
     case .agentError(let msg):
-      let lower = msg.lowercased()
-      if lower.contains("leaked") || lower.contains("api key") || lower.contains("api_key")
-        || lower.contains("unauthorized") || lower.contains("permission denied")
-        || lower.contains("invalid key") || lower.contains("forbidden")
-      {
-        return "AI service authentication error. Please update the app to the latest version."
-      }
-      if lower.contains("quota") || lower.contains("rate limit")
-        || lower.contains("resource exhausted")
-      {
-        return "AI service is busy. Please try again in a moment."
-      }
-      if lower.contains("overloaded") || lower.contains("service unavailable")
-        || lower.contains("internal error")
-      {
-        return "AI service is temporarily unavailable. Please try again later."
-      }
-      return "Something went wrong. Please try again."
+      // Strip "Internal error: " prefix if present — ACP wraps the real message
+      let cleaned = msg.hasPrefix("Internal error: ") ? String(msg.dropFirst("Internal error: ".count)) : msg
+      return cleaned
     }
   }
 }
