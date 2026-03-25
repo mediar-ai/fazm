@@ -935,6 +935,16 @@ class ChatProvider: ObservableObject {
             ])
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
+
+            // Track if the bundled node binary was broken (Sparkle update corruption)
+            if NodeBinaryHelper.bundledNodeWasBroken {
+                let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+                let hadSparkle = UserDefaults.standard.bool(forKey: "hasSuccessfullyInstalledSparkleUpdate")
+                let installMethod = hadSparkle ? "sparkle" : "other"
+                log("ChatProvider: ⚠️ Bundled node binary was corrupted, recovered via temp copy (install=\(installMethod))")
+                AnalyticsManager.shared.nodeBinaryCorrupted(version: version, installMethod: installMethod)
+            }
+
             return true
         } catch {
             logError("Failed to start ACP bridge", error: error)
