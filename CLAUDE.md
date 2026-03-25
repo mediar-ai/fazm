@@ -125,9 +125,11 @@ Do NOT touch `~/fazm/skills/` for bundling purposes — that directory is for pu
 
 ### Before Running `run.sh` (Multi-Agent Safety)
 
-Multiple agents work on this codebase simultaneously. `run.sh` handles locking automatically — it will wait if another `run.sh` is active, and detect stale locks from dead processes.
+Multiple agents work on this codebase simultaneously. `run.sh` and `build.sh` handle locking automatically — they will wait if another build is active, and detect stale locks from dead processes.
 
-- **Just run `./run.sh`** — it handles everything. If another agent holds the lock, it waits (up to 5 min).
+- **Just run `./run.sh` (or `./build.sh`)** — it handles everything. If another agent holds the lock, it waits (up to 5 min).
+- **NEVER manually delete `/tmp/fazm-build.lock`** or run `rm -rf /tmp/fazm-build.lock`. The lock is a directory managed by the scripts. Manually deleting it defeats the entire concurrency system and causes parallel builds to collide.
+- **NEVER kill the app (`pkill -f "Fazm Dev"`) before building.** `run.sh` handles stopping the old app as part of its flow. Killing it externally orphans the lock.
 - **If you only need to test with distributed notifications** (e.g., `com.fazm.testQuery`) and the app is already running, you do NOT need to run `run.sh`. Just send the notification.
 
 ### Monitoring `run.sh`
@@ -138,12 +140,12 @@ Multiple agents work on this codebase simultaneously. `run.sh` handles locking a
 
 During the **build phase** (before app launch), `run.sh` writes a startup line to the dev log immediately. You can monitor build progress via the `run.sh` stdout or `tail -f /private/tmp/fazm-dev.log`.
 
-If `run.sh` itself is stalled (e.g., `swift-build` at 0% CPU), kill and retry:
+If `run.sh` itself appears stalled (e.g., `swift-build` at 0% CPU for >10 minutes), first check if the holder PID is alive:
 ```bash
-rm -rf /tmp/fazm-build.lock
-pkill -f "run\.sh"; pkill -f "swift-build"
-./run.sh
+cat /tmp/fazm-build.lock/pid && cat /tmp/fazm-build.lock/script
+# Then check: ps -p <pid>
 ```
+Only if the holder process is confirmed dead AND the stale-lock detection hasn't cleaned it up, escalate to the user. Do NOT manually delete the lock.
 
 ### After Implementing Changes
 - **ALWAYS test your changes** — see global CLAUDE.md "After Implementing Changes — MANDATORY Testing" for the full workflow
