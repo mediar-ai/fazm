@@ -1023,7 +1023,7 @@ class ChatProvider: ObservableObject {
             return
         }
         // NSAppleScript is not Sendable but is safe here — created on main, used exclusively on the background queue.
-        nonisolated(unsafe) let script = appleScript
+        nonisolated(unsafe) let unsafeScript = appleScript
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
             script.executeAndReturnError(&error)
