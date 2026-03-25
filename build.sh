@@ -165,6 +165,24 @@ with open('$WORKSPACE_MCP_REPO/pyproject.toml', 'rb') as f:
     print(' '.join(tomllib.load(f)['project']['dependencies']))
 ")
         uv pip install --python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" --link-mode copy $WORKSPACE_MCP_DEPS --quiet 2>&1 | tail -3 || true
+        # Replace symlinks with actual binary for portability (venv python may symlink to uv-managed install)
+        GWMCP_REAL_PYTHON=$(readlink -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" 2>/dev/null)
+        if [ -n "$GWMCP_REAL_PYTHON" ] && [ -f "$GWMCP_REAL_PYTHON" ] && [ -L "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" ]; then
+            GWMCP_MANAGED_DIR=$(dirname "$(dirname "$GWMCP_REAL_PYTHON")")
+            rm -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
+            cp "$GWMCP_REAL_PYTHON" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
+            rm -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3.12"
+            ln -s python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3"
+            ln -s python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3.12"
+            # Copy libpython so @executable_path/../lib/libpython3.12.dylib resolves
+            if [ -f "$GWMCP_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
+                cp "$GWMCP_MANAGED_DIR/lib/libpython3.12.dylib" "$WORKSPACE_MCP_BUNDLE/.venv/lib/libpython3.12.dylib"
+            fi
+            # Copy stdlib so Python can find encodings, os, etc. on machines without uv
+            if [ -d "$GWMCP_MANAGED_DIR/lib/python3.12" ]; then
+                rsync -a --ignore-existing "$GWMCP_MANAGED_DIR/lib/python3.12/" "$WORKSPACE_MCP_BUNDLE/.venv/lib/python3.12/"
+            fi
+        fi
         echo "Bundled Google Workspace MCP with venv"
     else
         echo "Warning: uv not found — Google Workspace MCP will not work without dependencies"
