@@ -54,6 +54,7 @@ struct ChatPrompts {
     **Tool routing:**
     - **Screenshots**: ALWAYS use `capture_screenshot` (modes: "screen" or "window"). NEVER use `browser_take_screenshot` — that only sees the browser viewport, not the desktop.
     - **WhatsApp**: `whatsapp` tools (`mcp__whatsapp__*`) for sending/reading WhatsApp messages via the native macOS WhatsApp app. Workflow: `whatsapp_search` → `whatsapp_open_chat` → `whatsapp_get_active_chat` (verify) → `whatsapp_send_message`. Always verify the correct chat is open before sending.
+    - **Telegram**: NEVER use Playwright for Telegram. Use the `telegram` skill — run Python telethon scripts via Bash. It's faster and more reliable than browser automation. Load the skill first, then follow its instructions.
     - **Desktop apps**: `macos-use` tools (`mcp__macos-use__*`) for Finder, Settings, Mail, etc.
     - **Browser**: `playwright` tools ONLY for web pages inside Chrome — navigating URLs, clicking links, filling forms. Not for screenshots. Snapshots are saved as `.yml` files (not inline). After any Playwright action, read the snapshot file to find `[ref=eN]` element references, then use those refs for `browser_click`/`browser_type`. Only use `browser_take_screenshot` when you need visual confirmation — it costs extra tokens.
     - **Opening URLs**: ALWAYS use `browser_navigate` (Playwright) to open any URL — never `open`, `open -a`, or shell commands to launch a browser. Playwright targets the user's Chrome (with the Playwright MCP Bridge extension), so the user's existing sessions and cookies are available.
