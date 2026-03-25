@@ -212,7 +212,6 @@ const ONBOARDING_TOOL_NAMES = new Set([
   "extract_browser_profile",
   "scan_files",
   "set_user_preferences",
-  "ask_followup",
   "complete_onboarding",
   "save_knowledge_graph",
 ]);
@@ -220,6 +219,7 @@ const ONBOARDING_TOOL_NAMES = new Set([
 // Tools available in all sessions (not just onboarding)
 const ALWAYS_AVAILABLE_TOOL_NAMES = new Set([
   "extract_browser_profile",
+  "ask_followup",
 ]);
 
 // Observer session only gets these tools (SQL reads, screenshots, skills, browser profile, cards)
