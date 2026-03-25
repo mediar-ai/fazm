@@ -44,4 +44,4 @@ Returns name, emails, phone, addresses, payment info, companies, top tools, acco
 
 ## Availability
 
-Requires browser data extraction during onboarding. If no data found, tell the user to re-run: `npx ai-browser-profile init && python ~/ai-browser-profile/extract.py`
+Requires browser data extraction during onboarding. If queries return no results, call `extract_browser_profile` to re-run the extraction — it uses the native Swift extractor built into the app (no external tools needed).
