@@ -51,6 +51,51 @@ echo ""
 # Extract version from tag: v1.1.2+86-macos-staging -> 1.1.2
 VERSION=$(echo "$TAG" | sed 's/^v//' | sed 's/+.*//')
 
+# Fetch current state from the list endpoint
+echo "Fetching current release state..."
+LIST_RESP=$(curl -s "$BACKEND_URL/api/releases" 2>/dev/null)
+CURRENT_CHANNEL=$(echo "$LIST_RESP" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for r in data.get('releases', []):
+    if r['tag'] == '$TAG':
+        print(r['channel'])
+        break
+else:
+    print('NOT_FOUND')
+" 2>/dev/null || echo "UNKNOWN")
+
+if [ "$CURRENT_CHANNEL" = "NOT_FOUND" ]; then
+    echo "✗ Release $TAG not found in Firestore. Has it been registered?"
+    exit 1
+fi
+
+if [ "$CURRENT_CHANNEL" = "stable" ]; then
+    echo "✗ Release $TAG is already on stable — nothing to promote."
+    exit 0
+fi
+
+# Determine next channel
+case "$CURRENT_CHANNEL" in
+    staging) NEXT_CHANNEL="beta" ;;
+    beta)    NEXT_CHANNEL="stable" ;;
+    *)       echo "✗ Unknown channel: $CURRENT_CHANNEL"; exit 1 ;;
+esac
+
+echo "  Current channel: $CURRENT_CHANNEL"
+echo "  Will promote to: $NEXT_CHANNEL"
+echo ""
+
+# Confirm unless --yes flag is passed
+if [ "${2:-}" != "--yes" ]; then
+    read -p "Proceed? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+fi
+
 # Promote in Firestore (the backend handles deactivating previous releases
 # on the target channel automatically)
 RESPONSE=$(curl -s -w "\n%{http_code}" \

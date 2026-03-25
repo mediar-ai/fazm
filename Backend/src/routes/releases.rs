@@ -20,6 +20,50 @@ fn next_channel(current: &str) -> Option<&'static str> {
     }
 }
 
+// ─── List ─────────────────────────────────────────────────────────────────────
+
+/// GET /api/releases
+/// Returns all releases with their channel and is_live status.
+pub async fn list(Extension(config): Extension<Arc<Config>>) -> impl IntoResponse {
+    let token = match firestore::get_access_token(&config).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("Firestore auth failed: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("auth failed: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    match firestore::list_all_releases(&config, &token).await {
+        Ok(releases) => {
+            let items: Vec<serde_json::Value> = releases
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "tag": r.tag,
+                        "version": r.version,
+                        "build": r.build,
+                        "channel": r.channel,
+                        "is_live": r.is_live,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!({ "releases": items }))).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Firestore query failed: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("query failed: {}", e)})),
+            )
+                .into_response()
+        }
+    }
+}
+
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]

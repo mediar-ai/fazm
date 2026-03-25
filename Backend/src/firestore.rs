@@ -273,6 +273,49 @@ pub async fn deactivate_channel(
     Ok(deactivated)
 }
 
+/// List ALL release documents (live and inactive), ordered by descending build number.
+pub async fn list_all_releases(
+    config: &Arc<Config>,
+    token: &str,
+) -> Result<Vec<ReleaseDoc>, Box<dyn std::error::Error + Send + Sync>> {
+    let url = format!(
+        "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:runQuery",
+        config.firebase_project_id
+    );
+
+    let query = serde_json::json!({
+        "structuredQuery": {
+            "from": [{ "collectionId": COLLECTION }],
+            "limit": 100
+        }
+    });
+
+    let resp: serde_json::Value = reqwest::Client::new()
+        .post(&url)
+        .bearer_auth(token)
+        .json(&query)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let mut docs: Vec<ReleaseDoc> = resp
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|r| r.get("document").and_then(|d| from_firestore_doc(d)))
+        .collect();
+
+    docs.sort_by(|a, b| {
+        let ba: u64 = a.build.parse().unwrap_or(0);
+        let bb: u64 = b.build.parse().unwrap_or(0);
+        bb.cmp(&ba)
+    });
+
+    Ok(docs)
+}
+
 /// List all live release documents, ordered by descending build number.
 pub async fn list_live_releases(
     config: &Arc<Config>,
