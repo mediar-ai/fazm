@@ -1049,7 +1049,8 @@ actor ACPBridge {
     // 1. Check bundled node binary in app resources
     let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil)
     if let bundledNode, FileManager.default.isExecutableFile(atPath: bundledNode) {
-      return bundledNode
+      // Copy to temp dir to avoid macOS 26 CSM killing JIT-entitled binaries inside sealed bundles
+      return NodeBinaryHelper.externalNodePath(from: bundledNode)
     }
 
     // 2. Fall back to system-installed node
