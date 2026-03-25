@@ -9,14 +9,19 @@ import SessionReplay
 actor GeminiAnalysisService {
     static let shared = GeminiAnalysisService()
 
-    private let analysisPrompt = """
-        You are watching ~60 minutes of a user's session recording. Your job is to identify the ONE most impactful task an AI agent could take off their plate.
+    private let analysisPromptTemplate = """
+        You are watching ~60 minutes of a user's screen recording. Each video clip captures the active window of whatever app the user was using at that moment. Your job is to identify the ONE most impactful task an AI agent could take off their plate.
 
-        With this much context, you should almost always find something. Only return NO_TASK if the user is genuinely idle or doing something an AI agent cannot help with at all.
+        IMPORTANT: Each recording chunk shows only the focused app window, not the full screen. The metadata below tells you which app and window title was active during each chunk.
+
+        {APP_CONTEXT}
+
+        Be honest about what you can and cannot see. If the video is too blurry, too fast, or you genuinely can't tell what the user is doing, say so — return UNCLEAR. Do NOT invent or guess tasks based on vague visual signals. A wrong suggestion is worse than no suggestion.
 
         The AI agent has: shell access, Claude Code, native browser control, full file system access, and can execute any task on the user's computer.
 
         Only flag a task if ALL of these are true:
+        - You can clearly see what the user is doing and what they're trying to accomplish
         - The task is concrete and completable (not vague like "help debug" or "improve code")
         - An AI agent could realistically do it 5x faster than the user
         - The AI agent's known weaknesses (slower at visual tasks, can't do real-time interaction) won't make it slower
@@ -26,10 +31,13 @@ actor GeminiAnalysisService {
 
         Respond in this exact format:
 
-        VERDICT: NO_TASK or TASK_FOUND
+        VERDICT: NO_TASK or TASK_FOUND or UNCLEAR
         TASK: (only if TASK_FOUND) One sentence: what the user is trying to accomplish overall, and one concrete action the agent would take to help.
         DESCRIPTION: (only if TASK_FOUND) 3-5 sentences: what you observed the user doing, what apps/tools they were using, what patterns you noticed (e.g. repetitive actions, context switching, manual work that could be automated), and why this specific task is a strong candidate for AI assistance.
         DOCUMENT: (only if TASK_FOUND) A detailed write-up in markdown format. Include: ## What Was Observed (timeline of what the user did, apps used, files touched), ## The Task (exactly what needs to be done, scope, inputs/outputs), ## Why AI Can Help (what makes this suitable for automation — repetitive, mechanical, well-defined pattern), ## Recommended Approach (step-by-step how an AI agent would execute this). Be specific and reference actual apps, filenames, or patterns you saw in the recording.
+
+        Return UNCLEAR if: you can't make out what the user is doing, the content is ambiguous, or you'd be guessing. It's better to say "I'm not sure" than to suggest a task the user never needed.
+        Return NO_TASK if: you can clearly see what the user is doing but there's nothing an AI agent could meaningfully help with.
         """
 
     private let model = "gemini-pro-latest"
@@ -49,11 +57,18 @@ actor GeminiAnalysisService {
     /// JSON file that persists the buffer index across restarts.
     private let bufferIndexURL: URL
 
+    struct ActiveAppInfo: Codable, Sendable {
+        let appName: String
+        let windowTitle: String?
+        let frameCount: Int
+    }
+
     struct ChunkEntry: Codable, Sendable {
         let localURL: URL
         let chunkIndex: Int
         let startTimestamp: Date
         let endTimestamp: Date
+        let activeApps: [ActiveAppInfo]
     }
 
     struct AnalysisResult: Sendable {
@@ -71,6 +86,7 @@ actor GeminiAnalysisService {
         let chunkIndex: Int
         let startTimestamp: Date
         let endTimestamp: Date
+        let activeApps: [ActiveAppInfo]
     }
 
     init() {
@@ -113,7 +129,8 @@ actor GeminiAnalysisService {
             localURL: stableFile,
             chunkIndex: info.chunkIndex,
             startTimestamp: info.startTimestamp,
-            endTimestamp: info.endTimestamp
+            endTimestamp: info.endTimestamp,
+            activeApps: info.activeApps
         )
         chunkBuffer.append(entry)
 
@@ -243,8 +260,12 @@ actor GeminiAnalysisService {
             }
         }
 
+        // Build app context summary from chunk metadata
+        let appContext = buildAppContextSummary(chunks: chunks)
+        let prompt = analysisPromptTemplate.replacingOccurrences(of: "{APP_CONTEXT}", with: appContext)
+
         // Add the prompt as the last part
-        parts.append(["text": analysisPrompt])
+        parts.append(["text": prompt])
 
         // Call generateContent
         let result = await callGenerateContent(parts: parts, apiKey: apiKey)
@@ -415,6 +436,40 @@ actor GeminiAnalysisService {
     }
 
     // MARK: - Helpers
+
+    /// Build a text summary of which apps/windows were active across chunks, for the Gemini prompt.
+    private func buildAppContextSummary(chunks: [ChunkEntry]) -> String {
+        guard chunks.contains(where: { !$0.activeApps.isEmpty }) else {
+            return "No app metadata available for these recordings."
+        }
+
+        // Aggregate frame counts across all chunks
+        var appTotals: [String: (appName: String, windowTitle: String?, totalFrames: Int)] = [:]
+        for chunk in chunks {
+            for app in chunk.activeApps {
+                let key = "\(app.appName)||\(app.windowTitle ?? "")"
+                if var existing = appTotals[key] {
+                    existing.totalFrames += app.frameCount
+                    appTotals[key] = existing
+                } else {
+                    appTotals[key] = (appName: app.appName, windowTitle: app.windowTitle, totalFrames: app.frameCount)
+                }
+            }
+        }
+
+        let totalFrames = appTotals.values.reduce(0) { $0 + $1.totalFrames }
+        guard totalFrames > 0 else { return "No app metadata available for these recordings." }
+
+        let sorted = appTotals.values.sorted { $0.totalFrames > $1.totalFrames }
+        var lines = ["Apps the user was using (sorted by time spent):"]
+        for entry in sorted {
+            let pct = Int(Double(entry.totalFrames) / Double(totalFrames) * 100)
+            let title = entry.windowTitle.map { " — \"\($0)\"" } ?? ""
+            lines.append("- \(entry.appName)\(title) (\(pct)% of time)")
+        }
+
+        return lines.joined(separator: "\n")
+    }
 
     private func parseResult(_ raw: String, chunksAnalyzed: Int) -> AnalysisResult {
         let lines = raw.components(separatedBy: "\n")
