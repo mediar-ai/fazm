@@ -217,6 +217,11 @@ const ONBOARDING_TOOL_NAMES = new Set([
   "save_knowledge_graph",
 ]);
 
+// Tools available in all sessions (not just onboarding)
+const ALWAYS_AVAILABLE_TOOL_NAMES = new Set([
+  "extract_browser_profile",
+]);
+
 // Observer session only gets these tools (SQL reads, screenshots, skills, browser profile, cards)
 const OBSERVER_TOOL_NAMES = new Set([
   "execute_sql",
@@ -288,7 +293,7 @@ This is the ONLY way to see what's on the user's desktop. Do NOT use playwright'
   },
   {
     name: "extract_browser_profile",
-    description: `Extract user identity from browser data (autofill, logins, history, bookmarks). Returns a markdown profile: name, emails, phones, addresses, payment info, accounts, top tools, contacts. Extracted locally from browser SQLite files — nothing leaves the machine. Auto-installs ai-browser-profile if not present (~10s install, ~10s extraction). Call BEFORE scan_files in onboarding.`,
+    description: `Extract user identity from browser data (autofill, logins, history, bookmarks). Returns a markdown profile: name, emails, phones, addresses, payment info, accounts, top tools, contacts. Extracted locally from browser SQLite files — nothing leaves the machine. Takes ~1-2 seconds. query_browser_profile auto-triggers this if the profile is missing, stale (>24h), or incomplete — but you can also call this directly to force a fresh extraction.`,
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -460,6 +465,8 @@ const TOOLS = ALL_TOOLS.filter((t) => {
   if (VOICE_RESPONSE_TOOL_NAMES.has(t.name) && !isVoiceResponseEnabled) return false;
   if (isOnboarding) return true;
   if (isObserver) return OBSERVER_TOOL_NAMES.has(t.name);
+  // Some tools are available in all sessions even though they're also in onboarding
+  if (ALWAYS_AVAILABLE_TOOL_NAMES.has(t.name)) return true;
   return !ONBOARDING_TOOL_NAMES.has(t.name);
 });
 
