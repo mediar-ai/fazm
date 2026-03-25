@@ -178,7 +178,7 @@ struct FloatingControlBarView: View {
                     }
                 }
             }
-            .onChange(of: updaterViewModel.updateAvailable) { available in
+            .onChange(of: updaterViewModel.updateAvailable) { _, available in
                 if available {
                     updatePulse = false
                     withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
