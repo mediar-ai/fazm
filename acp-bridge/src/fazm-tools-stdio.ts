@@ -433,7 +433,7 @@ Aim for 15-40 nodes with meaningful edges connecting them.`,
   },
   {
     name: "speak_response",
-    description: `Speak a short summary of your response aloud to the user using text-to-speech. Call this on EVERY final response to deliver a concise spoken version. The text should be a natural, conversational summary (1-3 sentences) — not the full written response. Keep it brief and direct, as if you're speaking to the user face-to-face.`,
+    description: `Speak a short summary of your response aloud to the user using text-to-speech. Call this on EVERY final response when the conversation language is supported. The text should be a natural, conversational summary (1-3 sentences) — not the full written response. Keep it brief and direct, as if you're speaking to the user face-to-face. IMPORTANT: Only call this tool when the conversation is in one of these supported languages: English, Spanish, French, German, Italian, Dutch, Japanese. Do NOT call this tool for any other language (e.g. Russian, Chinese, Korean, Portuguese, Arabic, etc.) — the TTS engine cannot synthesize those languages and will produce garbled audio.`,
     inputSchema: {
       type: "object" as const,
       properties: {
