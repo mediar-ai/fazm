@@ -144,7 +144,10 @@ final class WebRelay: ObservableObject {
         ].compactMap { $0 }
 
         for path in bundlePaths {
-            if FileManager.default.fileExists(atPath: path) { return path }
+            if FileManager.default.fileExists(atPath: path) {
+                // Copy to temp dir to avoid macOS 26 CSM killing JIT-entitled binaries inside sealed bundles
+                return NodeBinaryHelper.externalNodePath(from: path)
+            }
         }
 
         // Fallback to system node
