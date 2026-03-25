@@ -13,7 +13,7 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0"),
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "11.0.0"),
-        .package(url: "https://github.com/m13v/macos-session-replay.git", from: "0.4.0"),
+        .package(url: "https://github.com/m13v/macos-session-replay.git", from: "0.5.0"),
         .package(path: "LocalPackages/Highlightr"),
         .package(url: "https://github.com/m13v/ai-browser-profile-swift-light.git", from: "0.1.0"),
     ],
