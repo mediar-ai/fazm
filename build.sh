@@ -158,13 +158,13 @@ if [ -d "$WORKSPACE_MCP_REPO" ]; then
         --exclude='docs' --exclude='build' --exclude='dist' --exclude='*.egg-info' \
         "$WORKSPACE_MCP_REPO/" "$WORKSPACE_MCP_BUNDLE/"
     if command -v uv &>/dev/null; then
-        uv venv "$WORKSPACE_MCP_BUNDLE/.venv" --python python3.12 --quiet 2>&1 | tail -1 || true
+        uv venv "$WORKSPACE_MCP_BUNDLE/.venv" --python python3.12 --relocatable --quiet 2>&1 | tail -1 || true
         WORKSPACE_MCP_DEPS=$(python3.12 -c "
 import tomllib
 with open('$WORKSPACE_MCP_REPO/pyproject.toml', 'rb') as f:
     print(' '.join(tomllib.load(f)['project']['dependencies']))
 ")
-        uv pip install --python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" $WORKSPACE_MCP_DEPS --quiet 2>&1 | tail -3 || true
+        uv pip install --python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" --link-mode copy $WORKSPACE_MCP_DEPS --quiet 2>&1 | tail -3 || true
         echo "Bundled Google Workspace MCP with venv"
     else
         echo "Warning: uv not found — Google Workspace MCP will not work without dependencies"
