@@ -1026,7 +1026,7 @@ class ChatProvider: ObservableObject {
         nonisolated(unsafe) let unsafeScript = appleScript
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
-            script.executeAndReturnError(&error)
+            unsafeScript.executeAndReturnError(&error)
             if error != nil {
                 DispatchQueue.main.async {
                     BrowserExtensionSetup.openURLInChrome(urlString)
