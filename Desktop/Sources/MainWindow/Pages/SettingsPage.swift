@@ -1368,34 +1368,58 @@ struct SettingsContentView: View {
 
             // Launch at Login toggle
             settingsCard(settingId: "advanced.preferences.launchatlogin") {
-                HStack(spacing: 16) {
-                    Image(systemName: "power")
-                        .scaledFont(size: 16)
-                        .foregroundColor(FazmColors.textSecondary)
-                        .frame(width: 24, height: 24)
+                VStack(spacing: 12) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "power")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textSecondary)
+                            .frame(width: 24, height: 24)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Launch at Login")
-                            .scaledFont(size: 16, weight: .semibold)
-                            .foregroundColor(FazmColors.textPrimary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Launch at Login")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
 
-                        Text(launchAtLoginManager.statusDescription)
-                            .scaledFont(size: 13)
-                            .foregroundColor(FazmColors.textTertiary)
+                            Text(launchAtLoginManager.statusDescription)
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: Binding(
+                            get: { launchAtLoginManager.isEnabled },
+                            set: { newValue in
+                                if launchAtLoginManager.setEnabled(newValue) {
+                                    AnalyticsManager.shared.launchAtLoginChanged(enabled: newValue, source: "user")
+                                }
+                            }
+                        ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
 
-                    Spacer()
+                    if launchAtLoginManager.lastError != nil {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .scaledFont(size: 12)
+                                .foregroundColor(.orange)
 
-                    Toggle("", isOn: Binding(
-                        get: { launchAtLoginManager.isEnabled },
-                        set: { newValue in
-                            if launchAtLoginManager.setEnabled(newValue) {
-                                AnalyticsManager.shared.launchAtLoginChanged(enabled: newValue, source: "user")
+                            Text("Could not toggle automatically.")
+                                .scaledFont(size: 12)
+                                .foregroundColor(.orange)
+
+                            Spacer()
+
+                            Button("Open Login Items") {
+                                launchAtLoginManager.openLoginItemsSettings()
                             }
+                            .scaledFont(size: 12)
+                            .foregroundColor(FazmColors.purplePrimary)
+                            .buttonStyle(.plain)
                         }
-                    ))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
+                        .padding(.horizontal, 4)
+                    }
                 }
             }
         }
