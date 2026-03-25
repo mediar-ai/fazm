@@ -989,20 +989,14 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Claude's OAuth page sometimes fails on first attempt when the user has no active
-    /// session on claude.ai. Auto-reopen the URL after a short delay to handle the
-    /// "fails first, works second" pattern silently. Navigates the existing tab instead
-    /// of opening a new one.
+    /// Previously auto-reopened the OAuth URL after a delay, but this caused more
+    /// harm than good — it would fire during login (user hadn't finished signing in)
+    /// or after auth completed (before Swift received auth_success). The "Open Sign-in
+    /// Again" button in ClaudeAuthSheet is the better UX for handling first-attempt failures.
     private var oauthAutoReopenTask: Task<Void, Never>?
 
     private func scheduleOAuthAutoReopen(_ urlString: String) {
-        oauthAutoReopenTask?.cancel()
-        oauthAutoReopenTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
-            guard !Task.isCancelled, isClaudeAuthRequired, !isClaudeConnected else { return }
-            log("ChatProvider: Auto-reopening OAuth URL in existing tab (workaround for first-attempt failure)")
-            Self.navigateChromeActiveTab(to: urlString)
-        }
+        // No-op: auto-reopen removed. Users can click "Open Sign-in Again" if needed.
     }
 
     /// Navigate Chrome's active tab to a URL (instead of opening a new tab).
