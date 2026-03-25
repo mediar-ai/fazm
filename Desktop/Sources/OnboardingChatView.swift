@@ -722,19 +722,6 @@ struct OnboardingChatView: View {
         // Start transcription if microphone is available
         appState.startTranscription()
 
-        // Create welcome task (skip if it already exists from a previous onboarding)
-        Task {
-            let welcomeDescription = "Run Fazm for two days to start receiving helpful advice"
-            let alreadyExists = await ActionItemStorage.shared.actionItemExists(description: welcomeDescription)
-            if !alreadyExists {
-                await TasksStore.shared.createTask(
-                    description: welcomeDescription,
-                    dueAt: Date(),
-                    priority: "low"
-                )
-            }
-        }
-
         // Send welcome notification
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             NotificationService.shared.sendNotification(
