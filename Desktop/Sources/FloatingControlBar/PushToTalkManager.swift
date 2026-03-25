@@ -559,10 +559,9 @@ class PushToTalkManager: ObservableObject {
       let holdDuration = ProcessInfo.processInfo.systemUptime - lastOptionDownTime
       let micName = AudioCaptureService.getCurrentMicrophoneName() ?? "unknown"
       log("PushToTalkManager: no transcript to send (held \(String(format: "%.1f", holdDuration))s, mic='\(micName)')")
-      if wasPttOpenedChat && !chatWasOpenBeforePTT {
-        // PTT opened the chat but no transcript — close it only if PTT opened it
+      // Keep the chat open even if no speech was detected — user will close it manually
+      if wasPttOpenedChat {
         pttOpenedChat = false
-        FloatingControlBarManager.shared.closeAIConversation()
       }
       // Only show silence overlay if PTT was held for at least 3 seconds
       if holdDuration >= 3.0 {
