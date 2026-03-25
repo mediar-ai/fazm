@@ -142,26 +142,36 @@ export default function Chat({
 
       {/* Input */}
       <div className="px-4 py-3 border-t border-neutral-800">
-        <form onSubmit={handleSubmit} className="flex gap-2 items-end">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isDesktopOnline ? "Message..." : "Desktop offline"}
-            disabled={!isDesktopOnline}
-            rows={1}
-            className="flex-1 bg-neutral-900 text-white rounded-2xl px-4 py-2.5 text-sm resize-none leading-5 outline-none border border-neutral-700 focus:border-neutral-600 placeholder:text-neutral-500 disabled:opacity-40 hide-scrollbar"
-            style={{ maxHeight: "calc(8 * 1.25rem + 1.25rem)", overflowY: "auto" }}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isSending || !isDesktopOnline}
-            className="bg-white text-black font-medium px-4 py-2.5 rounded-full hover:bg-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm shrink-0"
-          >
-            {isSending ? "..." : "Send"}
-          </button>
-        </form>
+        {!isDesktopOnline ? (
+          <div className="flex items-center justify-center gap-2 bg-neutral-900 rounded-2xl px-4 py-3 border border-neutral-700">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-sm text-neutral-400">
+              {isConnected
+                ? "Desktop offline — open Fazm on your computer"
+                : "Connection lost — reconnecting..."}
+            </span>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex gap-2 items-end">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Message..."
+              rows={1}
+              className="flex-1 bg-neutral-900 text-white rounded-2xl px-4 py-2.5 text-sm resize-none leading-5 outline-none border border-neutral-700 focus:border-neutral-600 placeholder:text-neutral-500 hide-scrollbar"
+              style={{ maxHeight: "calc(8 * 1.25rem + 1.25rem)", overflowY: "auto" }}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isSending}
+              className="bg-white text-black font-medium px-4 py-2.5 rounded-full hover:bg-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm shrink-0"
+            >
+              {isSending ? "..." : "Send"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
