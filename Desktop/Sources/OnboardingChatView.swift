@@ -238,7 +238,6 @@ struct OnboardingChatView: View {
                                 switch pending {
                                 case "screen_recording": return !appState.hasScreenRecordingPermission
                                 case "microphone": return !appState.hasMicrophonePermission
-                                case "notifications": return !appState.hasNotificationPermission
                                 case "accessibility": return !appState.hasAccessibilityPermission
                                 default: return false
                                 }
@@ -384,7 +383,6 @@ struct OnboardingChatView: View {
             startChat()
         }
         .onReceive(permissionCheckTimer) { _ in
-            appState.checkNotificationPermission()
             appState.checkScreenRecordingPermission()
             appState.checkMicrophonePermission()
             appState.checkAccessibilityPermission()
@@ -395,9 +393,6 @@ struct OnboardingChatView: View {
         }
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
             if granted { handlePermissionGranted("microphone", label: "Microphone") }
-        }
-        .onChange(of: appState.hasNotificationPermission) { _, granted in
-            if granted { handlePermissionGranted("notifications", label: "Notifications") }
         }
         .onChange(of: appState.hasAccessibilityPermission) { _, granted in
             if granted { handlePermissionGranted("accessibility", label: "Accessibility") }
@@ -430,8 +425,6 @@ struct OnboardingChatView: View {
                 return "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
             case "accessibility":
                 return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            case "notifications":
-                return "x-apple.systempreferences:com.apple.preference.security?Privacy_Notifications"
             default:
                 return nil
             }
