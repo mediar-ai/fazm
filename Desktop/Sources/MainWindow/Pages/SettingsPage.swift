@@ -130,6 +130,7 @@ struct SettingsContentView: View {
     enum SettingsSection: String, CaseIterable {
         case home = "Home"
         case discoveredTasks = "Discovered Tasks"
+        case remoteControl = "Remote Control"
         case dictionary = "Dictionary"
         case shortcuts = "Shortcuts"
         case permissions = "Permissions"
@@ -179,6 +180,8 @@ struct SettingsContentView: View {
                     HomeSection()
                 case .discoveredTasks:
                     DiscoveredTasksSection()
+                case .remoteControl:
+                    remoteControlSection
                 case .general:
                     generalSection
                 case .shortcuts:
@@ -205,6 +208,199 @@ struct SettingsContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .navigateToFloatingBarSettings)) { _ in
             selectedSection = .shortcuts
         }
+    }
+
+    // MARK: - Remote Control Section
+
+    private var remoteControlSection: some View {
+        VStack(spacing: 20) {
+            // QR Code + URL card
+            settingsCard(settingId: "remotecontrol.connect") {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "iphone.and.arrow.forward")
+                            .scaledFont(size: 16, weight: .medium)
+                            .foregroundColor(FazmColors.purplePrimary)
+                            .frame(width: 12)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Connect Your Phone")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+                            Text("Control Fazm from your phone. Open the link below or scan the QR code on your mobile device.")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textTertiary)
+                        }
+
+                        Spacer()
+                    }
+
+                    HStack(spacing: 20) {
+                        // QR Code
+                        if let qrImage = generateQRCode(from: "https://chat.fazm.ai") {
+                            Image(nsImage: qrImage)
+                                .interpolation(.none)
+                                .resizable()
+                                .frame(width: 120, height: 120)
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(FazmColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
+                                )
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("chat.fazm.ai")
+                                .scaledFont(size: 18, weight: .semibold)
+                                .foregroundColor(FazmColors.purplePrimary)
+
+                            Text("Sign in with the same Google account on your phone to connect automatically.")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Button(action: {
+                                NSWorkspace.shared.open(URL(string: "https://chat.fazm.ai")!)
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.up.right")
+                                        .scaledFont(size: 11, weight: .medium)
+                                    Text("Open in Browser")
+                                        .scaledFont(size: 13, weight: .medium)
+                                }
+                                .foregroundColor(FazmColors.purplePrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(FazmColors.purplePrimary.opacity(0.1))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+
+            // Connection status card
+            settingsCard(settingId: "remotecontrol.status") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .scaledFont(size: 16, weight: .medium)
+                            .foregroundColor(FazmColors.purplePrimary)
+                            .frame(width: 12)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Connection Status")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+                            Text("Current state of the phone relay connection.")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textTertiary)
+                        }
+
+                        Spacer()
+                    }
+
+                    VStack(spacing: 8) {
+                        // Relay status
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(chatProvider?.webRelay.tunnelUrl != nil ? Color.green : FazmColors.textTertiary.opacity(0.4))
+                                .frame(width: 8, height: 8)
+                            Text("Relay Server")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textSecondary)
+                            Spacer()
+                            Text(chatProvider?.webRelay.tunnelUrl != nil ? "Online" : "Offline")
+                                .scaledFont(size: 13, weight: .medium)
+                                .foregroundColor(chatProvider?.webRelay.tunnelUrl != nil ? Color.green : FazmColors.textTertiary)
+                        }
+
+                        Divider()
+                            .background(FazmColors.backgroundQuaternary.opacity(0.3))
+
+                        // Phone connection
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(chatProvider?.webRelay.isPhoneConnected == true ? Color.green : FazmColors.textTertiary.opacity(0.4))
+                                .frame(width: 8, height: 8)
+                            Text("Phone")
+                                .scaledFont(size: 13)
+                                .foregroundColor(FazmColors.textSecondary)
+                            Spacer()
+                            Text(chatProvider?.webRelay.isPhoneConnected == true ? "Connected" : "Not Connected")
+                                .scaledFont(size: 13, weight: .medium)
+                                .foregroundColor(chatProvider?.webRelay.isPhoneConnected == true ? Color.green : FazmColors.textTertiary)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(FazmColors.backgroundTertiary.opacity(0.5))
+                    )
+                }
+            }
+
+            // How it works card
+            settingsCard(settingId: "remotecontrol.howitworks") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "questionmark.circle")
+                            .scaledFont(size: 16, weight: .medium)
+                            .foregroundColor(FazmColors.purplePrimary)
+                            .frame(width: 12)
+
+                        Text("How It Works")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        remoteControlStep(number: "1", text: "Open chat.fazm.ai on your phone")
+                        remoteControlStep(number: "2", text: "Sign in with the same Google account")
+                        remoteControlStep(number: "3", text: "Your phone connects to this computer automatically")
+                        remoteControlStep(number: "4", text: "Send voice or text messages from your phone")
+                    }
+                    .padding(.horizontal, 4)
+                }
+            }
+        }
+    }
+
+    private func remoteControlStep(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(number)
+                .scaledFont(size: 12, weight: .bold)
+                .foregroundColor(FazmColors.purplePrimary)
+                .frame(width: 20, height: 20)
+                .background(
+                    Circle()
+                        .fill(FazmColors.purplePrimary.opacity(0.15))
+                )
+            Text(text)
+                .scaledFont(size: 13)
+                .foregroundColor(FazmColors.textSecondary)
+        }
+    }
+
+    private func generateQRCode(from string: String) -> NSImage? {
+        guard let data = string.data(using: .ascii),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let ciImage = filter.outputImage else { return nil }
+        let scale = CGAffineTransform(scaleX: 10, y: 10)
+        let scaled = ciImage.transformed(by: scale)
+        let rep = NSCIImageRep(ciImage: scaled)
+        let nsImage = NSImage(size: rep.size)
+        nsImage.addRepresentation(rep)
+        return nsImage
     }
 
     // MARK: - General Section
