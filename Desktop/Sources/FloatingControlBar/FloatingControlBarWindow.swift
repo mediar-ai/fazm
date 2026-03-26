@@ -1178,7 +1178,7 @@ class FloatingControlBarManager {
         // Observe ChatProvider dequeuing messages to sync UI queue
         dequeueObserver = NotificationCenter.default.addObserver(
             forName: .chatProviderDidDequeue, object: nil, queue: .main
-        ) { [weak barWindow] notification in
+        ) { [weak barWindow, weak chatProvider] notification in
             guard let text = notification.userInfo?["text"] as? String,
                   let state = barWindow?.state else { return }
             MainActor.assumeIsolated {
@@ -1186,9 +1186,18 @@ class FloatingControlBarManager {
                 if let idx = state.messageQueue.firstIndex(where: { $0.text == text }) {
                     state.messageQueue.remove(at: idx)
                 }
-                // Archive current exchange and set up for the new query
+                // Archive current exchange and set up for the new query.
+                // The Combine $messages sink uses receive(on: .main) which delivers
+                // asynchronously, so currentAIMessage may not yet reflect the latest
+                // provider state. Fall back to reading directly from provider.messages.
                 let currentQuery = state.displayedQuery
-                if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
+                var aiMessage = state.currentAIMessage
+                if aiMessage == nil, let provider = chatProvider,
+                   let latestAI = provider.messages.last, latestAI.sender == .ai,
+                   !latestAI.text.isEmpty {
+                    aiMessage = latestAI
+                }
+                if var currentMessage = aiMessage, !currentQuery.isEmpty {
                     currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
                         if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
                             return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
