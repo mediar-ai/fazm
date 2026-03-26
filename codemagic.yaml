@@ -411,8 +411,18 @@ workflows:
               rm -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
               cp "$GWMCP_REAL_PYTHON" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
               rm -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3.12"
-              ln -s python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3"
-              ln -s python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3.12"
+              # Create wrapper scripts that set PYTHONHOME so the bundled Python
+              # can find its stdlib regardless of where the app is installed.
+              # The real binary is "python"; wrappers resolve the venv path at runtime.
+              for wrapper_name in python3 python3.12; do
+                cat > "$WORKSPACE_MCP_BUNDLE/.venv/bin/$wrapper_name" << 'WRAPPER'
+#!/bin/sh
+VENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONHOME="$VENV_DIR"
+exec "$VENV_DIR/bin/python" "$@"
+WRAPPER
+                chmod +x "$WORKSPACE_MCP_BUNDLE/.venv/bin/$wrapper_name"
+              done
               # Copy libpython so @executable_path/../lib/libpython3.12.dylib resolves
               if [ -f "$GWMCP_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
                 cp "$GWMCP_MANAGED_DIR/lib/libpython3.12.dylib" "$WORKSPACE_MCP_BUNDLE/.venv/lib/libpython3.12.dylib"
