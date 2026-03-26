@@ -226,14 +226,23 @@ final class WebRelay: ObservableObject {
 
     // MARK: - Cloudflared Tunnel
 
-    private func startCloudflared(port: UInt16) {
-        let paths = [
-            "/opt/homebrew/bin/cloudflared",
-            "/usr/local/bin/cloudflared",
-            "/usr/bin/cloudflared",
-        ]
+    private func findCloudflared(in bundle: Bundle) -> String? {
+        // Check bundle first
+        let bundlePaths = [
+            bundle.resourcePath.map { $0 + "/Fazm_Fazm.bundle/cloudflared" },
+        ].compactMap { $0 }
 
-        guard let binary = paths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        for path in bundlePaths {
+            if FileManager.default.fileExists(atPath: path) { return path }
+        }
+
+        // Fallback to system
+        let systemPaths = ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared", "/usr/bin/cloudflared"]
+        return systemPaths.first(where: { FileManager.default.fileExists(atPath: $0) })
+    }
+
+    private func startCloudflared(port: UInt16) {
+        guard let binary = findCloudflared(in: Bundle.main) else {
             log("WebRelay: cloudflared not found, skipping tunnel")
             return
         }
