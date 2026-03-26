@@ -2179,12 +2179,14 @@ class ChatProvider: ObservableObject {
             let toolResultDisplayHandler: ACPBridge.ToolResultDisplayHandler = { [weak self] toolUseId, name, output in
                 Task { @MainActor [weak self] in
                     self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
-                    // Detect browser extension disconnect mid-task and surface it clearly
+                    // Detect browser extension disconnect mid-task
+                    // Only prompt setup if token is missing (first-time); if token exists, let the agent handle the error naturally
                     let isBrowserTool = name.contains("browser") || name.contains("playwright")
                     let isDisconnected = output.contains("Extension connection timeout")
                         || output.contains("extension is not connected")
-                    if isBrowserTool && isDisconnected && self?.stoppedForBrowserSetup != true {
-                        log("ChatProvider: Browser extension disconnected mid-task (\(name)) — stopping and prompting setup")
+                    let hasToken = !(UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? "").isEmpty
+                    if isBrowserTool && isDisconnected && !hasToken && self?.stoppedForBrowserSetup != true {
+                        log("ChatProvider: Browser extension not set up (\(name)) — prompting setup")
                         self?.errorMessage = "The browser extension disconnected. Reconnecting — your task will resume automatically once it's back."
                         self?.stoppedForBrowserSetup = true
                         self?.needsBrowserExtensionSetup = true
