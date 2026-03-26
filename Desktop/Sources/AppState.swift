@@ -219,95 +219,6 @@ class AppState: ObservableObject {
         ScreenCaptureService.openScreenRecordingPreferences()
     }
 
-    func requestNotificationPermission() {
-        // First check current authorization status
-        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-
-                if settings.authorizationStatus == .notDetermined {
-                    // First time - show the system prompt
-                    NSApp.activate(ignoringOtherApps: true)
-                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
-                        if let error = error {
-                            let nsError = error as NSError
-                            log("Notification permission error: \(error) (domain=\(nsError.domain) code=\(nsError.code))")
-
-                            // UNErrorDomain code 1 = notificationsNotAllowed
-                            // This happens when LaunchServices has the app marked as launch-disabled,
-                            // which prevents the notification center from registering the app.
-                            // Fix: unregister from LaunchServices and re-register to clear the flag, then retry.
-                            if nsError.domain == "UNErrorDomain" && nsError.code == 1 {
-                                DispatchQueue.main.async {
-                                    AnalyticsManager.shared.notificationRepairTriggered(
-                                        reason: "launch_disabled_error",
-                                        previousStatus: "notDetermined",
-                                        currentStatus: "error_code_1"
-                                    )
-                                    self?.repairNotificationRegistrationAndRetry()
-                                }
-                                return
-                            }
-                        }
-                        DispatchQueue.main.async {
-                            self?.checkNotificationPermission()
-                        }
-                    }
-                } else if settings.authorizationStatus == .denied {
-                    // Previously denied - open System Settings so user can enable manually
-                    self.openNotificationPreferences()
-                }
-                // If already authorized, checkNotificationPermission() will handle it
-            }
-        }
-    }
-
-    /// Repair LaunchServices registration when notification authorization fails.
-    /// The "launch-disabled" flag in LaunchServices prevents the notification center
-    /// from registering the app. This unregisters and re-registers to clear the flag.
-    private func repairNotificationRegistrationAndRetry() {
-        // Use the shared repair utility (also used by ProactiveAssistantsPlugin)
-        ProactiveAssistantsPlugin.repairNotificationRegistration()
-
-        // After the repair + retry, update our permission state and open System Settings as fallback
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                DispatchQueue.main.async {
-                    let isNowGranted = settings.authorizationStatus == .authorized
-                    self?.hasNotificationPermission = isNowGranted
-                    if !isNowGranted {
-                        log("Notification permission still not granted after repair. Opening System Settings.")
-                        self?.openNotificationPreferences()
-                    }
-                }
-            }
-        }
-    }
-
-    /// Repair notification registration via lsregister, then fall back to System Settings if still broken.
-    /// Called from sidebar and settings "Fix" buttons when auth is not authorized.
-    func repairNotificationAndFallback() {
-        log("Fix button tapped — running lsregister repair for notifications")
-        ProactiveAssistantsPlugin.repairNotificationRegistration()
-
-        // Wait for repair + re-authorization, then check if it worked
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                DispatchQueue.main.async {
-                    let isNowGranted = settings.authorizationStatus == .authorized
-                    self?.hasNotificationPermission = isNowGranted
-                    self?.notificationAlertStyle = settings.alertStyle
-                    if isNowGranted {
-                        log("Notification repair succeeded — auth is now authorized")
-                    } else {
-                        log("Notification repair didn't restore auth (status=\(settings.authorizationStatus.rawValue)) — opening System Settings")
-                        self?.openNotificationPreferences()
-                    }
-                }
-            }
-        }
-    }
-
     /// Trigger screen recording permission prompt
     func triggerScreenRecordingPermission() {
         // Request both traditional TCC and ScreenCaptureKit permissions
@@ -318,7 +229,6 @@ class AppState: ObservableObject {
 
     /// Check and update all permission states
     func checkAllPermissions() {
-        checkNotificationPermission()
         checkScreenRecordingPermission()
         checkAccessibilityPermission()
         // One-time startup diagnostic for accessibility
@@ -327,69 +237,6 @@ class AppState: ObservableObject {
         log("ACCESSIBILITY_STARTUP: bundleId=\(bundleId), macOS=\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion), TCC=\(hasAccessibilityPermission), broken=\(isAccessibilityBroken), onboarded=\(hasCompletedOnboarding)")
     }
 
-    /// Check notification permission status and alert style
-    func checkNotificationPermission() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            DispatchQueue.main.async {
-                let isNowGranted = settings.authorizationStatus == .authorized
-                self.hasNotificationPermission = isNowGranted
-                self.notificationAlertStyle = settings.alertStyle
-
-                // Log the current notification settings
-                let authStatus = switch settings.authorizationStatus {
-                    case .notDetermined: "notDetermined"
-                    case .denied: "denied"
-                    case .authorized: "authorized"
-                    case .provisional: "provisional"
-                    case .ephemeral: "ephemeral"
-                    @unknown default: "unknown"
-                }
-                let alertStyleName = switch settings.alertStyle {
-                    case .none: "NONE (no banners)"
-                    case .banner: "BANNER"
-                    case .alert: "ALERT"
-                    @unknown default: "unknown"
-                }
-                // Track notification settings in analytics only when they change
-                let soundEnabled = settings.soundSetting == .enabled
-                let badgeEnabled = settings.badgeSetting == .enabled
-                let settingsChanged = authStatus != self.lastNotificationAuthStatus ||
-                                      alertStyleName != self.lastNotificationAlertStyle ||
-                                      soundEnabled != self.lastNotificationSoundEnabled ||
-                                      badgeEnabled != self.lastNotificationBadgeEnabled
-
-                if settingsChanged {
-                    log("Notification settings: auth=\(authStatus), alertStyle=\(alertStyleName), sound=\(settings.soundSetting.rawValue), badge=\(settings.badgeSetting.rawValue)")
-                    AnalyticsManager.shared.notificationSettingsChecked(
-                        authStatus: authStatus,
-                        alertStyle: alertStyleName,
-                        soundEnabled: soundEnabled,
-                        badgeEnabled: badgeEnabled,
-                        bannersDisabled: settings.alertStyle == .none
-                    )
-
-                    // Detect regression: was authorized, now reverted to notDetermined
-                    // This happens on macOS 26+ where the OS silently revokes notification permission
-                    if self.lastNotificationAuthStatus == "authorized" && authStatus == "notDetermined" {
-                        log("Notification permission REGRESSED from authorized to notDetermined — triggering auto-repair")
-                        AnalyticsManager.shared.notificationRepairTriggered(
-                            reason: "auth_regression",
-                            previousStatus: "authorized",
-                            currentStatus: "notDetermined"
-                        )
-                        self.repairNotificationRegistrationAndRetry()
-                    }
-
-                    // Update last known state
-                    self.lastNotificationAuthStatus = authStatus
-                    self.lastNotificationAlertStyle = alertStyleName
-                    self.lastNotificationSoundEnabled = soundEnabled
-                    self.lastNotificationBadgeEnabled = badgeEnabled
-                }
-
-            }
-        }
-    }
 
     /// Check screen recording permission status
     func checkScreenRecordingPermission() {
