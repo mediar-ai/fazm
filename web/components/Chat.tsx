@@ -20,6 +20,7 @@ export default function Chat({
   isConnected,
 }: ChatProps) {
   const [input, setInput] = useState("");
+  const [showTextInput, setShowTextInput] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -28,10 +29,7 @@ export default function Chat({
     (transcript: string) => {
       if (transcript.trim()) {
         setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        // Only focus input on desktop — avoid keyboard popup on mobile
-        if (window.matchMedia("(min-width: 768px)").matches) {
-          inputRef.current?.focus();
-        }
+        setShowTextInput(true);
       }
     },
     []
@@ -87,6 +85,7 @@ export default function Chat({
     if (!trimmed || isSending || !isDesktopOnline) return;
     onSend(trimmed);
     setInput("");
+    setShowTextInput(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -184,7 +183,7 @@ export default function Chat({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input — combined text + voice + send (like AI TV) */}
+      {/* Input */}
       <div className="px-4 py-3 border-t border-neutral-800">
         {!isDesktopOnline ? (
           <div className="flex items-center justify-center gap-2 bg-neutral-900 rounded-2xl px-4 py-3 border border-neutral-700">
@@ -197,21 +196,40 @@ export default function Chat({
                   : "Connecting to desktop..."}
             </span>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="flex gap-2 items-end">
-            <div className="relative flex-1">
+        ) : showTextInput ? (
+          /* Text input mode — shown after voice transcript or manual switch */
+          <div className="space-y-2">
+            <form onSubmit={handleSubmit} className="flex gap-2 items-end">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Message..."
-                className="block w-full rounded-2xl px-4 py-[10px] text-white placeholder-neutral-500 focus:outline-none text-sm resize-none leading-5 hide-scrollbar bg-neutral-900 border border-neutral-700 focus:border-neutral-600"
+                className="flex-1 bg-neutral-900 text-white rounded-2xl px-4 py-[10px] text-sm resize-none leading-5 outline-none border border-neutral-700 focus:border-neutral-600 placeholder:text-neutral-500 hide-scrollbar"
                 style={{ height: "40px", maxHeight: "calc(8 * 1.25rem + 1.25rem)", overflow: "hidden" }}
                 disabled={isSending}
-                autoFocus={false}
+                autoFocus
               />
-            </div>
+              <button
+                type="submit"
+                disabled={!input.trim() || isSending}
+                className="bg-white text-black font-medium px-4 h-10 rounded-full hover:bg-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm shrink-0"
+              >
+                {isSending ? "..." : "Send"}
+              </button>
+            </form>
+            <button
+              type="button"
+              onClick={() => setShowTextInput(false)}
+              className="w-full text-xs text-neutral-500 hover:text-neutral-300 transition-colors py-1"
+            >
+              Switch to voice
+            </button>
+          </div>
+        ) : (
+          /* Voice mode (default) — hold to talk */
+          <div className="space-y-2">
             <button
               type="button"
               onPointerDown={(e) => {
@@ -222,37 +240,43 @@ export default function Chat({
               onPointerLeave={() => stopRecording()}
               onContextMenu={(e) => e.preventDefault()}
               disabled={isSending || transcribing}
-              className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors shrink-0 select-none touch-none ${
+              className={`w-full flex items-center justify-center gap-3 h-12 rounded-2xl transition-colors text-sm font-medium select-none touch-none ${
                 recording
                   ? "bg-red-500 text-white animate-pulse"
                   : transcribing
                     ? "bg-neutral-700 text-white/50 cursor-wait"
-                    : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
+                    : "bg-white text-black hover:bg-neutral-200 active:bg-neutral-300"
               }`}
-              aria-label={recording ? "Release to send" : "Hold to talk"}
+              aria-label={recording ? "Release to stop" : "Hold to talk"}
             >
               {transcribing ? (
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4 31.4" />
-                </svg>
+                <>
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4 31.4" />
+                  </svg>
+                  Transcribing...
+                </>
               ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  {recording ? (
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  ) : (
-                    <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm-1 18.93A7.01 7.01 0 0 1 5 13h2a5 5 0 0 0 10 0h2a7.01 7.01 0 0 1-6 6.93V22h3v2H8v-2h3v-2.07z" />
-                  )}
-                </svg>
+                <>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    {recording ? (
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    ) : (
+                      <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm-1 18.93A7.01 7.01 0 0 1 5 13h2a5 5 0 0 0 10 0h2a7.01 7.01 0 0 1-6 6.93V22h3v2H8v-2h3v-2.07z" />
+                    )}
+                  </svg>
+                  {recording ? "Release to stop" : "Hold to talk"}
+                </>
               )}
             </button>
             <button
-              type="submit"
-              disabled={!input.trim() || isSending}
-              className="bg-white text-black font-medium px-4 h-10 rounded-full hover:bg-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm shrink-0"
+              type="button"
+              onClick={() => setShowTextInput(true)}
+              className="w-full text-xs text-neutral-500 hover:text-neutral-300 transition-colors py-1"
             >
-              {isSending ? "..." : "Send"}
+              Type instead
             </button>
-          </form>
+          </div>
         )}
       </div>
     </div>
