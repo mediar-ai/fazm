@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { type ChatMessage } from "@/lib/useDesktopRelay";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
 
 interface ChatProps {
   messages: ChatMessage[];
@@ -21,6 +22,19 @@ export default function Chat({
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Voice input — push-to-talk
+  const handleVoiceTranscript = useCallback(
+    (transcript: string) => {
+      setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      // Only focus input on desktop — avoid keyboard popup on mobile
+      if (window.matchMedia("(min-width: 768px)").matches) {
+        inputRef.current?.focus();
+      }
+    },
+    []
+  );
+  const { recording, transcribing, toggleRecording } = useVoiceInput(handleVoiceTranscript);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -170,6 +184,33 @@ export default function Chat({
               className="flex-1 bg-neutral-900 text-white rounded-2xl px-4 py-2.5 text-sm resize-none leading-5 outline-none border border-neutral-700 focus:border-neutral-600 placeholder:text-neutral-500 hide-scrollbar"
               style={{ maxHeight: "calc(8 * 1.25rem + 1.25rem)", overflowY: "auto" }}
             />
+            <button
+              type="button"
+              onClick={toggleRecording}
+              disabled={isSending || transcribing}
+              className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors shrink-0 ${
+                recording
+                  ? "bg-red-500 text-white animate-pulse"
+                  : transcribing
+                    ? "bg-neutral-700 text-white/50 cursor-wait"
+                    : "bg-neutral-800 text-white hover:bg-neutral-700 border border-neutral-700"
+              }`}
+              aria-label={recording ? "Stop recording" : "Start voice input"}
+            >
+              {transcribing ? (
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4 31.4" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  {recording ? (
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  ) : (
+                    <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm-1 18.93A7.01 7.01 0 0 1 5 13h2a5 5 0 0 0 10 0h2a7.01 7.01 0 0 1-6 6.93V22h3v2H8v-2h3v-2.07z" />
+                  )}
+                </svg>
+              )}
+            </button>
             <button
               type="submit"
               disabled={!input.trim() || isSending}
