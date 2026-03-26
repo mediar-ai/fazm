@@ -1,6 +1,5 @@
 import AVFoundation
 import SwiftUI
-import UserNotifications
 @preconcurrency import ObjectiveC
 
 @MainActor
@@ -8,15 +7,7 @@ class AppState: ObservableObject {
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
 
     // Permission states for onboarding
-    @Published var hasNotificationPermission = false
-    @Published var notificationAlertStyle: UNAlertStyle = .none  // .none, .banner, or .alert
     @Published var hasScreenRecordingPermission = false
-
-    // Track last notification settings for change detection (avoid duplicate analytics)
-    private var lastNotificationAuthStatus: String?
-    private var lastNotificationAlertStyle: String?
-    private var lastNotificationSoundEnabled: Bool?
-    private var lastNotificationBadgeEnabled: Bool?
     @Published var isScreenCaptureKitBroken = false  // TCC says yes but ScreenCaptureKit says no
     @Published var isScreenRecordingStale = false  // TCC says yes but capture fails (developer signing changed)
     var screenRecordingGrantAttempts = 0  // Track how many times user clicked Grant without success
@@ -24,35 +15,12 @@ class AppState: ObservableObject {
     @Published var isAccessibilityBroken = false  // TCC says yes but AX calls actually fail (common after macOS updates/app re-signs)
     private var lastAccessibilityApiDisabledLogged = false  // Dedup apiDisabled log spam
 
-    /// True if notifications are enabled but won't show visual banners
-    var isNotificationBannerDisabled: Bool {
-        hasNotificationPermission && notificationAlertStyle == .none
-    }
-
-
     /// Returns list of missing permissions that are required for full functionality
     var missingPermissions: [String] {
         var missing: [String] = []
         if !hasScreenRecordingPermission || isScreenCaptureKitBroken || isScreenRecordingStale { missing.append("Screen Recording") }
-        if !hasNotificationPermission { missing.append("Notifications") }
-        else if isNotificationBannerDisabled { missing.append("Notification Banners") }
         if !hasAccessibilityPermission || isAccessibilityBroken { missing.append("Accessibility") }
         return missing
-    }
-
-    /// Check if notification permission was explicitly denied
-    func isNotificationPermissionDenied() -> Bool {
-        // We need to check synchronously, so use a semaphore pattern
-        // This is cached from checkNotificationPermission() calls
-        return hasCompletedOnboarding && !hasNotificationPermission
-    }
-
-    /// Open notification preferences in System Settings (directly to Fazm's settings)
-    func openNotificationPreferences() {
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.fazm.app"
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundleId)") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     /// True if any required permissions are missing
@@ -61,7 +29,6 @@ class AppState: ObservableObject {
     }
 
     // Periodic notification health check timer
-    private var notificationHealthTimer: Timer?
 
     // Observers for app lifecycle
     private var willTerminateObserver: NSObjectProtocol?
@@ -106,14 +73,6 @@ class AppState: ObservableObject {
                 self?.hasScreenRecordingPermission = false
                 self?.isScreenCaptureKitBroken = true  // Needs reset
                 log("AppState: ScreenCaptureKit broken - needs reset")
-            }
-        }
-
-        // Start periodic notification health check (every 30 min)
-        // Detects when macOS silently revokes notification authorization and auto-repairs
-        notificationHealthTimer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.checkNotificationPermission()
             }
         }
 
