@@ -623,12 +623,11 @@ WRAPPER
                 codesign --force --options runtime --timestamp $CS_PAGESIZE \
                   --sign "$SIGN_IDENTITY" "$native_bin"
             done
-            # Sign the venv Python binary itself
-            if [ -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" ]; then
-              REAL_PYTHON=$(readlink -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" 2>/dev/null || echo "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3")
-              if file "$REAL_PYTHON" 2>/dev/null | grep -q "Mach-O"; then
+            # Sign the venv Python binary itself (python, not python3 which is a wrapper script)
+            if [ -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" ]; then
+              if file "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" 2>/dev/null | grep -q "Mach-O"; then
                 codesign --force --options runtime --timestamp $CS_PAGESIZE \
-                  --sign "$SIGN_IDENTITY" "$REAL_PYTHON"
+                  --sign "$SIGN_IDENTITY" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
               fi
             fi
           fi
