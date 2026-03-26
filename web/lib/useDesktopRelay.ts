@@ -16,6 +16,7 @@ interface RelayHook {
   isDesktopOnline: boolean;
   messages: ChatMessage[];
   sendMessage: (text: string) => void;
+  stopGeneration: () => void;
   isSending: boolean;
 }
 
@@ -198,7 +199,6 @@ export function useDesktopRelay(token: string | null): RelayHook {
   const sendMessage = useCallback(
     (text: string) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-      if (isSending) return;
 
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -212,8 +212,26 @@ export function useDesktopRelay(token: string | null): RelayHook {
         JSON.stringify({ type: "send_message", text, sessionKey: "main" })
       );
     },
-    [isSending]
+    []
   );
 
-  return { isConnected, isDesktopOnline, messages, sendMessage, isSending };
+  const stopGeneration = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: "stop" }));
+    trackEvent("web_stop_generation");
+
+    // Finalize the current streaming message locally
+    const id = currentAiMessageId.current;
+    if (id) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, isStreaming: false } : m
+        )
+      );
+      currentAiMessageId.current = null;
+    }
+    setIsSending(false);
+  }, []);
+
+  return { isConnected, isDesktopOnline, messages, sendMessage, stopGeneration, isSending };
 }
