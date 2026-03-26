@@ -5,7 +5,7 @@ import GRDB
 /// Uses the `chat_messages` table (renamed from `task_chat_messages` in V3 migration).
 enum ChatMessageStore {
 
-    static func saveMessage(_ message: ChatMessage, context: String) async {
+    static func saveMessage(_ message: ChatMessage, context: String, sessionId: String? = nil) async {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         let sender = message.sender == .user ? "user" : "ai"
         let now = Date()
@@ -14,10 +14,10 @@ enum ChatMessageStore {
                 try db.execute(
                     sql: """
                         INSERT OR REPLACE INTO chat_messages
-                        (taskId, messageId, sender, messageText, createdAt, updatedAt, backendSynced)
-                        VALUES (?, ?, ?, ?, ?, ?, 0)
+                        (taskId, messageId, sender, messageText, createdAt, updatedAt, backendSynced, session_id)
+                        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
                     """,
-                    arguments: [context, message.id, sender, message.text, message.createdAt, now]
+                    arguments: [context, message.id, sender, message.text, message.createdAt, now, sessionId]
                 )
             }
         } catch {
