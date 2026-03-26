@@ -24,14 +24,15 @@ export default function Chat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Voice input — press-and-hold to talk, auto-send on release
+  // Voice input — press-and-hold to talk, show transcript in text field
   const handleVoiceTranscript = useCallback(
     (transcript: string) => {
       if (transcript.trim()) {
-        onSend(transcript.trim());
+        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        setShowTextInput(true);
       }
     },
-    [onSend]
+    []
   );
   const { recording, transcribing, startRecording, stopRecording } = useVoiceInput(handleVoiceTranscript);
 
