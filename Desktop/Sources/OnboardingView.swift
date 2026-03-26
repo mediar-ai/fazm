@@ -170,6 +170,7 @@ struct OnboardingView: View {
 
         // Install bundled skills
         let _ = SkillInstaller.install()
+        AnalyticsManager.shared.onboardingChatToolUsed(tool: "install_skills", properties: ["source": "skip", "requested_count": SkillInstaller.bundledSkillNames.count])
 
         // Start essential services
         Task {
