@@ -168,6 +168,9 @@ struct OnboardingView: View {
         appState.hasCompletedOnboarding = true
         UserDefaults.standard.set(true, forKey: "hasCompletedFileIndexing")
 
+        // Install bundled skills
+        let _ = SkillInstaller.install()
+
         // Start essential services
         Task {
             await AgentVMService.shared.startPipeline()
