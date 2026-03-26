@@ -37,6 +37,10 @@ struct SettingsSearchItem: Identifiable {
         SettingsSearchItem(name: "Dev Mode", subtitle: "Developer tools and debugging options", keywords: ["developer", "debug", "dev mode", "development"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.devmode"),
         SettingsSearchItem(name: "Voice Response", subtitle: "AI speaks responses aloud using text-to-speech", keywords: ["voice", "tts", "text to speech", "speak", "audio", "sound"], section: .general, advancedSubsection: nil, icon: "speaker.wave.2.fill", settingId: "general.voiceresponse"),
 
+        // Remote Control
+        SettingsSearchItem(name: "Remote Control", subtitle: "Control Fazm from your phone via chat.fazm.ai", keywords: ["phone", "remote", "mobile", "qr code", "relay", "websocket"], section: .remoteControl, advancedSubsection: nil, icon: "iphone", settingId: "remotecontrol.connect"),
+        SettingsSearchItem(name: "Connection Status", subtitle: "Phone relay and connection status", keywords: ["status", "connected", "online", "relay", "phone"], section: .remoteControl, advancedSubsection: nil, icon: "antenna.radiowaves.left.and.right", settingId: "remotecontrol.status"),
+
         // Permissions
         SettingsSearchItem(name: "Permissions", subtitle: "Manage screen recording, microphone, and accessibility permissions", keywords: ["permissions", "screen recording", "microphone", "accessibility", "privacy", "security"], section: .permissions, advancedSubsection: nil, icon: "lock.shield", settingId: "permissions.permissions"),
 
@@ -316,6 +320,7 @@ struct SettingsSidebarItem: View {
         switch section {
         case .home: return "house"
         case .discoveredTasks: return "wand.and.stars"
+        case .remoteControl: return "iphone"
         case .general: return "gearshape"
         case .shortcuts: return "keyboard"
         case .permissions: return "lock.shield"
