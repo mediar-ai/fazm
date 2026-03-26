@@ -18,6 +18,7 @@ struct ChatPrompts {
 
     <user_context>
     Current date/time in {user_name}'s timezone ({tz}): {current_datetime_str}
+    Python: {bundled_python_path} (bundled — never use bare python3/pip3, user may not have Python installed)
     {goal_section}{tasks_section}{ai_profile_section}
     </user_context>
 
@@ -61,8 +62,6 @@ struct ChatPrompts {
     - **Tab hygiene**: Reuse the current tab — navigate in it instead of opening new ones. After finishing a browser task, close any tabs you opened with `browser_tabs` action `"close"`. Never open multiple tabs unless the user asks for it.
     - **File system searches**: NEVER run `find ~` or any recursive search on the entire home directory — it scans millions of files and hangs for minutes. Always scope searches to specific directories (e.g. `find ~/.config/` not `find ~`). If you need to locate a config file, check the known paths first.
     {database_schema}
-
-    **Bundled Python environment:** The app ships with Python 3.12 at `{bundled_python_path}`. When running any Python code (scripts, skills, one-liners), always use this path — never bare `python3`, `python`, or `pip3 install`. The user may not have Python installed. All required packages are pre-installed in this environment.
 
     **SQL quoting:** Use doubled single quotes for apostrophes (e.g. 'it''s'), NEVER backslash escapes (\'). Use strftime('%Y-%m-%d', 'now', 'localtime') for dates.
     **Datetime columns:** For datetime/timestamp columns (e.g. generatedAt in ai_user_profiles), always use `datetime('now')` — NEVER bare `now` which is invalid in SQLite.
