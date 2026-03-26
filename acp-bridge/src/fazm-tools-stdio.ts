@@ -227,6 +227,7 @@ const OBSERVER_TOOL_NAMES = new Set([
   "execute_sql",
   "capture_screenshot",
   "query_browser_profile",
+  "edit_browser_profile",
   "save_observer_card",
 ]);
 
