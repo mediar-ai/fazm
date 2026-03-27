@@ -146,6 +146,13 @@ async fn generate_appcast(
             })
             .unwrap_or_default();
 
+        // Extract release notes from GitHub release body (markdown → HTML)
+        let release_notes_html = release
+            .body
+            .as_deref()
+            .map(|body| markdown_to_html_release_notes(body, version))
+            .unwrap_or_default();
+
         let pub_date = format_rfc2822(&release.published_at);
 
         // Sparkle channel tags — each release may appear on multiple channels:
@@ -172,13 +179,22 @@ async fn generate_appcast(
         enclosure_attrs.push_str("\n                 type=\"application/octet-stream\"");
 
         for channel_tag in &channel_tags {
+            let description_block = if !release_notes_html.is_empty() {
+                format!(
+                    "\n      <description><![CDATA[{}]]></description>",
+                    release_notes_html
+                )
+            } else {
+                String::new()
+            };
+
             items.push(format!(
                 r#"    <item>
       <title>Version {version}</title>
       <pubDate>{pub_date}</pubDate>
       <sparkle:version>{build_number}</sparkle:version>
       <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>{channel_tag}
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>{channel_tag}{description_block}
       <enclosure {enclosure_attrs}/>
     </item>"#,
             ));
@@ -228,6 +244,59 @@ async fn fetch_github_releases(
         .error_for_status()?
         .json()
         .await?)
+}
+
+/// Convert GitHub release body markdown into simple HTML for Sparkle release notes.
+/// Extracts the "What's New" section and converts markdown list items to HTML.
+fn markdown_to_html_release_notes(body: &str, version: &str) -> String {
+    // Extract lines between "### What's New" and the next "###" or end
+    let mut in_section = false;
+    let mut items: Vec<String> = Vec::new();
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("### What's New") {
+            in_section = true;
+            continue;
+        }
+        if in_section && trimmed.starts_with("###") {
+            break;
+        }
+        if in_section && trimmed.starts_with("- ") {
+            let text = &trimmed[2..];
+            // Escape HTML entities
+            let escaped = text
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            items.push(format!("<li>{}</li>", escaped));
+        }
+    }
+
+    // If no "What's New" section, try all top-level list items
+    if items.is_empty() {
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("- ") {
+                let text = &trimmed[2..];
+                let escaped = text
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                items.push(format!("<li>{}</li>", escaped));
+            }
+        }
+    }
+
+    if items.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "<h2>What's New in {}</h2><ul>{}</ul>",
+        version,
+        items.join("")
+    )
 }
 
 fn format_rfc2822(iso: &str) -> String {
