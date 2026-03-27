@@ -2,10 +2,22 @@ import Combine
 import SwiftUI
 
 /// A single question/answer exchange in the floating bar chat history.
-struct FloatingChatExchange: Identifiable {
-    let id = UUID()
+struct FloatingChatExchange: Identifiable, Equatable {
+    let id: UUID
     let question: String
     var aiMessage: ChatMessage
+
+    init(question: String, aiMessage: ChatMessage) {
+        self.id = UUID()
+        self.question = question
+        self.aiMessage = aiMessage
+    }
+
+    static func == (lhs: FloatingChatExchange, rhs: FloatingChatExchange) -> Bool {
+        lhs.id == rhs.id
+            && lhs.question == rhs.question
+            && lhs.aiMessage == rhs.aiMessage
+    }
 }
 
 /// A message waiting in the queue to be sent after the current query finishes.
