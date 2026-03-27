@@ -123,13 +123,14 @@ struct ChatPrompts {
        ORDER BY createdAt DESC LIMIT 20
        ```
 
-       Full-text search — faster and smarter than LIKE for multi-word queries:
+       Full-text search — faster and smarter than LIKE for multi-word queries (uses FTS5 — MUST use `rowid`, NOT `docid`):
        ```sql
        SELECT cm.sender, substr(cm.messageText, 1, 200), datetime(cm.createdAt)
        FROM chat_messages cm
        WHERE cm.rowid IN (SELECT rowid FROM chat_messages_fts WHERE chat_messages_fts MATCH 'search terms')
        ORDER BY cm.createdAt DESC LIMIT 20
        ```
+       IMPORTANT: The FTS table uses FTS5. Always use `rowid` — `docid` is NOT supported and will error.
 
     This is how you know {user_name} — without these, you're a stranger every time.
     </memory>
