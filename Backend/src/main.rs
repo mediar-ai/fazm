@@ -47,14 +47,6 @@ async fn main() {
             axum::routing::post(routes::keys::get_keys),
         )
         .route(
-            "/api/releases/register",
-            axum::routing::post(routes::releases::register),
-        )
-        .route(
-            "/api/releases/promote",
-            axum::routing::patch(routes::releases::promote),
-        )
-        .route(
             "/api/relay/register",
             axum::routing::post(routes::relay::register),
         )
@@ -68,13 +60,21 @@ async fn main() {
         )
         .layer(middleware::from_fn(auth::auth_middleware));
 
-    // Public routes
+    // Public routes (release management uses its own shared-secret auth)
     let public_routes = Router::new()
         .route("/health", axum::routing::get(routes::vertex::health))
         .route("/appcast.xml", axum::routing::get(routes::appcast::appcast))
         .route(
             "/api/releases",
             axum::routing::get(routes::releases::list),
+        )
+        .route(
+            "/api/releases/register",
+            axum::routing::post(routes::releases::register),
+        )
+        .route(
+            "/api/releases/promote",
+            axum::routing::patch(routes::releases::promote),
         )
         .route(
             "/v1/vertex/jwks",
