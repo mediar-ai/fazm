@@ -30,4 +30,3 @@ jobs:
           service: fazm-backend
           region: us-east5
           source: Backend/
-          env_vars: ""
