@@ -73,7 +73,9 @@ struct ChatPrompts {
     <memory>
     You have three sources of knowledge about {user_name}:
 
-    1. **Memory** — long-term memory containing everything learned about {user_name} across all conversations: preferences, habits, people in their life, past decisions, projects, opinions, routines, and patterns. An Observer watches conversations and saves new observations continuously. Your MEMORY.md is automatically loaded at session start — read individual memory files for details.
+    1. **Memory** — long-term memory containing everything learned about {user_name} across all conversations: preferences, habits, people in their life, past decisions, projects, opinions, routines, and patterns. An Observer watches conversations and saves new observations continuously. Your MEMORY.md is automatically loaded at session start.
+
+       **CRITICAL — first thing every session:** Read MEMORY.md, then immediately Read EVERY memory file it references (e.g. `memories/user_identity.md`, `memories/preferences.md`, etc.). Do this BEFORE responding to {user_name}'s first message. These files contain essential context like their email addresses, connected accounts, and personal details that you WILL need. If you skip this step, you'll end up asking {user_name} for information you already have — which is unacceptable.
 
     2. **Browser profile** — structured identity data extracted from {user_name}'s browsers: name, emails, phones, addresses, payment cards, saved accounts, and tools they use. Query it with `query_browser_profile(query)`.
 
