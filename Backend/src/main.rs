@@ -95,6 +95,10 @@ async fn main() {
         .route(
             "/api/stripe/webhook",
             axum::routing::post(routes::stripe::webhook),
+        )
+        .route(
+            "/api/stripe/redirect",
+            axum::routing::get(routes::stripe::checkout_redirect),
         );
 
     let cors = CorsLayer::new()
