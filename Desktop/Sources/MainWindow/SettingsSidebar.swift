@@ -170,6 +170,14 @@ struct SettingsSidebar: View {
 
             Spacer()
 
+            // Screen recording permission widget
+            if !appState.hasScreenRecordingPermission {
+                screenRecordingWidget
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, updaterViewModel.updateAvailable ? 8 : 16)
+                    .transition(.opacity)
+            }
+
             // Update available widget
             if updaterViewModel.updateAvailable {
                 updateAvailableWidget
@@ -192,6 +200,49 @@ struct SettingsSidebar: View {
             let count = await DiscoveredTasksStore.unreadCount()
             await MainActor.run { discoveredTasksUnread = count }
         }
+    }
+
+    // MARK: - Screen Recording Permission Widget
+    private var screenRecordingWidget: some View {
+        Button(action: {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedSection = .permissions
+            }
+        }) {
+            HStack(spacing: 12) {
+                Image(systemName: "record.circle")
+                    .scaledFont(size: 17)
+                    .foregroundColor(.orange)
+                    .frame(width: iconWidth)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Screen Recording")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundColor(FazmColors.textPrimary)
+
+                    Text("Permission needed")
+                        .scaledFont(size: 11)
+                        .foregroundColor(FazmColors.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .scaledFont(size: 12)
+                    .foregroundColor(FazmColors.textTertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(FazmColors.backgroundTertiary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Update Available Widget
