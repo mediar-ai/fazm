@@ -205,8 +205,9 @@ struct SettingsSidebar: View {
     // MARK: - Screen Recording Permission Widget
     private var screenRecordingWidget: some View {
         Button(action: {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                selectedSection = .permissions
+            SessionRecordingPermissionWindowController.shared.showFromSidebar {
+                // Permission granted — SessionRecordingManager will pick it up on next poll
+                SessionRecordingManager.shared.checkFlagAndUpdate()
             }
         }) {
             HStack(spacing: 12) {
