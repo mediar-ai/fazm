@@ -1980,12 +1980,20 @@ class ChatProvider: ObservableObject {
             return
         }
 
+        // Pre-query paywall: block the message if trial expired and free limit exceeded
+        SubscriptionService.shared.incrementMessageCount()
+        if SubscriptionService.shared.isTrialExpired
+            && SubscriptionService.shared.dailyMessageCount > SubscriptionService.shared.freeMessagesPerDay {
+            await SubscriptionService.shared.refreshStatus()
+            if SubscriptionService.shared.shouldShowPaywall() {
+                showPaywall = true
+                return
+            }
+        }
+
         isSending = true
         errorMessage = nil
         pendingRetryMessage = trimmedText
-
-        // Track daily message count for paywall
-        SubscriptionService.shared.incrementMessageCount()
 
         // Track user message sent
         AnalyticsManager.shared.chatMessageSent(
@@ -2344,15 +2352,6 @@ class ChatProvider: ObservableObject {
             isSending = false
             isStopping = false
 
-            // Show paywall if trial expired and free message limit exceeded.
-            // Refresh subscription status from backend first to catch recent payments.
-            if SubscriptionService.shared.isTrialExpired
-                && SubscriptionService.shared.dailyMessageCount > 3 {
-                await SubscriptionService.shared.refreshStatus()
-                if SubscriptionService.shared.shouldShowPaywall() {
-                    showPaywall = true
-                }
-            }
 
             await applyPendingBridgeModeSwitch()
             if stoppedForBrowserSetup {
