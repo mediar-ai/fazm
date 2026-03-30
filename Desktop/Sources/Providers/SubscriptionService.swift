@@ -1,6 +1,7 @@
 import Foundation
 import IOKit
 import AppKit
+import FirebaseAuth
 
 /// Manages Stripe subscription state — checkout, status polling, and local caching.
 final class SubscriptionService {
@@ -24,20 +25,39 @@ final class SubscriptionService {
     private let trialDays = 30
     let freeMessagesPerDay = 3
 
-    /// Date the user first launched the app (persisted in UserDefaults).
-    var firstLaunchDate: Date {
-        let key = "fazm_first_launch_date"
+    /// Date the user's trial started — uses Firebase account creation date (actual signup)
+    /// when available, falling back to first app launch for users not yet signed in.
+    var trialStartDate: Date {
+        let key = "fazm_trial_start_date"
         if let stored = UserDefaults.standard.object(forKey: key) as? Date {
             return stored
         }
+        // Use Firebase account creation date if the user is signed in
+        if let creationDate = Auth.auth().currentUser?.metadata.creationDate {
+            UserDefaults.standard.set(creationDate, forKey: key)
+            return creationDate
+        }
+        // Fallback: first time this code runs (pre-signup)
         let now = Date()
         UserDefaults.standard.set(now, forKey: key)
         return now
     }
 
+    /// Call after sign-in to update trial start to the actual account creation date.
+    func syncTrialStartWithFirebase() {
+        guard let creationDate = Auth.auth().currentUser?.metadata.creationDate else { return }
+        let key = "fazm_trial_start_date"
+        let current = UserDefaults.standard.object(forKey: key) as? Date
+        // Only update if Firebase date is earlier (user signed up before this code existed)
+        if current == nil || creationDate < current! {
+            UserDefaults.standard.set(creationDate, forKey: key)
+            log("SubscriptionService: synced trial start to Firebase creation date: \(creationDate)")
+        }
+    }
+
     /// Whether the free trial period has expired.
     var isTrialExpired: Bool {
-        let elapsed = Calendar.current.dateComponents([.day], from: firstLaunchDate, to: Date()).day ?? 0
+        let elapsed = Calendar.current.dateComponents([.day], from: trialStartDate, to: Date()).day ?? 0
         return elapsed >= trialDays
     }
 
@@ -83,8 +103,8 @@ final class SubscriptionService {
         self.isActive = UserDefaults.standard.bool(forKey: "fazm_sub_active")
         self.status = UserDefaults.standard.string(forKey: "fazm_sub_status") ?? "none"
         self.currentPeriodEnd = UserDefaults.standard.object(forKey: "fazm_sub_period_end") as? Date
-        // Touch firstLaunchDate to ensure it's set on first run
-        _ = firstLaunchDate
+        // Touch trialStartDate to ensure it's set on first run
+        _ = trialStartDate
         // Refresh from backend in background
         Task { await refreshStatus() }
     }
