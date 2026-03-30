@@ -13,9 +13,68 @@ final class SubscriptionService {
     private let backendUrl: String
     private let deviceId: String
 
+    // MARK: - Trial & Paywall
+
+    private let trialDays = 30
+    private let freeMessagesPerDay = 3
+
+    /// Date the user first launched the app (persisted in UserDefaults).
+    var firstLaunchDate: Date {
+        let key = "fazm_first_launch_date"
+        if let stored = UserDefaults.standard.object(forKey: key) as? Date {
+            return stored
+        }
+        let now = Date()
+        UserDefaults.standard.set(now, forKey: key)
+        return now
+    }
+
+    /// Whether the free trial period has expired.
+    var isTrialExpired: Bool {
+        let elapsed = Calendar.current.dateComponents([.day], from: firstLaunchDate, to: Date()).day ?? 0
+        return elapsed >= trialDays
+    }
+
+    /// Number of messages sent today (resets daily).
+    var dailyMessageCount: Int {
+        get {
+            let today = Calendar.current.startOfDay(for: Date())
+            let storedDay = UserDefaults.standard.object(forKey: "fazm_msg_count_day") as? Date ?? .distantPast
+            if Calendar.current.isDate(storedDay, inSameDayAs: today) {
+                return UserDefaults.standard.integer(forKey: "fazm_msg_count")
+            }
+            return 0
+        }
+        set {
+            let today = Calendar.current.startOfDay(for: Date())
+            UserDefaults.standard.set(today, forKey: "fazm_msg_count_day")
+            UserDefaults.standard.set(newValue, forKey: "fazm_msg_count")
+        }
+    }
+
+    /// Increment the daily message counter. Call this when the user sends a message.
+    func incrementMessageCount() {
+        dailyMessageCount += 1
+    }
+
+    /// Whether the paywall should be shown right now.
+    /// Returns true when: (trial expired OR subscription expired) AND daily free limit exceeded.
+    func shouldShowPaywall() -> Bool {
+        // Active subscribers never see the paywall
+        if isActive { return false }
+
+        // During the trial period, no paywall
+        if !isTrialExpired { return false }
+
+        // After trial: allow 3 free messages per day, block on the 4th+
+        return dailyMessageCount > freeMessagesPerDay
+    }
+
     private init() {
         self.backendUrl = Self.env("FAZM_BACKEND_URL").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.deviceId = Self.getDeviceId()
+        // Touch firstLaunchDate to ensure it's set on first run
+        _ = firstLaunchDate
     }
 
     // MARK: - Open Checkout
