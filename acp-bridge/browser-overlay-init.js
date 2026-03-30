@@ -6,6 +6,7 @@
  * Persists across all page navigations automatically.
  */
 (function injectFazmOverlay() {
+  console.log('[fazm-overlay] injectFazmOverlay called, existing:', !!document.getElementById('fazm-overlay'));
   if (document.getElementById('fazm-overlay')) return;
 
   var overlay = document.createElement('div');
