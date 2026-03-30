@@ -1321,7 +1321,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         activeSessionId = "";
         msg.resume = undefined;
         await startAuthFlow();
-        return handleQuery(msg);
+        return handleQuery(msg, _retryDepth + 1);
       }
       const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -1426,7 +1426,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       authRetryCount++;
       logErr(`Query failed with auth error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
       await startAuthFlow();
-      return handleQuery(msg);
+      return handleQuery(msg, _retryDepth + 1);
     }
     const errMsg = err instanceof Error ? err.message : String(err);
     // Credit balance or rate limit exhausted — surface as specific type (outer catch)
