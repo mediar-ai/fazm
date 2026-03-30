@@ -238,6 +238,10 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     cp -Rf "$ACP_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     cp -f "$ACP_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    # Copy browser overlay init script for Playwright MCP
+    if [ -f "$ACP_BRIDGE_DIR/browser-overlay-init.js" ]; then
+        cp -f "$ACP_BRIDGE_DIR/browser-overlay-init.js" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    fi
     # Copy Vertex AI service account key if present
     if [ -f "$ACP_BRIDGE_DIR/vertex-ai-sa-key.json" ]; then
         cp -f "$ACP_BRIDGE_DIR/vertex-ai-sa-key.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
