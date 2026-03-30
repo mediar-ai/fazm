@@ -437,6 +437,28 @@ class AnalyticsManager {
         PostHogManager.shared.deleteAccountCancelled()
     }
 
+    // MARK: - Subscription Events
+
+    func paywallShown() {
+        PostHogManager.shared.track("paywall_shown")
+    }
+
+    func subscriptionUpgradeTapped(source: String) {
+        PostHogManager.shared.track("subscription_upgrade_tapped", properties: ["source": source])
+    }
+
+    func subscriptionCheckoutOpened(sessionId: String) {
+        PostHogManager.shared.track("subscription_checkout_opened", properties: ["session_id": sessionId])
+    }
+
+    func subscriptionActivated(status: String) {
+        PostHogManager.shared.track("subscription_activated", properties: ["status": status])
+    }
+
+    func paywallDismissed() {
+        PostHogManager.shared.track("paywall_dismissed")
+    }
+
     // MARK: - Navigation Events
 
     func tabChanged(tabName: String) {
