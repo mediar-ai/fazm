@@ -481,7 +481,6 @@ class AuthService: NSObject {
         updateAuthState()
         setSentryUserContext()
         setPostHogUserContext()
-        SubscriptionService.shared.syncTrialStartWithFirebase()
 
         // Fetch API keys from backend now that user is authenticated
         Task { await KeyService.shared.fetchKeys() }
@@ -673,7 +672,6 @@ class AuthService: NSObject {
             log("AuthService: Restored auth state (userId: \(userId ?? "nil"), email: \(userEmail ?? "nil"))")
             setSentryUserContext()
             setPostHogUserContext()
-            SubscriptionService.shared.syncTrialStartWithFirebase()
             Task { await KeyService.shared.fetchKeys() }
             // Don't call updateAuthState() here — AuthState.init() already restored
             // isSignedIn from UserDefaults synchronously. Calling updateAuthState() during
