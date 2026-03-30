@@ -25,6 +25,7 @@ struct HomeSection: View {
             }
             howToUseCard
             exploreCards
+            subscriptionCard
             statsCard
             recentMessagesCard
         }
@@ -161,6 +162,67 @@ struct HomeSection: View {
     }
 
     // MARK: - Stats
+
+    // MARK: - Subscription Status
+
+    private var subscriptionCard: some View {
+        let sub = SubscriptionService.shared
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: sub.isActive ? "checkmark.seal.fill" : "clock.fill")
+                    .scaledFont(size: 13)
+                    .foregroundColor(sub.isActive ? FazmColors.success : FazmColors.purplePrimary)
+
+                Text(sub.isActive ? "Fazm Pro" : (sub.isTrialExpired ? "Free Plan" : "Free Trial"))
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundColor(FazmColors.textPrimary)
+
+                Spacer()
+
+                if !sub.isActive {
+                    Button(action: {
+                        Task { try? await sub.openCheckout() }
+                    }) {
+                        Text("Upgrade")
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(FazmColors.purplePrimary)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if sub.isActive {
+                if let end = sub.currentPeriodEnd {
+                    Text("Renews \(end.formatted(date: .abbreviated, time: .omitted))")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+                }
+            } else if !sub.isTrialExpired {
+                let daysLeft = max(0, 30 - (Calendar.current.dateComponents([.day], from: sub.firstLaunchDate, to: Date()).day ?? 0))
+                Text("\(daysLeft) days remaining in free trial")
+                    .scaledFont(size: 12)
+                    .foregroundColor(FazmColors.textTertiary)
+            } else {
+                Text("\(sub.freeMessagesPerDay) free messages per day")
+                    .scaledFont(size: 12)
+                    .foregroundColor(FazmColors.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(FazmColors.backgroundTertiary.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(sub.isActive ? FazmColors.success.opacity(0.3) : FazmColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
 
     private var statsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
