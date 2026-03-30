@@ -895,17 +895,22 @@ class ChatToolExecutor {
         do {
             let apiKey = try await TranscriptionService.resolveDeepgramKey()
 
+            // Read user's speed preference (default 1.0)
+            let speed = UserDefaults.standard.double(forKey: "voiceResponseSpeed")
+            let clampedSpeed = speed > 0 ? min(max(speed, 0.25), 2.0) : 1.0
+
             var components = URLComponents(string: "https://api.deepgram.com/v1/speak")!
             components.queryItems = [
                 URLQueryItem(name: "model", value: "aura-luna-en"),
+                URLQueryItem(name: "encoding", value: "linear16"),
+                URLQueryItem(name: "sample_rate", value: "24000"),
             ]
 
             var request = URLRequest(url: components.url!)
             request.httpMethod = "POST"
             request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-            // Deepgram speak API expects JSON body with text field, but Content-Type text/plain
             let body = try JSONSerialization.data(withJSONObject: ["text": text])
             request.httpBody = body
 
@@ -918,9 +923,24 @@ class ChatToolExecutor {
                 return "Error: Deepgram TTS failed with status \(statusCode)"
             }
 
-            log("speak_response: received \(data.count) bytes of audio, playing...")
+            // Validate we received audio data, not an error page
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+            guard contentType.contains("audio") || data.count > 1000 else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+                log("speak_response: unexpected content-type '\(contentType)': \(errorBody)")
+                return "Error: Deepgram returned non-audio response"
+            }
+
+            log("speak_response: received \(data.count) bytes of audio, playing at speed \(clampedSpeed)...")
+
+            // Stop any currently playing audio cleanly before starting new playback
+            if let existing = ttsAudioPlayer, existing.isPlaying {
+                existing.stop()
+            }
 
             let player = try AVAudioPlayer(data: data)
+            player.enableRate = true
+            player.rate = Float(clampedSpeed)
             ttsAudioPlayer = player
             player.play()
 
