@@ -1,8 +1,8 @@
 use axum::{
     body::Bytes,
-    extract::Extension,
+    extract::{Extension, Query},
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -44,12 +44,14 @@ pub async fn create_checkout_session(
     }
 
     let firebase_uid = auth.firebase_uid.unwrap_or_default();
-    let success_url = body
-        .success_url
-        .unwrap_or_else(|| "fazm://subscription/success".to_string());
+
+    // Stripe Checkout requires https:// URLs. Use backend redirect endpoints
+    // that will forward to the app's fazm:// custom URL scheme.
+    let backend_base = &config.vertex_issuer; // reuse VERTEX_ISSUER as backend base URL
+    let success_url = format!("{backend_base}/api/stripe/redirect?to=fazm://subscription/success");
     let cancel_url = body
         .cancel_url
-        .unwrap_or_else(|| "fazm://subscription/cancel".to_string());
+        .unwrap_or_else(|| format!("{backend_base}/api/stripe/redirect?to=fazm://subscription/cancel"));
 
     let client = reqwest::Client::new();
 
@@ -65,6 +67,7 @@ pub async fn create_checkout_session(
         ("customer", customer_id.clone()),
         ("success_url", success_url),
         ("cancel_url", cancel_url),
+        ("payment_method_types[0]", "card".to_string()),
         ("line_items[0][price]", config.stripe_price_id.clone()),
         ("line_items[0][quantity]", "1".to_string()),
         ("subscription_data[metadata][firebase_uid]", firebase_uid),
@@ -113,6 +116,58 @@ pub async fn create_checkout_session(
         checkout_url,
         session_id,
     }))
+}
+
+// ---------- Redirect ----------
+
+#[derive(Deserialize)]
+pub struct RedirectQuery {
+    pub to: String,
+}
+
+/// GET /api/stripe/redirect?to=fazm://subscription/success
+/// Stripe Checkout requires https:// success/cancel URLs. This endpoint
+/// serves as a trampoline: Stripe redirects here, and we redirect the
+/// browser to the app's custom URL scheme (fazm://).
+pub async fn checkout_redirect(
+    Query(query): Query<RedirectQuery>,
+) -> impl IntoResponse {
+    // Only allow redirects to the fazm:// scheme
+    if !query.to.starts_with("fazm://") {
+        return Redirect::temporary("https://fazm.ai").into_response();
+    }
+
+    // Return an HTML page that redirects to the custom URL scheme.
+    // Custom URL schemes don't work with HTTP 302 redirects in all browsers,
+    // so we use JavaScript + meta refresh as fallback.
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="1;url={url}">
+    <title>Redirecting to Fazm...</title>
+    <style>
+        body {{ background: #0F0F0F; color: #E5E5E5; font-family: -apple-system, system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+        .container {{ text-align: center; }}
+        h1 {{ color: #8B5CF6; font-size: 24px; }}
+        p {{ color: #B0B0B0; }}
+        a {{ color: #8B5CF6; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✓ Payment Successful!</h1>
+        <p>Redirecting you back to Fazm...</p>
+        <p><a href="{url}">Click here if not redirected automatically</a></p>
+    </div>
+    <script>window.location.href = "{url}";</script>
+</body>
+</html>"#,
+        url = query.to
+    );
+
+    axum::response::Html(html).into_response()
 }
 
 // ---------- Subscription Status ----------
@@ -201,7 +256,7 @@ pub async fn webhook(
     let stripe_secret = &config.stripe_webhook_secret;
 
     // Verify webhook signature if secret is configured
-    if !stripe_secret.is_empty() {
+    if !stripe_secret.is_empty() && stripe_secret != "placeholder" {
         let sig = headers
             .get("stripe-signature")
             .and_then(|v| v.to_str().ok())
