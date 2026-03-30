@@ -884,6 +884,14 @@ class ChatToolExecutor {
     /// Shared audio player for TTS playback (kept alive to prevent dealloc during playback)
     private static var ttsAudioPlayer: AVAudioPlayer?
 
+    /// Stop any currently playing TTS audio.
+    static func stopTTSPlayback() {
+        if let player = ttsAudioPlayer, player.isPlaying {
+            player.stop()
+        }
+        ttsAudioPlayer = nil
+    }
+
     /// Speak text aloud using Deepgram Aura TTS
     private static func executeSpeakResponse(_ args: [String: Any]) async -> String {
         guard let text = args["text"] as? String, !text.isEmpty else {
