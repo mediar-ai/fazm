@@ -50,6 +50,7 @@ local/
 scripts/
 !scripts/generate-appcast.sh
 !scripts/deploy-appcast.sh
+!acp-bridge/scripts/
 
 # Swift compiler diagnostics cache
 *.dia
