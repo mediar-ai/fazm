@@ -1008,7 +1008,10 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
 
 // --- Handle query from Swift ---
 
-async function handleQuery(msg: QueryMessage): Promise<void> {
+/** Maximum number of recursive handleQuery retries (session resume + image-too-large combined) */
+const MAX_QUERY_RETRIES = 2;
+
+async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
   if (activeAbort) {
     activeAbort.abort();
     activeAbort = null;
@@ -1352,15 +1355,15 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         } catch (retryErr) {
           const retryErrMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
           const isStillImageTooLarge = /image.*(too large|too big|exceeds.*limit)|unable to resize image|content too long/i.test(retryErrMsg);
-          if (isStillImageTooLarge) {
+          if (isStillImageTooLarge && _retryDepth < MAX_QUERY_RETRIES) {
             // The session history itself contains oversized images — start a fresh session.
-            logErr(`Retry without image also failed with image-too-large — session history poisoned, starting new session: ${retryErrMsg}`);
+            logErr(`Retry without image also failed with image-too-large — session history poisoned, starting new session (depth=${_retryDepth}): ${retryErrMsg}`);
             sessions.delete(sessionKey);
             imageTurnCounts.delete(sessionKey);
             activeSessionId = "";
             msg.resume = undefined;
             fullPrompt = msg.prompt;
-            return handleQuery(msg);
+            return handleQuery(msg, _retryDepth + 1);
           }
           throw retryErr;
         } finally {
@@ -1377,9 +1380,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       // Skip retry for errors that are clearly not session-related (rate limits, usage errors,
       // etc.) — retrying just wastes time and can trigger spurious OAuth flows.
       const isNonRetryable = /usage|limit|resets\s|credit|quota|exhausted|rejected/i.test(errMsg);
-      if (!isNewSession && sessionId && sessionRetryCount === 0 && !isNonRetryable) {
+      if (!isNewSession && sessionId && sessionRetryCount === 0 && !isNonRetryable && _retryDepth < MAX_QUERY_RETRIES) {
         sessionRetryCount++;
-        logErr(`session/prompt failed with existing session, retrying with session resume: ${err}`);
+        logErr(`session/prompt failed with existing session, retrying with session resume (depth=${_retryDepth}): ${err}`);
         const failedSessionId = sessionId;
         sessions.delete(sessionKey);
         imageTurnCounts.delete(sessionKey);
@@ -1388,7 +1391,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         // conversation history from ~/.claude/projects/ session files.
         // If resume fails, the resume path falls back to session/new automatically.
         msg.resume = failedSessionId;
-        return handleQuery(msg);
+        return handleQuery(msg, _retryDepth + 1);
       }
       // For non-retryable errors, surface the raw message immediately
       if (isNonRetryable) {
