@@ -239,7 +239,7 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     cp -f "$ACP_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     # Copy browser overlay init scripts for Playwright MCP
-    for f in browser-overlay-init.js browser-overlay-init-page.ts; do
+    for f in browser-overlay-init.js browser-overlay-init-page.js browser-overlay-init-page.ts; do
         if [ -f "$ACP_BRIDGE_DIR/$f" ]; then
             cp -f "$ACP_BRIDGE_DIR/$f" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
         fi
