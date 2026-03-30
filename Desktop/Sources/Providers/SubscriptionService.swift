@@ -95,10 +95,9 @@ final class SubscriptionService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 15
 
-        let body: [String: String] = [
-            "success_url": "fazm://subscription/success",
-            "cancel_url": "fazm://subscription/cancel",
-        ]
+        // The backend constructs the actual success/cancel URLs using its own
+        // redirect endpoint, so we don't need to send them from the client.
+        let body: [String: String] = [:]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)

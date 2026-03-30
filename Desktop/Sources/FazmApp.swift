@@ -973,6 +973,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for window in NSApp.windows where window.title.hasPrefix("Fazm") {
                 window.makeKeyAndOrderFront(nil)
             }
+        case "subscription":
+            // Handle subscription success/cancel redirects from Stripe Checkout
+            let path = url.path
+            log("FazmApp: Subscription URL callback: \(path)")
+            NSApp.activate(ignoringOtherApps: true)
+            if path == "/success" {
+                // Refresh subscription status and dismiss paywall
+                Task {
+                    await SubscriptionService.shared.refreshStatus()
+                    await MainActor.run {
+                        PaywallWindowController.shared.close()
+                    }
+                }
+            }
         default:
             log("FazmApp AppDelegate: Unhandled URL path: \(url.host ?? "nil")")
         }
