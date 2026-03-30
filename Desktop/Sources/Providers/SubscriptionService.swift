@@ -128,6 +128,7 @@ final class SubscriptionService {
 
         let checkout = try JSONDecoder().decode(CheckoutResponse.self, from: data)
         log("SubscriptionService: opening checkout \(checkout.session_id)")
+        AnalyticsManager.shared.subscriptionCheckoutOpened(sessionId: checkout.session_id)
 
         if let checkoutURL = URL(string: checkout.checkout_url) {
             await MainActor.run {
@@ -167,6 +168,7 @@ final class SubscriptionService {
             }
 
             let result = try JSONDecoder().decode(StatusResponse.self, from: data)
+            let wasActive = isActive
             isActive = result.active
             status = result.status
             if let end = result.current_period_end {
@@ -174,6 +176,9 @@ final class SubscriptionService {
             }
 
             log("SubscriptionService: status=\(result.status) active=\(result.active)")
+            if result.active && !wasActive {
+                AnalyticsManager.shared.subscriptionActivated(status: result.status)
+            }
             return result.active
         } catch {
             log("SubscriptionService: status check error: \(error.localizedDescription)")
