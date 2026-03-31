@@ -75,7 +75,11 @@ pub async fn list(Extension(config): Extension<Arc<Config>>) -> impl IntoRespons
                     })
                 })
                 .collect();
-            (StatusCode::OK, Json(serde_json::json!({ "releases": items }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "releases": items })),
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::error!("Firestore query failed: {}", e);
