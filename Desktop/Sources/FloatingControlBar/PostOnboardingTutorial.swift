@@ -489,6 +489,7 @@ class TutorialChatGuide {
     }
 
     /// Observe AI responses for the [[TUTORIAL_STEP_DONE]] marker to advance steps.
+    /// Falls back to auto-advancing when the user sends a follow-up query (engaged).
     private func observeResponses(barState: FloatingControlBarState) {
         cancellables.removeAll()
 
@@ -514,17 +515,7 @@ class TutorialChatGuide {
                       self.stepDoneMarkerSeen else { return }
                 self.stepDoneMarkerSeen = false
 
-                // Advance to next step
-                barState.tutorialWaitingForResponse = false
-                let completedStep = barState.tutorialChatStep
-                let prompts = barState.tutorialPrompts
-                let desc = completedStep < prompts.count ? prompts[completedStep].description : "unknown"
-                AnalyticsManager.shared.tutorialChatStepCompleted(step: completedStep, description: desc)
-                barState.tutorialChatStep += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self, weak barState] in
-                    guard let self, let barState, barState.isTutorialChatActive else { return }
-                    self.injectNextGuidance(barState: barState)
-                }
+                self.advanceStep(barState: barState)
             }
             .store(in: &cancellables)
 
@@ -533,11 +524,31 @@ class TutorialChatGuide {
             .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
-            .sink { [weak barState] query in
-                guard let barState, barState.isTutorialChatActive, !query.isEmpty else { return }
+            .sink { [weak self, weak barState] query in
+                guard let self, let barState, barState.isTutorialChatActive, !query.isEmpty else { return }
+                // If the user sends a follow-up before the marker was seen, auto-advance.
+                // The user engaging means the step's educational goal was met enough to move on.
+                if barState.tutorialWaitingForResponse, !self.stepDoneMarkerSeen {
+                    log("TutorialChatGuide: Auto-advancing step (user sent follow-up without marker)")
+                    self.advanceStep(barState: barState)
+                }
                 barState.tutorialWaitingForResponse = true
             }
             .store(in: &cancellables)
+    }
+
+    /// Advance to the next tutorial step.
+    private func advanceStep(barState: FloatingControlBarState) {
+        barState.tutorialWaitingForResponse = false
+        let completedStep = barState.tutorialChatStep
+        let prompts = barState.tutorialPrompts
+        let desc = completedStep < prompts.count ? prompts[completedStep].description : "unknown"
+        AnalyticsManager.shared.tutorialChatStepCompleted(step: completedStep, description: desc)
+        barState.tutorialChatStep += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self, weak barState] in
+            guard let self, let barState, barState.isTutorialChatActive else { return }
+            self.injectNextGuidance(barState: barState)
+        }
     }
 
     /// Inject a tutorial message into the chat as a continuation of the conversation.
