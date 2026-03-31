@@ -251,6 +251,13 @@ actor GeminiAnalysisService {
                         costUsd: 0,
                         account: "observer_gemini"
                     )
+                    await APIClient.shared.recordExternalLlmTrace(
+                        model: "gemini-2.5-pro",
+                        inputTokens: usage.inputTokens,
+                        outputTokens: usage.outputTokens,
+                        totalTokens: usage.totalTokens,
+                        source: "fazm_observer"
+                    )
                 }
             }
 
