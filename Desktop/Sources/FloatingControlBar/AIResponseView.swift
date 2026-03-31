@@ -217,10 +217,15 @@ struct AIResponseView: View {
                     // legitimately take minutes (e.g. Terminal commands).
                     try? await Task.sleep(for: .seconds(60))
                     guard !Task.isCancelled else { return }
-                    let hasRunningTools = currentMessage?.contentBlocks.contains(where: {
+                    let blocks = await MainActor.run { currentMessage?.contentBlocks ?? [] }
+                    let hasRunningTools = blocks.contains(where: {
                         if case .toolCall(_, _, .running, _, _, _) = $0 { return true }
                         return false
-                    }) ?? false
+                    })
+                    let hasAnyToolCalls = blocks.contains(where: {
+                        if case .toolCall = $0 { return true }
+                        return false
+                    })
                     if hasRunningTools {
                         // Tools are still running — don't flag as hanging.
                         // Re-check every 30s in case tools finish but model stops responding.
@@ -236,6 +241,12 @@ struct AIResponseView: View {
                             if !stillRunning { break }
                         }
                         // Tools finished — give the model 60s more to respond
+                        try? await Task.sleep(for: .seconds(60))
+                        guard !Task.isCancelled else { return }
+                    } else if hasAnyToolCalls {
+                        // Tools completed but none are currently running — the model is
+                        // processing tool results. This commonly happens when tools finish
+                        // right around the 60s mark. Give 60s grace for the model to respond.
                         try? await Task.sleep(for: .seconds(60))
                         guard !Task.isCancelled else { return }
                     }
