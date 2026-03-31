@@ -1116,6 +1116,11 @@ class ChatProvider: ObservableObject {
                 await MainActor.run {
                     guard let capturedSelf else { return }
                     capturedSelf.isClaudeConnected = hasCredentials
+                    if hasCredentials && !UserDefaults.standard.bool(forKey: "didReportClaudeCliCredentials") {
+                        UserDefaults.standard.set(true, forKey: "didReportClaudeCliCredentials")
+                        AnalyticsManager.shared.claudeCliCredentialsDetected()
+                        log("ChatProvider: Reported claude_cli_credentials_detected (one-time)")
+                    }
                     if autoSwitchToPersonal && hasCredentials && capturedSelf.bridgeMode != "personal" {
                         log("ChatProvider: Active Claude CLI session detected, auto-switching to personal mode")
                         Task { await capturedSelf.switchBridgeMode(to: "personal") }
