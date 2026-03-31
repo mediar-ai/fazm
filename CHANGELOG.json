@@ -17,7 +17,8 @@
     "Fixed built-in Claude not working for new users due to API key fetch race condition",
     "Redesigned first-session tutorial to educate users about building personal software and automations",
     "Added one-time claude_cli_credentials_detected analytics event when existing Claude CLI credentials are found at first launch",
-    "Added \"Friends\" as a discovery source option in onboarding"
+    "Added \"Friends\" as a discovery source option in onboarding",
+    "Added analytics tracking throughout the post-onboarding tutorial flow"
   ],
   "releases": [
     {
