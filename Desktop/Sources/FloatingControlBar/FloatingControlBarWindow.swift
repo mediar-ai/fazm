@@ -1437,6 +1437,20 @@ class FloatingControlBarManager {
             }
         }
 
+        // Debug: show the paywall popup
+        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testPaywall"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.fazm.testPaywall"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let provider = self?.chatProvider else { return }
+                log("FloatingControlBarManager: Test paywall triggered")
+                provider.showPaywall = true
+            }
+        }
+
     }
 
     /// Whether the floating bar window is currently visible.
