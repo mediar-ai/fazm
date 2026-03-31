@@ -131,6 +131,8 @@ struct SettingsContentView: View {
 
     // Launch at login manager
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
+    @State private var transcriptionAutoDetect: Bool = AssistantSettings.shared.transcriptionAutoDetect
+    @State private var transcriptionLanguage: String = AssistantSettings.shared.transcriptionLanguage
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
     @ObservedObject private var shortcutSettings = ShortcutSettings.shared
     @ObservedObject private var authState = AuthState.shared
@@ -478,6 +480,132 @@ struct SettingsContentView: View {
             }
             .onAppear { audioDeviceManager.startLevelMonitoring() }
             .onDisappear { audioDeviceManager.stopLevelMonitoring() }
+
+            // Language Mode
+            settingsCard(settingId: "general.languagemode") {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "globe")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.purplePrimary)
+
+                        Text("Language Mode")
+                            .scaledFont(size: 15, weight: .medium)
+                            .foregroundColor(FazmColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    // Auto-Detect option
+                    Button(action: {
+                        transcriptionAutoDetect = true
+                        AssistantSettings.shared.transcriptionAutoDetect = true
+                        restartTranscriptionIfNeeded()
+                    }) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: transcriptionAutoDetect ? "checkmark.circle.fill" : "circle")
+                                .scaledFont(size: 20)
+                                .foregroundColor(transcriptionAutoDetect ? FazmColors.purplePrimary : FazmColors.textTertiary)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Auto-Detect (Multi-Language)")
+                                    .scaledFont(size: 14, weight: .medium)
+                                    .foregroundColor(FazmColors.textPrimary)
+
+                                Text("Automatically detects and transcribes:")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(FazmColors.textTertiary)
+
+                                Text("English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian, Dutch")
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(FazmColors.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(transcriptionAutoDetect ? FazmColors.purplePrimary.opacity(0.1) : Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(transcriptionAutoDetect ? FazmColors.purplePrimary.opacity(0.3) : FazmColors.backgroundQuaternary, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Single Language option
+                    Button(action: {
+                        transcriptionAutoDetect = false
+                        AssistantSettings.shared.transcriptionAutoDetect = false
+                        restartTranscriptionIfNeeded()
+                    }) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: !transcriptionAutoDetect ? "checkmark.circle.fill" : "circle")
+                                .scaledFont(size: 20)
+                                .foregroundColor(!transcriptionAutoDetect ? FazmColors.purplePrimary : FazmColors.textTertiary)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Single Language (Better Accuracy)")
+                                    .scaledFont(size: 14, weight: .medium)
+                                    .foregroundColor(FazmColors.textPrimary)
+
+                                Text("Best for speaking in one specific language")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(FazmColors.textTertiary)
+
+                                if !transcriptionAutoDetect {
+                                    HStack {
+                                        Text("Language:")
+                                            .scaledFont(size: 12)
+                                            .foregroundColor(FazmColors.textTertiary)
+
+                                        Picker("", selection: $transcriptionLanguage) {
+                                            ForEach(languageOptions, id: \.0) { option in
+                                                Text(option.1).tag(option.0)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                        .frame(width: 180)
+                                        .onChange(of: transcriptionLanguage) { _, newValue in
+                                            AssistantSettings.shared.transcriptionLanguage = newValue
+                                            let supportsMulti = AssistantSettings.supportsAutoDetect(newValue)
+                                            transcriptionAutoDetect = supportsMulti
+                                            AssistantSettings.shared.transcriptionAutoDetect = supportsMulti
+                                            restartTranscriptionIfNeeded()
+                                        }
+                                    }
+                                    .padding(.top, 4)
+                                }
+                            }
+
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(!transcriptionAutoDetect ? FazmColors.purplePrimary.opacity(0.1) : Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(!transcriptionAutoDetect ? FazmColors.purplePrimary.opacity(0.3) : FazmColors.backgroundQuaternary, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle")
+                            .scaledFont(size: 12)
+                            .foregroundColor(FazmColors.textTertiary)
+
+                        Text("Single language mode supports 42 languages including Korean, Ukrainian, and more.")
+                            .scaledFont(size: 11)
+                            .foregroundColor(FazmColors.textTertiary)
+                    }
+                }
+            }
 
             // Font Size
             settingsCard(settingId: "general.fontsize") {
