@@ -93,6 +93,18 @@ actor GeminiAnalysisService {
         let activeApps: [ActiveAppInfo]
     }
 
+    struct UsageMetrics: Sendable {
+        var inputTokens: Int = 0
+        var outputTokens: Int = 0
+        var totalTokens: Int = 0
+
+        mutating func add(_ other: UsageMetrics) {
+            inputTokens += other.inputTokens
+            outputTokens += other.outputTokens
+            totalTokens += other.totalTokens
+        }
+    }
+
     struct AnalysisResult: Sendable {
         let verdict: String  // "NO_TASK" or "TASK_FOUND"
         let task: String?
@@ -102,6 +114,9 @@ actor GeminiAnalysisService {
         let chunksAnalyzed: Int
         let toolCallCount: Int
         let turnsUsed: Int
+        let inputTokens: Int
+        let outputTokens: Int
+        let totalTokens: Int
     }
 
     /// Chunk info passed from SessionRecordingManager when a chunk is finalized.
@@ -215,11 +230,29 @@ actor GeminiAnalysisService {
                 "response": result.raw,
                 "tool_call_count": result.toolCallCount,
                 "turns_used": result.turnsUsed,
+                "input_tokens": result.inputTokens,
+                "output_tokens": result.outputTokens,
+                "total_tokens": result.totalTokens,
             ]
             if let task = result.task {
                 properties["task"] = task
             }
             PostHogSDK.shared.capture("gemini_analysis_completed", properties: properties)
+
+            if result.totalTokens > 0 {
+                let usage = result
+                Task.detached(priority: .background) {
+                    await APIClient.shared.recordLlmUsage(
+                        inputTokens: usage.inputTokens,
+                        outputTokens: usage.outputTokens,
+                        cacheReadTokens: 0,
+                        cacheWriteTokens: 0,
+                        totalTokens: usage.totalTokens,
+                        costUsd: 0,
+                        account: "observer_gemini"
+                    )
+                }
+            }
 
             // Persist TASK_FOUND results to observer_activity and show overlay
             if result.verdict == "TASK_FOUND", let task = result.task {
@@ -321,7 +354,7 @@ actor GeminiAnalysisService {
         parts.append(["text": prompt])
 
         // Call generateContent with agentic loop (function calling enabled)
-        let (result, toolCallCount, turnsUsed) = await callGenerateContentAgentic(
+        let (result, toolCallCount, turnsUsed, usage) = await callGenerateContentAgentic(
             initialParts: parts,
             tools: toolDeclarations,
             apiKey: apiKey,
@@ -338,8 +371,16 @@ actor GeminiAnalysisService {
             return nil
         }
 
-        let parsed = parseResult(raw, chunksAnalyzed: chunks.count, toolCallCount: toolCallCount, turnsUsed: turnsUsed)
-        log("GeminiAnalysis: \(parsed.verdict) (\(chunks.count) chunks, \(toolCallCount) tool calls, \(turnsUsed) turns)")
+        let parsed = parseResult(
+            raw,
+            chunksAnalyzed: chunks.count,
+            toolCallCount: toolCallCount,
+            turnsUsed: turnsUsed,
+            usage: usage
+        )
+        log(
+            "GeminiAnalysis: \(parsed.verdict) (\(chunks.count) chunks, \(toolCallCount) tool calls, \(turnsUsed) turns, tokens=\(parsed.inputTokens)+\(parsed.outputTokens)=\(parsed.totalTokens))"
+        )
         if let task = parsed.task {
             log("GeminiAnalysis: task=\(task)")
         }
@@ -691,13 +732,14 @@ actor GeminiAnalysisService {
         tools: [[String: Any]],
         apiKey: String,
         maxTurns: Int = 5
-    ) async -> (text: String?, toolCallCount: Int, turnsUsed: Int) {
+    ) async -> (text: String?, toolCallCount: Int, turnsUsed: Int, usage: UsageMetrics) {
         guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)") else {
-            return (nil, 0, 0)
+            return (nil, 0, 0, UsageMetrics())
         }
 
         var contents: [[String: Any]] = [["role": "user", "parts": initialParts]]
         var totalToolCalls = 0
+        var totalUsage = UsageMetrics()
 
         for turn in 1...maxTurns {
             let body: [String: Any] = [
@@ -723,6 +765,7 @@ actor GeminiAnalysisService {
 
             // Retry up to 3 times per turn
             var responseParts: [[String: Any]]?
+            var turnUsage = UsageMetrics()
             for attempt in 1...3 {
                 guard let (data, resp) = try? await URLSession.shared.data(for: req),
                       let http = resp as? HTTPURLResponse else {
@@ -738,6 +781,9 @@ actor GeminiAnalysisService {
                    let content = candidates.first?["content"] as? [String: Any],
                    let parts = content["parts"] as? [[String: Any]] {
                     responseParts = parts
+                    if let usageJson = json["usageMetadata"] as? [String: Any] {
+                        turnUsage = parseUsageMetadata(usageJson)
+                    }
                     break
                 }
 
@@ -750,8 +796,10 @@ actor GeminiAnalysisService {
 
             guard let parts = responseParts else {
                 log("GeminiAnalysis: agentic turn \(turn) failed after retries")
-                return (nil, totalToolCalls, turn)
+                return (nil, totalToolCalls, turn, totalUsage)
             }
+
+            totalUsage.add(turnUsage)
 
             // Check if the response contains function calls
             var functionCalls: [(name: String, args: [String: Any])] = []
@@ -772,7 +820,7 @@ actor GeminiAnalysisService {
             if functionCalls.isEmpty {
                 let finalText = textParts.joined(separator: "\n")
                 log("GeminiAnalysis: agentic loop completed in \(turn) turn(s), \(totalToolCalls) tool call(s)")
-                return (finalText.isEmpty ? nil : finalText, totalToolCalls, turn)
+                return (finalText.isEmpty ? nil : finalText, totalToolCalls, turn, totalUsage)
             }
 
             // Append model's response to conversation
@@ -797,7 +845,7 @@ actor GeminiAnalysisService {
         }
 
         log("GeminiAnalysis: exhausted \(maxTurns) agentic turns")
-        return (nil, totalToolCalls, maxTurns)
+        return (nil, totalToolCalls, maxTurns, totalUsage)
     }
 
     // MARK: - Gemini File API (Resumable Upload)
@@ -978,7 +1026,13 @@ actor GeminiAnalysisService {
         return lines.joined(separator: "\n")
     }
 
-    private func parseResult(_ raw: String, chunksAnalyzed: Int, toolCallCount: Int = 0, turnsUsed: Int = 0) -> AnalysisResult {
+    private func parseResult(
+        _ raw: String,
+        chunksAnalyzed: Int,
+        toolCallCount: Int = 0,
+        turnsUsed: Int = 0,
+        usage: UsageMetrics = UsageMetrics()
+    ) -> AnalysisResult {
         let lines = raw.components(separatedBy: "\n")
 
         var verdict = "NO_TASK"
@@ -1011,7 +1065,47 @@ actor GeminiAnalysisService {
             document = documentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        return AnalysisResult(verdict: verdict, task: task, description: description, document: document, raw: raw, chunksAnalyzed: chunksAnalyzed, toolCallCount: toolCallCount, turnsUsed: turnsUsed)
+        return AnalysisResult(
+            verdict: verdict,
+            task: task,
+            description: description,
+            document: document,
+            raw: raw,
+            chunksAnalyzed: chunksAnalyzed,
+            toolCallCount: toolCallCount,
+            turnsUsed: turnsUsed,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            totalTokens: usage.totalTokens
+        )
+    }
+
+    private func parseUsageMetadata(_ usageJson: [String: Any]) -> UsageMetrics {
+        let inputTokens = intValue(usageJson["promptTokenCount"])
+        let outputTokens = intValue(usageJson["candidatesTokenCount"])
+        let totalTokens = {
+            let rawTotal = intValue(usageJson["totalTokenCount"])
+            return rawTotal > 0 ? rawTotal : inputTokens + outputTokens
+        }()
+
+        return UsageMetrics(
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            totalTokens: totalTokens
+        )
+    }
+
+    private func intValue(_ value: Any?) -> Int {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let string = value as? String, let intValue = Int(string) {
+            return intValue
+        }
+        return 0
     }
 
     private func cleanupChunkFiles(chunks: [ChunkEntry]) {
@@ -1032,6 +1126,9 @@ actor GeminiAnalysisService {
                     "task": task,
                     "chunks_analyzed": result.chunksAnalyzed,
                     "raw": result.raw,
+                    "input_tokens": result.inputTokens,
+                    "output_tokens": result.outputTokens,
+                    "total_tokens": result.totalTokens,
                 ]
                 if let description { contentJson["description"] = description }
                 if let document { contentJson["document"] = document }
