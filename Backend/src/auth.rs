@@ -39,13 +39,21 @@ pub fn new_jwks_cache() -> SharedJwksCache {
 pub struct AuthDevice {
     pub device_id: String,
     pub firebase_uid: Option<String>,
+    pub firebase_email: Option<String>,
 }
 
 /// Firebase JWT claims we care about
 #[derive(Debug, Deserialize)]
 struct FirebaseClaims {
     sub: String,
+    email: Option<String>,
     // iss and aud are checked by the Validation config
+}
+
+#[derive(Clone, Debug)]
+struct FirebaseIdentity {
+    uid: String,
+    email: Option<String>,
 }
 
 /// JWKS response from Google
@@ -126,12 +134,12 @@ async fn get_decoding_key(
     result.ok_or_else(|| format!("No JWKS key found for kid={}", kid))
 }
 
-/// Validate a Firebase ID token and return the uid (sub claim)
+/// Validate a Firebase ID token and return the Firebase identity claims we need.
 async fn validate_firebase_token(
     token: &str,
     project_id: &str,
     cache: &SharedJwksCache,
-) -> Result<String, String> {
+) -> Result<FirebaseIdentity, String> {
     // Decode the header to get the kid
     let header =
         decode_header(token).map_err(|e| format!("Invalid JWT header: {}", e))?;
@@ -163,7 +171,10 @@ async fn validate_firebase_token(
         return Err("JWT sub claim is empty".to_string());
     }
 
-    Ok(uid)
+    Ok(FirebaseIdentity {
+        uid,
+        email: token_data.claims.email,
+    })
 }
 
 /// Middleware that validates a Firebase ID token
@@ -205,11 +216,17 @@ pub async fn auth_middleware(
         .to_string();
 
     let auth_device = match validate_firebase_token(token, &config.firebase_project_id, &jwks_cache).await {
-        Ok(uid) => {
-            tracing::debug!("Firebase auth success: uid={}, device={}", uid, device_id);
+        Ok(identity) => {
+            tracing::debug!(
+                "Firebase auth success: uid={}, email={:?}, device={}",
+                identity.uid,
+                identity.email,
+                device_id
+            );
             AuthDevice {
                 device_id,
-                firebase_uid: Some(uid),
+                firebase_uid: Some(identity.uid),
+                firebase_email: identity.email,
             }
         }
         Err(e) => {
