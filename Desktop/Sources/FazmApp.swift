@@ -993,6 +993,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                 }
             }
+        case "referral":
+            // Handle referral code from referral link: fazm://referral/{code}
+            let code = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if !code.isEmpty {
+                log("FazmApp: Referral code received: \(code)")
+                NSApp.activate(ignoringOtherApps: true)
+                Task {
+                    await ReferralService.shared.trackReferralSignup(code: code)
+                    await MainActor.run {
+                        ToastManager.shared.show("Referral applied!", icon: "checkmark.circle.fill")
+                    }
+                }
+            }
         default:
             log("FazmApp AppDelegate: Unhandled URL path: \(url.host ?? "nil")")
         }
