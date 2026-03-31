@@ -526,9 +526,12 @@ class TutorialChatGuide {
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak barState] query in
                 guard let self, let barState, barState.isTutorialChatActive, !query.isEmpty else { return }
-                // If the user sends a follow-up before the marker was seen, auto-advance.
-                // The user engaging means the step's educational goal was met enough to move on.
-                if barState.tutorialWaitingForResponse, !self.stepDoneMarkerSeen {
+                // If the user sends a follow-up before the marker was seen, auto-advance —
+                // but only if the AI already responded to the current step (not still streaming).
+                // The user engaging after seeing a response means the step's goal was met enough.
+                if barState.tutorialWaitingForResponse, !self.stepDoneMarkerSeen,
+                   let currentMsg = barState.currentAIMessage,
+                   !currentMsg.text.isEmpty, !currentMsg.isStreaming {
                     log("TutorialChatGuide: Auto-advancing step (user sent follow-up without marker)")
                     self.advanceStep(barState: barState)
                 }
