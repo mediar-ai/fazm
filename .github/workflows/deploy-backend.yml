@@ -30,3 +30,6 @@ jobs:
           service: fazm-backend
           region: us-east5
           source: Backend/
+          # Keep 1 instance warm to avoid cold start delays on /v1/keys
+          # (cold starts cause ensureKeys timeouts → bridge falls back to personal OAuth)
+          flags: '--min-instances=1'
