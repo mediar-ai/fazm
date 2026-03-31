@@ -49,16 +49,17 @@ pub async fn create_checkout_session(
     // that will forward to the app's fazm:// custom URL scheme.
     let backend_base = &config.vertex_issuer; // reuse VERTEX_ISSUER as backend base URL
     let success_url = format!("{backend_base}/api/stripe/redirect?to=fazm://subscription/success");
-    let cancel_url = body
-        .cancel_url
-        .unwrap_or_else(|| format!("{backend_base}/api/stripe/redirect?to=fazm://subscription/cancel"));
+    let cancel_url = body.cancel_url.unwrap_or_else(|| {
+        format!("{backend_base}/api/stripe/redirect?to=fazm://subscription/cancel")
+    });
 
     let client = reqwest::Client::new();
 
     // First, ensure a Stripe customer exists for this user (idempotent lookup/create)
-    let customer_id = get_or_create_customer(&client, stripe_secret, &firebase_uid, &auth.device_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let customer_id =
+        get_or_create_customer(&client, stripe_secret, &firebase_uid, &auth.device_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     // Create checkout session with the subscription
     // Uses a trial-like approach: first invoice gets a coupon ($40 off = $9 first month)
@@ -76,7 +77,10 @@ pub async fn create_checkout_session(
 
     // Apply intro coupon if configured
     if !config.stripe_intro_coupon_id.is_empty() {
-        params.push(("discounts[0][coupon]", config.stripe_intro_coupon_id.clone()));
+        params.push((
+            "discounts[0][coupon]",
+            config.stripe_intro_coupon_id.clone(),
+        ));
     }
 
     let resp = client
@@ -101,14 +105,8 @@ pub async fn create_checkout_session(
         ));
     }
 
-    let checkout_url = body["url"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
-    let session_id = body["id"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    let checkout_url = body["url"].as_str().unwrap_or_default().to_string();
+    let session_id = body["id"].as_str().unwrap_or_default().to_string();
 
     tracing::info!(customer = %customer_id, session = %session_id, "Checkout session created");
 
@@ -129,9 +127,7 @@ pub struct RedirectQuery {
 /// Stripe Checkout requires https:// success/cancel URLs. This endpoint
 /// serves as a trampoline: Stripe redirects here, and we redirect the
 /// browser to the app's custom URL scheme (fazm://).
-pub async fn checkout_redirect(
-    Query(query): Query<RedirectQuery>,
-) -> impl IntoResponse {
+pub async fn checkout_redirect(Query(query): Query<RedirectQuery>) -> impl IntoResponse {
     // Only allow redirects to the fazm:// scheme
     if !query.to.starts_with("fazm://") {
         return Redirect::temporary("https://fazm.ai").into_response();
@@ -286,9 +282,7 @@ pub async fn webhook(
             let sub = &event["data"]["object"];
             let customer = sub["customer"].as_str().unwrap_or_default();
             let status = sub["status"].as_str().unwrap_or_default();
-            let firebase_uid = sub["metadata"]["firebase_uid"]
-                .as_str()
-                .unwrap_or_default();
+            let firebase_uid = sub["metadata"]["firebase_uid"].as_str().unwrap_or_default();
             tracing::info!(
                 customer,
                 status,
@@ -351,7 +345,10 @@ async fn find_customer(
     let resp = client
         .get("https://api.stripe.com/v1/customers/search")
         .bearer_auth(secret)
-        .query(&[("query", &format!("metadata['firebase_uid']:'{firebase_uid}'"))])
+        .query(&[(
+            "query",
+            &format!("metadata['firebase_uid']:'{firebase_uid}'"),
+        )])
         .send()
         .await
         .map_err(|e| format!("Stripe search error: {e}"))?;
