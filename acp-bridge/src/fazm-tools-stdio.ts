@@ -136,6 +136,8 @@ function notifyObserverCardReady(): void {
   }
 }
 
+const TOOL_TIMEOUT_MS = 30_000;
+
 async function requestSwiftTool(
   name: string,
   input: Record<string, unknown>
@@ -147,7 +149,20 @@ async function requestSwiftTool(
   }
 
   return new Promise<string>((resolve) => {
-    pendingToolCalls.set(callId, { resolve });
+    const timer = setTimeout(() => {
+      if (pendingToolCalls.has(callId)) {
+        pendingToolCalls.delete(callId);
+        logErr(`Tool call timed out after ${TOOL_TIMEOUT_MS}ms: ${name} (${callId})`);
+        resolve(`Error: tool call timed out after ${TOOL_TIMEOUT_MS / 1000}s`);
+      }
+    }, TOOL_TIMEOUT_MS);
+
+    pendingToolCalls.set(callId, {
+      resolve: (result: string) => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+    });
     const msg = JSON.stringify({ type: "tool_use", callId, name, input });
     pipeConnection!.write(msg + "\n");
   });
