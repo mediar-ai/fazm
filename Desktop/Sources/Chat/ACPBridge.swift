@@ -179,6 +179,9 @@ actor ACPBridge {
   private var lastExitWasOOM = false
   /// Set when interrupt() is called so query() can skip remaining tool calls
   private var isInterrupted = false
+  /// Updated when stderr shows ACP tool activity (tool started/completed/progress).
+  /// Used by waitForMessage to avoid timing out while ACP tools are actively running.
+  private var lastStderrToolActivity: Date?
 
   /// Whether the bridge subprocess is alive and ready
   var isAlive: Bool { isRunning }
@@ -300,6 +303,13 @@ actor ACPBridge {
       let data = handle.availableData
       if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
         log("ACPBridge stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+        // Track ACP tool activity so waitForMessage doesn't time out
+        // while tools are actively running inside ACP (Terminal, text_editor, etc.)
+        if text.contains("Tool started") || text.contains("Tool completed")
+          || text.contains("tool_call") || text.contains("NOTIFY")
+        {
+          Task { await self?.markStderrToolActivity() }
+        }
         if text.contains("FatalProcessOutOfMemory")
           || text.contains("JavaScript heap out of memory")
           || text.contains("Failed to reserve virtual memory")
@@ -992,6 +1002,19 @@ actor ACPBridge {
         if let timeout = timeout {
           Task {
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            // Before timing out, check if ACP tools are still active via stderr.
+            // ACP's own tools (Terminal, text_editor) don't send bridge messages,
+            // so waitForMessage would time out even though work is progressing.
+            // Keep extending the deadline while stderr shows recent tool activity.
+            while self.messageGeneration == expectedGeneration, self.messageContinuation != nil {
+              if let lastActivity = self.lastStderrToolActivity,
+                 Date().timeIntervalSince(lastActivity) < timeout {
+                log("ACPBridge: waitForMessage timeout deferred — stderr tool activity \(Int(Date().timeIntervalSince(lastActivity)))s ago")
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                continue
+              }
+              break
+            }
             if self.messageGeneration == expectedGeneration, self.messageContinuation != nil {
               self.messageContinuation = nil
               log("ACPBridge: waitForMessage timeout fired after \(timeout)s — no message received, bridge may be stuck")
@@ -1020,6 +1043,10 @@ actor ACPBridge {
 
   private func markOOM() {
     lastExitWasOOM = true
+  }
+
+  private func markStderrToolActivity() {
+    lastStderrToolActivity = Date()
   }
 
   private func handleTermination(
