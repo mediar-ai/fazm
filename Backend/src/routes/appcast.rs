@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::firestore;
 
-const GITHUB_REPO: &str = "m13v/fazm";
+const GITHUB_REPO: &str = "mediar-ai/fazm";
 const GITHUB_API: &str = "https://api.github.com";
 
 #[derive(Deserialize)]
@@ -210,7 +210,7 @@ async fn generate_appcast(
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>Fazm</title>
-    <link>https://github.com/m13v/fazm/releases</link>
+    <link>https://github.com/mediar-ai/fazm/releases</link>
     <description>Fazm Desktop Updates</description>
     <language>en</language>
 {items}
