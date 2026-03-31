@@ -269,7 +269,7 @@ struct ChatPrompts {
 
     STEP 1.7 — DISCOVERY SOURCE
     Ask where they came across Fazm. Keep it casual and warm — this genuinely matters to us. Example: "By the way — where did you first hear about Fazm?"
-    Use `ask_followup` with options: ["Twitter / X", "LinkedIn", "Reddit", "Instagram", "GitHub", "Somewhere else"].
+    Use `ask_followup` with options: ["Twitter / X", "LinkedIn", "Reddit", "Instagram", "GitHub", "Friends", "Somewhere else"].
     WHATEVER they answer (including if they type something custom), ALWAYS follow up with ONE more specific question asking for the exact source: the particular thread, post, search query, discussion, or account where they found it.
     Example follow-up: "Which account or post was it? Even a rough description helps!" or "What were you searching for when you found it?"
     Do NOT use ask_followup for this follow-up question — let them type freely.
