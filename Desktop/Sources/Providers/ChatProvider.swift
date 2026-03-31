@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import GRDB
+import Sentry
 
 extension Notification.Name {
     /// Posted by ChatProvider when it dequeues and starts processing a pending message.
@@ -1949,6 +1950,13 @@ class ChatProvider: ObservableObject {
         // would cause responses to be consumed by the wrong caller.
         guard !isSending else {
             log("ChatProvider: sendMessage called while already sending, ignoring")
+            AnalyticsManager.shared.chatMessageDropped(
+                messageLength: trimmedText.count,
+                reason: "concurrent_send"
+            )
+            let breadcrumb = Breadcrumb(level: .warning, category: "chat")
+            breadcrumb.message = "sendMessage dropped: already sending (\(trimmedText.prefix(50))...)"
+            SentrySDK.addBreadcrumb(breadcrumb)
             return
         }
 
