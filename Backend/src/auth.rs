@@ -1,9 +1,4 @@
-use axum::{
-    extract::Request,
-    http::StatusCode,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -101,10 +96,7 @@ async fn fetch_jwks() -> Result<HashMap<String, DecodingKey>, String> {
 }
 
 /// Get a decoding key for the given kid, fetching/refreshing JWKS as needed
-async fn get_decoding_key(
-    cache: &SharedJwksCache,
-    kid: &str,
-) -> Result<DecodingKey, String> {
+async fn get_decoding_key(cache: &SharedJwksCache, kid: &str) -> Result<DecodingKey, String> {
     // Try cache first
     {
         let guard = cache.read().await;
@@ -141,8 +133,7 @@ async fn validate_firebase_token(
     cache: &SharedJwksCache,
 ) -> Result<FirebaseIdentity, String> {
     // Decode the header to get the kid
-    let header =
-        decode_header(token).map_err(|e| format!("Invalid JWT header: {}", e))?;
+    let header = decode_header(token).map_err(|e| format!("Invalid JWT header: {}", e))?;
 
     let kid = header
         .kid
@@ -166,22 +157,16 @@ async fn validate_firebase_token(
     let token_data = decode::<FirebaseClaims>(token, &decoding_key, &validation)
         .map_err(|e| format!("JWT validation failed: {}", e))?;
 
-    let uid = token_data.claims.sub;
+    let FirebaseClaims { sub: uid, email } = token_data.claims;
     if uid.is_empty() {
         return Err("JWT sub claim is empty".to_string());
     }
 
-    Ok(FirebaseIdentity {
-        uid,
-        email: token_data.claims.email,
-    })
+    Ok(FirebaseIdentity { uid, email })
 }
 
 /// Middleware that validates a Firebase ID token
-pub async fn auth_middleware(
-    request: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
+pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, StatusCode> {
     let config = request
         .extensions()
         .get::<Arc<Config>>()
@@ -215,25 +200,26 @@ pub async fn auth_middleware(
         .unwrap_or("unknown")
         .to_string();
 
-    let auth_device = match validate_firebase_token(token, &config.firebase_project_id, &jwks_cache).await {
-        Ok(identity) => {
-            tracing::debug!(
-                "Firebase auth success: uid={}, email={:?}, device={}",
-                identity.uid,
-                identity.email,
-                device_id
-            );
-            AuthDevice {
-                device_id,
-                firebase_uid: Some(identity.uid),
-                firebase_email: identity.email,
+    let auth_device =
+        match validate_firebase_token(token, &config.firebase_project_id, &jwks_cache).await {
+            Ok(identity) => {
+                tracing::debug!(
+                    "Firebase auth success: uid={}, email={:?}, device={}",
+                    identity.uid,
+                    identity.email,
+                    device_id
+                );
+                AuthDevice {
+                    device_id,
+                    firebase_uid: Some(identity.uid),
+                    firebase_email: identity.email,
+                }
             }
-        }
-        Err(e) => {
-            tracing::warn!("Firebase token validation failed: {}", e);
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-    };
+            Err(e) => {
+                tracing::warn!("Firebase token validation failed: {}", e);
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+        };
 
     let mut request = request;
     request.extensions_mut().insert(auth_device);
