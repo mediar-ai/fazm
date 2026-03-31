@@ -66,16 +66,19 @@ node ~/analytics/scripts/send-email.js \
 ```
 
 Reply guidelines:
+- **ALWAYS send a reply.** Every single inbound email gets a response. Even "awesome" or "thanks" gets a short friendly reply. The only exception is noise (auto-replies, DMARC, spam).
 - Sign as "matt" (lowercase)
 - Be casual, friendly, like texting a coworker
 - Be specific and helpful — reference what you found in the code if relevant
 - If it's a bug: acknowledge it, explain what's happening, say if you've found/fixed it
 - If it's a feature: say whether it's doable, give a rough sense of effort
 - If it's a question: answer it directly
+- For short acknowledgments ("awesome", "thanks", "cool"): reply warmly, maybe ask a follow-up or offer help
 - Keep it short — 2-5 sentences usually
 - Never use em dashes
 - Never promise specific timelines
 - If you made a code fix, mention that you're looking into it and will push a fix soon
+- Do NOT skip replying because an outbound message already exists in the thread. Newsletter broadcasts and automated campaign emails are NOT real replies. You must always send a personal, contextual reply to the specific message the user sent.
 
 ### Step 5: Email report to Matt
 
@@ -131,5 +134,6 @@ curl -s -H "Authorization: Bearer $POSTHOG_PERSONAL_API_KEY" \
 - You are running in the FAZM repo at ~/fazm/. The codebase is Swift (macOS desktop app).
 - The send-email script is in ~/analytics/scripts/ — it needs the analytics .env.production.local for RESEND_API_KEY and DATABASE_URL.
 - If you make code changes, do NOT commit or push. Just make the changes and report them.
-- Always reply to the user. Always send the report to Matt. Never skip these steps.
+- ALWAYS reply to the user. ALWAYS send the report to Matt. Never skip these steps.
+- The thread may contain outbound "newsletter" or "broadcast" emails (e.g., "Fazm now watches your screen", "Your Fazm download link", campaign blasts). These are NOT real replies to the user. Ignore them when deciding whether to reply. You MUST still send a personal reply.
 - If the email is noise (auto-reply, DMARC, spam), skip steps 2-4 but still mark as processed.
