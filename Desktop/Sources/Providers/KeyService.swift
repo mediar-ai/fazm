@@ -14,11 +14,15 @@ final class KeyService {
     /// Task that represents the in-flight fetchKeys() call, so callers can await it.
     private var fetchTask: Task<Void, Never>?
 
-    private let backendUrl: String
+    /// Read dynamically so that KeyService.shared can be initialized before loadEnvironment()
+    /// sets FAZM_BACKEND_URL via setenv(). If we cached this in init(), returning users would
+    /// get an empty URL because AuthService.configure() triggers the singleton before AppState.init().
+    private var backendUrl: String {
+        Self.env("FAZM_BACKEND_URL").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
     private let deviceId: String
 
     private init() {
-        self.backendUrl = Self.env("FAZM_BACKEND_URL").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.deviceId = Self.getDeviceId()
     }
 
@@ -42,7 +46,7 @@ final class KeyService {
 
     /// Wait for keys to be available (up to `timeout` seconds).
     /// Call this before using `deepgramAPIKey` or `anthropicAPIKey`.
-    func ensureKeys(timeout: TimeInterval = 3) async {
+    func ensureKeys(timeout: TimeInterval = 10) async {
         if hasFetched { return }
 
         // Await the in-flight fetch, or start one if none exists
@@ -75,10 +79,13 @@ final class KeyService {
         guard !hasFetched else { return }
         guard !backendUrl.isEmpty else {
             log("KeyService: missing FAZM_BACKEND_URL, skipping key fetch")
+            // Clear fetchTask so the next ensureKeys() retries (env may be loaded by then)
+            fetchTask = nil
             return
         }
         guard await AuthService.shared.isSignedIn else {
             log("KeyService: user not signed in, skipping key fetch")
+            fetchTask = nil
             return
         }
 
@@ -102,15 +109,17 @@ final class KeyService {
 
                 let status = (response as? HTTPURLResponse)?.statusCode ?? -1
 
-                if status == 401 && attempt < 2 {
-                    log("KeyService: fetch got 401, will retry with refreshed token")
+                if (status == 401 || status == 403) && attempt < 2 {
+                    log("KeyService: fetch got \(status), will retry with refreshed token")
                     continue
                 }
 
                 guard status == 200 else {
                     let body = String(data: data, encoding: .utf8) ?? ""
                     log("KeyService: fetch failed with status \(status): \(body)")
-                    hasFetched = true
+                    // Don't set hasFetched — allow future retries for transient failures
+                    // (cold start timeouts, expired tokens, server errors)
+                    fetchTask = nil
                     return
                 }
 
@@ -139,7 +148,8 @@ final class KeyService {
                     continue
                 }
                 log("KeyService: fetch error: \(error.localizedDescription)")
-                hasFetched = true
+                // Don't set hasFetched — allow future retries
+                fetchTask = nil
             }
         }
     }
