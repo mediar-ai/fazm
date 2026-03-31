@@ -715,6 +715,10 @@ extension PostHogManager {
         ])
     }
 
+    func claudeCliCredentialsDetected() {
+        track("claude_cli_credentials_detected")
+    }
+
     // MARK: - Settings State
 
     func settingsStateTracked(screenshotsEnabled: Bool, memoryExtractionEnabled: Bool, memoryNotificationsEnabled: Bool) {
