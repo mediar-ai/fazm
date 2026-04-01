@@ -43,11 +43,11 @@ struct MessageQueueView: View {
                 onReorder?(source, destination)
             }
         }
-        .background(Color.white.opacity(0.05))
+        .background(FazmColors.overlayForeground.opacity(0.05))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(FazmColors.overlayForeground.opacity(0.1), lineWidth: 1)
         )
     }
 }
@@ -65,13 +65,13 @@ private struct QueueItemRow: View {
             // Drag handle
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9))
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(FazmColors.overlayForeground.opacity(0.3))
                 .frame(width: 16)
 
             // Message text
             Text(item.text)
                 .scaledFont(size: 12)
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(FazmColors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -81,9 +81,9 @@ private struct QueueItemRow: View {
                 Button(action: onDelete) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(FazmColors.overlayForeground.opacity(0.4))
                         .frame(width: 18, height: 18)
-                        .background(Color.white.opacity(0.1))
+                        .background(FazmColors.overlayForeground.opacity(0.1))
                         .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
@@ -101,7 +101,7 @@ private struct QueueItemRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(isHovered ? Color.white.opacity(0.05) : Color.clear)
+        .background(isHovered ? FazmColors.overlayForeground.opacity(0.05) : Color.clear)
         .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.1), value: isHovered)
     }
