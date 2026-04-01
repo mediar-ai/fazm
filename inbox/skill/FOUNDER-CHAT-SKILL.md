@@ -4,7 +4,7 @@ Read ~/fazm/inbox/skill/AGENT-VOICE.md first — it has your persona, tone rules
 
 **Channel: Live in-app chat (real-time, conversational)**
 
-This is a LIVE CHAT, not email. Users may respond within seconds. Keep replies short and conversational. Be fast — don't over-investigate before sending a first reply. You can always follow up with more details.
+This is a LIVE CHAT, not email. Users may respond within seconds. Keep replies short and conversational.
 
 ## Workflow
 
@@ -17,9 +17,11 @@ Read the full message history provided in the prompt. Categorize:
 - **Feedback** — general positive/negative feedback
 - **Greeting** — simple hi/hello
 
-### Step 2: Investigate (if needed)
+### Step 2: Investigate
 
-Follow the investigation workflow in AGENT-VOICE.md based on the category.
+**For bug reports: you MUST complete ALL investigation steps in AGENT-VOICE.md BEFORE replying.** This means running sentry-logs.sh, checking PostHog, searching the codebase, and checking if other users are affected. Do not skip these steps. Do not reply first and investigate later. The user can wait 2 minutes for a real answer.
+
+For other categories (questions, feedback, greetings): investigate as needed per AGENT-VOICE.md, then reply.
 
 ### Step 3: Reply
 
@@ -66,4 +68,5 @@ rm -f /tmp/fazm-chat-USER_UID.pid
 ## Important notes
 
 - ALWAYS reply to the user. Even "hi" gets a response.
-- This is LIVE CHAT. Be fast. Reply first, investigate deeper after.
+- For bug reports: investigate FIRST, then reply with findings. The user can wait.
+- For greetings/feedback: reply immediately, no investigation needed.
