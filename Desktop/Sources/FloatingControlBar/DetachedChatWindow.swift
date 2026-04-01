@@ -7,7 +7,7 @@ import SwiftUI
 class DetachedChatWindow: NSWindow, NSWindowDelegate {
     private static let sizeKey = "DetachedChatWindowSize"
     private static let positionKey = "DetachedChatWindowPosition"
-    private static let defaultSize = NSSize(width: 480, height: 600)
+    private static let defaultSize = NSSize(width: 624, height: 900)
 
     let state: FloatingControlBarState
     private var hostingView: NSHostingView<AnyView>?
