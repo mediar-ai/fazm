@@ -1361,9 +1361,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
 
       // Image/content too large — retry on the SAME session without the image,
       // with a hint so the model can adjust its approach.
-      const isImageTooLarge = /image.*(too large|too big|exceeds.*limit)|unable to resize image|content too long/i.test(errMsg);
-      if (isImageTooLarge && sessionId && !retryingWithHint) {
-        logErr(`session/prompt failed with image-too-large error, retrying on same session without image: ${errMsg}`);
+      const isImageError = /image.*(too large|too big|exceeds.*limit|dimension)|unable to resize image|content too long|at least one of the image/i.test(errMsg);
+      if (isImageError && sessionId && !retryingWithHint) {
+        logErr(`session/prompt failed with image error, retrying on same session without image: ${errMsg}`);
         for (const name of pendingTools) {
           send({ type: "tool_activity", name, status: "completed" });
         }
@@ -1376,8 +1376,8 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           await sendPrompt();
         } catch (retryErr) {
           const retryErrMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          const isStillImageTooLarge = /image.*(too large|too big|exceeds.*limit)|unable to resize image|content too long/i.test(retryErrMsg);
-          if (isStillImageTooLarge && _retryDepth < MAX_QUERY_RETRIES) {
+          const isStillImageError = /image.*(too large|too big|exceeds.*limit|dimension)|unable to resize image|content too long|at least one of the image/i.test(retryErrMsg);
+          if (isStillImageError && _retryDepth < MAX_QUERY_RETRIES) {
             // The session history itself contains oversized images — start a fresh session.
             logErr(`Retry without image also failed with image-too-large — session history poisoned, starting new session (depth=${_retryDepth}): ${retryErrMsg}`);
             sessions.delete(sessionKey);
