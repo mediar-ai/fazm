@@ -1758,6 +1758,9 @@ class FloatingControlBarManager {
         let state = window.state
 
         log("FloatingControlBarManager: Popping out conversation to detached window")
+        AnalyticsManager.shared.floatingBarChatPoppedOut(
+            historyCount: state.chatHistory.count
+        )
         AnalyticsManager.shared.floatingBarAskFazmClosed()
 
         // Remove monitors before hiding the floating bar conversation
