@@ -893,6 +893,24 @@ workflows:
           fi
           echo "ED_SIGNATURE=$ED_SIGNATURE" >> $CM_ENV
 
+      - name: Prepare changelog for release
+        script: |
+          # Move unreleased entries into a versioned release, then push the
+          # updated CHANGELOG.json back to the repo so it stays clean.
+          bash scripts/prepare-release.sh "$VERSION"
+
+          # Commit and push the changelog update back to the repo
+          git config user.name "Codemagic CI"
+          git config user.email "ci@fazm.dev"
+          if ! git diff --quiet CHANGELOG.json; then
+            git add CHANGELOG.json
+            git commit -m "Release changelog for v${VERSION}"
+            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git" HEAD:main || \
+              echo "Warning: could not push changelog update (non-fatal)"
+          else
+            echo "CHANGELOG.json unchanged (already versioned or empty)"
+          fi
+
       - name: Create GitHub release
         script: |
           DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$CM_TAG/Fazm.zip"
@@ -902,7 +920,7 @@ workflows:
           try:
             with open('CHANGELOG.json') as f:
               data = json.load(f)
-            # Try versioned release first, then fall back to unreleased
+            # Use the versioned release entry (just created by prepare-release.sh)
             changes = []
             for r in data.get('releases', []):
               if r.get('version') == '$VERSION':
