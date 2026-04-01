@@ -29,7 +29,7 @@ struct AskAIInputView: View {
                         .scaledFont(size: 11)
                         .foregroundColor(.secondary)
                         .frame(width: 30, height: 16)
-                        .background(Color.white.opacity(0.1))
+                        .background(FazmColors.overlayForeground.opacity(0.1))
                         .cornerRadius(4)
                     Text("to close")
                         .scaledFont(size: 11)
@@ -124,9 +124,9 @@ struct AskAIInputView: View {
             if state.showSendButtonHint && hasInput {
                 Text("⏎")
                     .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(FazmColors.overlayForeground.opacity(0.6))
                     .frame(width: 20, height: 14)
-                    .background(Color.white.opacity(0.1))
+                    .background(FazmColors.overlayForeground.opacity(0.1))
                     .cornerRadius(3)
                     .transition(.opacity)
             }
