@@ -110,7 +110,7 @@ enum ChatContentBlock: Identifiable, Equatable {
             summary = Self.shortenPath(input["file_path"] as? String)
         case "Write", "Edit":
             summary = Self.shortenPath(input["file_path"] as? String)
-        case "Bash":
+        case "Bash", "Terminal":
             if let cmd = input["command"] as? String {
                 summary = cmd.count > 80 ? String(cmd.prefix(80)) + "…" : cmd
             } else {
