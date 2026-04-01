@@ -90,6 +90,7 @@ final class ReferralService {
         }
 
         UserDefaults.standard.set(trimmed, forKey: "fazm_referred_by_code")
+        Task { @MainActor in AnalyticsManager.shared.referralSignupTracked(code: trimmed) }
 
         guard !backendUrl.isEmpty else { return }
 
@@ -144,6 +145,7 @@ final class ReferralService {
                 }
                 if let result = try? JSONDecoder().decode(ValidateResponse.self, from: data) {
                     log("ReferralService: validate — messages=\(result.message_count) completed=\(result.completed) rewarded=\(result.reward_granted)")
+                    Task { @MainActor in AnalyticsManager.shared.referralMessageValidated(count: result.message_count, completed: result.completed) }
                     if result.completed {
                         // Clear the referral tracking — no more calls needed
                         UserDefaults.standard.set(true, forKey: "fazm_referral_completed")
@@ -170,6 +172,9 @@ final class ReferralService {
             NSPasteboard.general.setString(url, forType: .string)
         }
         log("ReferralService: copied referral link to clipboard")
+        if let code = referralCode {
+            Task { @MainActor in AnalyticsManager.shared.referralLinkCopied(code: code) }
+        }
     }
 
     // MARK: - Errors
