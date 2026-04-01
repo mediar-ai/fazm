@@ -526,6 +526,7 @@ let interruptRequested = false;
  *  within 30s, the session is discarded and a fresh one is created. */
 const interruptedSessions = new Set<string>();
 let isInitialized = false;
+let initPromise: Promise<void> | null = null;
 let authMethods: AuthMethod[] = [];
 let authResolve: (() => void) | null = null;
 let preWarmPromise: Promise<void> | null = null;
@@ -616,7 +617,10 @@ async function startAuthFlow(): Promise<void> {
 
 async function initializeAcp(): Promise<void> {
   if (isInitialized) return;
+  // Guard against concurrent calls (e.g. preWarmSession + handleQuery racing after OAuth restart)
+  if (initPromise) return initPromise;
 
+  initPromise = (async () => {
   try {
     const result = (await acpRequest("initialize", {
       protocolVersion: 1,
@@ -679,6 +683,13 @@ async function initializeAcp(): Promise<void> {
       return;
     }
     throw err;
+  }
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
   }
 }
 
