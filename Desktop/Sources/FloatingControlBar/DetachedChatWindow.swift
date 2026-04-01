@@ -38,13 +38,15 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             defer: false
         )
 
-        self.title = "Fazm Chat"
+        // Put the first prompt in the actual macOS title bar
+        let firstPrompt = state.chatHistory.first?.question ?? state.displayedQuery
+        self.title = firstPrompt.isEmpty ? "Fazm Chat" : firstPrompt
         self.minSize = NSSize(width: 360, height: 300)
         self.isReleasedWhenClosed = false
         self.delegate = self
         self.appearance = NSAppearance(named: .vibrantDark)
-        self.titlebarAppearsTransparent = true
-        self.titleVisibility = .hidden
+        self.titlebarAppearsTransparent = false
+        self.titleVisibility = .visible
         self.backgroundColor = NSColor(white: 0.1, alpha: 1.0)
 
         // Restore saved position
@@ -107,7 +109,6 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     // MARK: - NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {
-        // Save position and size
         UserDefaults.standard.set(NSStringFromSize(frame.size), forKey: DetachedChatWindow.sizeKey)
         UserDefaults.standard.set(NSStringFromPoint(frame.origin), forKey: DetachedChatWindow.positionKey)
         onWindowClose?()
@@ -139,115 +140,87 @@ struct DetachedChatView: View {
     var onConnectClaude: () -> Void
     var onObserverCardAction: (Int64, String) -> Void
 
-    /// The first user prompt in this chat session.
-    private var sessionTitle: String {
-        if let first = state.chatHistory.first, !first.question.isEmpty {
-            return first.question
-        }
-        if !state.displayedQuery.isEmpty {
-            return state.displayedQuery
-        }
-        return "Chat"
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            // Session title bar
-            HStack(spacing: 0) {
-                Text(sessionTitle)
-                    .scaledFont(size: 12, weight: .medium)
-                    .foregroundColor(.white.opacity(0.5))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 4)
-
-            AIResponseView(
-                isLoading: Binding(
-                    get: { state.isAILoading },
-                    set: { state.isAILoading = $0 }
-                ),
-                currentMessage: state.currentAIMessage,
-                userInput: state.displayedQuery,
-                chatHistory: state.chatHistory,
-                isVoiceFollowUp: Binding(
-                    get: { state.isVoiceFollowUp },
-                    set: { state.isVoiceFollowUp = $0 }
-                ),
-                voiceFollowUpTranscript: Binding(
-                    get: { state.voiceFollowUpTranscript },
-                    set: { state.voiceFollowUpTranscript = $0 }
-                ),
-                suggestedReplies: Binding(
-                    get: { state.suggestedReplies },
-                    set: { state.suggestedReplies = $0 }
-                ),
-                suggestedReplyQuestion: Binding(
-                    get: { state.suggestedReplyQuestion },
-                    set: { state.suggestedReplyQuestion = $0 }
-                ),
-                onClose: nil,
-                onNewChat: onNewChat,
-                onSendFollowUp: { message in
-                    state.suggestedReplies = []
-                    state.suggestedReplyQuestion = ""
-                    let currentQuery = state.displayedQuery
-                    if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
-                        state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
-                    }
-                    state.flushPendingObserverExchanges()
-                    state.displayedQuery = message
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        state.isAILoading = true
-                        state.currentAIMessage = nil
-                    }
-                    onSendFollowUp(message)
-                },
-                onEnqueueMessage: { message in
-                    guard state.messageQueue.count < FloatingControlBarState.maxQueueSize else { return }
-                    state.enqueue(message)
-                    onEnqueueMessage(message)
-                },
-                onSendNow: { item in
-                    state.dequeue(item.id)
-                    let currentQuery = state.displayedQuery
-                    if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
-                        currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
-                            if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
-                                return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
-                            }
-                            return block
-                        }
-                        state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
-                    }
-                    state.flushPendingObserverExchanges()
-                    state.displayedQuery = item.text
+        AIResponseView(
+            isLoading: Binding(
+                get: { state.isAILoading },
+                set: { state.isAILoading = $0 }
+            ),
+            currentMessage: state.currentAIMessage,
+            userInput: state.displayedQuery,
+            chatHistory: state.chatHistory,
+            isVoiceFollowUp: Binding(
+                get: { state.isVoiceFollowUp },
+                set: { state.isVoiceFollowUp = $0 }
+            ),
+            voiceFollowUpTranscript: Binding(
+                get: { state.voiceFollowUpTranscript },
+                set: { state.voiceFollowUpTranscript = $0 }
+            ),
+            suggestedReplies: Binding(
+                get: { state.suggestedReplies },
+                set: { state.suggestedReplies = $0 }
+            ),
+            suggestedReplyQuestion: Binding(
+                get: { state.suggestedReplyQuestion },
+                set: { state.suggestedReplyQuestion = $0 }
+            ),
+            onClose: nil,
+            onNewChat: onNewChat,
+            onSendFollowUp: { message in
+                state.suggestedReplies = []
+                state.suggestedReplyQuestion = ""
+                let currentQuery = state.displayedQuery
+                if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
+                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                }
+                state.flushPendingObserverExchanges()
+                state.displayedQuery = message
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     state.isAILoading = true
                     state.currentAIMessage = nil
-                    onSendNowQueued(item)
-                },
-                onDeleteQueued: { item in
-                    state.dequeue(item.id)
-                    onDeleteQueued(item)
-                },
-                onClearQueue: {
-                    state.clearQueue()
-                    onClearQueue()
-                },
-                onReorderQueue: { source, dest in
-                    state.messageQueue.move(fromOffsets: source, toOffset: dest)
-                    onReorderQueue(source, dest)
-                },
-                onStopAgent: onStopAgent,
-                onConnectClaude: onConnectClaude,
-                onObserverCardAction: onObserverCardAction
-            )
-            .padding(.horizontal, 6)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-        }
+                }
+                onSendFollowUp(message)
+            },
+            onEnqueueMessage: { message in
+                guard state.messageQueue.count < FloatingControlBarState.maxQueueSize else { return }
+                state.enqueue(message)
+                onEnqueueMessage(message)
+            },
+            onSendNow: { item in
+                state.dequeue(item.id)
+                let currentQuery = state.displayedQuery
+                if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
+                    currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
+                        if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
+                            return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
+                        }
+                        return block
+                    }
+                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                }
+                state.flushPendingObserverExchanges()
+                state.displayedQuery = item.text
+                state.isAILoading = true
+                state.currentAIMessage = nil
+                onSendNowQueued(item)
+            },
+            onDeleteQueued: { item in
+                state.dequeue(item.id)
+                onDeleteQueued(item)
+            },
+            onClearQueue: {
+                state.clearQueue()
+                onClearQueue()
+            },
+            onReorderQueue: { source, dest in
+                state.messageQueue.move(fromOffsets: source, toOffset: dest)
+                onReorderQueue(source, dest)
+            },
+            onStopAgent: onStopAgent,
+            onConnectClaude: onConnectClaude,
+            onObserverCardAction: onObserverCardAction
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .floatingBackground(cornerRadius: 0)
     }
@@ -262,14 +235,19 @@ class DetachedChatWindowController {
 
     private var window: DetachedChatWindow?
     private var chatCancellable: AnyCancellable?
+    private var compactCancellable: AnyCancellable?
 
     var isShowing: Bool { window?.isVisible ?? false }
 
     /// Pop out the current floating bar conversation into a detached window.
+    /// Creates its own FloatingControlBarState so the floating bar can reset to new chat.
     func show(
-        state: FloatingControlBarState,
+        chatHistory: [FloatingChatExchange],
+        displayedQuery: String,
+        currentAIMessage: ChatMessage?,
+        isAILoading: Bool,
         chatProvider: ChatProvider,
-        onSendQuery: @escaping (String) -> Void
+        messageCountBefore: Int
     ) {
         // Reuse or create the window
         if let existing = window {
@@ -278,19 +256,27 @@ class DetachedChatWindowController {
             return
         }
 
-        let win = DetachedChatWindow(state: state)
+        // Create a fresh state for the detached window, copying conversation data
+        let detachedState = FloatingControlBarState()
+        detachedState.chatHistory = chatHistory
+        detachedState.displayedQuery = displayedQuery
+        detachedState.currentAIMessage = currentAIMessage
+        detachedState.isAILoading = isAILoading
+        detachedState.showingAIConversation = true
+        detachedState.showingAIResponse = true
 
-        win.onSendFollowUp = { message in
-            onSendQuery(message)
+        let win = DetachedChatWindow(state: detachedState)
+
+        win.onSendFollowUp = { [weak self] message in
+            self?.sendQuery(message)
         }
 
-        win.onNewChat = { [weak state, weak chatProvider] in
-            guard let state, let provider = chatProvider else { return }
+        win.onNewChat = { [weak detachedState, weak chatProvider] in
+            guard let state = detachedState, let provider = chatProvider else { return }
             state.chatHistory = []
             state.displayedQuery = ""
             state.currentAIMessage = nil
             state.isAILoading = false
-            state.showingAIResponse = false
             state.aiInputText = ""
             state.clearQueue()
             Task { @MainActor in
@@ -337,31 +323,91 @@ class DetachedChatWindowController {
             chatProvider?.handleObserverCardAction(activityId: activityId, action: action)
         }
 
-        win.onWindowClose = { [weak self, weak state] in
-            // Snapshot conversation so floating bar can restore it
-            guard let state else { return }
-            if let msg = state.currentAIMessage, !msg.text.isEmpty {
-                var fullHistory = state.chatHistory
-                if !state.displayedQuery.isEmpty {
-                    fullHistory.append(FloatingChatExchange(question: state.displayedQuery, aiMessage: msg))
-                }
-                if !fullHistory.isEmpty {
-                    let last = fullHistory.last!
-                    state.lastConversation = (
-                        history: Array(fullHistory.dropLast()),
-                        lastQuestion: last.question,
-                        lastMessage: last.aiMessage
-                    )
-                }
-            }
+        win.onWindowClose = { [weak self] in
+            self?.chatCancellable?.cancel()
+            self?.chatCancellable = nil
+            self?.compactCancellable?.cancel()
+            self?.compactCancellable = nil
             self?.window = nil
         }
 
         win.setupViews()
         self.window = win
 
+        // Subscribe to ChatProvider messages for streaming updates in the detached window
+        subscribeToChatProvider(chatProvider, state: detachedState, messageCountBefore: messageCountBefore)
+
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Send a follow-up query from the detached window.
+    private func sendQuery(_ message: String) {
+        guard let win = window else { return }
+        let state = win.state
+        let provider = FloatingControlBarManager.shared.chatProvider
+        guard let provider else { return }
+
+        if provider.isSending {
+            provider.enqueueMessage(message)
+            return
+        }
+
+        let messageCountBefore = provider.messages.count
+        state.suggestedReplies = []
+        state.suggestedReplyQuestion = ""
+
+        ChatToolExecutor.onQuickReplyOptions = { [weak state] question, options in
+            Task { @MainActor in
+                state?.suggestedReplyQuestion = question
+                state?.suggestedReplies = options
+            }
+        }
+
+        subscribeToChatProvider(provider, state: state, messageCountBefore: messageCountBefore)
+
+        Task { @MainActor in
+            await provider.sendMessage(
+                message,
+                model: ShortcutSettings.shared.selectedModel,
+                systemPromptSuffix: nil,
+                systemPromptPrefix: ChatProvider.floatingBarSystemPromptPrefixCurrent,
+                sessionKey: "floating"
+            )
+            state.isAILoading = false
+        }
+    }
+
+    /// Subscribe to ChatProvider.$messages for streaming response updates.
+    private func subscribeToChatProvider(_ provider: ChatProvider, state: FloatingControlBarState, messageCountBefore: Int) {
+        chatCancellable?.cancel()
+        chatCancellable = provider.$messages
+            .receive(on: DispatchQueue.main)
+            .sink { [weak state] messages in
+                guard let state else { return }
+                guard messages.count > messageCountBefore,
+                      let aiMessage = messages.last,
+                      aiMessage.sender == .ai else { return }
+
+                state.currentAIMessage = aiMessage
+                if aiMessage.isStreaming {
+                    state.isAILoading = false
+                    if !state.showingAIResponse {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            state.showingAIResponse = true
+                        }
+                    }
+                } else {
+                    state.isAILoading = false
+                }
+            }
+
+        compactCancellable?.cancel()
+        compactCancellable = provider.$isCompacting
+            .receive(on: DispatchQueue.main)
+            .sink { [weak state] isCompacting in
+                state?.isCompacting = isCompacting
+            }
     }
 
     func close() {
