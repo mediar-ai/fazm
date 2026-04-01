@@ -88,10 +88,16 @@ PROMPT_EOF
     SESSION_LOG="$LOG_DIR/chat-session-${UID_VAL}-$(date +%Y%m%d_%H%M%S).log"
     (
         cd "$HOME/fazm"
+        echo "[$(date)] Starting Claude session for $EMAIL" >> "$SESSION_LOG"
         gtimeout 1200 claude \
             -p "$(cat "$PROMPT_FILE")" \
             --dangerously-skip-permissions \
-            2>&1 | tee -a "$SESSION_LOG" || log "WARNING: Claude session for $EMAIL exited with code $?"
+            >> "$SESSION_LOG" 2>&1
+        EXIT_CODE=$?
+        echo "[$(date)] Claude exited with code $EXIT_CODE" >> "$SESSION_LOG"
+        if [ $EXIT_CODE -ne 0 ]; then
+            log "WARNING: Claude session for $EMAIL exited with code $EXIT_CODE"
+        fi
         rm -f "$PROMPT_FILE" "$PID_FILE"
     ) &
 
