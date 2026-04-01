@@ -82,6 +82,12 @@ enum FazmColors {
 
     // MARK: - Code Block Background
     static let codeBlockBackground = adaptive(dark: 0x282C34, light: 0xF6F8FA)
+
+    // MARK: - Overlay Colors (for floating bar, translucent panels)
+    /// Use instead of Color.white.opacity(...) for overlay foregrounds
+    static let overlayForeground = adaptive(dark: 0xFFFFFF, light: 0x000000)
+    /// Use instead of Color.black.opacity(...) for overlay strokes/borders
+    static let overlayBorder = adaptive(dark: 0x000000, light: 0x888888)
 }
 
 // MARK: - Color Extension for Hex
