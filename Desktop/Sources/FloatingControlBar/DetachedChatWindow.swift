@@ -139,8 +139,31 @@ struct DetachedChatView: View {
     var onConnectClaude: () -> Void
     var onObserverCardAction: (Int64, String) -> Void
 
+    /// The first user prompt in this chat session.
+    private var sessionTitle: String {
+        if let first = state.chatHistory.first, !first.question.isEmpty {
+            return first.question
+        }
+        if !state.displayedQuery.isEmpty {
+            return state.displayedQuery
+        }
+        return "Chat"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            // Session title bar
+            HStack(spacing: 0) {
+                Text(sessionTitle)
+                    .scaledFont(size: 12, weight: .medium)
+                    .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 4)
+
             AIResponseView(
                 isLoading: Binding(
                     get: { state.isAILoading },
