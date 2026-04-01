@@ -121,7 +121,6 @@ struct SessionRecordingPermissionSheet: View {
         .frame(width: 340, height: 400)
         .animation(.easeInOut(duration: 0.3), value: state.isGranted)
         .background(FazmColors.backgroundPrimary)
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -219,7 +218,6 @@ final class SessionRecordingPermissionWindowController {
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.appearance = NSAppearance(named: .darkAqua)
 
         let mouseScreen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) })
             ?? NSScreen.main ?? NSScreen.screens.first
