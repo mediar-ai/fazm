@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Added pop-out button to open chat in a separate window that behaves like a normal Mac window"
+  ],
   "releases": [
     {
       "version": "1.7.1",
