@@ -161,6 +161,11 @@ actor GeminiAnalysisService {
     /// Called by SessionRecordingManager when a chunk is finalized.
     /// Copies the file to a stable location and persists the buffer index.
     func handleChunk(_ info: ChunkInfo) {
+        // Check if screen observer is disabled in settings
+        guard UserDefaults.standard.object(forKey: "shortcut_screenObserverEnabled") as? Bool ?? true else {
+            return
+        }
+
         // Read file data now, before upload deletes the local file
         guard let data = try? Data(contentsOf: info.localURL) else {
             log("GeminiAnalysis: failed to read chunk at \(info.localURL.path)")
@@ -214,6 +219,7 @@ actor GeminiAnalysisService {
     /// Force analysis with whatever chunks are buffered (e.g., on app quit or manual trigger).
     func analyzeNow() async -> AnalysisResult? {
         guard !chunkBuffer.isEmpty, !isAnalyzing else { return nil }
+        guard UserDefaults.standard.object(forKey: "shortcut_screenObserverEnabled") as? Bool ?? true else { return nil }
         return await triggerAnalysis()
     }
 
