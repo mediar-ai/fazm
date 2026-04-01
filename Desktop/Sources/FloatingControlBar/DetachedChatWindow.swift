@@ -81,10 +81,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
         let hosting = NSHostingView(rootView: AnyView(
             chatView
                 .withFontScaling()
-                .preferredColorScheme(ColorScheme.dark)
-                .environment(\.colorScheme, ColorScheme.dark)
         ))
-        hosting.appearance = NSAppearance(named: .vibrantDark)
         self.contentView = hosting
         self.hostingView = hosting
     }
