@@ -87,7 +87,7 @@ PROMPT_EOF
     # Spawn Claude in background
     (
         cd "$HOME/fazm"
-        gtimeout 600 claude \
+        gtimeout 1200 claude \
             -p "$(cat "$PROMPT_FILE")" \
             --dangerously-skip-permissions \
             2>>"$LOG_DIR/founder-chat.log" || log "WARNING: Claude session for $EMAIL exited with code $?"
