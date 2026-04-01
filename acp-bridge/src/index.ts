@@ -1137,6 +1137,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       if (abortController.signal.aborted) return;
 
       if (method === "session/update") {
+        // Ignore notifications from other sessions (e.g. stale cleanup from a
+        // cancelled session).  Without this filter, stale notifications increment
+        // notificationCount and defeat the TTFT watchdog, causing infinite hangs.
+        const notifSessionId = getNotificationSessionId(params);
+        if (notifSessionId && notifSessionId !== sessionId) {
+          return;
+        }
+
         notificationCount++;
         const now = Date.now();
         const gapMs = now - lastNotificationTime;
