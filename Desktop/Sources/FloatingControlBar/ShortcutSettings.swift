@@ -179,6 +179,11 @@ class ShortcutSettings: ObservableObject {
         didSet { UserDefaults.standard.set(proactivenessLevel.rawValue, forKey: "shortcut_proactivenessLevel") }
     }
 
+    /// Whether the screen observer (discovered tasks) is enabled.
+    @Published var screenObserverEnabled: Bool {
+        didSet { UserDefaults.standard.set(screenObserverEnabled, forKey: "shortcut_screenObserverEnabled") }
+    }
+
     private init() {
         if let saved = UserDefaults.standard.string(forKey: "shortcut_pttKey"),
            let key = PTTKey(rawValue: saved) {
@@ -215,5 +220,6 @@ class ShortcutSettings: ObservableObject {
         } else {
             self.proactivenessLevel = .proactive
         }
+        self.screenObserverEnabled = UserDefaults.standard.object(forKey: "shortcut_screenObserverEnabled") as? Bool ?? true
     }
 }
