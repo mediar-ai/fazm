@@ -85,12 +85,13 @@ Remember to remove the PID file /tmp/fazm-chat-${UID_VAL}.pid when you're done.
 PROMPT_EOF
 
     # Spawn Claude in background
+    SESSION_LOG="$LOG_DIR/chat-session-${UID_VAL}-$(date +%Y%m%d_%H%M%S).log"
     (
         cd "$HOME/fazm"
         gtimeout 1200 claude \
             -p "$(cat "$PROMPT_FILE")" \
             --dangerously-skip-permissions \
-            2>>"$LOG_DIR/founder-chat.log" || log "WARNING: Claude session for $EMAIL exited with code $?"
+            2>&1 | tee -a "$SESSION_LOG" || log "WARNING: Claude session for $EMAIL exited with code $?"
         rm -f "$PROMPT_FILE" "$PID_FILE"
     ) &
 
