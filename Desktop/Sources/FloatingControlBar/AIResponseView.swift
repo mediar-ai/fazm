@@ -1002,7 +1002,7 @@ struct PopOutButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                Image(systemName: "macwindow.badge.plus")
                     .font(.system(size: 10))
                 if isHovered {
                     Text("Pop out")
