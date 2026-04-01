@@ -810,7 +810,7 @@ class ChatToolExecutor {
         // Notify the UI to render question text and quick-reply buttons
         onQuickReplyOptions?(question, options)
 
-        return "Presented to user: \"\(question)\" with options: \(options.joined(separator: ", "))"
+        return "Presented to user: \"\(question)\" with options: \(options.joined(separator: ", ")). STOP here and wait for the user to respond before continuing."
     }
 
 
