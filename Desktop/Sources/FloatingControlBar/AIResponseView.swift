@@ -347,7 +347,7 @@ struct AIResponseView: View {
                 Text("Connect Claude")
                     .scaledFont(size: 11, weight: .medium)
             }
-            .foregroundColor(.white)
+            .foregroundColor(FazmColors.overlayForeground)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(
@@ -380,7 +380,7 @@ struct AIResponseView: View {
                 Text("Upgrade Plan")
                     .scaledFont(size: 11, weight: .medium)
             }
-            .foregroundColor(.white)
+            .foregroundColor(FazmColors.overlayForeground)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(
@@ -412,7 +412,7 @@ struct AIResponseView: View {
             }
             .buttonStyle(.plain)
             .scaledFont(size: 11)
-            .foregroundColor(.white.opacity(0.6))
+            .foregroundColor(FazmColors.overlayForeground.opacity(0.6))
         }
         .foregroundColor(FazmColors.purplePrimary)
         .padding(.horizontal, 10)
@@ -572,13 +572,13 @@ struct AIResponseView: View {
                 } content: {
                     Text(exchange.question)
                         .scaledFont(size: 13)
-                        .foregroundColor(.white)
+                        .foregroundColor(FazmColors.overlayForeground)
                         .textSelection(.enabled)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
+                        .background(FazmColors.overlayForeground.opacity(0.1))
                         .cornerRadius(8)
                 }
             }
@@ -597,7 +597,7 @@ struct AIResponseView: View {
             }
 
             Divider()
-                .background(Color.white.opacity(0.1))
+                .background(FazmColors.overlayForeground.opacity(0.1))
         }
     }
 
@@ -610,7 +610,7 @@ struct AIResponseView: View {
                     ScrollView {
                         Text(userInput)
                             .scaledFont(size: 13)
-                            .foregroundColor(.white)
+                            .foregroundColor(FazmColors.overlayForeground)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -618,7 +618,7 @@ struct AIResponseView: View {
                 } else {
                     Text(userInput)
                         .scaledFont(size: 13)
-                        .foregroundColor(.white)
+                        .foregroundColor(FazmColors.overlayForeground)
                         .textSelection(.enabled)
                         .lineLimit(1)
                         .truncationMode(.head)
@@ -634,7 +634,7 @@ struct AIResponseView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.1))
+        .background(FazmColors.overlayForeground.opacity(0.1))
         .cornerRadius(8)
     }
 
@@ -687,18 +687,18 @@ struct AIResponseView: View {
 
             Image(systemName: "mic.fill")
                 .scaledFont(size: 14, weight: .semibold)
-                .foregroundColor(.white)
+                .foregroundColor(FazmColors.overlayForeground)
 
             if !voiceFollowUpTranscript.isEmpty {
                 Text(voiceFollowUpTranscript)
                     .scaledFont(size: 13)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(FazmColors.overlayForeground.opacity(0.8))
                     .lineLimit(2)
                     .truncationMode(.head)
             } else {
                 Text("Listening...")
                     .scaledFont(size: 13)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(FazmColors.overlayForeground.opacity(0.5))
             }
 
             Spacer()
@@ -754,7 +754,7 @@ struct AIResponseView: View {
 
             Text("Observer is thinking...")
                 .scaledFont(size: 11, weight: .medium)
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(FazmColors.overlayForeground.opacity(0.4))
 
             Spacer()
         }
@@ -822,7 +822,7 @@ struct AIResponseView: View {
                 }
             }
             .frame(height: followUpTextHeight)
-            .background(Color.white.opacity(0.1))
+            .background(FazmColors.overlayForeground.opacity(0.1))
             .cornerRadius(8)
 
             if (isLoading || currentMessage?.isStreaming == true) && followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1036,7 +1036,7 @@ struct NewChatButton: View {
                     .scaledFont(size: 9)
                     .padding(.horizontal, 3)
                     .padding(.vertical, 1)
-                    .background(Color.white.opacity(0.1))
+                    .background(FazmColors.overlayForeground.opacity(0.1))
                     .cornerRadius(3)
             }
             .foregroundColor(.secondary)
