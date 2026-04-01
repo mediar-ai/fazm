@@ -442,6 +442,21 @@ class PushToTalkManager: ObservableObject {
     }
   }
 
+  // MARK: - UI Button PTT (mouse press-and-hold)
+
+  /// Start PTT from a UI button press. Call on mouseDown.
+  func startUIListening() {
+    guard state == .idle else { return }
+    lastOptionDownTime = ProcessInfo.processInfo.systemUptime
+    startListening()
+  }
+
+  /// Finalize PTT from a UI button release. Call on mouseUp.
+  func finalizeUIListening() {
+    guard state == .listening || state == .lockedListening else { return }
+    finalize()
+  }
+
   /// Cancel PTT without sending — used when conversation is closed mid-PTT.
   func cancelListening() {
     guard state != .idle else { return }
