@@ -328,7 +328,7 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem = nil
 
     // Dismiss silence overlay if it's showing from a previous PTT attempt
-    barState?.dismissSilenceOverlay()
+    effectiveBarState?.dismissSilenceOverlay()
 
     // Play start-of-PTT sound (off main thread to avoid audio subsystem XPC blocking UI)
     if ShortcutSettings.shared.pttSoundsEnabled {
@@ -340,18 +340,20 @@ class PushToTalkManager: ObservableObject {
     }
 
     // Track whether PTT actually opened the chat (vs it was already open)
-    chatWasOpenBeforePTT = barState?.showingAIConversation == true
+    chatWasOpenBeforePTT = effectiveBarState?.showingAIConversation == true
     pttOpenedChat = true
-    if !chatWasOpenBeforePTT {
-      FloatingControlBarManager.shared.moveToActiveScreen()
-      FloatingControlBarManager.shared.openAIInput()
-    } else if barState?.isCollapsed == true {
-      // Bar was collapsed (semi-transparent, half height) — move to active screen and expand
-      FloatingControlBarManager.shared.moveToActiveScreen()
-      FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
+    if uiOverrideState == nil {
+      // Keyboard PTT — manage floating bar window
+      if !chatWasOpenBeforePTT {
+        FloatingControlBarManager.shared.moveToActiveScreen()
+        FloatingControlBarManager.shared.openAIInput()
+      } else if effectiveBarState?.isCollapsed == true {
+        FloatingControlBarManager.shared.moveToActiveScreen()
+        FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
+      }
     }
     // Capture existing input AFTER opening the chat so any restored draft is included
-    preVoiceInputText = barState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
+    preVoiceInputText = effectiveBarState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
 
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "hold")
     updateBarState()
@@ -376,18 +378,20 @@ class PushToTalkManager: ObservableObject {
     }
 
     // Track whether PTT actually opened the chat (vs it was already open)
-    chatWasOpenBeforePTT = barState?.showingAIConversation == true
+    chatWasOpenBeforePTT = effectiveBarState?.showingAIConversation == true
     pttOpenedChat = true
-    if !chatWasOpenBeforePTT {
-      FloatingControlBarManager.shared.moveToActiveScreen()
-      FloatingControlBarManager.shared.openAIInput()
-    } else if barState?.isCollapsed == true {
-      // Bar was collapsed (semi-transparent, half height) — move to active screen and expand
-      FloatingControlBarManager.shared.moveToActiveScreen()
-      FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
+    if uiOverrideState == nil {
+      // Keyboard PTT — manage floating bar window
+      if !chatWasOpenBeforePTT {
+        FloatingControlBarManager.shared.moveToActiveScreen()
+        FloatingControlBarManager.shared.openAIInput()
+      } else if effectiveBarState?.isCollapsed == true {
+        FloatingControlBarManager.shared.moveToActiveScreen()
+        FloatingControlBarManager.shared.expandFromCollapsed(instant: true)
+      }
     }
     // Capture existing input AFTER opening the chat so any restored draft is included
-    preVoiceInputText = barState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
+    preVoiceInputText = effectiveBarState?.aiInputText.trimmingCharacters(in: .whitespaces) ?? ""
 
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "locked")
 
@@ -444,9 +448,20 @@ class PushToTalkManager: ObservableObject {
 
   // MARK: - UI Button PTT (mouse press-and-hold)
 
+  /// Temporary state override for UI-triggered PTT (e.g. detached window).
+  /// When set, transcript syncs to this state instead of the floating bar's barState.
+  private var uiOverrideState: FloatingControlBarState?
+
+  /// The effective state for the current PTT session (override or default barState).
+  private var effectiveBarState: FloatingControlBarState? {
+    uiOverrideState ?? barState
+  }
+
   /// Start PTT from a UI button press. Call on mouseDown.
-  func startUIListening() {
+  /// - Parameter targetState: Optional state to sync transcript to (for detached windows).
+  func startUIListening(targetState: FloatingControlBarState? = nil) {
     guard state == .idle else { return }
+    uiOverrideState = targetState
     lastOptionDownTime = ProcessInfo.processInfo.systemUptime
     startListening()
   }
