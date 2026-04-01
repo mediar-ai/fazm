@@ -91,7 +91,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             defer: flag
         )
 
-        self.appearance = NSAppearance(named: .vibrantDark)
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = false
@@ -243,10 +242,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         hostingView = NSHostingView(rootView: AnyView(
             swiftUIView
                 .withFontScaling()
-                .preferredColorScheme(.dark)
-                .environment(\.colorScheme, .dark)
         ))
-        hostingView?.appearance = NSAppearance(named: .vibrantDark)
 
         // CRITICAL: Use a container view instead of making NSHostingView the contentView directly.
         // When NSHostingView IS the contentView of a borderless window, it tries to negotiate
