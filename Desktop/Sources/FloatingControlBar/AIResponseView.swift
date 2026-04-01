@@ -54,7 +54,6 @@ struct AIResponseView: View {
 
             headerView
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 20)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -273,6 +272,22 @@ struct AIResponseView: View {
 
     private var headerView: some View {
         HStack(spacing: 12) {
+            Button {
+                onClose?()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8))
+                        .foregroundColor(.secondary)
+                        .frame(width: 16, height: 16)
+                        .overlay(Circle().strokeBorder(FazmColors.overlayForeground.opacity(0.2), lineWidth: 0.5))
+                    Text("esc")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
             if state.isCompacting {
                 ProgressView()
                     .scaleEffect(0.6)
