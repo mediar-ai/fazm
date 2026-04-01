@@ -202,12 +202,19 @@ struct OnboardingChatView: View {
                                 .id(message.id)
                         }
 
-                        // Typing indicator (floating, no avatar)
+                        // Loading state: prominent centered view when no messages yet,
+                        // small typing indicator once messages have appeared
                         if chatProvider.isSending {
-                            TypingIndicator()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.leading, 44) // align with message text (32px avatar + 12px spacing)
-                                .id("typing")
+                            if chatProvider.messages.isEmpty {
+                                OnboardingConnectingView()
+                                    .frame(maxWidth: .infinity)
+                                    .id("connecting")
+                            } else {
+                                TypingIndicator()
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 44)
+                                    .id("typing")
+                            }
                         }
 
                         // Quick reply buttons
@@ -1473,6 +1480,28 @@ struct ExplorationProfileCard: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: isCompleted)
+    }
+}
+
+/// Prominent loading view shown during onboarding when no messages are visible yet
+/// (e.g. waiting for OAuth, bridge restart, or first LLM response).
+struct OnboardingConnectingView: View {
+    @State private var animating = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.2)
+                .tint(FazmColors.purplePrimary)
+
+            Text("Connecting…")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(FazmColors.textSecondary)
+                .opacity(animating ? 1.0 : 0.5)
+                .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: animating)
+        }
+        .padding(.top, 60)
+        .onAppear { animating = true }
     }
 }
 
