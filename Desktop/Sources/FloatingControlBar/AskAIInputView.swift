@@ -110,9 +110,12 @@ struct AskAIInputView: View {
                 onSend?(localInput.trimmingCharacters(in: .whitespacesAndNewlines))
             }) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .symbolRenderingMode(.monochrome)
+                    .symbolRenderingMode(.palette)
                     .scaledFont(size: 24)
-                    .foregroundColor(hasInput ? FazmColors.overlayForeground : .secondary)
+                    .foregroundStyle(
+                        hasInput ? FazmColors.backgroundPrimary : Color.secondary.opacity(0.5),
+                        hasInput ? FazmColors.overlayForeground : Color.secondary.opacity(0.3)
+                    )
                     .shadow(
                         color: state.showSendButtonHint && hasInput
                             ? FazmColors.purplePrimary.opacity(sendPulse ? 0.8 : 0.3)
