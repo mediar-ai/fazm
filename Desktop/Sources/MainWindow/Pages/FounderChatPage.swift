@@ -111,7 +111,7 @@ struct FounderChatPage: View {
 
             Button(action: sendMessage) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 24))
+                    .scaledFont(size: 24)
                     .foregroundColor(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                     ? FazmColors.textTertiary
                                     : FazmColors.purplePrimary)
@@ -178,7 +178,7 @@ struct FounderChatBubble: View {
             if message.sender == .user {
                 // User avatar
                 Image(systemName: "person.fill")
-                    .font(.system(size: 14))
+                    .scaledFont(size: 14)
                     .foregroundColor(FazmColors.textSecondary)
                     .frame(width: 32, height: 32)
                     .background(FazmColors.backgroundTertiary)
