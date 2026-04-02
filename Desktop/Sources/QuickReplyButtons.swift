@@ -16,7 +16,7 @@ struct QuickReplyButtonsView: View {
         VStack(alignment: .leading, spacing: 4) {
             if !question.isEmpty {
                 Text(question)
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .foregroundColor(FazmColors.textSecondary.opacity(0.8))
             }
 
@@ -27,7 +27,7 @@ struct QuickReplyButtonsView: View {
                         onSelect(option)
                     }) {
                         Text(option)
-                            .font(.system(size: 13, weight: .medium))
+                            .scaledFont(size: 13, weight: .medium)
                             .foregroundColor(highlighted ? .white : FazmColors.purplePrimary)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
