@@ -154,14 +154,14 @@ struct BrowserProfileMigrationView: View {
             // Header
             HStack {
                 Text("Browser Profile Import")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
 
                 Spacer()
 
                 Button(action: onSkip) {
                     Text("Skip")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundColor(FazmColors.textTertiary)
                 }
                 .buttonStyle(.plain)
@@ -193,7 +193,7 @@ struct BrowserProfileMigrationView: View {
                         if !quickReplyOptions.isEmpty && !chatProvider.isSending {
                             if !quickReplyQuestion.isEmpty {
                                 Text(quickReplyQuestion)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .scaledFont(size: 12, weight: .medium)
                                     .foregroundColor(FazmColors.textSecondary.opacity(0.8))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.leading, 44)
@@ -204,7 +204,7 @@ struct BrowserProfileMigrationView: View {
                                 ForEach(quickReplyOptions, id: \.self) { option in
                                     Button(action: { handleQuickReply(option) }) {
                                         Text(option)
-                                            .font(.system(size: 13, weight: .medium))
+                                            .scaledFont(size: 13, weight: .medium)
                                             .foregroundColor(FazmColors.purplePrimary)
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 8)
@@ -226,7 +226,7 @@ struct BrowserProfileMigrationView: View {
                         if doneMarkerSeen && !chatProvider.isSending {
                             Button(action: onComplete) {
                                 Text("Done")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .scaledFont(size: 14, weight: .semibold)
                                     .foregroundColor(.white)
                                     .frame(maxWidth: 160)
                                     .padding(.vertical, 10)
@@ -256,7 +256,7 @@ struct BrowserProfileMigrationView: View {
             HStack(spacing: 12) {
                 TextField("Type your message...", text: $inputText, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 14))
+                    .scaledFont(size: 14)
                     .foregroundColor(FazmColors.textPrimary)
                     .focused($isInputFocused)
                     .padding(12)
@@ -269,7 +269,7 @@ struct BrowserProfileMigrationView: View {
                 if chatProvider.isSending {
                     Button(action: { chatProvider.stopAgent() }) {
                         Image(systemName: chatProvider.isStopping ? "ellipsis.circle" : "stop.circle.fill")
-                            .font(.system(size: 28))
+                            .scaledFont(size: 28)
                             .foregroundColor(FazmColors.purplePrimary)
                     }
                     .buttonStyle(.plain)
@@ -277,7 +277,7 @@ struct BrowserProfileMigrationView: View {
                 } else {
                     Button(action: sendMessage) {
                         Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 28))
+                            .scaledFont(size: 28)
                             .foregroundColor(canSend ? FazmColors.purplePrimary : FazmColors.textTertiary)
                     }
                     .buttonStyle(.plain)
