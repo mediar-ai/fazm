@@ -444,7 +444,8 @@ class DetachedChatWindowController {
                     let currentQuery = state.displayedQuery
                     var aiMessage = state.currentAIMessage
                     if aiMessage == nil,
-                       let latestAI = provider.messages.last, latestAI.sender == .ai,
+                       let currentKey = self.entries[id]?.sessionKey,
+                       let latestAI = provider.messages.last(where: { $0.sender == .ai && $0.sessionKey == currentKey }),
                        !latestAI.text.isEmpty {
                         aiMessage = latestAI
                     }
