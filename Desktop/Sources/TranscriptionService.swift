@@ -564,7 +564,6 @@ extension TranscriptionService {
             URLQueryItem(name: "language", value: language),
             URLQueryItem(name: "smart_format", value: "true"),
             URLQueryItem(name: "punctuate", value: "true"),
-            URLQueryItem(name: "diarize", value: "true"),
             // Raw PCM parameters (same as streaming API uses)
             URLQueryItem(name: "encoding", value: "linear16"),
             URLQueryItem(name: "sample_rate", value: "16000"),
