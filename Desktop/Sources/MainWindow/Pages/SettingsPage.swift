@@ -466,7 +466,7 @@ struct SettingsContentView: View {
                             .foregroundColor(FazmColors.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
-                            AudioLevelBarsSettingsView(level: audioDeviceManager.currentAudioLevel)
+                            ObservedAudioLevelBarsSettingsView()
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
