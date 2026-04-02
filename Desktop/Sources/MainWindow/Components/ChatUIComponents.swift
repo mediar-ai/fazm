@@ -228,7 +228,7 @@ struct ToolCallsGroup: View {
                                 let cleaned = ToolCallsGroup.cleanOutput(output)
                                 if !cleaned.isEmpty {
                                     Text(cleaned)
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .scaledMonospacedFont(size: 11)
                                         .foregroundColor(.secondary)
                                         .lineLimit(6)
                                         .padding(.horizontal, 8)
