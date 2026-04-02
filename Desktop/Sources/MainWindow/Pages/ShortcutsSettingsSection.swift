@@ -43,7 +43,7 @@ struct ShortcutsSettingsSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(FazmColors.backgroundTertiary.opacity(0.5))
         )
-        .modifier(SettingHighlightModifier(settingId: "advanced.askomi.shortcut", highlightedSettingId: $highlightedSettingId))
+        .modifier(SettingHighlightModifier(settingId: "advanced.askfazm.shortcut", highlightedSettingId: $highlightedSettingId))
     }
 
     private func askFazmKeyButton(_ key: ShortcutSettings.AskFazmKey) -> some View {
@@ -93,7 +93,7 @@ struct ShortcutsSettingsSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(FazmColors.backgroundTertiary.opacity(0.5))
         )
-        .modifier(SettingHighlightModifier(settingId: "advanced.askomi.ptt", highlightedSettingId: $highlightedSettingId))
+        .modifier(SettingHighlightModifier(settingId: "advanced.askfazm.ptt", highlightedSettingId: $highlightedSettingId))
     }
 
     private func pttKeyButton(_ key: ShortcutSettings.PTTKey) -> some View {
@@ -147,7 +147,7 @@ struct ShortcutsSettingsSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(FazmColors.backgroundTertiary.opacity(0.5))
         )
-        .modifier(SettingHighlightModifier(settingId: "advanced.askomi.transcriptionmode", highlightedSettingId: $highlightedSettingId))
+        .modifier(SettingHighlightModifier(settingId: "advanced.askfazm.transcriptionmode", highlightedSettingId: $highlightedSettingId))
     }
 
     private func pttTranscriptionModeButton(_ mode: ShortcutSettings.PTTTranscriptionMode) -> some View {
@@ -194,7 +194,7 @@ struct ShortcutsSettingsSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(FazmColors.backgroundTertiary.opacity(0.5))
         )
-        .modifier(SettingHighlightModifier(settingId: "advanced.askomi.doubletap", highlightedSettingId: $highlightedSettingId))
+        .modifier(SettingHighlightModifier(settingId: "advanced.askfazm.doubletap", highlightedSettingId: $highlightedSettingId))
     }
 
     private var pttSoundsCard: some View {
@@ -217,7 +217,7 @@ struct ShortcutsSettingsSection: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(FazmColors.backgroundTertiary.opacity(0.5))
         )
-        .modifier(SettingHighlightModifier(settingId: "advanced.askomi.pttsounds", highlightedSettingId: $highlightedSettingId))
+        .modifier(SettingHighlightModifier(settingId: "advanced.askfazm.pttsounds", highlightedSettingId: $highlightedSettingId))
     }
 
     private var referenceCard: some View {
