@@ -11,7 +11,7 @@ struct AnalysisOverlayView: View {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "wand.and.stars")
                     .foregroundColor(.purple)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                 Text("Task Detected")
                     .scaledFont(size: 12, weight: .semibold)
                     .foregroundColor(.white)
@@ -20,7 +20,7 @@ struct AnalysisOverlayView: View {
                     onHide()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
+                        .scaledFont(size: 11, weight: .semibold)
                         .foregroundColor(.white.opacity(0.6))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
