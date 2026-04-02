@@ -285,7 +285,7 @@ struct AIResponseView: View {
             } else if isLoading {
                 if isHanging {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundColor(.orange)
                     Text("not responding")
                         .scaledFont(size: 14)
@@ -346,7 +346,7 @@ struct AIResponseView: View {
             Button(action: { showWorkspaceChangeConfirmation = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                     Text((aiChatWorkingDirectory as NSString).lastPathComponent)
                         .scaledFont(size: 14)
                         .lineLimit(1)
@@ -374,7 +374,7 @@ struct AIResponseView: View {
         Button(action: { onConnectClaude?() }) {
             HStack(spacing: 5) {
                 Image(systemName: "person.badge.key")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                 Text("Connect Claude")
                     .scaledFont(size: 11, weight: .medium)
             }
@@ -407,7 +407,7 @@ struct AIResponseView: View {
         }) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.up.circle")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                 Text("Upgrade Plan")
                     .scaledFont(size: 11, weight: .medium)
             }
@@ -928,7 +928,7 @@ private struct QuestionBarButtons: View {
                 }
             }) {
                 Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundColor(showCopied ? .green : .secondary)
                     .frame(width: 20, height: 20)
             }
@@ -973,7 +973,7 @@ struct MessageWithCopyButton<Content: View>: View {
                 }
             }) {
                 Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundColor(showCopied ? .green : .secondary)
                     .padding(4)
                     .background(.ultraThinMaterial)
@@ -1007,7 +1007,7 @@ struct VoiceMuteButton: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: voiceResponseEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundColor(voiceResponseEnabled ? .secondary : .orange)
                 if isHovered {
                     Text(voiceResponseEnabled ? "Mute voice" : "Unmute voice")
