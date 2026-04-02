@@ -1442,13 +1442,13 @@ struct SettingsContentView: View {
                 Spacer()
             } else if fileViewerEditable {
                 TextEditor(text: $fileViewerContent)
-                    .font(.system(size: 12, design: .monospaced))
+                    .scaledMonospacedFont(size: 12)
                     .scrollContentBackground(.hidden)
                     .padding(12)
             } else {
                 ScrollView {
                     Text(fileViewerContent)
-                        .font(.system(size: 12, design: .monospaced))
+                        .scaledMonospacedFont(size: 12)
                         .foregroundColor(FazmColors.textSecondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2122,9 +2122,9 @@ struct SettingsContentView: View {
                                                 HStack {
                                                     VStack(alignment: .leading, spacing: 2) {
                                                         Text(channel.displayName)
-                                                            .font(.system(size: 13, weight: .medium))
+                                                            .scaledFont(size: 13, weight: .medium)
                                                         Text(channel.description)
-                                                            .font(.system(size: 11))
+                                                            .scaledFont(size: 11)
                                                             .foregroundColor(.secondary)
                                                     }
                                                     Spacer()
@@ -2226,7 +2226,7 @@ struct SettingsContentView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
 
                             Text("Auto-updates require App Management permission.")
                                 .scaledFont(size: 12)
@@ -2238,7 +2238,7 @@ struct SettingsContentView: View {
                                 }
                             }
                             .buttonStyle(.link)
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                         }
                     }
                 }
