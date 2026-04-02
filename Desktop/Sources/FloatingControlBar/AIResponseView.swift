@@ -434,7 +434,7 @@ struct AIResponseView: View {
     private var tutorialBanner: some View {
         HStack(spacing: 6) {
             Image(systemName: "graduationcap.fill")
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
             Text("Getting Started — Step \(min(state.tutorialChatStep + 1, state.tutorialPrompts.count)) of \(state.tutorialPrompts.count)")
                 .scaledFont(size: 11, weight: .medium)
             Spacer()
