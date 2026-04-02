@@ -1864,6 +1864,7 @@ class FloatingControlBarManager {
         // The queue drains automatically after the current response finishes.
         if provider.isSending {
             provider.enqueueMessage(message)
+            barWindow.state.isAILoading = false
             log("FloatingControlBarManager: Query enqueued (agent busy): \(message.prefix(80))")
             return
         }
