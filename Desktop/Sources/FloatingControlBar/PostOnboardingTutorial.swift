@@ -1053,7 +1053,7 @@ private struct TutorialMicPicker: View {
             }
             .buttonStyle(.plain)
 
-            AudioLevelBarsSettingsView(level: deviceManager.currentAudioLevel)
+            ObservedAudioLevelBarsSettingsView()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { deviceManager.startLevelMonitoring() }
