@@ -744,7 +744,6 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: voiceResponseEnabled) { _, newValue in
                                 AnalyticsManager.shared.settingToggled(setting: "voice_response", enabled: newValue)
-                                Task { await chatProvider?.restartBridgeForVoiceResponse() }
                             }
                     }
 
