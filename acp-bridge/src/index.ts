@@ -758,8 +758,14 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   }
   // Save snapshots to files and strip inline base64 screenshots to reduce context size
   playwrightArgs.push("--output-mode", "file", "--image-responses", "omit", "--output-dir", "/tmp/playwright-mcp");
-  // Browser overlay is injected via patched extensionContextFactory.js
-  // (reads browser-overlay-init.js from acp-bridge root)
+  // Inject visual overlay on every page to indicate browser is controlled by Fazm
+  const overlayInitPage = join(__dirname, "..", "browser-overlay-init-page.js");
+  if (existsSync(overlayInitPage)) {
+    playwrightArgs.push("--init-page", overlayInitPage);
+    logErr(`Browser overlay init-page: ${overlayInitPage}`);
+  } else {
+    logErr(`Browser overlay init-page NOT FOUND: ${overlayInitPage}`);
+  }
   const playwrightEnv: Array<{ name: string; value: string }> = [];
   if (process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN) {
     playwrightEnv.push({
