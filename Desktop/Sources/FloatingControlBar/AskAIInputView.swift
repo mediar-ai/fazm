@@ -109,12 +109,13 @@ struct AskAIInputView: View {
                 state.showSendButtonHint = false
                 onSend?(localInput.trimmingCharacters(in: .whitespacesAndNewlines))
             }) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .symbolRenderingMode(.palette)
-                    .scaledFont(size: 24)
-                    .foregroundStyle(
-                        hasInput ? FazmColors.overlayForeground : Color.secondary.opacity(0.3),
-                        hasInput ? FazmColors.backgroundPrimary : Color.secondary.opacity(0.5)
+                Image(systemName: "arrow.up")
+                    .scaledFont(size: 12, weight: .bold)
+                    .foregroundColor(hasInput ? FazmColors.backgroundPrimary : Color.secondary.opacity(0.5))
+                    .frame(width: 24, height: 24)
+                    .background(
+                        Circle()
+                            .fill(hasInput ? FazmColors.overlayForeground : Color.secondary.opacity(0.3))
                     )
                     .shadow(
                         color: state.showSendButtonHint && hasInput
