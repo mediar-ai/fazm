@@ -14,7 +14,10 @@
     "Fixed floating bar getting stuck in loading state when queries are enqueued while agent is busy",
     "Fixed voice response not playing after using the mute/unmute toggle in the floating bar",
     "Fixed transcription for non-English speakers \u2014 replacement rules now only apply to English and multi-language modes",
-    "Fixed font size setting not applying to chat messages, follow-up questions, input field, and UI elements throughout the app"
+    "Fixed font size setting not applying to chat messages, follow-up questions, input field, and UI elements throughout the app",
+    "Fixed high CPU usage caused by SwiftUI layout thrashing when Settings is open",
+    "Fixed orphaned ACP bridge process spinning at 100% CPU after app exit",
+    "Fixed session recording blocking cooperative threads during video encoding"
   ],
   "releases": [
     {
