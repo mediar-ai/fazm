@@ -21,6 +21,9 @@ echo "Building $APP_NAME..."
 # Verify all DB tables have schema annotations before building
 bash scripts/check_schema_docs.sh
 
+# Verify all settings UI elements have search entries
+bash scripts/check_search_coverage.sh
+
 # Clean only the release app bundle (preserve other bundles like Fazm Dev.app from run.sh)
 rm -rf "$APP_BUNDLE"
 mkdir -p "$BUILD_DIR"
