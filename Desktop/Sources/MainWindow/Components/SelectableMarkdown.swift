@@ -92,8 +92,8 @@ struct PlainCopyText: NSViewRepresentable {
     }
 
     func updateNSView(_ tv: NSTextView, context: Context) {
-        // Only update if content actually changed to avoid layout thrashing
-        if tv.textStorage?.string != attributedString.string {
+        // Update if content or attributes changed (e.g. font scale)
+        if tv.textStorage?.string != attributedString.string || !attributedString.isEqual(to: tv.attributedString()) {
             if let exception = ObjCExceptionCatcher.catching({
                 tv.textStorage?.setAttributedString(self.attributedString)
                 tv.invalidateIntrinsicContentSize()
@@ -234,9 +234,15 @@ struct SelectableMarkdown: View {
             }
         }
         .onChange(of: fontScale) {
-            // Font scale changed — cached attributed strings are stale
+            // Font scale changed — cached attributed strings are stale;
+            // clear cache and re-parse all segments with new font size
             attrCache.removeAll()
             cachedFontScale = 0
+            for segment in cachedSegments {
+                if case .text = segment.kind {
+                    parseOnBackground(content: segment.content)
+                }
+            }
         }
     }
 
