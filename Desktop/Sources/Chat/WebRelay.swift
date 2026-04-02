@@ -21,6 +21,11 @@ final class WebRelay: ObservableObject {
     private var stdinPipe: Pipe?
     private var localPort: UInt16 = 0
     private var heartbeatTask: Task<Void, Never>?
+    private var isStarted = false
+
+    /// Dedup: last processed query text + timestamp to reject rapid duplicates
+    private var lastQueryText: String?
+    private var lastQueryTime: Date?
 
     /// Callback: a query arrived from the phone. Parameters: text, sessionKey
     var onQuery: ((String, String) async -> Void)?
@@ -31,11 +36,17 @@ final class WebRelay: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
+        guard !isStarted else {
+            log("WebRelay: already started, skipping duplicate start()")
+            return
+        }
+        isStarted = true
         killOrphanedCloudflared()
         startWsServer()
     }
 
     func stop() {
+        isStarted = false
         heartbeatTask?.cancel()
         heartbeatTask = nil
         unregisterTunnel()
@@ -234,6 +245,16 @@ final class WebRelay: ObservableObject {
             let text = json["text"] as? String ?? ""
             let sessionKey = json["sessionKey"] as? String ?? "main"
             guard !text.isEmpty else { return }
+
+            // Dedup: reject identical messages within 5 seconds
+            let now = Date()
+            if let lastText = lastQueryText, lastText == text,
+               let lastTime = lastQueryTime, now.timeIntervalSince(lastTime) < 5 {
+                log("WebRelay: duplicate message rejected (\(text.prefix(50))...)")
+                return
+            }
+            lastQueryText = text
+            lastQueryTime = now
 
             // Notify the phone that query started
             sendToPhone(["type": "query_started"])
