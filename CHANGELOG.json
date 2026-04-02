@@ -18,7 +18,8 @@
     "Fixed high CPU usage caused by SwiftUI layout thrashing when Settings is open",
     "Fixed orphaned ACP bridge process spinning at 100% CPU after app exit",
     "Fixed session recording blocking cooperative threads during video encoding",
-    "Fixed detached window creating parallel sessions with floating bar instead of independent sessions"
+    "Fixed detached window creating parallel sessions with floating bar instead of independent sessions",
+    "Fixed \"Transcribing...\" and voice input text being invisible in light mode"
   ],
   "releases": [
     {
