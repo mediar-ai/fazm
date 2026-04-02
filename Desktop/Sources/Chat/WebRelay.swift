@@ -47,7 +47,7 @@ final class WebRelay: ObservableObject {
         let bundle = Bundle.main
         Task.detached { [weak self] in
             let nodePath = await self?.resolveNodePath(in: bundle)
-            await self?.startWsServer(nodePath: nodePath)
+            await self?.startWsServer(nodePath: nodePath, bundle: bundle)
         }
     }
 
@@ -106,7 +106,7 @@ final class WebRelay: ObservableObject {
         return findNode(in: bundle)
     }
 
-    private func startWsServer(nodePath: String?) {
+    private func startWsServer(nodePath: String?, bundle: Bundle) {
         guard let nodePath else {
             log("WebRelay: Node.js binary not found, skipping")
             return
