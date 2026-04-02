@@ -1204,14 +1204,14 @@ class FloatingControlBarManager {
             Task { await provider.discoverClaudeConfig() }
 
             // Reset session
-            let state = self.barWindow?.state
+            let state = self.window?.state
             state?.chatHistory = []
             state?.displayedQuery = ""
             state?.currentAIMessage = nil
             state?.isAILoading = false
             state?.aiInputText = ""
             state?.clearQueue()
-            self.barWindow?.onResetSession?()
+            self.window?.onResetSession?()
         }
 
         // Observe ChatProvider dequeuing messages to sync UI queue
