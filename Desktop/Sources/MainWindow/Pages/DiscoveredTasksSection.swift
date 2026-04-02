@@ -33,7 +33,7 @@ struct DiscoveredTasksSection: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "wand.and.stars")
-                .font(.system(size: 32))
+                .scaledFont(size: 32)
                 .foregroundColor(FazmColors.textTertiary)
 
             Text("No tasks discovered yet")
@@ -96,7 +96,7 @@ struct DiscoveredTasksSection: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "wand.and.stars")
-                        .font(.system(size: 14))
+                        .scaledFont(size: 14)
                         .foregroundColor(.purple)
                         .frame(width: 20)
 
@@ -125,7 +125,7 @@ struct DiscoveredTasksSection: View {
                     }
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundColor(FazmColors.textTertiary)
                 }
                 .padding(12)
