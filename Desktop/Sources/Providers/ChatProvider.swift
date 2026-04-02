@@ -2043,6 +2043,8 @@ class ChatProvider: ObservableObject {
         // Guard against concurrent sendMessage calls.
         // The bridge uses a single message continuation, so concurrent queries
         // would cause responses to be consumed by the wrong caller.
+        // Set isSending=true immediately (before any await) to close the race
+        // window where multiple calls could pass this guard concurrently.
         guard !isSending else {
             log("ChatProvider: sendMessage called while already sending, ignoring")
             AnalyticsManager.shared.chatMessageDropped(
@@ -2054,6 +2056,7 @@ class ChatProvider: ObservableObject {
             SentrySDK.addBreadcrumb(breadcrumb)
             return
         }
+        isSending = true
 
         // Notify observers (e.g. floating bar) that a new query is starting
         queryStartedCount += 1
@@ -2087,6 +2090,7 @@ class ChatProvider: ObservableObject {
         // Ensure bridge is running
         guard await ensureBridgeStarted() else {
             errorMessage = "AI not available"
+            isSending = false
             return
         }
 
@@ -2101,7 +2105,6 @@ class ChatProvider: ObservableObject {
             }
         }
 
-        isSending = true
         errorMessage = nil
         pendingRetryMessage = trimmedText
 
