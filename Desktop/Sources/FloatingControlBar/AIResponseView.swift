@@ -45,6 +45,8 @@ struct AIResponseView: View {
     var onPopOut: (() -> Void)?
     var onConnectClaude: (() -> Void)?
     var onObserverCardAction: ((Int64, String) -> Void)?
+    var onChangeWorkspace: (() -> Void)?
+    var workspacePath: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -269,6 +271,7 @@ struct AIResponseView: View {
     }
 
     @State private var connectClaudePulse = false
+    @State private var showWorkspaceChangeConfirmation = false
 
     private var headerView: some View {
         HStack(spacing: 12) {
@@ -304,9 +307,7 @@ struct AIResponseView: View {
                     .scaledFont(size: 14)
                     .foregroundColor(.secondary)
             } else {
-                Text("Fazm says")
-                    .scaledFont(size: 14)
-                    .foregroundColor(.secondary)
+                workspaceLabel
             }
 
             if state.showConnectClaudeButton {
@@ -336,6 +337,36 @@ struct AIResponseView: View {
             if let onNewChat {
                 NewChatButton(action: onNewChat)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var workspaceLabel: some View {
+        if let path = workspacePath, !path.isEmpty, onChangeWorkspace != nil {
+            Button(action: { showWorkspaceChangeConfirmation = true }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10))
+                    Text((path as NSString).lastPathComponent)
+                        .scaledFont(size: 14)
+                        .lineLimit(1)
+                }
+                .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(path)
+            .alert("Change Workspace?", isPresented: $showWorkspaceChangeConfirmation) {
+                Button("Change", role: .destructive) {
+                    onChangeWorkspace?()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Changing the workspace will start a new session. Current conversation will be preserved in history.")
+            }
+        } else {
+            Text("Fazm says")
+                .scaledFont(size: 14)
+                .foregroundColor(.secondary)
         }
     }
 
