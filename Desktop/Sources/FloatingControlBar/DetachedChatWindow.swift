@@ -313,8 +313,10 @@ class DetachedChatWindowController {
             }
         }
 
-        win.onEnqueueMessage = { [weak chatProvider] message in
-            chatProvider?.enqueueMessage(message)
+        win.onEnqueueMessage = { [weak self, weak win, weak chatProvider] message in
+            guard let win else { return }
+            let key = self?.entries[ObjectIdentifier(win)]?.sessionKey
+            chatProvider?.enqueueMessage(message, sessionKey: key)
         }
 
         win.onSendNowQueued = { [weak chatProvider] item in
@@ -429,7 +431,7 @@ class DetachedChatWindowController {
         guard let provider else { return }
 
         if provider.isSending {
-            provider.enqueueMessage(message)
+            provider.enqueueMessage(message, sessionKey: sessionKey)
             // Listen for when this message is dequeued so we can set up the response subscriber
             entries[winId]?.dequeueCancellable?.cancel()
             entries[winId]?.dequeueCancellable = NotificationCenter.default
