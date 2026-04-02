@@ -656,7 +656,7 @@ struct PostOnboardingTutorialView: View {
                 if viewModel.step != .done {
                     Button(action: onSkip) {
                         Text("Skip")
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                             .foregroundColor(FazmColors.textTertiary)
                     }
                     .buttonStyle(.plain)
@@ -688,14 +688,14 @@ struct PostOnboardingTutorialView: View {
         case .selectMic:
             VStack(spacing: 8) {
                 Image(systemName: "mic.circle.fill")
-                    .font(.system(size: 28))
+                    .scaledFont(size: 28)
                     .foregroundColor(FazmColors.purplePrimary)
                 Text("Select your microphone")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
                     .multilineTextAlignment(.center)
                 Text("Make sure you see the level bars move when you speak")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundColor(FazmColors.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -711,7 +711,7 @@ struct PostOnboardingTutorialView: View {
                     }
                 } label: {
                     Text("Next")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
@@ -727,12 +727,12 @@ struct PostOnboardingTutorialView: View {
             VStack(spacing: 8) {
                 KeyboardBottomRowView(pulseScale: viewModel.pulseScale)
                 Text("Press and hold Left ⌃ to talk")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Your voice becomes your cursor")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundColor(FazmColors.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -746,14 +746,14 @@ struct PostOnboardingTutorialView: View {
 
                 VStack(spacing: 4) {
                     Text("Say:")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundColor(FazmColors.textTertiary)
 
                     SpeakingPromptText(text: "Hey Fazm, what kind of software can you build for me?")
                 }
 
                 Text("Then release ⌃ to send")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundColor(FazmColors.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -763,13 +763,13 @@ struct PostOnboardingTutorialView: View {
         case .done:
             VStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 28))
+                    .scaledFont(size: 28)
                     .foregroundColor(FazmColors.purplePrimary)
                 Text("You're ready!")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
                 Text("Left ⌃ → speak → release, anytime")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundColor(FazmColors.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -788,7 +788,7 @@ struct SpeakingPromptText: View {
 
     var body: some View {
         Text("\"\(text)\"")
-            .font(.system(size: 15, weight: .bold))
+            .scaledFont(size: 15, weight: .bold)
             .foregroundColor(.white)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -927,7 +927,7 @@ struct KeyboardBottomRowView: View {
 
     private var leftControlKey: some View {
         Text("⌃")
-            .font(.system(size: 12, weight: .semibold))
+            .scaledFont(size: 12, weight: .semibold)
             .foregroundColor(.white)
             .frame(width: 28, height: kh)
             .background(
@@ -945,7 +945,7 @@ struct KeyboardBottomRowView: View {
 
     private func key(_ label: String, w: CGFloat, h: CGFloat? = nil) -> some View {
         Text(label)
-            .font(.system(size: 9, weight: .medium))
+            .scaledFont(size: 9, weight: .medium)
             .foregroundColor(Color.white.opacity(0.4))
             .frame(width: w, height: h ?? kh)
             .background(
@@ -967,9 +967,9 @@ struct KeyCapView: View {
     var body: some View {
         HStack(spacing: 4) {
             Text("⌘")
-                .font(.system(size: 16, weight: .medium))
+                .scaledFont(size: 16, weight: .medium)
             Text("Right")
-                .font(.system(size: 11, weight: .medium))
+                .scaledFont(size: 11, weight: .medium)
         }
         .foregroundColor(FazmColors.textPrimary)
         .padding(.horizontal, 14)
@@ -1036,13 +1036,13 @@ private struct TutorialMicPicker: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                     Text(selectedDeviceName)
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .lineLimit(1)
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 9))
+                        .scaledFont(size: 9)
                         .foregroundColor(.white.opacity(0.5))
                 }
                 .foregroundColor(.white)
