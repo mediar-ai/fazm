@@ -20,7 +20,7 @@ struct FloatingControlBarView: View {
     var onStopAgent: (() -> Void)?
     var onPopOut: (() -> Void)?
     var onConnectClaude: (() -> Void)?
-    var onObserverCardAction: ((Int64, String) -> Void)?
+    var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: (() -> Void)?
 
     @State private var isHovering = false
@@ -443,7 +443,7 @@ struct FloatingControlBarView: View {
             onStopAgent: onStopAgent,
             onPopOut: onPopOut,
             onConnectClaude: onConnectClaude,
-            onObserverCardAction: onObserverCardAction,
+            onChatObserverCardAction: onChatObserverCardAction,
             onChangeWorkspace: onChangeWorkspace
         )
         .transition(
