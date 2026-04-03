@@ -924,7 +924,7 @@ async function flushChatObserverBatch(): Promise<void> {
 
     // If new messages accumulated while we were running, flush again
     if (observerBuffer.length > 0) {
-      setTimeout(() => flushObserverBatch(), 1000);
+      setTimeout(() => flushChatObserverBatch(), 1000);
     }
   }
 }
@@ -1249,9 +1249,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
 
         // Buffer conversation turns for the observer session (skip if this IS the observer)
         if (sessionKey !== "observer" && sessions.has("observer")) {
-          bufferObserverTurn("user", fullPrompt);
+          bufferChatObserverTurn("user", fullPrompt);
           if (fullText.trim()) {
-            bufferObserverTurn("assistant", fullText);
+            bufferChatObserverTurn("assistant", fullText);
           }
         }
 
@@ -1306,9 +1306,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           pendingTools.length = 0;
 
           if (sessionKey !== "observer" && sessions.has("observer")) {
-            bufferObserverTurn("user", fullPrompt);
+            bufferChatObserverTurn("user", fullPrompt);
             if (fullText.trim()) {
-              bufferObserverTurn("assistant", fullText);
+              bufferChatObserverTurn("assistant", fullText);
             }
           }
 
