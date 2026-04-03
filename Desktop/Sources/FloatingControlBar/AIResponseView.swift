@@ -63,8 +63,8 @@ struct AIResponseView: View {
                         ForEach(regularExchanges) { exchange in
                             chatExchangeView(exchange)
                         }
-                        // Observer-only exchanges consolidated into one stack
-                        consolidatedHistoryObserverCards
+                        // Chat observer-only exchanges consolidated into one stack
+                        consolidatedHistoryChatObserverCards
 
                         // Current question (hidden when empty, e.g. tutorial guide messages or history-only mode)
                         if !userInput.isEmpty {
@@ -76,8 +76,8 @@ struct AIResponseView: View {
                             currentContentView
                         }
 
-                        // Observer cards that arrived while the current query was streaming
-                        consolidatedPendingObserverCards
+                        // Chat observer cards that arrived while the current query was streaming
+                        consolidatedPendingChatObserverCards
 
                         // Voice follow-up indicator (shown inline when PTT is active during conversation)
                         if isVoiceFollowUp {
