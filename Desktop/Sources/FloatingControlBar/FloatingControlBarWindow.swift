@@ -1245,7 +1245,7 @@ class FloatingControlBarManager {
                     }
                     state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
                 }
-                state.flushPendingObserverExchanges()
+                state.flushPendingChatObserverExchanges()
                 state.displayedQuery = text
                 state.isAILoading = true
                 state.currentAIMessage = nil
@@ -1863,7 +1863,7 @@ class FloatingControlBarManager {
         if let currentMessage = window.state.currentAIMessage, !currentQuery.isEmpty {
             window.state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
         }
-        window.state.flushPendingObserverExchanges()
+        window.state.flushPendingChatObserverExchanges()
 
         // Reset streaming state but keep chat history — the session will be resumed
         chatCancellable?.cancel()
