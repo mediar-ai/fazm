@@ -513,11 +513,11 @@ struct ObserverCardStackView: View {
                     }
 
                 if isObserverRunning && cards.isEmpty {
-                    Text("Observer is thinking...")
+                    Text("Chat observer is thinking...")
                         .scaledFont(size: 11, weight: .medium)
                         .foregroundColor(FazmColors.overlayForeground.opacity(0.4))
                 } else {
-                    Text("Observer noted \(cards.count) thing\(cards.count == 1 ? "" : "s")")
+                    Text("Chat observer noted \(cards.count) thing\(cards.count == 1 ? "" : "s")")
                         .scaledFont(size: 11, weight: .medium)
                         .foregroundColor(FazmColors.overlayForeground.opacity(0.5))
                 }
