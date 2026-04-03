@@ -350,12 +350,15 @@ class DetachedChatWindowController {
         let context = "__\(sessionKey)__"
         Task {
             for exchange in chatHistory {
-                let userMsg = ChatMessage(text: exchange.question, sender: .user, sessionKey: sessionKey)
+                // Use a timestamp just before the AI message so ordering is correct
+                let userDate = exchange.aiMessage.createdAt.addingTimeInterval(-0.1)
+                let userMsg = ChatMessage(text: exchange.question, createdAt: userDate, sender: .user, sessionKey: sessionKey)
                 await ChatMessageStore.saveMessage(userMsg, context: context)
                 await ChatMessageStore.saveMessage(exchange.aiMessage, context: context)
             }
             if !displayedQuery.isEmpty {
-                let userMsg = ChatMessage(text: displayedQuery, sender: .user, sessionKey: sessionKey)
+                let userDate = currentAIMessage?.createdAt.addingTimeInterval(-0.1) ?? Date()
+                let userMsg = ChatMessage(text: displayedQuery, createdAt: userDate, sender: .user, sessionKey: sessionKey)
                 await ChatMessageStore.saveMessage(userMsg, context: context)
             }
             if let aiMsg = currentAIMessage, !aiMsg.text.isEmpty {
