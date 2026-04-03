@@ -1082,6 +1082,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.global(qos: .utility).async {
             let appPath = Bundle.main.bundlePath
 
+            // 0. Clean up stale __pycache__ dirs inside the app bundle.
+            //    Pre-fix builds (before PYTHONDONTWRITEBYTECODE=1) let the
+            //    Google Workspace MCP Python server write .pyc files into the
+            //    bundle, which invalidates the code signature seal.  Removing
+            //    them once heals Sparkle-managed installs that carried the
+            //    corruption forward through subsequent updates.
+            let fm = FileManager.default
+            let resourcesDir = (appPath as NSString).appendingPathComponent("Contents/Resources")
+            if let enumerator = fm.enumerator(atPath: resourcesDir) {
+                while let relativePath = enumerator.nextObject() as? String {
+                    if (relativePath as NSString).lastPathComponent == "__pycache__" {
+                        let fullPath = (resourcesDir as NSString).appendingPathComponent(relativePath)
+                        var isDir: ObjCBool = false
+                        if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue {
+                            try? fm.removeItem(atPath: fullPath)
+                            log("CodeSign: removed stale \(relativePath)")
+                            enumerator.skipDescendants()
+                        }
+                    }
+                }
+            }
+
             // 1. Verify code signature
             let verifyProcess = Process()
             verifyProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
