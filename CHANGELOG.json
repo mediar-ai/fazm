@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Chat observer cards are now auto-accepted (deny to undo) instead of requiring manual approval"
+  ],
   "releases": [
     {
       "version": "2.0.1",
