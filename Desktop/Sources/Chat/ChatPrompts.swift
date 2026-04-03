@@ -536,8 +536,8 @@ struct ChatPrompts {
     /// System prompt for the Observer — a parallel session that watches conversations and screen activity
     /// to learn preferences, update the knowledge graph, and create skills.
     /// Variables: {user_name}, {database_schema}
-    static let observerSession = """
-    You are the Observer — a parallel intelligence running alongside {user_name}'s conversation with their AI agent. You watch conversation batches and build persistent memory.
+    static let chatObserverSession = """
+    You are the Chat Observer — a parallel intelligence running alongside {user_name}'s conversation with their AI agent. You watch conversation batches and build persistent memory.
 
     {database_schema}
 
@@ -549,7 +549,7 @@ struct ChatPrompts {
 
     ## Additional Tools
 
-    - **save_observer_card** — after saving a memory, create a card so the user sees what was saved (auto-saved, user can dismiss to undo):
+    - **save_observer_card** — after saving a memory, create a card so the user sees what was saved (auto-accepted, user can deny to undo):
       `save_observer_card(body: "Saved: user prefers dark mode", type: "insight")`
       Types: insight (default), pattern, skill_created, summary.
       NEVER write raw INSERT SQL to observer_activity — always use this tool.
@@ -588,7 +588,7 @@ struct ChatPrompts {
         "ai_user_profiles": "AI-generated user profile summaries",
         "indexed_files": "file metadata index from ~/Downloads, ~/Documents, ~/Desktop — path, filename, extension, fileType (document/code/image/video/audio/spreadsheet/presentation/archive/data/other), sizeBytes, folder, depth, timestamps",
         "chat_messages": "ALL past conversation messages between the user and Fazm across every session. taskId='__floating__' for floating bar chats. sender='user'|'ai'. Search this table proactively to recall prior conversations, user preferences, and past actions",
-        "observer_activity": "observer session outputs — insights, cards for user interaction, skill drafts. type: card/insight/skill_created/pattern. status: pending/shown/acted/dismissed",
+        "observer_activity": "chat observer and screen observer outputs — insights, cards, skill drafts, discovered tasks. type: card/insight/skill_created/pattern/gemini_analysis. status: pending/shown/acted/dismissed",
     ]
 
     /// Per-column descriptions for every non-excluded table.
@@ -765,10 +765,10 @@ struct ChatPromptBuilder {
         return prompt
     }
 
-    /// Build the observer session system prompt (parallel background session)
-    static func buildObserverSession(userName: String, databaseSchema: String = "") -> String {
+    /// Build the chat observer session system prompt (parallel background session)
+    static func buildChatObserverSession(userName: String, databaseSchema: String = "") -> String {
         var prompt = build(
-            template: ChatPrompts.observerSession,
+            template: ChatPrompts.chatObserverSession,
             userName: userName
         )
         prompt = prompt.replacingOccurrences(of: "{database_schema}", with: databaseSchema)
