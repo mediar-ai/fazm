@@ -139,11 +139,41 @@ node ~/analytics/scripts/send-email.js \
 6. **User email sent**: yes/no, and what you said
 7. **Action needed from Matt**: None / Review changes / Prioritize fix / Discuss
 
-### Step 5: Mark as investigated
+### Step 5: Write outcome file
+
+**MANDATORY**: Before marking as investigated, write a JSON outcome file so the pipeline can verify what actually happened. The file path is provided in the `OUTCOME_FILE` environment variable.
+
+```bash
+cat > "$OUTCOME_FILE" <<'OUTCOME_EOF'
+{
+  "deviceId": "DEVICE_ID",
+  "issuesFound": 3,
+  "bugsFixed": 1,
+  "userEmailSent": true,
+  "userEmailTo": "user@example.com",
+  "reportEmailSent": true,
+  "reportEmailTo": "matt@mediar.ai",
+  "summary": "Brief summary of findings and actions taken",
+  "issueDetails": [
+    {"title": "Issue title", "severity": "crash", "status": "fixed_in_commit_abc123"},
+    {"title": "Issue title", "severity": "functional", "status": "already_fixed"},
+    {"title": "Issue title", "severity": "ux", "status": "documented"}
+  ]
+}
+OUTCOME_EOF
+```
+
+Set `userEmailSent` and `reportEmailSent` to `true` ONLY if the `send-email.js` script printed "Sent! Resend ID:". If it errored, set to `false`.
+
+If you could not complete the investigation (missing env vars, API errors, etc.), still write the outcome file with what you managed to do and set the relevant fields to `false`.
+
+### Step 6: Mark as investigated
 
 ```bash
 node ~/fazm/inbox/scripts/mark-device-investigated.js DEVICE_ID "BRIEF_SUMMARY"
 ```
+
+**Note**: The shell orchestrator also validates the outcome file after you exit. If the outcome file is missing or shows emails were not sent, the device will NOT be marked as fully investigated and will be retried.
 
 ## Access
 
@@ -184,3 +214,5 @@ node ~/analytics/scripts/send-email.js --to "EMAIL" --subject "SUBJECT" --body "
 - You are running in the ~/fazm repo. You can edit code, build, and commit fixes.
 - For Swift code changes, verify with: `xcrun swift build` (use xcrun, not bare swift)
 - Do not push to remote. Commits are local; Matt will review and push.
+- ALWAYS write the outcome file (Step 5) before marking investigated. The pipeline depends on it for verification.
+- If Claude Code is running low on credits or context, prioritize: outcome file > report email > user email > code fixes.
