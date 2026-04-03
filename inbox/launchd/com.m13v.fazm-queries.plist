@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.m13v.fazm-queries</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/matthewdi/fazm/inbox/skill/check-queries.sh</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>21600</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/matthewdi/fazm/inbox/skill/logs/queries-launchd-stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/matthewdi/fazm/inbox/skill/logs/queries-launchd-stderr.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/matthewdi/.nvm/versions/node/v20.19.4/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+		<key>HOME</key>
+		<string>/Users/matthewdi</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>AbandonProcessGroup</key>
+	<true/>
+</dict>
+</plist>
