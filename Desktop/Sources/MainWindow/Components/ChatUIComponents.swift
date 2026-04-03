@@ -491,7 +491,7 @@ struct ObserverCardItem: Identifiable {
 
 struct ObserverCardStackView: View {
     let cards: [ObserverCardItem]
-    var isObserverRunning: Bool = false
+    var isChatObserverRunning: Bool = false
     var onAction: ((Int64, String) -> Void)?
 
     @State private var expanded: Bool = false
@@ -503,16 +503,16 @@ struct ObserverCardStackView: View {
             HStack(spacing: 6) {
                 Image(systemName: "eye.circle.fill")
                     .scaledFont(size: 11)
-                    .foregroundColor(FazmColors.purplePrimary.opacity(isObserverRunning ? pulseOpacity : 0.7))
-                    .animation(isObserverRunning ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .default, value: pulseOpacity)
+                    .foregroundColor(FazmColors.purplePrimary.opacity(isChatObserverRunning ? pulseOpacity : 0.7))
+                    .animation(isChatObserverRunning ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .default, value: pulseOpacity)
                     .onAppear {
-                        if isObserverRunning { pulseOpacity = 0.3 }
+                        if isChatObserverRunning { pulseOpacity = 0.3 }
                     }
-                    .onChange(of: isObserverRunning) { _, running in
+                    .onChange(of: isChatObserverRunning) { _, running in
                         pulseOpacity = running ? 0.3 : 0.7
                     }
 
-                if isObserverRunning && cards.isEmpty {
+                if isChatObserverRunning && cards.isEmpty {
                     Text("Chat observer is thinking...")
                         .scaledFont(size: 11, weight: .medium)
                         .foregroundColor(FazmColors.overlayForeground.opacity(0.4))
