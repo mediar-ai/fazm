@@ -602,7 +602,7 @@ class PushToTalkManager: ObservableObject {
       }
       // Only show silence overlay if PTT was held for at least 3 seconds
       if holdDuration >= 3.0 {
-        effectiveBarState?.showSilenceOverlay()
+        (sendOverrideState ?? barState)?.showSilenceOverlay()
       }
       return
     }
@@ -610,7 +610,7 @@ class PushToTalkManager: ObservableObject {
     if pttOpenedChat {
       // PTT already opened the chat and synced live transcript — just finalize the text
       log("PushToTalkManager: finalizing PTT transcript in open chat (\(query.count) chars): \(query)")
-      let targetState = effectiveBarState
+      let targetState = sendOverrideState ?? barState
       let isShowingResponse = targetState?.showingAIResponse == true
       if !isShowingResponse {
         targetState?.aiInputText = preVoiceInputText.isEmpty ? query : preVoiceInputText + " " + query
@@ -627,17 +627,17 @@ class PushToTalkManager: ObservableObject {
       if isShowingResponse {
         // Set pendingFollowUpText after activation so the onChange handler's
         // isFollowUpFocused=true is honored (requires active app)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-          self?.effectiveBarState?.pendingFollowUpText = query
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+          targetState?.pendingFollowUpText = query
         }
       }
     } else {
       log("PushToTalkManager: inserting transcription into input (\(query.count) chars): \(query)")
-      if uiOverrideState == nil {
+      if sendOverrideState == nil {
         FloatingControlBarManager.shared.openAIInputWithQuery(query)
       } else {
-        effectiveBarState?.aiInputText = query
-        if let overrideState = uiOverrideState {
+        barState?.aiInputText = query
+        if let overrideState = sendOverrideState {
           DetachedChatWindowController.shared.focusInputField(for: overrideState)
         }
       }
