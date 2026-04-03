@@ -122,7 +122,7 @@ class AnalysisOverlayWindow {
     static func sendDiscussMessage(task: String, description: String?, document: String?) {
         // Build the message that gets sent as if the user typed it
         var message = """
-        The screen observer analyzed my last ~60 minutes of activity and identified a task that could be done by AI:
+        The screen observer analyzed my last ~60 minutes of screen activity and identified a task that could be done by AI:
 
         **Task:** \(task)
         """
