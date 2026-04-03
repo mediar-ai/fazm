@@ -21,7 +21,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     var onStopAgent: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onConnectClaude: (() -> Void)?
-    var onObserverCardAction: ((Int64, String) -> Void)?
+    var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: (() -> Void)?
     var onWindowClose: (() -> Void)?
 
@@ -76,7 +76,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             onReorderQueue: { [weak self] src, dst in self?.onReorderQueue?(src, dst) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
-            onObserverCardAction: { [weak self] id, action in self?.onObserverCardAction?(id, action) },
+            onChatObserverCardAction: { [weak self] id, action in self?.onChatObserverCardAction?(id, action) },
             onChangeWorkspace: onChangeWorkspace != nil ? { [weak self] in self?.onChangeWorkspace?() } : nil
         ).environmentObject(state)
 
@@ -156,7 +156,7 @@ struct DetachedChatView: View {
     var onReorderQueue: (IndexSet, Int) -> Void
     var onStopAgent: () -> Void
     var onConnectClaude: () -> Void
-    var onObserverCardAction: (Int64, String) -> Void
+    var onChatObserverCardAction: (Int64, String) -> Void
     var onChangeWorkspace: (() -> Void)?
 
     var body: some View {
@@ -239,7 +239,7 @@ struct DetachedChatView: View {
             },
             onStopAgent: onStopAgent,
             onConnectClaude: onConnectClaude,
-            onObserverCardAction: onObserverCardAction,
+            onChatObserverCardAction: onChatObserverCardAction,
             onChangeWorkspace: onChangeWorkspace
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -350,8 +350,8 @@ class DetachedChatWindowController {
             ClaudeAuthWindowController.shared.show(chatProvider: provider)
         }
 
-        win.onObserverCardAction = { [weak chatProvider] activityId, action in
-            chatProvider?.handleObserverCardAction(activityId: activityId, action: action)
+        win.onChatObserverCardAction = { [weak chatProvider] activityId, action in
+            chatProvider?.handleChatObserverCardAction(activityId: activityId, action: action)
         }
 
         win.onChangeWorkspace = { [weak self, weak win, weak detachedState, weak chatProvider] in
