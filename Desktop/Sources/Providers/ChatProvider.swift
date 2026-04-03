@@ -976,6 +976,12 @@ class ChatProvider: ObservableObject {
                 log("Background tool \(name) executed for callId=\(callId)")
                 return result
             }
+            // Restore floating chat messages from SQLite BEFORE building the system prompt.
+            // This ensures buildConversationHistory() has access to prior messages, so if
+            // ACP session resume fails, the fallback new session gets seeded with context.
+            // Without this, messages is empty at warmup time and the user loses all history.
+            await restoreFloatingChatIfNeeded()
+
             // Pre-warm ACP sessions with their respective system prompts.
             // This is the only place the system prompt is built and applied.
             let mainSystemPrompt = buildSystemPrompt(contextString: "")
@@ -1520,10 +1526,12 @@ class ChatProvider: ObservableObject {
     }
 
 
-    /// Formats the last 10 non-empty messages in the current session as a conversation history string.
+    /// Formats the last 30 non-empty messages in the current session as a conversation history string.
     /// Used to seed new ACP sessions with context from the existing chat UI history.
+    /// This is critical when session resume fails after an app restart or update, as it is
+    /// the only mechanism that preserves conversational context for the new session.
     private func buildConversationHistory() -> String {
-        let recent = messages.filter { !$0.text.isEmpty }.suffix(10)
+        let recent = messages.filter { !$0.text.isEmpty }.suffix(30)
         return recent.map { msg in
             let role = msg.sender == .user ? "User" : "Assistant"
             return "\(role): \(msg.text)"
