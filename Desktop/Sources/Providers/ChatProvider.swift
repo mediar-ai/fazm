@@ -34,11 +34,11 @@ struct ToolCallInput: Equatable {
     let details: String?
 }
 
-/// Button for observer cards
+/// Button for chat observer cards (auto-accepted; only "Deny" shown for rollback)
 struct ObserverCardButton: Identifiable, Equatable {
     let id: String
     let label: String
-    let action: String  // "approve", "dismiss", "edit"
+    let action: String  // "dismiss" (rollback), "approve" (internal only)
 }
 
 /// A block of content within an AI message (text or tool call indicator)
@@ -51,7 +51,7 @@ enum ChatContentBlock: Identifiable, Equatable {
     case thinking(id: String, text: String)
     /// Collapsible card showing a summary with expandable full text (used for AI profile/discovery)
     case discoveryCard(id: String, title: String, summary: String, fullText: String)
-    /// Observer session card — button-only inline element for user interaction
+    /// Chat observer card — auto-accepted inline element, user can deny to rollback
     case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String? = nil)
 
     var id: String {
@@ -956,16 +956,16 @@ class ChatProvider: ObservableObject {
                     }
                 }
             )
-            // Set up observer poll handler — when the observer finishes a batch,
-            // poll observer_activity for new pending cards and inject them into the chat
-            await acpBridge.setObserverPollHandler { [weak self] in
+            // Set up chat observer poll handler — when the chat observer finishes a batch,
+            // poll observer_activity for new pending cards, auto-accept them, and inject into chat
+            await acpBridge.setChatObserverPollHandler { [weak self] in
                 Task { @MainActor [weak self] in
-                    self?.pollObserverCards()
+                    self?.pollChatObserverCards()
                 }
             }
-            await acpBridge.setObserverStatusHandler { running in
+            await acpBridge.setChatObserverStatusHandler { running in
                 Task { @MainActor in
-                    FloatingControlBarManager.shared.barState?.isObserverRunning = running
+                    FloatingControlBarManager.shared.barState?.isChatObserverRunning = running
                 }
             }
             // Set up background tool call handler for observer session tool calls
@@ -3052,8 +3052,8 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Execute pending operations from an approved observer card (writes, KG saves, skill drafts)
-    private func executeApprovedObserverOperations(activityId: Int64) async {
+    /// Execute pending operations from an auto-accepted chat observer card (writes, KG saves, skill drafts)
+    private func executeApprovedChatObserverOperations(activityId: Int64) async {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         do {
             let row = try await dbQueue.read { db in
@@ -3063,12 +3063,12 @@ class ChatProvider: ObservableObject {
                   let type: String = row?["type"],
                   let jsonData = contentJson.data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-                log("ChatProvider: Observer approve — no content for id=\(activityId)")
+                log("ChatProvider: Chat observer approve — no content for id=\(activityId)")
                 return
             }
 
             if type == "skill_draft" {
-                await createSkillFromObserverDraft(activityId: activityId)
+                await createSkillFromChatObserverDraft(activityId: activityId)
                 return
             }
 
@@ -3079,21 +3079,21 @@ class ChatProvider: ObservableObject {
                           let opArgs = op["args"] as? [String: Any] else { continue }
 
                     if tool == "execute_sql", let query = opArgs["query"] as? String {
-                        log("ChatProvider: Executing approved SQL: \(query.prefix(200))")
+                        log("ChatProvider: Executing auto-accepted SQL: \(query.prefix(200))")
                         try await dbQueue.write { db in
                             try db.execute(sql: query)
                         }
                     }
                 }
-                log("ChatProvider: Executed \(operations.count) approved observer operations for id=\(activityId)")
+                log("ChatProvider: Executed \(operations.count) auto-accepted chat observer operations for id=\(activityId)")
             }
         } catch {
-            log("ChatProvider: Failed to execute approved observer operations: \(error)")
+            log("ChatProvider: Failed to execute chat observer operations: \(error)")
         }
     }
 
-    /// Create a skill file from an approved observer draft
-    private func createSkillFromObserverDraft(activityId: Int64) async {
+    /// Create a skill file from an auto-accepted chat observer draft
+    private func createSkillFromChatObserverDraft(activityId: Int64) async {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         do {
             let row = try await dbQueue.read { db in
@@ -3105,7 +3105,7 @@ class ChatProvider: ObservableObject {
                   let draftSkill = parsed["draft_skill"] as? [String: Any],
                   let skillName = draftSkill["name"] as? String,
                   let skillContent = draftSkill["content"] as? String else {
-                log("ChatProvider: Observer draft missing skill data for id=\(activityId)")
+                log("ChatProvider: Chat observer draft missing skill data for id=\(activityId)")
                 return
             }
 
@@ -3116,14 +3116,14 @@ class ChatProvider: ObservableObject {
             let skillFile = skillDir.appendingPathComponent("SKILL.md")
             try skillContent.write(to: skillFile, atomically: true, encoding: .utf8)
 
-            log("ChatProvider: Observer created skill at \(skillFile.path)")
+            log("ChatProvider: Chat observer created skill at \(skillFile.path)")
         } catch {
-            log("ChatProvider: Failed to create skill from observer draft: \(error)")
+            log("ChatProvider: Failed to create skill from chat observer draft: \(error)")
         }
     }
 
-    /// Roll back previously approved observer operations (user clicked deny after auto-approve)
-    private func rollbackObserverOperations(activityId: Int64) async {
+    /// Roll back previously auto-accepted chat observer operations (user clicked deny)
+    private func rollbackChatObserverOperations(activityId: Int64) async {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
         do {
             let row = try await dbQueue.read { db in
@@ -3133,7 +3133,7 @@ class ChatProvider: ObservableObject {
                   let type: String = row?["type"],
                   let jsonData = contentJson.data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-                log("ChatProvider: Observer rollback — no content for id=\(activityId)")
+                log("ChatProvider: Chat observer rollback — no content for id=\(activityId)")
                 return
             }
 
@@ -3150,7 +3150,7 @@ class ChatProvider: ObservableObject {
                     if contents?.isEmpty == true {
                         try? FileManager.default.removeItem(at: skillDir)
                     }
-                    log("ChatProvider: Rolled back skill draft — deleted \(skillFile.path)")
+                    log("ChatProvider: Rolled back chat observer skill draft — deleted \(skillFile.path)")
                 }
                 return
             }
@@ -3161,7 +3161,7 @@ class ChatProvider: ObservableObject {
                     if let tool = op["tool"] as? String, tool == "execute_sql",
                        let args = op["args"] as? [String: Any],
                        let query = args["query"] as? String {
-                        log("ChatProvider: Executing rollback SQL: \(query.prefix(200))")
+                        log("ChatProvider: Executing chat observer rollback SQL: \(query.prefix(200))")
                         try await dbQueue.write { db in
                             try db.execute(sql: query)
                         }
@@ -3169,9 +3169,9 @@ class ChatProvider: ObservableObject {
                 }
             }
 
-            log("ChatProvider: Rolled back observer operations for id=\(activityId)")
+            log("ChatProvider: Rolled back chat observer operations for id=\(activityId)")
         } catch {
-            log("ChatProvider: Failed to rollback observer operations: \(error)")
+            log("ChatProvider: Failed to rollback chat observer operations: \(error)")
         }
     }
 
