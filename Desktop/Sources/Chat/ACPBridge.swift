@@ -212,19 +212,19 @@ actor ACPBridge {
   var onAuthTimeoutGlobal: AuthTimeoutHandler?
   /// Persistent auth failed handler called when token exchange is rejected (e.g. 403)
   var onAuthFailedGlobal: AuthFailedHandler?
-  /// Called when the observer session completes a batch and new cards may be available
-  var onObserverPoll: (() -> Void)?
-  /// Called when the observer starts or stops processing a batch
-  var onObserverStatusChange: ((_ running: Bool) -> Void)?
-  /// Global tool call handler for background sessions (observer) — processes tool_use even when no query is active
+  /// Called when the chat observer session completes a batch and new cards may be available
+  var onChatObserverPoll: (() -> Void)?
+  /// Called when the chat observer starts or stops processing a batch
+  var onChatObserverStatusChange: ((_ running: Bool) -> Void)?
+  /// Global tool call handler for background sessions (chat observer) — processes tool_use even when no query is active
   var onBackgroundToolCall: ToolCallHandler?
 
-  func setObserverPollHandler(_ handler: @escaping @Sendable () -> Void) {
-    self.onObserverPoll = handler
+  func setChatObserverPollHandler(_ handler: @escaping @Sendable () -> Void) {
+    self.onChatObserverPoll = handler
   }
 
-  func setObserverStatusHandler(_ handler: @escaping @Sendable (_ running: Bool) -> Void) {
-    self.onObserverStatusChange = handler
+  func setChatObserverStatusHandler(_ handler: @escaping @Sendable (_ running: Bool) -> Void) {
+    self.onChatObserverStatusChange = handler
   }
 
   func setBackgroundToolCallHandler(_ handler: @escaping ToolCallHandler) {
@@ -1028,16 +1028,16 @@ actor ACPBridge {
         return
       }
     case .observerPoll:
-      // Always handle immediately — observer runs independently of any active query
-      log("ACPBridge: received observer_poll, handler=\(onObserverPoll != nil)")
-      onObserverPoll?()
+      // Always handle immediately — chat observer runs independently of any active query
+      log("ACPBridge: received chat observer poll, handler=\(onChatObserverPoll != nil)")
+      onChatObserverPoll?()
       return
     case .observerStatus(let running):
-      log("ACPBridge: observer status running=\(running)")
-      onObserverStatusChange?(running)
+      log("ACPBridge: chat observer status running=\(running)")
+      onChatObserverStatusChange?(running)
       return
     case .toolUse(let callId, let name, let input):
-      // If no active query is waiting, handle tool calls from background sessions (observer)
+      // If no active query is waiting, handle tool calls from background sessions (chat observer)
       if !continuationBox.isPending, let handler = onBackgroundToolCall {
         Task {
           let result = await handler(callId, name, input)
