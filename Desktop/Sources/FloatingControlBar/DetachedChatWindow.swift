@@ -343,6 +343,25 @@ class DetachedChatWindowController {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         saveWindowRegistry()
+
+        // Persist the initial conversation to the detached session's DB context
+        // so it can be restored on next launch. The floating bar already saved these
+        // under __floating__, but we need them under the detached key.
+        let context = "__\(sessionKey)__"
+        Task {
+            for exchange in chatHistory {
+                let userMsg = ChatMessage(text: exchange.question, sender: .user, sessionKey: sessionKey)
+                await ChatMessageStore.saveMessage(userMsg, context: context)
+                await ChatMessageStore.saveMessage(exchange.aiMessage, context: context)
+            }
+            if !displayedQuery.isEmpty {
+                let userMsg = ChatMessage(text: displayedQuery, sender: .user, sessionKey: sessionKey)
+                await ChatMessageStore.saveMessage(userMsg, context: context)
+            }
+            if let aiMsg = currentAIMessage, !aiMsg.text.isEmpty {
+                await ChatMessageStore.saveMessage(aiMsg, context: context)
+            }
+        }
     }
 
     /// Restore detached windows that were open when the app last quit.
