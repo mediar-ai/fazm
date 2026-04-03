@@ -992,7 +992,6 @@ class FloatingControlBarManager {
     private var recordingCancellable: AnyCancellable?
     private var durationCancellable: AnyCancellable?
     private var chatCancellable: AnyCancellable?
-    private var compactCancellable: AnyCancellable?
     private var sharedProviderCancellables: [AnyCancellable] = []
     private(set) var chatProvider: ChatProvider?
     private var workspaceObserver: Any?
