@@ -461,6 +461,7 @@ class DetachedChatWindowController {
                     }
                     state.isAILoading = true
                     state.currentAIMessage = nil
+                    state.showUpgradeClaudeButton = false
                     // Set up the response subscriber now that our message is being sent
                     let countBefore = provider.messages.count
                     self.subscribeToResponse(provider: provider, state: state, winId: id, messageCountBefore: countBefore)
@@ -477,15 +478,20 @@ class DetachedChatWindowController {
     /// Start sending a query immediately (provider is not busy).
     private func startQuery(message: String, for win: DetachedChatWindow, winId: ObjectIdentifier, sessionKey: String, state: FloatingControlBarState, provider: ChatProvider) {
         let messageCountBefore = provider.messages.count
-        state.suggestedReplies = []
-        state.suggestedReplyQuestion = ""
 
-        ChatToolExecutor.onQuickReplyOptions = { [weak state] question, options in
-            Task { @MainActor in
-                state?.suggestedReplyQuestion = question
-                state?.suggestedReplies = options
+        // Shared pre-query setup: suggested replies, callbacks, analytics, referral
+        ChatQueryLifecycle.prepareForQuery(
+            state: state,
+            message: message,
+            hasScreenshot: false,
+            sendFollowUp: { [weak self, weak win] message in
+                guard let self, let win else { return }
+                Task { @MainActor in
+                    log("Auto-sending follow-up (detached): \(message)")
+                    self.sendQuery(message, for: win)
+                }
             }
-        }
+        )
 
         subscribeToResponse(provider: provider, state: state, winId: winId, messageCountBefore: messageCountBefore)
 
@@ -497,15 +503,9 @@ class DetachedChatWindowController {
                 systemPromptPrefix: ChatProvider.floatingBarSystemPromptPrefixCurrent,
                 sessionKey: sessionKey
             )
-            state.isAILoading = false
 
-            // Sync the latest AI message directly from provider.messages to close the
-            // race window where sendMessage has returned but the Combine $messages sink
-            // (scheduled via .receive(on: .main)) hasn't fired yet.
-            if let latestAI = provider.messages.last(where: { $0.sender == .ai && $0.sessionKey == sessionKey }),
-               !latestAI.text.isEmpty || !latestAI.contentBlocks.isEmpty {
-                state.currentAIMessage = latestAI
-            }
+            // Shared post-query: error handling, credit exhaustion, auth, paywall, etc.
+            ChatQueryLifecycle.handlePostQuery(provider: provider, state: state, sessionKey: sessionKey)
         }
     }
 
