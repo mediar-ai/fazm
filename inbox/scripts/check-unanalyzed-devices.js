@@ -123,16 +123,14 @@ async function main() {
   // Filter to devices that:
   // 1. Have unanalyzed chunks (need Gemini analysis first) OR have analyses with issues
   // 2. Haven't been investigated by this pipeline yet
-  // 3. Have between MIN_CHUNKS and MAX_CHUNKS total chunks
+  // 3. Have at least MIN_CHUNKS total, and ≤MAX_CHUNKS unanalyzed
   // 4. Are not "unknown"
   const candidates = status.devices.filter(d => {
     if (d.deviceId === 'unknown') return false;
     if (d.deviceId.includes('-')) return false; // Not a Firebase UID
     if (investigated.has(d.deviceId)) return false;
     if (d.totalChunks < MIN_CHUNKS) return false;
-    if (d.totalChunks > MAX_CHUNKS) return false;
-    // Must have some analyses (Gemini has processed them) with issues
-    // OR have unanalyzed chunks we need to trigger first
+    if (d.unanalyzedChunks > MAX_CHUNKS) return false; // Cap on unanalyzed, not total
     return true;
   });
 
