@@ -982,15 +982,15 @@ class ChatProvider: ObservableObject {
             cachedMainSystemPrompt = mainSystemPrompt
             let floatingSystemPrompt = Self.floatingBarSystemPromptPrefixCurrent + "\n\n" + mainSystemPrompt
             let savedFloatingSessionId = UserDefaults.standard.string(forKey: floatingSessionIdKey)
-            let observerUserName = AuthService.shared.displayName.isEmpty ? "the user" : AuthService.shared.givenName
-            let observerSystemPrompt = ChatPromptBuilder.buildObserverSession(
-                userName: observerUserName,
+            let chatObserverUserName = AuthService.shared.displayName.isEmpty ? "the user" : AuthService.shared.givenName
+            let chatObserverSystemPrompt = ChatPromptBuilder.buildChatObserverSession(
+                userName: chatObserverUserName,
                 databaseSchema: cachedDatabaseSchema
             )
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
                 .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
                 .init(key: "floating", model: "claude-opus-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
-                .init(key: "observer", model: "claude-opus-4-6", systemPrompt: observerSystemPrompt)
+                .init(key: "observer", model: "claude-opus-4-6", systemPrompt: chatObserverSystemPrompt)
             ])
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
