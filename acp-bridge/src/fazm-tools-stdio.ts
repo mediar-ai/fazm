@@ -125,7 +125,7 @@ function rejectPendingToolCalls(reason: string): void {
   pendingToolCalls.clear();
 }
 
-/** Notify the bridge that an observer card is ready for immediate display */
+/** Notify the bridge that a chat observer card is ready for immediate display */
 function notifyObserverCardReady(): void {
   if (pipeConnection) {
     try {
@@ -171,7 +171,7 @@ async function requestSwiftTool(
 // --- MCP tool definitions ---
 
 const isOnboarding = (process.env.FAZM_ONBOARDING || process.env.OMI_ONBOARDING) === "true";
-const isObserver = process.env.FAZM_OBSERVER === "true";
+const isChatObserver = process.env.FAZM_OBSERVER === "true";
 const isVoiceResponseEnabled = process.env.FAZM_VOICE_RESPONSE === "true";
 
 /** Escape a string for use inside a SQL single-quoted literal.
@@ -267,8 +267,8 @@ const ALWAYS_AVAILABLE_TOOL_NAMES = new Set([
   "ask_followup",
 ]);
 
-// Observer session only gets these tools (SQL reads, screenshots, skills, browser profile, cards)
-const OBSERVER_TOOL_NAMES = new Set([
+// Chat observer session only gets these tools (SQL reads, screenshots, skills, browser profile, cards)
+const CHAT_OBSERVER_TOOL_NAMES = new Set([
   "execute_sql",
   "capture_screenshot",
   "query_browser_profile",
@@ -472,7 +472,7 @@ Aim for 15-40 nodes with meaningful edges connecting them.`,
   },
   {
     name: "save_observer_card",
-    description: `Save an observer card to notify the user about something you observed. The card is saved immediately and the user can dismiss it to undo. Use this instead of writing raw SQL to observer_activity.`,
+    description: `Save a chat observer card to notify the user about something you observed. The card is auto-accepted and the user can deny it to undo. Use this instead of writing raw SQL to observer_activity.`,
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -503,14 +503,14 @@ const VOICE_RESPONSE_TOOL_NAMES = new Set(["speak_response"]);
 
 // Filter tools based on session type:
 // - onboarding: all tools (except voice-gated unless enabled)
-// - observer: only observer-specific tools (KG, SQL, screenshots, skills)
+// - chat observer: only chat-observer-specific tools (KG, SQL, screenshots, skills)
 // - regular: all tools except onboarding-only tools
 // speak_response is only included when FAZM_VOICE_RESPONSE is enabled
 const TOOLS = ALL_TOOLS.filter((t) => {
   // Gate voice response tools behind the toggle
   if (VOICE_RESPONSE_TOOL_NAMES.has(t.name) && !isVoiceResponseEnabled) return false;
   if (isOnboarding) return true;
-  if (isObserver) return OBSERVER_TOOL_NAMES.has(t.name);
+  if (isChatObserver) return CHAT_OBSERVER_TOOL_NAMES.has(t.name);
   // Some tools are available in all sessions even though they're also in onboarding
   if (ALWAYS_AVAILABLE_TOOL_NAMES.has(t.name)) return true;
   return !ONBOARDING_TOOL_NAMES.has(t.name);
@@ -598,8 +598,8 @@ async function handleJsonRpc(
             return;
         }
 
-        // Observer mode: intercept all writes
-        if (isObserver && isWriteQuery) {
+        // Chat observer mode: intercept all writes
+        if (isChatObserver && isWriteQuery) {
           // Block writes to non-existent tables (e.g. hallucinated tables
           // when the LLM falls back to execute_sql instead of using proper tools)
           const tableMatch = normalized.match(/INSERT\s+INTO\s+(\w+)/i) ||
