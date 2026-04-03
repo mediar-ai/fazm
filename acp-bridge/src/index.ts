@@ -1198,7 +1198,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // drop the prompt (broken session state after cancel mid-tool-call). Race the
       // prompt against a 30s timer — if no notifications arrive, assume the session
       // is dead and throw so the outer retry logic can create a fresh session.
-      const TTFT_WATCHDOG_MS = 30_000;
+      const TTFT_WATCHDOG_MS = 5_000;
       let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
       let watchdogReject: ((err: Error) => void) | null = null;
 
