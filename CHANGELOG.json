@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Chat observer cards are now auto-accepted (deny to undo) instead of requiring manual approval",
-    "Detached chat windows now restore automatically after app restart or update"
+    "Detached chat windows now restore automatically after app restart or update",
+    "Fixed stuck loading spinner when popping out chat to detached window mid-stream"
   ],
   "releases": [
     {
