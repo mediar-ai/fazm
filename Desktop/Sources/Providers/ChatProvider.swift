@@ -2470,29 +2470,27 @@ class ChatProvider: ObservableObject {
                 // Forward final result to phone
                 webRelay.sendToPhone(["type": "result", "text": messageText])
 
+                // Persist AI message locally before yielding. The yield below lets
+                // the Combine $messages sink run, which may call clearTransferredMessages()
+                // and empty the messages array. Save the message reference now while it's
+                // still in memory.
+                if let freshIndex = messages.firstIndex(where: { $0.id == aiMessageId }), !messageText.isEmpty {
+                    let msg = messages[freshIndex]
+                    if isOnboarding {
+                        Task { await OnboardingChatPersistence.saveMessage(msg) }
+                    } else if sessionKey == "floating" {
+                        let sid = floatingChatSessionId
+                        Task { await ChatMessageStore.saveMessage(msg, context: "__floating__", sessionId: sid) }
+                    } else if let key = sessionKey, key.hasPrefix("detached-") {
+                        Task { await ChatMessageStore.saveMessage(msg, context: "__\(key)__") }
+                    }
+                }
+
                 // Yield the main actor so the Combine $messages sink (scheduled
                 // via .receive(on: .main)) fires now, updating the UI to remove
                 // the typing indicator immediately rather than waiting for the
                 // backend save network call to complete.
                 await Task.yield()
-
-                // Persist AI message locally for onboarding restart recovery
-                // Must happen before backend save which replaces the message ID
-                // Re-lookup index after yield — the messages array may have mutated
-                // during the suspension point above (session switch, message clear, etc.)
-                if let freshIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                    if isOnboarding, !messageText.isEmpty {
-                        let msg = messages[freshIndex]
-                        Task { await OnboardingChatPersistence.saveMessage(msg) }
-                    } else if sessionKey == "floating", !messageText.isEmpty {
-                        let msg = messages[freshIndex]
-                        let sid = floatingChatSessionId
-                        Task { await ChatMessageStore.saveMessage(msg, context: "__floating__", sessionId: sid) }
-                    } else if let key = sessionKey, key.hasPrefix("detached-"), !messageText.isEmpty {
-                        let msg = messages[freshIndex]
-                        Task { await ChatMessageStore.saveMessage(msg, context: "__\(key)__") }
-                    }
-                }
             } else {
                 // Message no longer in memory (user switched away from this session).
                 messageText = queryResult.text
