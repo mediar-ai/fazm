@@ -1111,6 +1111,15 @@ class ChatProvider: ObservableObject {
         }
     }
 
+    /// Whether the floating chat was cleared (e.g. by pop-out or explicit new chat)
+    /// and is awaiting a fresh start on the next floating bar interaction. The caller
+    /// is expected to skip any restore/populate-from-messages logic when this is true.
+    /// The flag is consumed by `clearTransferredMessages()` once the detached window's
+    /// in-flight query finishes streaming, so we only read it here (don't clear).
+    var floatingChatWasCleared: Bool {
+        UserDefaults.standard.bool(forKey: Self.floatingChatClearedKey)
+    }
+
     /// Clear messages that were kept alive during a floating→detached session transfer.
     /// Called by the detached window's subscriber once the in-flight query finishes streaming.
     func clearTransferredMessages() {
