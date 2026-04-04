@@ -119,18 +119,13 @@ struct AIResponseView: View {
                     .allowsHitTesting(false)
                 }
                 .onChange(of: currentMessage?.text) {
-                    if !userHasScrolledUp {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo("bottom", anchor: .bottom)
-                        }
-                    }
-                }
-                .onChange(of: currentMessage?.contentBlocks.count) {
-                    if !userHasScrolledUp {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo("bottom", anchor: .bottom)
-                        }
-                    }
+                    // Streaming updates arrive every few ms. Animating each one
+                    // causes overlapping animations to fight as content reflows,
+                    // which looks like the scroll jumping back to earlier lines.
+                    // Unanimated scrollTo calls coalesce per frame and track the
+                    // growing bottom smoothly.
+                    guard !userHasScrolledUp else { return }
+                    proxy.scrollTo("bottom", anchor: .bottom)
                 }
                 .onChange(of: chatHistory.count) {
                     // New exchange added — always scroll to bottom and reset
