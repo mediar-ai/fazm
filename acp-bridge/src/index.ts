@@ -740,7 +740,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
     fazmToolsEnv.push({ name: "FAZM_VOICE_RESPONSE", value: "true" });
   }
   servers.push({
-    name: "fazm-tools",
+    name: "fazm_tools",
     command: process.execPath,
     args: [fazmToolsStdioScript],
     env: fazmToolsEnv,
