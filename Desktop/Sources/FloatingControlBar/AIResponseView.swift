@@ -1100,7 +1100,7 @@ struct PopOutButton: View {
                 .foregroundColor(.secondary)
         }
         .buttonStyle(.plain)
-        .help("Pop out")
+        .floatingHint("Pop out")
     }
 }
 
@@ -1162,7 +1162,7 @@ struct NewChatButton: View {
             .foregroundColor(.secondary)
         }
         .buttonStyle(.plain)
-        .help("New chat")
+        .floatingHint("New chat")
     }
 }
 
@@ -1183,7 +1183,7 @@ struct CopyConversationButton: View {
                 .foregroundColor(showCopied ? .green : .secondary)
         }
         .buttonStyle(.plain)
-        .help(showCopied ? "Copied!" : "Copy all")
+        .floatingHint(showCopied ? "Copied!" : "Copy all")
     }
 
     private func copyAll() {
@@ -1236,7 +1236,7 @@ struct ReportIssueButton: View {
                 .shadow(color: isHanging ? .orange.opacity(flashOpacity * 0.9) : .clear, radius: 6)
         }
         .buttonStyle(.plain)
-        .help(showSent ? "Report sent!" : "Report an issue")
+        .floatingHint(showSent ? "Report sent!" : "Report an issue")
         .onChange(of: isHanging) {
             if isHanging {
                 withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
