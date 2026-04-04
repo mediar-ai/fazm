@@ -150,8 +150,6 @@ struct FloatingControlBarView: View {
                         compactLabel("Open chat", keys: shortcutSettings.askFazmKey.hintKeys)
                     }
                     .frame(maxWidth: .infinity)
-                    modelToggleButton
-                        .padding(.trailing, 6)
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -264,27 +262,6 @@ struct FloatingControlBarView: View {
                     .cornerRadius(3)
             }
         }
-    }
-
-    private var modelToggleButton: some View {
-        Button {
-            let models = ShortcutSettings.availableModels
-            if let idx = models.firstIndex(where: { $0.id == shortcutSettings.selectedModel }) {
-                let next = (idx + 1) % models.count
-                shortcutSettings.selectedModel = models[next].id
-            } else {
-                shortcutSettings.selectedModel = models[0].id
-            }
-        } label: {
-            Text(shortcutSettings.selectedModelShortLabel)
-                .scaledFont(size: 10, weight: .medium)
-                .foregroundColor(FazmColors.overlayForeground.opacity(0.7))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(FazmColors.overlayForeground.opacity(0.08))
-                .cornerRadius(4)
-        }
-        .buttonStyle(.plain)
     }
 
     private var voiceListeningView: some View {
