@@ -443,8 +443,8 @@ struct ChatPrompts {
     5. Installed applications: SELECT filename FROM indexed_files WHERE folder = '/Applications' AND fileExtension = 'app' ORDER BY filename LIMIT 50
     6. Document types: SELECT fileExtension, COUNT(*) as count FROM indexed_files WHERE fileType IN ('document', 'spreadsheet', 'presentation') GROUP BY fileExtension ORDER BY count DESC LIMIT 15
 
-    **Knowledge graph queries:**
-    7. Knowledge graph nodes: SELECT id, label, nodeType FROM local_kg_nodes ORDER BY updatedAt DESC LIMIT 30
+    **Knowledge graph queries (IMPORTANT: column is "label" NOT "name"):**
+    7. Knowledge graph nodes: SELECT nodeId, label, nodeType FROM local_kg_nodes ORDER BY updatedAt DESC LIMIT 30
     8. Knowledge graph edges: SELECT sourceNodeId, targetNodeId, label FROM local_kg_edges ORDER BY createdAt DESC LIMIT 30
 
     STEP 2 — BUILD KNOWLEDGE GRAPH (MANDATORY — 20-50 nodes)
@@ -506,8 +506,8 @@ struct ChatPrompts {
     5. Installed applications: SELECT filename FROM indexed_files WHERE folder = '/Applications' AND fileExtension = 'app' ORDER BY filename LIMIT 50
     6. Document types: SELECT fileExtension, COUNT(*) as count FROM indexed_files WHERE fileType IN ('document', 'spreadsheet', 'presentation') GROUP BY fileExtension ORDER BY count DESC LIMIT 15
 
-    **Knowledge graph queries:**
-    7. Knowledge graph nodes: SELECT id, label, nodeType FROM local_kg_nodes ORDER BY updatedAt DESC LIMIT 30
+    **Knowledge graph queries (IMPORTANT: column is "label" NOT "name"):**
+    7. Knowledge graph nodes: SELECT nodeId, label, nodeType FROM local_kg_nodes ORDER BY updatedAt DESC LIMIT 30
     8. Knowledge graph edges: SELECT sourceNodeId, targetNodeId, label FROM local_kg_edges ORDER BY createdAt DESC LIMIT 30
 
     STEP 2 — PROFILE SUMMARY
