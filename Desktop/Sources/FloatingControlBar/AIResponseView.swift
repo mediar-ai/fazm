@@ -1031,6 +1031,31 @@ struct MessageWithCopyButton<Content: View>: View {
     }
 }
 
+// MARK: - Model Toggle Button
+
+struct ModelToggleButton: View {
+    @ObservedObject private var shortcutSettings = ShortcutSettings.shared
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            let models = ShortcutSettings.availableModels
+            if let idx = models.firstIndex(where: { $0.id == shortcutSettings.selectedModel }) {
+                shortcutSettings.selectedModel = models[(idx + 1) % models.count].id
+            } else {
+                shortcutSettings.selectedModel = models[0].id
+            }
+        } label: {
+            Text(shortcutSettings.selectedModelShortLabel)
+                .scaledFont(size: 11, weight: .medium)
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+    }
+}
+
 // MARK: - Voice Mute Button
 
 /// Inline toggle to mute/unmute voice responses (TTS).
