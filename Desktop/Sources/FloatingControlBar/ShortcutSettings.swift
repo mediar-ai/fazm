@@ -113,8 +113,9 @@ class ShortcutSettings: ObservableObject {
 
     /// Available models for Ask Fazm.
     static let availableModels: [(id: String, label: String, shortLabel: String)] = [
-        ("claude-opus-4-6", "Smart (Opus)", "Smart"),
+        ("claude-haiku-4-5-20251001", "Scary (Haiku)", "Scary"),
         ("claude-sonnet-4-6", "Fast (Sonnet)", "Fast"),
+        ("claude-opus-4-6", "Smart (Opus)", "Smart"),
     ]
 
     /// Human-readable short label for the currently selected model.
