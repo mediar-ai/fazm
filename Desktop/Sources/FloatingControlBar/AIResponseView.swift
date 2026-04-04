@@ -1084,7 +1084,7 @@ struct VoiceMuteButton: View {
                 .foregroundColor(voiceResponseEnabled ? .secondary : .orange)
         }
         .buttonStyle(.plain)
-        .help(voiceResponseEnabled ? "Mute voice" : "Unmute voice")
+        .floatingHint(voiceResponseEnabled ? "Mute voice" : "Unmute voice")
     }
 }
 
@@ -1325,5 +1325,64 @@ private struct ScrollWheelDetector: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
             }
         }
+    }
+}
+
+// MARK: - Floating Hint (custom tooltip)
+
+/// Shows a small floating label below the view after a short hover delay.
+/// Used instead of SwiftUI's `.help()` because native tooltips don't fire
+/// reliably on borderless floating panels.
+private struct FloatingHintModifier: ViewModifier {
+    let label: String
+    @State private var isHovered = false
+    @State private var isVisible = false
+    @State private var showTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovered = hovering
+                showTask?.cancel()
+                if hovering {
+                    showTask = Task {
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        if !Task.isCancelled && isHovered {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                isVisible = true
+                            }
+                        }
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.10)) {
+                        isVisible = false
+                    }
+                }
+            }
+            .overlay(alignment: .top) {
+                if isVisible {
+                    Text(label)
+                        .scaledFont(size: 10)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.black.opacity(0.85))
+                        )
+                        .fixedSize()
+                        .allowsHitTesting(false)
+                        .alignmentGuide(.top) { d in d[.bottom] + 4 }
+                        .transition(.opacity)
+                        .zIndex(1000)
+                }
+            }
+    }
+}
+
+extension View {
+    /// Shows a small floating label below the view on hover.
+    func floatingHint(_ label: String) -> some View {
+        modifier(FloatingHintModifier(label: label))
     }
 }
