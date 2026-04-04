@@ -315,9 +315,14 @@ struct BrowserExtensionSetup: View {
                     stepBadge("3", done: tokenStepDone)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Open the extension and copy the auth token")
+                        Text("Click the extension icon in Chrome and copy the token")
                             .scaledFont(size: 13, weight: .medium)
                             .foregroundColor(!extensionStepDone ? FazmColors.textTertiary.opacity(0.5) : tokenStepDone ? FazmColors.textTertiary : FazmColors.textPrimary)
+
+                        Text("Look for the puzzle piece icon (\u{1F9E9}) in Chrome's toolbar, click it, then click \"Playwright MCP Bridge\". Copy the token shown in the popup.")
+                            .scaledFont(size: 11)
+                            .foregroundColor(FazmColors.textQuaternary)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         Button(action: {
                             Self.openExtensionInChrome()
@@ -328,7 +333,7 @@ struct BrowserExtensionSetup: View {
                             HStack(spacing: 5) {
                                 Image(systemName: tokenStepDone ? "checkmark" : "key")
                                     .scaledFont(size: 11)
-                                Text(tokenStepDone ? "Opened" : "Open Extension Settings")
+                                Text(tokenStepDone ? "Opened" : "Open Extension Page")
                                     .scaledFont(size: 12)
                             }
                         }
