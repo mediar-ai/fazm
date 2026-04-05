@@ -1544,7 +1544,7 @@ class ChatProvider: ObservableObject {
         let currentLang = AssistantSettings.shared.transcriptionLanguage
         let autoDetect = AssistantSettings.shared.transcriptionAutoDetect
         let voiceOn = voiceResponseEnabled
-        prompt += "\n\n<app_settings>\nTranscription language: \(currentLang) (auto-detect: \(autoDetect ? "on" : "off"))\nVoice response (TTS): \(voiceOn ? "enabled" : "disabled")\nTo change these, use `set_app_setting(setting, value)`.\n</app_settings>"
+        prompt += "\n\n<app_settings>\nTranscription language: \(currentLang) (auto-detect: \(autoDetect ? "on" : "off"))\nVoice response (TTS): \(voiceOn ? "enabled" : "disabled")\nTo change these, use `set_user_preferences` with language and/or voice parameters.\n</app_settings>"
 
         // Append voice response instructions if enabled
         if voiceResponseEnabled {
