@@ -12,7 +12,7 @@
   "dependencies": {
     "@playwright/mcp": "^0.0.68",
     "@types/ws": "^8.18.1",
-    "@zed-industries/claude-agent-acp": "^0.18.0",
+    "@agentclientprotocol/claude-agent-acp": "^0.25.0",
     "ws": "^8.20.0",
     "zod": "^4.0.0"
   },
