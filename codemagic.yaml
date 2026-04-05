@@ -644,9 +644,15 @@ workflows:
           # Create arch-specific app bundles from the SIGNED+NOTARIZED+STAPLED universal app.
           # Thin universal binaries to single-arch, then re-sign everything
           # (lipo -thin invalidates code signatures).
-          CS_PAGESIZE="--pagesize 16384"
 
           for ARCH in arm64 x86_64; do
+            # 16K page hashes required for arm64 on macOS 26+; x86_64 needs 4K (default).
+            # Using 16K on x86_64 causes errno=85 (code signature invalid) on Intel Macs.
+            if [ "$ARCH" = "arm64" ]; then
+              CS_PAGESIZE="--pagesize 16384"
+            else
+              CS_PAGESIZE=""
+            fi
             echo "Creating $ARCH ZIP..."
             ARCH_APP="/tmp/Fazm-$ARCH-app"
             rm -rf "$ARCH_APP"
