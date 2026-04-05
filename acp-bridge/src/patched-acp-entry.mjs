@@ -4,7 +4,7 @@
  * - Real token usage and USD cost from SDKResultSuccess (via query.next interception)
  * - Forward dropped SDK events (compaction, status, tasks, tool progress) as session updates
  *
- * Used instead of the default @zed-industries/claude-agent-acp entry point.
+ * Used instead of the default @agentclientprotocol/claude-agent-acp entry point.
  */
 
 // Redirect console to stderr (same as original)
@@ -13,7 +13,7 @@ console.info = console.error;
 console.warn = console.error;
 console.debug = console.error;
 
-import { ClaudeAcpAgent, runAcp } from "@zed-industries/claude-agent-acp/dist/acp-agent.js";
+import { ClaudeAcpAgent, runAcp } from "@agentclientprotocol/claude-agent-acp/dist/acp-agent.js";
 
 // Patch createSession (called by newSession, resumeSession, loadSession, forkSession)
 // to wrap query.next() for cost/usage capture and SDK event forwarding.
