@@ -593,22 +593,7 @@ struct AIResponseView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Question bubble (hidden for observer-only entries with no user question)
             if !exchange.question.isEmpty {
-                MessageWithCopyButton(alignment: .topTrailing) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(exchange.question, forType: .string)
-                } content: {
-                    SelectableText(
-                        text: exchange.question,
-                        fontSize: 13,
-                        textColor: NSColor(FazmColors.overlayForeground),
-                        lineLimit: 2
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(FazmColors.overlayForeground.opacity(0.1))
-                    .cornerRadius(8)
-                }
+                ExpandableQuestionBubble(question: exchange.question)
             }
 
             // Response with content blocks
@@ -635,13 +620,15 @@ struct AIResponseView: View {
         HStack(alignment: .top, spacing: 4) {
             Group {
                 if isQuestionExpanded {
-                    SelectableText(
-                        text: userInput,
-                        fontSize: 13,
-                        textColor: NSColor(FazmColors.overlayForeground)
-                    )
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    ScrollView {
+                        SelectableText(
+                            text: userInput,
+                            fontSize: 13,
+                            textColor: NSColor(FazmColors.overlayForeground)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 120)
                 } else {
                     SelectableText(
                         text: userInput,
@@ -896,6 +883,46 @@ struct AIResponseView: View {
         } else {
             onSendFollowUp?(trimmed)
         }
+    }
+}
+
+// MARK: - Expandable Question Bubble (chat history)
+
+/// Question bubble in chat history that truncates to 2 lines with an expand chevron.
+private struct ExpandableQuestionBubble: View {
+    let question: String
+    @State private var isExpanded = false
+
+    private var needsExpansion: Bool {
+        let font = NSFont.systemFont(ofSize: 13)
+        return (question as NSString).boundingRect(
+            with: NSSize(width: 350, height: CGFloat.greatestFiniteMagnitude),
+            options: .usesLineFragmentOrigin,
+            attributes: [.font: font]
+        ).size.height > font.pointSize * 1.5 * 2 // more than 2 lines
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 4) {
+            SelectableText(
+                text: question,
+                fontSize: 13,
+                textColor: NSColor(FazmColors.overlayForeground),
+                lineLimit: isExpanded ? nil : 2
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            QuestionBarButtons(
+                needsExpansion: needsExpansion,
+                isExpanded: $isExpanded,
+                userInput: question
+            )
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(FazmColors.overlayForeground.opacity(0.1))
+        .cornerRadius(8)
     }
 }
 
