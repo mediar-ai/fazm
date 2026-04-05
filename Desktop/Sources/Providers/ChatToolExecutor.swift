@@ -103,6 +103,9 @@ class ChatToolExecutor {
             }
             return result
 
+        case "set_app_setting":
+            return await executeSetAppSetting(toolCall.arguments)
+
         default:
             return "Unknown tool: \(toolCall.name)"
         }
@@ -707,6 +710,43 @@ class ChatToolExecutor {
             return "No preferences were changed. Provide 'language' (code like 'en', 'es', 'ja') and/or 'name' (string)."
         }
         return results.joined(separator: ". ") + "."
+    }
+
+    // MARK: - App Settings Tool
+
+    private static func executeSetAppSetting(_ args: [String: Any]) async -> String {
+        guard let setting = args["setting"] as? String, !setting.isEmpty else {
+            return "Error: 'setting' parameter required. Available settings: language, voice"
+        }
+
+        switch setting {
+        case "language":
+            guard let lang = args["value"] as? String, !lang.isEmpty else {
+                return "Error: 'value' must be a language code (e.g. 'en', 'es', 'ja', 'ko', 'ru')"
+            }
+            AssistantSettings.shared.transcriptionLanguage = lang
+            let supportsMulti = AssistantSettings.supportsAutoDetect(lang)
+            AssistantSettings.shared.transcriptionAutoDetect = supportsMulti
+            Task {
+                _ = try? await APIClient.shared.updateUserLanguage(lang)
+            }
+            return "Transcription language set to \(lang) (auto-detect: \(supportsMulti ? "on" : "off"))"
+
+        case "voice":
+            let enabled: Bool
+            if let boolVal = args["value"] as? Bool {
+                enabled = boolVal
+            } else if let strVal = args["value"] as? String {
+                enabled = ["true", "on", "yes", "1"].contains(strVal.lowercased())
+            } else {
+                return "Error: 'value' must be true/false for voice setting"
+            }
+            UserDefaults.standard.set(enabled, forKey: "voiceResponseEnabled")
+            return "Voice response \(enabled ? "enabled" : "disabled")"
+
+        default:
+            return "Error: unknown setting '\(setting)'. Available settings: language, voice"
+        }
     }
 
     // MARK: - Knowledge Graph Tool
