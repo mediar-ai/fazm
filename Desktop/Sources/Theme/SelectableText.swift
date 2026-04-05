@@ -45,5 +45,13 @@ struct SelectableText: NSViewRepresentable {
         }
         textView.font = .systemFont(ofSize: scaledSize)
         textView.textColor = textColor
+        if let lineLimit {
+            textView.textContainer?.maximumNumberOfLines = lineLimit
+            textView.textContainer?.lineBreakMode = .byTruncatingTail
+        } else {
+            textView.textContainer?.maximumNumberOfLines = 0
+            textView.textContainer?.lineBreakMode = .byWordWrapping
+        }
+        textView.invalidateIntrinsicContentSize()
     }
 }
