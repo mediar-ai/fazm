@@ -57,6 +57,12 @@ export interface ResetSessionMessage {
   sessionKey?: string;
 }
 
+export interface TransferSessionMessage {
+  type: "transferSession";
+  fromKey: string;
+  toKey: string;
+}
+
 export interface CancelAuthMessage {
   type: "cancel_auth";
 }
@@ -69,6 +75,7 @@ export type InboundMessage =
   | AuthenticateMessage
   | WarmupMessage
   | ResetSessionMessage
+  | TransferSessionMessage
   | CancelAuthMessage;
 
 // === Bridge → Swift (stdout) ===
