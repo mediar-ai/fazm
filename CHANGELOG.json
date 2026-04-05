@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed chat failing silently when personal Claude account lacks access to the selected model, now auto-falls back to built-in account"
+  ],
   "releases": [
     {
       "version": "2.0.6",
