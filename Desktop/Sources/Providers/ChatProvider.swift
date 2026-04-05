@@ -1069,7 +1069,9 @@ class ChatProvider: ObservableObject {
             UserDefaults.standard.removeObject(forKey: floatingSessionIdKey)
             UserDefaults.standard.set(true, forKey: Self.floatingChatClearedKey)
             pendingFloatingResume = nil
-            messages = []
+            // Only remove floating-session messages; preserve detached-session messages
+            // so in-flight queries in popped-out windows aren't destroyed.
+            messages.removeAll { ($0.sessionKey ?? "floating") == "floating" }
             pendingMessages.removeAll()
             floatingChatSessionId = UUID().uuidString
         }
@@ -1140,7 +1142,8 @@ class ChatProvider: ObservableObject {
         // array, causing responses to vanish ("Chat response arrived after session switch").
         guard UserDefaults.standard.bool(forKey: Self.floatingChatClearedKey) else { return }
         UserDefaults.standard.removeObject(forKey: Self.floatingChatClearedKey)
-        messages = []
+        // Only remove floating-session messages; preserve active detached-session messages.
+        messages.removeAll { ($0.sessionKey ?? "floating") == "floating" }
     }
 
     /// Get the saved ACP session ID for a detached session key, consuming it for resume.
