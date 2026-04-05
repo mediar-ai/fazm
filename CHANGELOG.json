@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Fixed chat failing silently when personal Claude account lacks access to the selected model, now auto-falls back to built-in account",
-    "Fixed browser agent ignoring already-open tabs when navigating to websites"
+    "Fixed browser agent ignoring already-open tabs when navigating to websites",
+    "Fixed voice input silently failing when transcription times out, now shows error feedback"
   ],
   "releases": [
     {
