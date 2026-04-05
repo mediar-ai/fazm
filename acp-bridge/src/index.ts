@@ -1426,8 +1426,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // Credit/billing/rate limit exhausted — do NOT retry, surface immediately.
       // Prefer structured detection from api_retry (HTTP status + error type),
       // fall back to regex on error message text.
-      const apiRetryErrorType = lastApiRetry?.errorType;
-      const apiRetryHttpStatus = lastApiRetry?.httpStatus;
+      const apiRetryInfo = lastApiRetry as { httpStatus: number | null; errorType: string } | null;
+      const apiRetryErrorType = apiRetryInfo?.errorType;
+      const apiRetryHttpStatus = apiRetryInfo?.httpStatus;
       const isStructuredCreditError = apiRetryErrorType === "billing_error" || apiRetryErrorType === "rate_limit"
         || apiRetryHttpStatus === 402 || apiRetryHttpStatus === 429;
       const isRegexCreditExhausted = /credit balance is too low|insufficient.*(credit|funds|balance)|you've hit your limit|you have hit your limit|hit your.*limit|rate.?limit.*rejected|out of extra usage|unable to verify.*membership/i.test(errMsg);
@@ -1552,8 +1553,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     const errMsg = err instanceof Error ? err.message : String(err);
     // Credit balance or rate limit exhausted — surface as specific type (outer catch).
     // Use structured api_retry info when available, regex as fallback.
-    const outerApiErrorType = lastApiRetry?.errorType;
-    const outerApiHttpStatus = lastApiRetry?.httpStatus;
+    const outerApiRetryInfo = lastApiRetry as { httpStatus: number | null; errorType: string } | null;
+    const outerApiErrorType = outerApiRetryInfo?.errorType;
+    const outerApiHttpStatus = outerApiRetryInfo?.httpStatus;
     const outerStructuredCredit = outerApiErrorType === "billing_error" || outerApiErrorType === "rate_limit"
       || outerApiHttpStatus === 402 || outerApiHttpStatus === 429;
     const outerRegexCredit = /credit balance is too low|insufficient.*(credit|funds|balance)|you've hit your limit|you have hit your limit|hit your.*limit|rate.?limit.*rejected|out of extra usage|unable to verify.*membership/i.test(errMsg);
