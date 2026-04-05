@@ -2060,6 +2060,25 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "transferSession": {
+        const { fromKey, toKey } = msg as import("./protocol.js").TransferSessionMessage;
+        if (fromKey && toKey && sessions.has(fromKey)) {
+          const entry = sessions.get(fromKey)!;
+          sessions.delete(fromKey);
+          sessions.set(toKey, entry);
+          // Transfer image turn count too
+          const imgCount = imageTurnCounts.get(fromKey);
+          if (imgCount !== undefined) {
+            imageTurnCounts.delete(fromKey);
+            imageTurnCounts.set(toKey, imgCount);
+          }
+          logErr(`Session transferred: ${fromKey} -> ${toKey} (sessionId=${entry.sessionId})`);
+        } else {
+          logErr(`Session transfer skipped: ${fromKey} not found`);
+        }
+        break;
+      }
+
       case "resetSession": {
         const key = (msg as any).sessionKey;
         if (key && sessions.has(key)) {
