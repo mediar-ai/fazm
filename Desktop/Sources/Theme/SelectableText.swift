@@ -22,6 +22,16 @@ class AutoSizingTextView: NSTextView {
         super.layout()
         invalidateIntrinsicContentSize()
     }
+
+    // Don't show NSTextView's default context menu — let SwiftUI's .contextMenu handle it
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return nil
+    }
+
+    // Pass right-clicks through to the parent so SwiftUI context menus work
+    override func rightMouseDown(with event: NSEvent) {
+        superview?.rightMouseDown(with: event)
+    }
 }
 
 /// A read-only selectable text view with visible selection highlighting.
