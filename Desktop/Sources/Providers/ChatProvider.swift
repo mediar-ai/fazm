@@ -2204,6 +2204,7 @@ class ChatProvider: ObservableObject {
             await SubscriptionService.shared.refreshStatus()
             if SubscriptionService.shared.shouldShowPaywall() {
                 showPaywall = true
+                PaywallWindowController.shared.show(chatProvider: self)
                 isSending = false
                 return
             }
