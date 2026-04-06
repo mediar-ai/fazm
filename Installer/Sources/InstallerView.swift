@@ -7,78 +7,18 @@ struct InstallerView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            // App icon
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable()
                 .frame(width: 80, height: 80)
 
-            // Status text
             Text(installer.statusText)
                 .font(.title3)
                 .fontWeight(.medium)
                 .multilineTextAlignment(.center)
 
-            // Progress section
-            VStack(spacing: 8) {
-                ProgressView(value: installer.progress)
-                    .progressViewStyle(.linear)
+            progressSection
 
-                HStack {
-                    Text(installer.detailText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(installer.progressPercent)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-            }
-            .padding(.horizontal, 40)
-
-            // Error / Cancel / Manual drag
-            if let error = installer.error {
-                VStack(spacing: 8) {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-
-                    Button("Retry") {
-                        installer.start()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            } else if installer.phase == .manualDrag {
-                VStack(spacing: 12) {
-                    Text("Drag Fazm into your Applications folder to complete the installation.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-
-                    HStack(spacing: 16) {
-                        Button("Open in Finder") {
-                            installer.openInFinder()
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Quit") {
-                            NSApplication.shared.terminate(nil)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-            } else if installer.phase != .done {
-                Button("Cancel") {
-                    installer.cancel()
-                    NSApplication.shared.terminate(nil)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
+            bottomSection
 
             Spacer()
         }
@@ -86,6 +26,83 @@ struct InstallerView: View {
         .onAppear {
             installer.start()
         }
+    }
+
+    private var progressSection: some View {
+        VStack(spacing: 8) {
+            ProgressView(value: installer.progress)
+                .progressViewStyle(.linear)
+
+            HStack {
+                Text(installer.detailText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(installer.progressPercent)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 40)
+    }
+
+    @ViewBuilder
+    private var bottomSection: some View {
+        if let error = installer.error {
+            errorSection(error)
+        } else if installer.phase == .manualDrag {
+            manualDragSection
+        } else if installer.phase != .done {
+            cancelButton
+        }
+    }
+
+    private func errorSection(_ error: String) -> some View {
+        VStack(spacing: 8) {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Button("Retry") {
+                installer.start()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var manualDragSection: some View {
+        VStack(spacing: 12) {
+            Text("Drag Fazm into your Applications folder to complete the installation.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            HStack(spacing: 16) {
+                Button("Open in Finder") {
+                    installer.openInFinder()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var cancelButton: some View {
+        Button("Cancel") {
+            installer.cancel()
+            NSApplication.shared.terminate(nil)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
     }
 }
 
