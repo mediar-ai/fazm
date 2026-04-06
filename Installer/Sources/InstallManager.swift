@@ -30,71 +30,68 @@ enum InstallManager {
         let extractDir = fm.temporaryDirectory.appendingPathComponent("FazmExtract-\(UUID().uuidString)")
 
         // Extract ZIP using ditto (preserves code signatures, resource forks, etc.)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        process.arguments = ["-xk", zipURL.path, extractDir.path]
-        try process.run()
-        process.waitUntilExit()
+        let extractProcess = Process()
+        extractProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        extractProcess.arguments = ["-xk", zipURL.path, extractDir.path]
+        try extractProcess.run()
+        extractProcess.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
+        guard extractProcess.terminationStatus == 0 else {
             throw InstallerError.extractionFailed
         }
 
         // Find Fazm.app in extracted contents
         let appName = "Fazm.app"
-        let appURL = findApp(named: appName, in: extractDir)
-
-        guard let sourceApp = appURL else {
+        guard let sourceApp = findApp(named: appName, in: extractDir) else {
             throw InstallerError.appNotFound
         }
 
         // Try /Applications first
-        if let result = try? installTo(
-            directory: URL(fileURLWithPath: "/Applications"),
-            sourceApp: sourceApp,
-            appName: appName,
-            fallback: .none
-        ) {
-            try? fm.removeItem(at: zipURL)
-            try? fm.removeItem(at: extractDir)
+        let systemAppsDir = URL(fileURLWithPath: "/Applications")
+        do {
+            let result = try installTo(directory: systemAppsDir, sourceApp: sourceApp, appName: appName, fallback: .none)
+            cleanup(zipURL: zipURL, extractDir: extractDir)
             return result
-        }
+        } catch {}
 
         // Fall back to ~/Applications
         let userAppsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
         try? fm.createDirectory(at: userAppsDir, withIntermediateDirectories: true)
-
-        if let result = try? installTo(
-            directory: userAppsDir,
-            sourceApp: sourceApp,
-            appName: appName,
-            fallback: .userApplications
-        ) {
-            try? fm.removeItem(at: zipURL)
-            try? fm.removeItem(at: extractDir)
+        do {
+            let result = try installTo(directory: userAppsDir, sourceApp: sourceApp, appName: appName, fallback: .userApplications)
+            cleanup(zipURL: zipURL, extractDir: extractDir)
             return result
-        }
+        } catch {}
 
-        // Both failed: move app to Desktop for manual drag
-        let desktopApp = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent("Desktop")
-            .appendingPathComponent(appName)
+        // Both failed: copy app to Desktop for manual drag
+        let desktopApp = fm.homeDirectoryForCurrentUser.appendingPathComponent("Desktop").appendingPathComponent(appName)
         try? fm.removeItem(at: desktopApp)
+        copyWithDitto(from: sourceApp.path, to: desktopApp.path)
 
-        let dittoProcess = Process()
-        dittoProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        dittoProcess.arguments = [sourceApp.path, desktopApp.path]
-        try? dittoProcess.run()
-        dittoProcess.waitUntilExit()
-
-        let manualApp = fm.fileExists(atPath: desktopApp.path) ? desktopApp : sourceApp
-        try? fm.removeItem(at: zipURL)
-        // Don't remove extractDir if we're using sourceApp as the fallback
-        if manualApp != sourceApp {
-            try? fm.removeItem(at: extractDir)
+        let finalApp: URL
+        if fm.fileExists(atPath: desktopApp.path) {
+            finalApp = desktopApp
+            cleanup(zipURL: zipURL, extractDir: extractDir)
+        } else {
+            // Last resort: use the extracted app directly
+            finalApp = sourceApp
+            try? fm.removeItem(at: zipURL)
         }
 
-        return InstallResult(appURL: manualApp, fallback: .manualDrag(appURL: manualApp))
+        return InstallResult(appURL: finalApp, fallback: .manualDrag(appURL: finalApp))
+    }
+
+    private static func cleanup(zipURL: URL, extractDir: URL) {
+        try? FileManager.default.removeItem(at: zipURL)
+        try? FileManager.default.removeItem(at: extractDir)
+    }
+
+    private static func copyWithDitto(from source: String, to destination: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = [source, destination]
+        try? process.run()
+        process.waitUntilExit()
     }
 
     private static func installTo(
