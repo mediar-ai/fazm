@@ -339,7 +339,7 @@ final class WebRelay: ObservableObject {
                 Task { @MainActor in
                     self?.tunnelUrl = url
                     log("WebRelay: tunnel URL = \(url)")
-                    self?.registerTunnel(url: url)
+                    await self?.registerTunnel(url: url)
                     self?.startHeartbeat()
                 }
             }
@@ -377,19 +377,28 @@ final class WebRelay: ObservableObject {
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
-                guard !Task.isCancelled, let self, let url = self.tunnelUrl else { break }
+                guard !Task.isCancelled, let self else { break }
+                // tunnelUrl can be temporarily nil during cloudflared restarts; skip this tick
+                guard let url = self.tunnelUrl else { continue }
                 log("WebRelay: heartbeat re-registering tunnel")
-                self.registerTunnel(url: url)
+                await self.registerTunnel(url: url)
             }
         }
     }
 
     // MARK: - Backend Registration
 
-    private func registerTunnel(url: String) {
-        guard let backendUrl = ProcessInfo.processInfo.environment["FAZM_BACKEND_URL"],
-              let token = AuthService.shared.idToken else {
-            log("WebRelay: missing backend URL or auth token, skipping registration")
+    private func registerTunnel(url: String) async {
+        guard let backendUrl = ProcessInfo.processInfo.environment["FAZM_BACKEND_URL"] else {
+            log("WebRelay: missing backend URL, skipping registration")
+            return
+        }
+
+        let token: String
+        do {
+            token = try await AuthService.shared.getIdToken()
+        } catch {
+            log("WebRelay: failed to get auth token for registration, skipping")
             return
         }
 
@@ -402,15 +411,16 @@ final class WebRelay: ObservableObject {
         let body: [String: String] = ["tunnel_url": url]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        URLSession.shared.dataTask(with: request) { _, response, error in
-            if let error {
-                logError("WebRelay: register failed", error: error)
-            } else if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 log("WebRelay: tunnel registered with backend")
             } else {
                 log("WebRelay: register got status \((response as? HTTPURLResponse)?.statusCode ?? 0)")
             }
-        }.resume()
+        } catch {
+            logError("WebRelay: register failed", error: error)
+        }
     }
 
     private func unregisterTunnel() {
