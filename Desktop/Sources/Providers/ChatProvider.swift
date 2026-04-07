@@ -2197,9 +2197,9 @@ class ChatProvider: ObservableObject {
             return
         }
 
-        // Pre-query paywall: block the message if trial expired and free limit exceeded
+        // Pre-query paywall: block the message if no active subscription and free limit exceeded
         SubscriptionService.shared.incrementMessageCount()
-        if SubscriptionService.shared.isTrialExpired
+        if !SubscriptionService.shared.isActive
             && SubscriptionService.shared.dailyMessageCount > SubscriptionService.shared.freeMessagesPerDay {
             await SubscriptionService.shared.refreshStatus()
             if SubscriptionService.shared.shouldShowPaywall() {
