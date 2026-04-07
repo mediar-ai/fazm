@@ -61,8 +61,9 @@ pub async fn create_checkout_session(
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    // Create checkout session with the subscription
-    // Uses a trial-like approach: first invoice gets a coupon ($40 off = $9 first month)
+    // Create checkout session with a free trial subscription.
+    // Card is collected upfront but not charged until the trial ends.
+    let trial_days = config.stripe_trial_days;
     let mut params = vec![
         ("mode", "subscription".to_string()),
         ("customer", customer_id.clone()),
@@ -75,8 +76,13 @@ pub async fn create_checkout_session(
         ("subscription_data[metadata][device_id]", auth.device_id),
     ];
 
-    // Apply intro coupon if configured
-    if !config.stripe_intro_coupon_id.is_empty() {
+    // Use free trial if configured; otherwise fall back to intro coupon
+    if trial_days > 0 {
+        params.push((
+            "subscription_data[trial_period_days]",
+            trial_days.to_string(),
+        ));
+    } else if !config.stripe_intro_coupon_id.is_empty() {
         params.push((
             "discounts[0][coupon]",
             config.stripe_intro_coupon_id.clone(),
