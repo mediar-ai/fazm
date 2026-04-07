@@ -88,6 +88,9 @@ network-requests.log
 .cursor/
 .windsurf/
 
+# Inbox logs (runtime chat/inbound logs)
+inbox/
+
 # Session logs / transcripts
 /*.txt
 
