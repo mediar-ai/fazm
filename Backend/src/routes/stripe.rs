@@ -273,6 +273,76 @@ pub async fn subscription_status(
     }))
 }
 
+// ---------- Billing Portal ----------
+
+#[derive(Serialize)]
+pub struct PortalSessionResponse {
+    pub portal_url: String,
+}
+
+/// POST /api/stripe/create-portal-session
+/// Creates a Stripe Billing Portal session so the user can manage their subscription.
+pub async fn create_portal_session(
+    Extension(config): Extension<Arc<Config>>,
+    Extension(auth): Extension<AuthDevice>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let stripe_secret = &config.stripe_secret_key;
+    if stripe_secret.is_empty() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Stripe not configured".to_string(),
+        ));
+    }
+
+    let firebase_uid = auth.firebase_uid.unwrap_or_default();
+    let firebase_email = auth.firebase_email.clone().unwrap_or_default();
+    let client = reqwest::Client::new();
+
+    // Find the Stripe customer
+    let mut customer_id = find_customer(&client, stripe_secret, &firebase_uid)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    if customer_id.is_none() && !firebase_email.is_empty() {
+        customer_id = find_customer_by_email(&client, stripe_secret, &firebase_email)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    }
+
+    let Some(customer_id) = customer_id else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "No Stripe customer found for this account".to_string(),
+        ));
+    };
+
+    // Create a billing portal session
+    let resp = client
+        .post("https://api.stripe.com/v1/billing_portal/sessions")
+        .bearer_auth(stripe_secret)
+        .form(&[("customer", customer_id.as_str())])
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Stripe API error: {e}")))?;
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Stripe parse error: {e}")))?;
+
+    let portal_url = body["url"]
+        .as_str()
+        .ok_or_else(|| {
+            let err = body["error"]["message"]
+                .as_str()
+                .unwrap_or("Unknown error creating portal session");
+            (StatusCode::BAD_GATEWAY, err.to_string())
+        })?
+        .to_string();
+
+    Ok(Json(PortalSessionResponse { portal_url }))
+}
+
 // ---------- Webhook ----------
 
 /// POST /api/stripe/webhook
