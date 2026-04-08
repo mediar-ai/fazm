@@ -68,6 +68,10 @@ async fn main() {
             axum::routing::get(routes::stripe::subscription_status),
         )
         .route(
+            "/api/stripe/create-portal-session",
+            axum::routing::post(routes::stripe::create_portal_session),
+        )
+        .route(
             "/api/referral/generate",
             axum::routing::post(routes::referral::generate),
         )
