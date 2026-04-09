@@ -2063,7 +2063,7 @@ struct SettingsContentView: View {
                                     .foregroundColor(FazmColors.textSecondary)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 6)
-                                    .background(FazmColors.bgTertiary)
+                                    .background(FazmColors.backgroundTertiary)
                                     .cornerRadius(6)
                             }
                             .buttonStyle(.plain)
