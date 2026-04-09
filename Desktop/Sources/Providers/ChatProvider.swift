@@ -2739,18 +2739,17 @@ class ChatProvider: ObservableObject {
             streamingFlushWorkItem = nil
             flushStreamingBuffer()
 
-            // Only remove the AI message if it's still empty (no streamed text yet).
-            // If text was already streamed and visible, keep it and just stop streaming.
+            // Keep the AI message in the array (even if empty) so Combine subscribers
+            // and handlePostQuery can find it. Removing it broke detached window error
+            // handling because the $messages subscription guard (count > before) would fail.
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                if messages[index].text.isEmpty && messages[index].contentBlocks.isEmpty {
-                    messages.remove(at: index)
-                } else {
-                    messages[index].isStreaming = false
-                    completeRemainingToolCalls(messageId: aiMessageId)
-                    await Task.yield()  // Let UI update immediately
-                    log("Bridge error after partial response — keeping \(messages[index].text.count) chars of streamed text")
-                    // Still try to persist the partial response
-                    let partialText = messages[index].text
+                messages[index].isStreaming = false
+                completeRemainingToolCalls(messageId: aiMessageId)
+                await Task.yield()  // Let UI update immediately
+
+                let partialText = messages[index].text
+                if !partialText.isEmpty {
+                    log("Bridge error after partial response — keeping \(partialText.count) chars of streamed text")
                     let partialToolMetadata = self.serializeToolCallMetadata(messageId: aiMessageId)
                     Task { [weak self] in
                         do {
