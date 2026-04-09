@@ -390,8 +390,12 @@ struct FloatingControlBarView: View {
                 state.suggestedReplyQuestion = ""
                 // Archive current exchange to chat history
                 let currentQuery = state.displayedQuery
-                if let currentMessage = state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
-                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                if !currentQuery.isEmpty {
+                    let aiMessage = state.currentAIMessage ?? ChatMessage(
+                        id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
+                        isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
+                    )
+                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: aiMessage))
                 }
                 state.flushPendingChatObserverExchanges()
 
@@ -416,14 +420,18 @@ struct FloatingControlBarView: View {
                 state.dequeue(item.id)
                 // Archive partial exchange and interrupt
                 let currentQuery = state.displayedQuery
-                if var currentMessage = state.currentAIMessage, !currentQuery.isEmpty {
-                    currentMessage.contentBlocks = currentMessage.contentBlocks.map { block in
+                if !currentQuery.isEmpty {
+                    var aiMessage = state.currentAIMessage ?? ChatMessage(
+                        id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
+                        isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
+                    )
+                    aiMessage.contentBlocks = aiMessage.contentBlocks.map { block in
                         if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = block {
                             return .toolCall(id: id, name: name, status: .completed, toolUseId: toolUseId, input: input, output: output)
                         }
                         return block
                     }
-                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
+                    state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: aiMessage))
                 }
                 state.flushPendingChatObserverExchanges()
                 state.displayedQuery = item.text
