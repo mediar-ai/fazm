@@ -207,6 +207,7 @@ struct DetachedChatView: View {
                         id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                         isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
                     )
+                    log("[DetachedChat] onSendFollowUp: archiving exchange question='\(currentQuery.prefix(40))' aiMessage.id=\(aiMessage.id) historyCount=\(state.chatHistory.count)")
                     state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: aiMessage))
                 }
                 state.flushPendingChatObserverExchanges()
@@ -736,6 +737,7 @@ class DetachedChatWindowController {
     /// Subscribe to ChatProvider messages for streaming response updates.
     private func subscribeToResponse(provider: ChatProvider, state: FloatingControlBarState, winId: ObjectIdentifier, messageCountBefore: Int) {
         let sessionKey = entries[winId]?.sessionKey
+        log("[DetachedChat] subscribeToResponse: messageCountBefore=\(messageCountBefore) session=\(sessionKey ?? "?")")
         entries[winId]?.chatCancellable?.cancel()
         entries[winId]?.chatCancellable = provider.$messages
             .receive(on: DispatchQueue.main)
@@ -743,9 +745,18 @@ class DetachedChatWindowController {
                 guard let state else { return }
                 // Filter to messages belonging to this detached window's session
                 let currentKey = self?.entries[winId]?.sessionKey ?? sessionKey
-                guard messages.count > messageCountBefore,
-                      let aiMessage = messages.last(where: { $0.sender == .ai && $0.sessionKey == currentKey })
-                      else { return }
+                guard messages.count > messageCountBefore else { return }
+                // Only examine messages added since this subscription was created.
+                // Searching ALL messages would cause the prior AI response to be re-set
+                // as currentAIMessage when a user follow-up message is added (which
+                // increments messages.count) before the new AI response has arrived,
+                // producing a duplicate bubble in the pop-out window.
+                let newMessages = messages[messageCountBefore...]
+                guard let aiMessage = newMessages.last(where: { $0.sender == .ai && $0.sessionKey == currentKey }) else {
+                    log("[DetachedChat] subscribeToResponse: \(messages.count - messageCountBefore) new message(s) but no new AI message yet — skipping currentAIMessage update (likely user message added before AI response)")
+                    return
+                }
+                log("[DetachedChat] subscribeToResponse: new AI message id=\(aiMessage.id) streaming=\(aiMessage.isStreaming) session=\(currentKey ?? "?")")
                 state.currentAIMessage = aiMessage
                 if aiMessage.isStreaming {
                     state.isAILoading = false
