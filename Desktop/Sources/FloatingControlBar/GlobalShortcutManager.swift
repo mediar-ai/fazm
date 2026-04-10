@@ -74,6 +74,15 @@ class GlobalShortcutManager {
         NSLog("GlobalShortcutManager: Registered Ask Fazm shortcut: \(askFazmKey.rawValue)")
     }
 
+    private func registerNewPopOutChat() {
+        if let ref = hotKeyRefs.removeValue(forKey: .newPopOutChat) {
+            UnregisterEventHotKey(ref)
+        }
+        let popOutKey = MainActor.assumeIsolated { ShortcutSettings.shared.newPopOutChatKey }
+        registerHotKey(keyCode: Int(popOutKey.keyCode), modifiers: popOutKey.carbonModifiers, id: .newPopOutChat)
+        NSLog("GlobalShortcutManager: Registered New Pop-Out Chat shortcut: \(popOutKey.rawValue)")
+    }
+
     private func registerHotKey(keyCode: Int, modifiers: Int, id: HotKeyID) {
         var hotKeyRef: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: FourCharCode(0x46415A4D), id: id.rawValue) // "FAZM"
@@ -115,6 +124,9 @@ class GlobalShortcutManager {
             DispatchQueue.main.async {
                 FloatingControlBarManager.shared.openAIInput()
             }
+        case .newPopOutChat:
+            NSLog("GlobalShortcutManager: New Pop-Out Chat shortcut detected")
+            NotificationCenter.default.post(name: GlobalShortcutManager.newPopOutChatNotification, object: nil)
         }
 
         return noErr
