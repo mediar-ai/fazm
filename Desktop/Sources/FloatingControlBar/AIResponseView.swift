@@ -18,6 +18,10 @@ struct AIResponseView: View {
     @State private var isHangingFromCrash = false
     @State private var shouldFollowContent = true
     @State private var isProgrammaticScroll = false
+    /// Debounced version of isLoading — stays true for at least 600ms after loading ends
+    /// to prevent the typing indicator from flickering during rapid API retries.
+    @State private var debouncedIsLoading = false
+    @State private var loadingHideTask: Task<Void, Never>? = nil
 
     let userInput: String
     let chatHistory: [FloatingChatExchange]
@@ -197,6 +201,21 @@ struct AIResponseView: View {
             }
         }
         .onChange(of: isLoading) {
+            // Debounce the typing indicator: show immediately, but delay hiding by 600ms
+            // so rapid API retries don't cause the dots to flicker on and off.
+            if isLoading {
+                loadingHideTask?.cancel()
+                loadingHideTask = nil
+                debouncedIsLoading = true
+            } else {
+                loadingHideTask?.cancel()
+                loadingHideTask = Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run { debouncedIsLoading = false }
+                }
+            }
+
             if isLoading {
                 hangTask?.cancel()
                 hangTask = Task { [onStopAgent] in
@@ -716,8 +735,10 @@ struct AIResponseView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         contentBlocksView(for: message)
 
-                        // Show typing indicator while AI is still generating
-                        if isLoading || message.isStreaming {
+                        // Show typing indicator while AI is still generating.
+                        // Uses debouncedIsLoading (600ms min display) to prevent flicker
+                        // during rapid API retries.
+                        if debouncedIsLoading || message.isStreaming {
                             TypingIndicator()
                         }
                     }
