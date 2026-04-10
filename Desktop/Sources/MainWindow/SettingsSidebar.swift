@@ -48,6 +48,7 @@ struct SettingsSearchItem: Identifiable {
 
         // Advanced > AI Chat
         SettingsSearchItem(name: "Claude Account", subtitle: "Switch between built-in and personal Claude account", keywords: ["account", "vertex", "built-in", "oauth", "sign in"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.account"),
+        SettingsSearchItem(name: "Custom API Endpoint", subtitle: "Route API calls through a custom proxy or gateway", keywords: ["endpoint", "proxy", "base url", "anthropic", "copilot", "gateway", "corporate"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.endpoint"),
         SettingsSearchItem(name: "Workspace", subtitle: "Set a project directory for AI chat context", keywords: ["workspace", "project", "directory", "folder", "working directory", "claude.md"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.workspace"),
         SettingsSearchItem(name: "CLAUDE.md", subtitle: "Personal instructions loaded into AI chat", keywords: ["claude md", "claude config", "instructions", "view"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.claudemd"),
         SettingsSearchItem(name: "Skills", subtitle: "Enable or disable discovered AI skills", keywords: ["skills", "plugins", "abilities", "view"], section: .advanced, advancedSubsection: .aiChat, icon: "cpu", settingId: "aichat.skills"),
