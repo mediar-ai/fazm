@@ -613,6 +613,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         state.isAILoading = false
         state.showingAIResponse = false
         state.aiInputText = ""
+        state.suggestedReplies = []
+        state.suggestedReplyQuestion = ""
         state.clearQueue()
 
         // Clear persisted messages and reset ACP session so restart doesn't reload old chat
