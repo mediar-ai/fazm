@@ -254,7 +254,8 @@ export default function Chat({
     if (!trimmed || !isDesktopOnline) return;
     onSend(trimmed);
     setInput("");
-    setShowTextInput(false);
+    // Do NOT reset showTextInput — keep the text input visible after sending
+    // so the user can type a follow-up without switching back to voice mode.
     setUserScrolled(false); // resume auto-scroll on new send
   };
 
