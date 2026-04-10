@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Fixed pop-out windows not restoring after app update or restart",
-    "Fixed suggested replies persisting after starting a new chat"
+    "Fixed suggested replies persisting after starting a new chat",
+    "Fixed typing indicator flickering during network retries by adding a 600ms debounce"
   ],
   "releases": [
     {
