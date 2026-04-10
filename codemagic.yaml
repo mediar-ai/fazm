@@ -180,6 +180,8 @@ workflows:
       - name: Resolve SPM packages
         script: |
           unset TOOLCHAINS
+          # Bust cached sentry-cocoa repo so SPM fetches the latest tag (>= 8.58.1)
+          find ~/Library/Caches/org.swift.swiftpm/repositories -maxdepth 1 -name "*sentry-cocoa*" -exec rm -rf {} + 2>/dev/null || true
           echo "Resolving SPM packages..."
           for attempt in 1 2 3; do
             if xcrun swift package resolve --package-path Desktop; then
