@@ -933,7 +933,7 @@ async function flushChatObserverBatch(): Promise<void> {
 
 // --- Session pre-warming ---
 
-const DEFAULT_MODEL = "claude-opus-4-6";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 const SONNET_MODEL = "claude-sonnet-4-6";
 
 interface WarmupSessionConfig {
