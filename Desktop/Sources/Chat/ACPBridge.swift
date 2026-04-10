@@ -800,6 +800,12 @@ actor ACPBridge {
 
       case .rateLimit(let status, let resetsAt, let rateLimitType, let utilization, _, _):
         onStatusEvent(.rateLimit(status: status, resetsAt: resetsAt, rateLimitType: rateLimitType, utilization: utilization))
+        // Do NOT throw on rate_limit rejected. The bridge monitoring layer fires this as a
+        // pre-check against Claude.ai's web usage, but the underlying API session may still
+        // complete successfully (the session continues and may call speak_response, etc.).
+        // Throwing here would exit the streaming loop prematurely, losing the response and
+        // incorrectly showing the "upgrade plan" label. Let the bridge run to completion;
+        // a real API-level failure will produce its own error through the normal error path.
         if status == "rejected" {
           let resetDesc = resetsAt.map { ts -> String in
             let formatter = DateFormatter()
@@ -808,7 +814,7 @@ actor ACPBridge {
             return formatter.string(from: Date(timeIntervalSince1970: ts))
           } ?? "soon"
           let typeLabel = rateLimitType ?? "usage limit"
-          throw BridgeError.creditExhausted("You've hit your limit · resets \(resetDesc) (\(typeLabel))")
+          log("ACPBridge: rate limit \(typeLabel) rejected (resets \(resetDesc)) — continuing session, not throwing")
         }
 
       case .apiRetry(let httpStatus, let errorType, let attempt, let maxRetries):
