@@ -905,6 +905,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Freeze detached window registry before windows tear down
+        DetachedChatWindowController.shared.prepareForTermination()
+
         // Stop ACP bridge and all child processes (MCP servers) to prevent orphans
         FloatingControlBarManager.shared.chatProvider?.stopBridge()
 

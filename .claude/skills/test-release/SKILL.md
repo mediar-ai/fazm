@@ -6,21 +6,23 @@ Smoke test a Fazm release. Use when the user says "test the release", "smoke tes
 
 ## Channel → Machine Mapping
 
-| Channel | Test machine | `update_channel` | Sparkle sees |
+Both the local production app (`/Applications/Fazm.app`) and the MacStadium remote are on the `staging` channel. Staging releases get tested on **both** machines; the primary test is the **local** machine (more reliable, no rate limits), with the remote as secondary.
+
+| Channel | Test machines | `update_channel` | Sparkle sees |
 |---------|-------------|-------------------|-------------|
-| **staging** | MacStadium remote | `staging` | staging + beta |
-| **beta** | Local (`/Applications/Fazm.app`) | default (beta) | beta |
+| **staging** | Local + MacStadium remote | `staging` | staging + beta |
+| **beta** | Local + MacStadium remote | `staging` (sees beta too) | beta |
 | **stable** | Both | — | all |
 
-**NEVER change the remote machine's `update_channel`.** It must stay `staging`. The local machine defaults to `beta` (no override needed).
+**NEVER change either machine's `update_channel`.** Both must stay `staging`.
 
 **NEVER promote to the next channel yourself.** Each promotion (staging→beta→stable) requires explicit user approval. Only test the channel that was just promoted.
 
 ## Prerequisites
 
 - The release must be registered in Firestore on the channel being tested
-- For staging tests: MacStadium remote must be reachable (`./scripts/macstadium/ssh.sh`)
-- For beta tests: production Fazm app must be installed locally (`/Applications/Fazm.app`)
+- Local: production Fazm app installed at `/Applications/Fazm.app`
+- Remote: MacStadium machine reachable (`./scripts/macstadium/ssh.sh`)
 
 ## Test Queries
 
@@ -46,24 +48,33 @@ After each query:
 - Errors: `grep -i "error\|fail\|crash\|unauthorized\|401" /private/tmp/fazm.log | tail -5`
 - Response: `grep -i "Prompt completed\|Chat response complete" /private/tmp/fazm.log | tail -5`
 
-## Flow: Staging Test (remote)
+## Flow: Staging Test — Local (PRIMARY, do this first)
+
+1. Verify local channel: `defaults read com.fazm.app update_channel` — must be `staging`
+2. Ensure production app is running: `pgrep -la Fazm` (launch with `open -a "Fazm"` if needed)
+3. Reset Sparkle check time so it checks immediately: `defaults delete com.fazm.app SULastCheckTime`
+4. Use `macos-use` MCP to open Fazm, navigate to Settings > About, click **"Check for Updates"**
+5. Sparkle shows the update dialog — verify the correct version. **Do NOT check "Automatically download and install updates"**
+6. Click **"Install Update"** (Sparkle downloads the ZIP, then shows "Ready to install")
+7. Click **"Install and Relaunch"** — Sparkle waits for the app to quit before swapping the binary
+8. If the app doesn't quit on its own within 10s, kill it: `pkill -x Fazm` (Sparkle needs the process gone to replace the binary)
+9. Wait 10–15s, then verify the new version: `defaults read /Applications/Fazm.app/Contents/Info.plist CFBundleShortVersionString`
+10. Relaunch if needed: `open -a "Fazm"`
+11. Send 4 test queries locally, check `/private/tmp/fazm.log` after each
+12. Check Sentry: `./scripts/sentry-release.sh --version X.Y.Z`
+
+## Flow: Staging Test — Remote (SECONDARY)
+
+The remote uses SSH + Sparkle's silent auto-install (no GUI clicks needed). The remote machine's Claude account frequently hits rate limits — if queries fail with "You've hit your limit", note as **blocked (rate limit)** and move on; it's not an app bug.
 
 1. Verify remote channel: `./scripts/macstadium/ssh.sh "defaults read com.fazm.app update_channel"` — must be `staging`
-2. Check Fazm is running: `./scripts/macstadium/ssh.sh "pgrep -la Fazm"` (launch if needed)
-3. Use `macos-use-remote` MCP to navigate to Settings > About > "Check for Updates"
-4. Sparkle shows update dialog — verify correct version. **Do NOT check "Automatically download and install updates"**
-5. Click "Install Update", wait for restart, verify new version
-6. Send 4 test queries via SSH, check remote logs after each
-7. Check Sentry: `./scripts/sentry-release.sh --version X.Y.Z`
-
-## Flow: Beta Test (local)
-
-1. Open production app: `open -a "Fazm"`
-2. Navigate to Settings > About > "Check for Updates" via `macos-use` MCP
-3. Sparkle shows update dialog — verify correct version. **Do NOT check "Automatically download and install updates"**
-4. Click "Install Update", wait for restart, verify new version
-5. Send 4 test queries locally, check `/private/tmp/fazm.log` after each
-6. Check Sentry: `./scripts/sentry-release.sh --version X.Y.Z`
+2. Reset Sparkle check time: `./scripts/macstadium/ssh.sh "defaults delete com.fazm.app SULastCheckTime 2>/dev/null; echo done"`
+3. Kill and relaunch Fazm to trigger the auto-check: `./scripts/macstadium/ssh.sh "pkill -x Fazm; sleep 3; open /Applications/Fazm.app"`
+4. Wait 15s, check the log for `Sparkle: Found update vX.Y.Z` and `Sparkle: Installer launched`: `./scripts/macstadium/ssh.sh "grep -i 'Sparkle' /private/tmp/fazm.log | tail -10"`
+5. Kill the old Fazm process so Sparkle can swap the binary: `./scripts/macstadium/ssh.sh "pkill -x Fazm"`
+6. Wait 15s, then verify the new version: `./scripts/macstadium/ssh.sh "defaults read /Applications/Fazm.app/Contents/Info.plist CFBundleShortVersionString"`
+7. Launch: `./scripts/macstadium/ssh.sh "open /Applications/Fazm.app; sleep 5; pgrep -la Fazm"`
+8. Send 4 test queries via SSH, check remote logs after each (see "Test Queries" section for SSH wrapping)
 
 ## Report Results
 
