@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed pop-out windows not restoring after app update or restart"
+    "Fixed pop-out windows not restoring after app update or restart",
+    "Fixed suggested replies persisting after starting a new chat"
   ],
   "releases": [
     {
