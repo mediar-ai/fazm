@@ -320,6 +320,9 @@ class ChatProvider: ObservableObject {
     @Published var isLoading = false
     @Published var isSending = false
     @Published var isStopping = false
+    /// Number of pending messages at the time the user clicked Stop.
+    /// Messages enqueued after this point should still be drained on completion.
+    private var pendingCountAtStop = 0
     /// When true, the bridge will be restarted after the current query completes
     /// (e.g., voice toggle changed mid-query).
     private var pendingBridgeRestart = false
@@ -2031,7 +2034,8 @@ class ChatProvider: ObservableObject {
     func stopAgent() {
         guard isSending else { return }
         isStopping = true
-        log("ChatProvider: user stopped agent, sending interrupt")
+        pendingCountAtStop = pendingMessages.count
+        log("ChatProvider: user stopped agent, sending interrupt (pendingCountAtStop=\(pendingCountAtStop))")
         Task {
             await acpBridge.interrupt()
         }
@@ -2891,13 +2895,30 @@ class ChatProvider: ObservableObject {
         // If messages are queued, chain the next one as a follow-up query.
         // Skip chaining if the user explicitly stopped (queue stays visible for manual use)
         // or if an error occurred (stale messages should not replay).
-        if !wasStopped, !hadError, !pendingMessages.isEmpty {
-            let next = pendingMessages.removeFirst()
-            log("ChatProvider: chaining queued message (\(pendingMessages.count) remaining)")
-            // Notify UI to dequeue (posted on main actor)
-            NotificationCenter.default.post(name: .chatProviderDidDequeue, object: nil, userInfo: ["text": next.text, "sessionKey": next.sessionKey ?? ""])
-            await sendMessage(next.text, isFollowUp: next.userMessageAdded, sessionKey: next.sessionKey)
+        // However, if new messages were enqueued AFTER the user clicked Stop
+        // (during the race window while the interrupt was being processed),
+        // those should still be drained so the chat doesn't hang.
+        if !hadError, !pendingMessages.isEmpty {
+            if wasStopped {
+                // Drop messages that were already queued when Stop was pressed;
+                // only process messages enqueued after the stop.
+                let newMessageCount = pendingMessages.count - pendingCountAtStop
+                if newMessageCount > 0 {
+                    // Remove the pre-stop messages from the front, keep post-stop ones
+                    pendingMessages.removeFirst(pendingCountAtStop)
+                    let next = pendingMessages.removeFirst()
+                    log("ChatProvider: draining post-stop message (\(pendingMessages.count) remaining, dropped \(pendingCountAtStop) pre-stop)")
+                    NotificationCenter.default.post(name: .chatProviderDidDequeue, object: nil, userInfo: ["text": next.text, "sessionKey": next.sessionKey ?? ""])
+                    await sendMessage(next.text, isFollowUp: next.userMessageAdded, sessionKey: next.sessionKey)
+                }
+            } else {
+                let next = pendingMessages.removeFirst()
+                log("ChatProvider: chaining queued message (\(pendingMessages.count) remaining)")
+                NotificationCenter.default.post(name: .chatProviderDidDequeue, object: nil, userInfo: ["text": next.text, "sessionKey": next.sessionKey ?? ""])
+                await sendMessage(next.text, isFollowUp: next.userMessageAdded, sessionKey: next.sessionKey)
+            }
         }
+        pendingCountAtStop = 0
     }
 
     /// Update message text (replaces entire text)
