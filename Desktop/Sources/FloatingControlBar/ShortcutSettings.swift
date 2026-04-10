@@ -9,6 +9,9 @@ class ShortcutSettings: ObservableObject {
     /// Notification posted when the Ask Fazm shortcut changes so hotkeys can be re-registered.
     nonisolated static let askFazmShortcutChanged = Notification.Name("ShortcutSettings.askFazmShortcutChanged")
 
+    /// Notification posted when the New Pop-Out Chat shortcut changes so hotkeys can be re-registered.
+    nonisolated static let newPopOutChatShortcutChanged = Notification.Name("ShortcutSettings.newPopOutChatShortcutChanged")
+
     /// Available modifier keys for push-to-talk.
     enum PTTKey: String, CaseIterable {
         case leftControl = "Left Control (⌃)"
@@ -81,6 +84,25 @@ class ShortcutSettings: ObservableObject {
         }
     }
 
+    /// Available shortcut presets for New Pop-Out Chat.
+    enum NewPopOutChatKey: String, CaseIterable {
+        case cmdShiftN = "⌘⇧N"
+        case cmdShiftO = "⌘⇧O"
+        case cmdShiftP = "⌘⇧P"
+
+        var keyCode: UInt16 {
+            switch self {
+            case .cmdShiftN: return 45  // N
+            case .cmdShiftO: return 31  // O
+            case .cmdShiftP: return 35  // P
+            }
+        }
+
+        var carbonModifiers: Int {
+            Int(cmdKey) | Int(shiftKey)
+        }
+    }
+
     @Published var pttKey: PTTKey {
         didSet { UserDefaults.standard.set(pttKey.rawValue, forKey: "shortcut_pttKey") }
     }
@@ -89,6 +111,13 @@ class ShortcutSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(askFazmKey.rawValue, forKey: "shortcut_askFazmKey")
             NotificationCenter.default.post(name: Self.askFazmShortcutChanged, object: nil)
+        }
+    }
+
+    @Published var newPopOutChatKey: NewPopOutChatKey {
+        didSet {
+            UserDefaults.standard.set(newPopOutChatKey.rawValue, forKey: "shortcut_newPopOutChatKey")
+            NotificationCenter.default.post(name: Self.newPopOutChatShortcutChanged, object: nil)
         }
     }
 
@@ -202,6 +231,12 @@ class ShortcutSettings: ObservableObject {
             self.askFazmKey = key
         } else {
             self.askFazmKey = .cmdJ
+        }
+        if let saved = UserDefaults.standard.string(forKey: "shortcut_newPopOutChatKey"),
+           let key = NewPopOutChatKey(rawValue: saved) {
+            self.newPopOutChatKey = key
+        } else {
+            self.newPopOutChatKey = .cmdShiftN
         }
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
