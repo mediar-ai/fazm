@@ -1356,6 +1356,19 @@ class ChatProvider: ObservableObject {
         return false
     }
 
+    /// Check if an error indicates Anthropic updated their Terms of Service and the user
+    /// hasn't accepted them yet. These are 400 invalid_request_error responses that contain
+    /// actionable instructions (go to claude.ai and accept). We surface them verbatim
+    /// rather than triggering a re-auth flow, since re-authing won't fix it.
+    static func isTermsAcceptanceRequired(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        if lower.contains("consumer terms") { return true }
+        if lower.contains("terms of service") && lower.contains("accept") { return true }
+        if lower.contains("terms and privacy") { return true }
+        if lower.contains("updated our") && lower.contains("policy") { return true }
+        return false
+    }
+
     // MARK: - Load Context
 
     // MARK: - Load AI User Profile
@@ -2818,6 +2831,14 @@ class ChatProvider: ObservableObject {
                     // Personal mode — user hit their own Claude rate limit.
                     errorMessage = bridgeError.errorDescription
                 }
+            } else if let bridgeError = error as? BridgeError,
+                      case .agentError(let msg) = bridgeError,
+                      Self.isTermsAcceptanceRequired(msg) {
+                // Anthropic updated their T&S and the user hasn't accepted yet.
+                // Show the actionable message directly — do NOT trigger re-auth flow.
+                pendingRetryMessage = nil
+                log("ChatProvider: terms acceptance required in \(bridgeMode) mode: \(msg)")
+                errorMessage = bridgeError.errorDescription
             } else if bridgeMode == "builtin",
                       let bridgeError = error as? BridgeError,
                       case .agentError(let msg) = bridgeError,
