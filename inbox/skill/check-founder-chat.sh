@@ -45,6 +45,18 @@ for i in $(seq 0 $((NUM_CHATS - 1))); do
 
     PID_FILE="/tmp/fazm-chat-${UID_VAL}.pid"
 
+    # Check if we're rate limited — skip all spawns until the limit resets
+    if [ -f "/tmp/fazm-chat-ratelimit" ]; then
+        RL_TS=$(awk '{print $2}' /tmp/fazm-chat-ratelimit 2>/dev/null || echo "0")
+        NOW_TS=$(date +%s)
+        # Rate limit marker expires after 1 hour (3600s) — by then the limit should have reset
+        if [ $((NOW_TS - RL_TS)) -lt 3600 ]; then
+            continue
+        else
+            rm -f /tmp/fazm-chat-ratelimit
+        fi
+    fi
+
     # Check if a Claude session is already running for this user
     if [ -f "$PID_FILE" ]; then
         EXISTING_PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
@@ -92,6 +104,7 @@ PROMPT_EOF
 
     # Spawn Claude in background
     SESSION_LOG="$LOG_DIR/chat-session-${UID_VAL}-$(date +%Y%m%d_%H%M%S).log"
+    FAIL_COUNT_FILE="/tmp/fazm-chat-fail-${UID_VAL}"
     (
         set +e  # Don't exit on error — we need cleanup to run
         cd "$HOME/fazm"
@@ -104,10 +117,36 @@ PROMPT_EOF
         echo "[$(date)] Claude exited with code $EXIT_CODE" >> "$SESSION_LOG"
         if [ $EXIT_CODE -ne 0 ]; then
             echo "[$(date)] WARNING: Claude session for $EMAIL exited with code $EXIT_CODE" >> "$LOG_DIR/founder-chat.log"
-            # Re-set unread so the message gets retried on next poll
-            NODE_PATH="$HOME/analytics/node_modules" "$HOME/.nvm/versions/node/v20.19.4/bin/node" \
-                "$HOME/fazm/inbox/scripts/unclaim-chat.js" "$UID_VAL" >> "$LOG_DIR/founder-chat.log" 2>&1
-            echo "[$(date)] Unclaimed chat for $EMAIL (will retry)" >> "$LOG_DIR/founder-chat.log"
+
+            # Check if this is a rate limit error — don't retry, just wait for reset
+            if grep -qi "hit your limit\|rate limit\|too many requests" "$SESSION_LOG" 2>/dev/null; then
+                echo "[$(date)] RATE LIMITED: Not retrying $EMAIL until limit resets" >> "$LOG_DIR/founder-chat.log"
+                # Leave chat claimed (don't unclaim) so it stops retrying
+                # Write a marker so the next poll knows to skip
+                echo "rate_limited $(date +%s)" > "/tmp/fazm-chat-ratelimit"
+                rm -f "$PROMPT_FILE" "$PID_FILE" "$FAIL_COUNT_FILE"
+                exit 0
+            fi
+
+            # Track consecutive failures — stop retrying after 3
+            FAILS=0
+            [ -f "$FAIL_COUNT_FILE" ] && FAILS=$(cat "$FAIL_COUNT_FILE" 2>/dev/null || echo "0")
+            FAILS=$((FAILS + 1))
+            echo "$FAILS" > "$FAIL_COUNT_FILE"
+
+            if [ "$FAILS" -ge 3 ]; then
+                echo "[$(date)] GIVING UP on $EMAIL after $FAILS consecutive failures" >> "$LOG_DIR/founder-chat.log"
+                rm -f "$FAIL_COUNT_FILE"
+                # Don't unclaim — leave it so it doesn't retry endlessly
+            else
+                # Re-set unread so the message gets retried on next poll
+                NODE_PATH="$HOME/analytics/node_modules" "$HOME/.nvm/versions/node/v20.19.4/bin/node" \
+                    "$HOME/fazm/inbox/scripts/unclaim-chat.js" "$UID_VAL" >> "$LOG_DIR/founder-chat.log" 2>&1
+                echo "[$(date)] Unclaimed chat for $EMAIL (will retry, attempt $FAILS/3)" >> "$LOG_DIR/founder-chat.log"
+            fi
+        else
+            # Success — reset failure counter
+            rm -f "$FAIL_COUNT_FILE"
         fi
         # Also check if Claude produced meaningful output (more than just the startup line)
         LINE_COUNT=$(wc -l < "$SESSION_LOG" 2>/dev/null || echo "0")
