@@ -2088,6 +2088,7 @@ class FloatingControlBarManager {
 
         // Record message count before sending so we can detect the new AI response
         let messageCountBefore = provider.messages.count
+        log("[FloatingBar] sendAIQuery: messageCountBefore=\(messageCountBefore) chatHistory=\(barWindow.state.chatHistory.count)")
 
         // Shared pre-query setup: suggested replies, callbacks, analytics, referral
         ChatQueryLifecycle.prepareForQuery(
@@ -2108,16 +2109,27 @@ class FloatingControlBarManager {
         barWindow.state.currentAIMessage = nil
         barWindow.state.isAILoading = true
         var hasSetUpResponseHeight = false
+        log("[FloatingBar] subscribeToResponse: messageCountBefore=\(messageCountBefore) session=floating")
         chatCancellable = provider.$messages
             .receive(on: DispatchQueue.main)
             .sink { [weak barWindow] messages in
                 // Ignore updates if the conversation was closed (Esc pressed during streaming)
                 guard let barWindow = barWindow, barWindow.state.showingAIConversation else { return }
-                // Find the AI response message added after our query, filtered to this session
-                guard messages.count > messageCountBefore,
-                      let aiMessage = messages.last(where: { $0.sender == .ai && $0.sessionKey == "floating" })
-                      else { return }
+                guard messages.count > messageCountBefore else { return }
+                // Only examine messages added since this subscription was created.
+                // Searching ALL messages would re-set currentAIMessage to a prior AI
+                // response when the user follow-up message is added (incrementing
+                // messages.count) before the new AI response has arrived.
+                let newMessages = messages[messageCountBefore...]
+                guard let aiMessage = newMessages.last(where: { $0.sender == .ai && $0.sessionKey == "floating" }) else {
+                    let dump = newMessages.map { m in
+                        "[\(m.sender) key=\(m.sessionKey ?? "nil") text=\(m.text.prefix(20))]"
+                    }.joined(separator: " ")
+                    log("[FloatingBar] subscribeToResponse: \(newMessages.count) new message(s) but no new AI with session=floating — \(dump)")
+                    return
+                }
 
+                log("[FloatingBar] subscribeToResponse: AI id=\(aiMessage.id) streaming=\(aiMessage.isStreaming)")
                 // Store the full ChatMessage (preserves contentBlocks, tool calls, thinking)
                 barWindow.state.currentAIMessage = aiMessage
 
@@ -2140,7 +2152,7 @@ class FloatingControlBarManager {
         await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: barWindow.state.tutorialSystemPromptSuffix, systemPromptPrefix: ChatProvider.floatingBarSystemPromptPrefixCurrent, sessionKey: "floating")
 
         // Handle errors, credit exhaustion, auth, paywall, etc.
-        ChatQueryLifecycle.handlePostQuery(provider: provider, state: barWindow.state, sessionKey: "floating")
+        ChatQueryLifecycle.handlePostQuery(provider: provider, state: barWindow.state, sessionKey: "floating", messageCountBefore: messageCountBefore)
 
         // Floating bar specific: resize window to fit the response/error
         if barWindow.state.showingAIResponse {
