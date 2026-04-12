@@ -399,7 +399,7 @@ class ChatProvider: ObservableObject {
     /// queries (main chat, follow-ups, retries) respect the user's model choice.
     var modelOverride: String? { ShortcutSettings.shared.selectedModel }
 
-    /// Bridge mode: "personal" (user's Claude OAuth), "builtin" (Vertex AI built-in account)
+    /// Bridge mode: "personal" (user's Claude OAuth), "builtin" (bundled Anthropic API key)
     @AppStorage("bridgeMode") var bridgeMode: String = "builtin"
 
     // MARK: - Web Relay (phone → desktop tunnel)
