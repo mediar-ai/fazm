@@ -864,18 +864,14 @@ struct OnboardingChatView: View {
         }
     }
 
-    /// Create an ACPBridge for onboarding: try Vertex first, fall back to bundled API key
+    /// Create an ACPBridge for onboarding: use bundled Anthropic API key, fall back to personal OAuth
     private static func createOnboardingBridge() async -> ACPBridge {
-        let vtm = VertexTokenManager()
-        if await vtm.isConfigured {
-            do {
-                let config = try await vtm.setup()
-                log("OnboardingChat: Using Vertex bridge (project=\(config.projectId))")
-                return ACPBridge(mode: .vertex(adcFilePath: config.adcFilePath, projectId: config.projectId, region: config.region))
-            } catch {
-                log("OnboardingChat: Vertex setup failed, falling back to personal OAuth: \(error.localizedDescription)")
-            }
+        await KeyService.shared.ensureKeys()
+        if let apiKey = KeyService.shared.anthropicAPIKey, !apiKey.isEmpty {
+            log("OnboardingChat: Using bundled Anthropic API key")
+            return ACPBridge(mode: .bundledKey(apiKey: apiKey))
         }
+        log("OnboardingChat: No bundled key available, falling back to personal OAuth")
         return ACPBridge(mode: .personalOAuth)
     }
 
