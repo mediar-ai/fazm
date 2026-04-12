@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed duplicate AI response appearing in pop-out and floating bar when sending follow-up messages"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.2.1",
+      "date": "2026-04-12",
+      "changes": [
+        "Fixed duplicate AI response appearing in pop-out and floating bar when sending follow-up messages"
+      ]
+    },
     {
       "version": "2.2.0",
       "date": "2026-04-11",
