@@ -156,6 +156,8 @@ struct OnboardingChatView: View {
     @State private var inputPulseActive: Bool = false
     @State private var inputPulsePhase: Bool = false
     @State private var showSkipConfirmation: Bool = false
+    @State private var skipButtonVisible: Bool = false
+    @State private var skipButtonTimer: Timer? = nil
     @FocusState private var isInputFocused: Bool
 
     // Parallel exploration state
@@ -189,12 +191,15 @@ struct OnboardingChatView: View {
 
                 Spacer()
 
-                Button(action: { showSkipConfirmation = true }) {
-                    Text("Skip")
-                        .scaledFont(size: 13)
-                        .foregroundColor(FazmColors.textTertiary)
+                if skipButtonVisible {
+                    Button(action: { showSkipConfirmation = true }) {
+                        Text("Skip")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
@@ -421,6 +426,13 @@ struct OnboardingChatView: View {
         }
         .onAppear {
             startChat()
+            skipButtonTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { _ in
+                withAnimation { skipButtonVisible = true }
+            }
+        }
+        .onDisappear {
+            skipButtonTimer?.invalidate()
+            skipButtonTimer = nil
         }
         .onReceive(permissionCheckTimer) { _ in
             appState.checkScreenRecordingPermission()
