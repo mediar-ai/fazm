@@ -300,7 +300,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SessionRecordingPermissionWindowController.shared.showForTesting()
         }
 
-        // One-time migration: Switch existing users from personal OAuth to Vertex built-in
+        // One-time migration: Switch existing users from personal OAuth to bundled built-in
         migrateBridgeModeToBuiltin()
 
         // One-time migration: Enable launch at login for existing users who haven't set it
@@ -1026,7 +1026,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// One-time migration: switch bridgeMode from "personal" to "builtin" (Vertex AI)
+    /// One-time migration: switch bridgeMode from "personal" to "builtin" (bundled Anthropic API key)
     /// Existing installs had "personal" as default, which shows "Connect your Claude account"
     private func migrateBridgeModeToBuiltin() {
         let migrationKey = "didMigrateBridgeModeToBuiltinV1"
@@ -1036,7 +1036,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let current = UserDefaults.standard.string(forKey: "bridgeMode") ?? "personal"
         if current == "personal" {
             UserDefaults.standard.set("builtin", forKey: "bridgeMode")
-            log("BridgeMode migration: Switched from personal → builtin (Vertex AI)")
+            log("BridgeMode migration: Switched from personal to builtin")
         } else {
             log("BridgeMode migration: Already \(current), skipping")
         }
