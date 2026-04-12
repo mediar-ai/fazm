@@ -375,7 +375,7 @@ class DetachedChatWindowController {
                     .sink { [weak detachedState, weak chatProvider] _ in
                         guard let state = detachedState, let provider = chatProvider else { return }
                         guard state.isAILoading else { return } // already handled by subscription
-                        ChatQueryLifecycle.handlePostQuery(provider: provider, state: state, sessionKey: sessionKey)
+                        ChatQueryLifecycle.handlePostQuery(provider: provider, state: state, sessionKey: sessionKey, messageCountBefore: messageCountBefore)
                     }
             )
         }
@@ -703,6 +703,7 @@ class DetachedChatWindowController {
     /// Start sending a query immediately (provider is not busy).
     private func startQuery(message: String, for win: DetachedChatWindow, winId: ObjectIdentifier, sessionKey: String, state: FloatingControlBarState, provider: ChatProvider) {
         let messageCountBefore = provider.messages.count
+        log("[DetachedChat] startQuery: messageCountBefore=\(messageCountBefore) session=\(sessionKey) chatHistory=\(state.chatHistory.count)")
 
         // Shared pre-query setup: suggested replies, callbacks, analytics, referral
         ChatQueryLifecycle.prepareForQuery(
@@ -730,7 +731,7 @@ class DetachedChatWindowController {
             )
 
             // Shared post-query: error handling, credit exhaustion, auth, paywall, etc.
-            ChatQueryLifecycle.handlePostQuery(provider: provider, state: state, sessionKey: sessionKey)
+            ChatQueryLifecycle.handlePostQuery(provider: provider, state: state, sessionKey: sessionKey, messageCountBefore: messageCountBefore)
         }
     }
 
