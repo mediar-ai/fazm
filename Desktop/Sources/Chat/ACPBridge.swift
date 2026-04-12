@@ -88,7 +88,7 @@ private final class ContinuationBox<T, E: Error>: @unchecked Sendable {
 }
 
 /// Manages a long-lived Node.js subprocess running the ACP (Agent Client Protocol) bridge.
-/// Supports three modes: built-in API key, user's OAuth, or Vertex AI.
+/// Supports two modes: bundled Anthropic API key or user's personal OAuth.
 /// Communication uses JSON lines over stdin/stdout pipes.
 actor ACPBridge {
 
