@@ -1809,12 +1809,22 @@ class ChatProvider: ObservableObject {
     }
 
     /// Discover project CLAUDE.md and skills for a specific workspace path (used by detached windows).
-    /// Returns (claudeMdContent, claudeMdPath, skills) for the project directory.
-    nonisolated static func discoverProjectConfig(workspace: String) async -> (claudeMdContent: String?, claudeMdPath: String?, skills: [(name: String, description: String, path: String)]) {
+    /// Returns project config result for the given directory.
+    struct ProjectConfig: Sendable {
+        let claudeMdContent: String?
+        let claudeMdPath: String?
+        let skills: [(name: String, description: String, path: String)]
+    }
+
+    nonisolated static func discoverProjectConfig(workspace: String) async -> ProjectConfig {
         let result = await Task.detached(priority: .utility) {
             loadClaudeConfigFromDisk(workspace: workspace)
         }.value
-        return (result.projectClaudeMdContent, result.projectClaudeMdPath, result.projectSkills)
+        return ProjectConfig(
+            claudeMdContent: result.projectClaudeMdContent,
+            claudeMdPath: result.projectClaudeMdPath,
+            skills: result.projectSkills
+        )
     }
 
     /// Extract description from YAML frontmatter in SKILL.md
