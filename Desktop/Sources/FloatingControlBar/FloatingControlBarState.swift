@@ -161,6 +161,15 @@ class FloatingControlBarState: NSObject, ObservableObject {
 
     func clearLastConversation() { lastConversation = nil }
 
+    // Per-window workspace directory (empty = home directory / no project)
+    // Each pop-out window tracks its own workspace independently.
+    @Published var workspaceDirectory: String = ""
+
+    // Per-window project CLAUDE.md (discovered from workspaceDirectory)
+    @Published var projectClaudeMdContent: String?
+    @Published var projectClaudeMdPath: String?
+    @Published var projectDiscoveredSkills: [(name: String, description: String, path: String)] = []
+
     // Collapsed mode (half-height, semi-transparent, shown when clicking away)
     @Published var isCollapsed: Bool = false
 
