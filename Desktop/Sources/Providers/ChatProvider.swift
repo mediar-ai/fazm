@@ -2206,7 +2206,8 @@ class ChatProvider: ObservableObject {
         // Ensure bridge is running
         guard await ensureBridgeStarted() else {
             errorMessage = "AI not available"
-            isSending = false
+            sendingSessionKeys.remove(effectiveKey)
+            isSending = !sendingSessionKeys.isEmpty
             return
         }
 
@@ -2220,7 +2221,8 @@ class ChatProvider: ObservableObject {
             if SubscriptionService.shared.shouldShowPaywall() {
                 showPaywall = true
                 PaywallWindowController.shared.show(chatProvider: self)
-                isSending = false
+                sendingSessionKeys.remove(effectiveKey)
+                isSending = !sendingSessionKeys.isEmpty
                 return
             }
         }
@@ -2595,7 +2597,8 @@ class ChatProvider: ObservableObject {
             // still in-flight. The AI message still has a local UUID at this point
             // (isSynced=false). pollForNewMessages() handles this by merging the
             // backend copy into the local message rather than appending a duplicate.
-            isSending = false
+            sendingSessionKeys.remove(effectiveKey)
+            isSending = !sendingSessionKeys.isEmpty
             isStopping = false
 
             await applyPendingBridgeRestart()
@@ -2862,7 +2865,8 @@ class ChatProvider: ObservableObject {
         }
 
         let wasStopped = isStopping
-        isSending = false
+        sendingSessionKeys.remove(effectiveKey)
+        isSending = !sendingSessionKeys.isEmpty
         isStopping = false
         await applyPendingBridgeRestart()
         await applyPendingBridgeModeSwitch()
