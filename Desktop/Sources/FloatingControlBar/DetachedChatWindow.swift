@@ -359,7 +359,8 @@ class DetachedChatWindowController {
         subscribeToResponse(provider: chatProvider, state: detachedState, winId: winId, messageCountBefore: messageCountBefore)
         // Subscribe to shared provider state (auth, suggested replies, compaction)
         entries[winId]?.sharedProviderCancellables = ChatQueryLifecycle.subscribeToProviderState(
-            provider: chatProvider, state: detachedState, sessionKey: sessionKey
+            provider: chatProvider, state: detachedState,
+            sessionKeyProvider: { [weak self] in self?.entries[winId]?.sessionKey }
         )
 
         // If a query was in-flight when we popped out, the floating bar's handlePostQuery
@@ -474,7 +475,8 @@ class DetachedChatWindowController {
 
                 self.entries[winId] = WindowEntry(window: win, sessionKey: sessionKey)
                 self.entries[winId]?.sharedProviderCancellables = ChatQueryLifecycle.subscribeToProviderState(
-                    provider: chatProvider, state: detachedState, sessionKey: sessionKey
+                    provider: chatProvider, state: detachedState,
+                    sessionKeyProvider: { [weak self] in self?.entries[winId]?.sessionKey }
                 )
 
                 win.makeKeyAndOrderFront(nil)
