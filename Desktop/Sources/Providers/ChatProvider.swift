@@ -337,6 +337,8 @@ class ChatProvider: ObservableObject {
     @Published var showCreditExhaustedAlert = false
     /// True while the agent is compacting conversation context
     @Published var isCompacting = false
+    /// The session key of the currently compacting session (nil when not compacting)
+    @Published var compactingSessionKey: String?
 
     // MARK: - Rate Limit State
     /// Latest rate limit status from Claude API ("allowed", "allowed_warning", "rejected")
@@ -2487,10 +2489,11 @@ class ChatProvider: ObservableObject {
                         switch event {
                         case .compacting(let active):
                             self.isCompacting = active
+                            self.compactingSessionKey = active ? sessionKey : nil
                             if active {
-                                log("ChatProvider: Context compaction started")
+                                log("ChatProvider: Context compaction started (session=\(sessionKey ?? "nil"))")
                             } else {
-                                log("ChatProvider: Context compaction finished")
+                                log("ChatProvider: Context compaction finished (session=\(sessionKey ?? "nil"))")
                             }
                         case .compactBoundary(let trigger, let preTokens):
                             log("ChatProvider: Compact boundary — trigger=\(trigger), preTokens=\(preTokens)")
