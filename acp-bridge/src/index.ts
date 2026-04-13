@@ -1409,7 +1409,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           };
           const freshResult = (await acpRequest("session/new", freshParams)) as { sessionId: string };
           sessionId = freshResult.sessionId;
-          sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
+          registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
           activeSessionId = sessionId;
           if (requestedModel) {
             await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
@@ -1486,7 +1486,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
         authRetryCount++;
         logErr(`session/prompt failed with auth error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
-        sessions.delete(sessionKey);
+        unregisterSession(sessionKey);
         imageTurnCounts.delete(sessionKey);
         activeSessionId = "";
         msg.resume = undefined;
@@ -1540,7 +1540,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           if (isStillImageError && _retryDepth < MAX_QUERY_RETRIES) {
             // The session history itself contains oversized images — start a fresh session.
             logErr(`Retry without image also failed with image-too-large — session history poisoned, starting new session (depth=${_retryDepth}): ${retryErrMsg}`);
-            sessions.delete(sessionKey);
+            unregisterSession(sessionKey);
             imageTurnCounts.delete(sessionKey);
             activeSessionId = "";
             msg.resume = undefined;
@@ -1568,7 +1568,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         sessionRetryCount++;
         logErr(`session/prompt failed with existing session, retrying with session resume (depth=${_retryDepth}): ${err}`);
         const failedSessionId = sessionId;
-        sessions.delete(sessionKey);
+        unregisterSession(sessionKey);
         imageTurnCounts.delete(sessionKey);
         activeSessionId = "";
         // Attempt to resume the failed session — the ACP SDK can reload
@@ -2237,8 +2237,8 @@ async function main(): Promise<void> {
         const { fromKey, toKey } = msg as import("./protocol.js").TransferSessionMessage;
         if (fromKey && toKey && sessions.has(fromKey)) {
           const entry = sessions.get(fromKey)!;
-          sessions.delete(fromKey);
-          sessions.set(toKey, entry);
+          unregisterSession(fromKey);
+          registerSession(toKey, entry);
           // Transfer image turn count too
           const imgCount = imageTurnCounts.get(fromKey);
           if (imgCount !== undefined) {
@@ -2257,7 +2257,7 @@ async function main(): Promise<void> {
         if (key && sessions.has(key)) {
           const oldSessionId = sessions.get(key)?.sessionId;
           if (oldSessionId) interruptedSessions.delete(oldSessionId);
-          sessions.delete(key);
+          unregisterSession(key);
           imageTurnCounts.delete(key);
           logErr(`Session reset: ${key}`);
 
