@@ -347,6 +347,12 @@ class DetachedChatWindowController {
         detachedState.showingAIConversation = true
         detachedState.showingAIResponse = true
 
+        // Copy workspace from shared provider so the pop-out starts with the same project
+        detachedState.workspaceDirectory = chatProvider.aiChatWorkingDirectory
+        detachedState.projectClaudeMdContent = chatProvider.projectClaudeMdContent
+        detachedState.projectClaudeMdPath = chatProvider.projectClaudeMdPath
+        detachedState.projectDiscoveredSkills = chatProvider.projectDiscoveredSkills
+
         let win = DetachedChatWindow(state: detachedState, sessionKey: sessionKey)
         let winId = ObjectIdentifier(win)
 
@@ -598,13 +604,11 @@ class DetachedChatWindowController {
 
             // Discover project CLAUDE.md for this window's workspace
             Task {
-                let result = await Task.detached(priority: .utility) {
-                    ChatProvider.loadClaudeConfigFromDisk(workspace: newPath)
-                }.value
+                let config = await ChatProvider.discoverProjectConfig(workspace: newPath)
                 await MainActor.run {
-                    state.projectClaudeMdContent = result.projectClaudeMdContent
-                    state.projectClaudeMdPath = result.projectClaudeMdPath
-                    state.projectDiscoveredSkills = result.projectSkills
+                    state.projectClaudeMdContent = config.claudeMdContent
+                    state.projectClaudeMdPath = config.claudeMdPath
+                    state.projectDiscoveredSkills = config.skills
                 }
             }
 
