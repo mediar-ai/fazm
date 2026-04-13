@@ -692,7 +692,7 @@ class ChatProvider: ObservableObject {
         // Check if user has an active Claude Code CLI session and auto-switch to personal mode.
         // The keychain check is async (runs in Task.detached), so we must trigger the mode
         // switch from within the completion — not from a synchronous read of isClaudeConnected.
-        checkClaudeConnectionStatus(autoSwitchToPersonal: true)
+        checkClaudeConnectionStatus(autoSwitchToPersonal: false)
 
         // Poll for new messages from other platforms (mobile) every 15 seconds
         messagePollTimer = Timer.publish(every: Self.messagePollInterval, on: .main, in: .common)
