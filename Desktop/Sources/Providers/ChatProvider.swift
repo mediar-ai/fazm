@@ -1974,11 +1974,6 @@ class ChatProvider: ObservableObject {
     /// Session key of the currently running sendMessage call, so follow-ups can be chained on the same session.
     private(set) var activeSessionKey: String?
 
-    /// Whether a specific session is currently sending. Returns true only if the
-    /// bridge is busy AND the active query belongs to the given session key.
-    func isSending(sessionKey: String) -> Bool {
-        isSending && activeSessionKey == sessionKey
-    }
 
     /// Stop the ACP bridge and all its child processes (MCP servers).
     /// Called during app termination to prevent orphaned processes.
