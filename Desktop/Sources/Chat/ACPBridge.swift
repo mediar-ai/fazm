@@ -1103,6 +1103,21 @@ actor ACPBridge {
   }
 
   private func deliverMessage(_ message: InboundMessage, sessionKey: String? = nil) {
+    // Debug: log routing for text/thinking/tool messages
+    switch message {
+    case .textDelta(let text):
+      log("ACPBridge: deliverMessage textDelta sessionKey=\(sessionKey ?? "nil") text='\(text.prefix(30))'")
+    case .thinkingDelta(let text):
+      if text.count > 20 { // skip tiny deltas to reduce noise
+        log("ACPBridge: deliverMessage thinkingDelta sessionKey=\(sessionKey ?? "nil") text='\(text.prefix(30))'")
+      }
+    case .toolUse(_, let name, _):
+      log("ACPBridge: deliverMessage toolUse sessionKey=\(sessionKey ?? "nil") name=\(name)")
+    case .result(let text, let sid, _, _, _, _, _):
+      log("ACPBridge: deliverMessage result sessionKey=\(sessionKey ?? "nil") sessionId=\(sid) text='\(text.prefix(40))'")
+    default:
+      break
+    }
     // Handle auth messages via global handlers. Auth UI state (sheets, buttons)
     // must update regardless of whether a query is in-flight. For auth_required,
     // only fire the global handler when no query is active (the query loop handles
