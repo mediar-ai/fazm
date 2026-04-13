@@ -646,6 +646,11 @@ class DetachedChatWindowController {
         if provider.isSending {
             log("[DetachedChat] sendQuery: enqueuing (provider busy) session=\(sessionKey) text='\(message.prefix(40))'")
             provider.enqueueMessage(message, sessionKey: sessionKey)
+            // Cancel the old response subscription immediately so it doesn't keep
+            // re-setting currentAIMessage to the previous (completed) response while
+            // the follow-up is queued. It gets re-established in the dequeue handler below.
+            entries[winId]?.chatCancellable?.cancel()
+            entries[winId]?.chatCancellable = nil
             // Listen for when this message is dequeued so we can set up the response subscriber
             entries[winId]?.dequeueCancellable?.cancel()
             entries[winId]?.dequeueCancellable = NotificationCenter.default
