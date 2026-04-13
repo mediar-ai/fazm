@@ -80,10 +80,11 @@ function send(msg: OutboundMessage): void {
   }
 }
 
-/** Send a message tagged with the query's sessionId for concurrent demuxing */
+/** Send a message tagged with the query's sessionId and sessionKey for concurrent demuxing */
 function sendWithSession(sessionId: string | undefined, msg: OutboundMessage): void {
   if (sessionId) {
-    send({ ...msg, sessionId } as OutboundMessage);
+    const sessionKey = sessionIdToKey.get(sessionId);
+    send({ ...msg, sessionId, ...(sessionKey && { sessionKey }) } as OutboundMessage);
   } else {
     send(msg);
   }
@@ -538,6 +539,28 @@ function startScreenshotResizeWatcher(): void {
 
 /** Pre-warmed sessions keyed by sessionKey (e.g. "main", "floating", or model name for backward compat) */
 const sessions = new Map<string, { sessionId: string; cwd: string; model?: string }>();
+/** Reverse map: ACP sessionId → sessionKey, for tagging outbound messages with sessionKey */
+const sessionIdToKey = new Map<string, string>();
+
+/** Register a session, maintaining the reverse map */
+function registerSession(sessionKey: string, entry: { sessionId: string; cwd: string; model?: string }): void {
+  // Clean up old reverse mapping if this sessionKey had a different sessionId
+  const old = sessions.get(sessionKey);
+  if (old && old.sessionId !== entry.sessionId) {
+    sessionIdToKey.delete(old.sessionId);
+  }
+  sessions.set(sessionKey, entry);
+  sessionIdToKey.set(entry.sessionId, sessionKey);
+}
+
+/** Unregister a session, maintaining the reverse map */
+function unregisterSession(sessionKey: string): void {
+  const entry = sessions.get(sessionKey);
+  if (entry) {
+    sessionIdToKey.delete(entry.sessionId);
+  }
+  sessions.delete(sessionKey);
+}
 /**
  * Tracks how many image-bearing turns each session key has had.
  * Claude's API enforces a stricter 2000px/image limit once a session has many images.
@@ -1039,7 +1062,7 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
             logErr(`Pre-warmed session: ${sessionId} (key=${cfg.key}, model=${cfg.model}, hasSystemPrompt=${!!cfg.systemPrompt})`);
           }
 
-          sessions.set(cfg.key, { sessionId, cwd: warmCwd, model: cfg.model });
+          registerSession(cfg.key, { sessionId, cwd: warmCwd, model: cfg.model });
           await acpRequest("session/set_model", { sessionId, modelId: cfg.model });
         } catch (err) {
           if (isAcpAuthError(err)) {
@@ -1129,7 +1152,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // If cwd changed, invalidate this specific session
       if (existing.cwd !== requestedCwd) {
         logErr(`Cwd changed for ${sessionKey} (${existing.cwd} -> ${requestedCwd}), creating new session`);
-        sessions.delete(sessionKey);
+        unregisterSession(sessionKey);
         imageTurnCounts.delete(sessionKey);
       } else {
         sessionId = existing.sessionId;
@@ -1147,7 +1170,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           mcpServers: buildMcpServers(mode, requestedCwd, sessionKey),
         });
         sessionId = msg.resume;
-        sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
+        registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
         isNewSession = false;
         // Set model after resume — without this the session uses the SDK default (possibly Haiku)
         await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
@@ -1166,7 +1189,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
 
       sessionId = sessionResult.sessionId;
-      sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
+      registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
       isNewSession = true;
       if (requestedModel) {
         await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
@@ -1373,7 +1396,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (watchdogErr instanceof Error && watchdogErr.message.startsWith("TTFT_WATCHDOG")) {
           // Session is dead after interrupt — destroy it and retry with a fresh session
           logErr(`TTFT watchdog fired: session ${sessionId} is unresponsive after interrupt, creating fresh session`);
-          sessions.delete(sessionKey);
+          unregisterSession(sessionKey);
           imageTurnCounts.delete(sessionKey);
           interruptedSessions.delete(sessionId);
           // Abort the dangling acpRequest (it will never resolve from ACP)
