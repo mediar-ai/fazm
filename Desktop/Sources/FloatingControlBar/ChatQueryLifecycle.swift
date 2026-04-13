@@ -98,10 +98,11 @@ enum ChatQueryLifecycle {
     /// Covers:
     /// - `$isClaudeConnected` / `$isClaudeAuthRequired`: auto-dismiss "Connect Claude" button
     /// - `$queryStartedCount`: clear stale suggested replies on new queries
-    /// - `$isCompacting`: sync compaction indicator
+    /// - `$isCompacting` / `$compactingSessionKey`: sync compaction indicator (scoped to session)
     static func subscribeToProviderState(
         provider: ChatProvider,
-        state: FloatingControlBarState
+        state: FloatingControlBarState,
+        sessionKey: String? = nil
     ) -> [AnyCancellable] {
         var cancellables: [AnyCancellable] = []
 
@@ -145,12 +146,20 @@ enum ChatQueryLifecycle {
                 }
         )
 
-        // Sync compaction indicator
+        // Sync compaction indicator, scoped to this session's key
         cancellables.append(
             provider.$isCompacting
+                .combineLatest(provider.$compactingSessionKey)
                 .receive(on: DispatchQueue.main)
-                .sink { [weak state] isCompacting in
-                    state?.isCompacting = isCompacting
+                .sink { [weak state] isCompacting, compactingKey in
+                    guard let state else { return }
+                    if let sessionKey {
+                        // Only show compaction for this specific session
+                        state.isCompacting = isCompacting && compactingKey == sessionKey
+                    } else {
+                        // No session key filter (e.g. floating bar before first query)
+                        state.isCompacting = isCompacting
+                    }
                 }
         )
 
