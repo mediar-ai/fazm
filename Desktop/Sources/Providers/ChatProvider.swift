@@ -2757,8 +2757,12 @@ class ChatProvider: ObservableObject {
 
             // On timeout, cancel the stuck ACP session so it's not left dangling
             if let bridgeError = error as? BridgeError, case .timeout = bridgeError {
-                log("ChatProvider: ACP query timed out, sending interrupt to cancel stuck session")
-                await acpBridge.interrupt()
+                log("ChatProvider: ACP query timed out, sending interrupt to cancel stuck session=\(effectiveKey)")
+                if effectiveKey != "__default__" {
+                    await acpBridge.interrupt(sessionKey: effectiveKey)
+                } else {
+                    await acpBridge.interrupt()
+                }
                 // Purge queued messages for the timed-out session — they are stale
                 let timedOutKey = activeSessionKey
                 let removedCount = pendingMessages.filter { $0.sessionKey == timedOutKey }.count
