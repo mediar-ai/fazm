@@ -1092,6 +1092,8 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
 
   // QueryContext will be fully initialized once we have the ACP sessionId
   let queryCtx: QueryContext | null = null;
+  // Declared outside try so it's accessible in catch/finally for error reporting
+  let sessionId = "";
 
   try {
     const mode = msg.mode ?? "act";
@@ -1121,7 +1123,6 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     // Ensure ACP is initialized
     await initializeAcp();
     const requestedCwd = msg.cwd || DEFAULT_CWD;
-    let sessionId = "";
 
     const existing = sessions.get(sessionKey);
     if (existing) {
@@ -1439,7 +1440,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const elapsedMs = Date.now() - promptStartTime;
       logErr(`[TIMING] Query failed after ${elapsedMs}ms, notifications received: ${notificationCount}, fullText: ${fullText.length} chars, error: ${err instanceof Error ? err.message : String(err)}`);
       if (abortController.signal.aborted) {
-        if (interruptRequested) {
+        if (queryCtx?.interruptRequested ?? interruptRequested) {
           for (const name of pendingTools) {
             sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
           }
@@ -1577,12 +1578,12 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     }
   } catch (err: unknown) {
     if (abortController.signal.aborted) {
-      if (interruptRequested) {
+      if (queryCtx?.interruptRequested ?? interruptRequested) {
         for (const name of pendingTools) {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
-        sendWithSession(sessionId, { type: "result", text: fullText, sessionId: activeSessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
       }
       return;
     }
@@ -2151,18 +2152,42 @@ async function main(): Promise<void> {
         resolveToolCall(msg);
         break;
 
-      case "interrupt":
-        logErr("Interrupt requested by user");
-        interruptRequested = true;
-        if (activeAbort) activeAbort.abort();
-        if (activeSessionId) {
-          acpNotify("session/cancel", { sessionId: activeSessionId });
-          // Mark this session as potentially broken — ACP may not accept new
-          // prompts after a cancel that interrupted a tool call mid-flight.
-          interruptedSessions.add(activeSessionId);
-          logErr(`Session ${activeSessionId} marked as interrupted (will apply TTFT watchdog on next reuse)`);
+      case "interrupt": {
+        const targetKey = (msg as { sessionKey?: string }).sessionKey;
+        if (targetKey) {
+          // Per-session interrupt: only abort the targeted session
+          const ctx = activeQueries.get(targetKey);
+          if (ctx) {
+            logErr(`Interrupt requested for session key=${targetKey} (sessionId=${ctx.sessionId})`);
+            ctx.interruptRequested = true;
+            ctx.abortController.abort();
+            acpNotify("session/cancel", { sessionId: ctx.sessionId });
+            interruptedSessions.add(ctx.sessionId);
+            logErr(`Session ${ctx.sessionId} marked as interrupted (will apply TTFT watchdog on next reuse)`);
+          } else {
+            logErr(`Interrupt requested for session key=${targetKey} but no active query found`);
+          }
+        } else {
+          // Legacy: no sessionKey specified, interrupt all active queries
+          logErr("Interrupt requested by user (all sessions)");
+          interruptRequested = true;
+          if (activeAbort) activeAbort.abort();
+          for (const [key, ctx] of activeQueries) {
+            ctx.interruptRequested = true;
+            ctx.abortController.abort();
+            acpNotify("session/cancel", { sessionId: ctx.sessionId });
+            interruptedSessions.add(ctx.sessionId);
+            logErr(`Session ${ctx.sessionId} (key=${key}) marked as interrupted`);
+          }
+          if (activeSessionId && !activeQueries.size) {
+            // Fallback for legacy single-query path
+            acpNotify("session/cancel", { sessionId: activeSessionId });
+            interruptedSessions.add(activeSessionId);
+            logErr(`Session ${activeSessionId} marked as interrupted (legacy fallback)`);
+          }
         }
         break;
+      }
 
       case "cancel_auth":
         logErr("Cancel auth requested by user");
