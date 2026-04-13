@@ -1941,7 +1941,7 @@ function handleSessionUpdate(
         sendWithSession(sid, { type: "task_notification", taskId, status, summary });
         break;
       }
-      send({ type: "task_notification", taskId, status, summary });
+      sendWithSession(sid, { type: "task_notification", taskId, status, summary });
       logErr(`Task notification: ${taskId} ${status}`);
       break;
     }
@@ -1950,7 +1950,7 @@ function handleSessionUpdate(
       const toolUseId = (update.toolUseId as string) ?? "";
       const toolName = (update.toolName as string) ?? "";
       const elapsed = (update.elapsedTimeSeconds as number) ?? 0;
-      send({ type: "tool_progress", toolUseId, toolName, elapsedTimeSeconds: elapsed });
+      sendWithSession(sid, { type: "tool_progress", toolUseId, toolName, elapsedTimeSeconds: elapsed });
       break;
     }
 
