@@ -621,11 +621,11 @@ class DetachedChatWindowController {
 
             // Discover project CLAUDE.md for this window's workspace
             Task {
-                let config = await ChatProvider.discoverProjectConfig(workspace: newPath)
+                let projConfig = await ChatProvider.discoverProjectConfig(workspace: newPath)
                 await MainActor.run {
-                    state.projectClaudeMdContent = config.claudeMdContent
-                    state.projectClaudeMdPath = config.claudeMdPath
-                    state.projectDiscoveredSkills = config.skills
+                    state.projectClaudeMdContent = projConfig.claudeMdContent
+                    state.projectClaudeMdPath = projConfig.claudeMdPath
+                    state.projectDiscoveredSkills = projConfig.skills
                 }
             }
 
