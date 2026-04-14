@@ -161,6 +161,14 @@ struct DesktopHomeView: View {
             selectedSettingsSection = .advanced
             selectedAdvancedSubsection = .aiChat
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("navigateToSetting"))) { notification in
+            guard let settingId = notification.userInfo?["settingId"] as? String,
+                  let item = SettingsSearchItem.allSearchableItems.first(where: { $0.settingId == settingId }) else { return }
+            selectedSettingsSection = item.section
+            if let sub = item.advancedSubsection {
+                selectedAdvancedSubsection = sub
+            }
+        }
     }
 }
 
