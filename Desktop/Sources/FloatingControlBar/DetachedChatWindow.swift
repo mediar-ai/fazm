@@ -196,6 +196,10 @@ struct DetachedChatView: View {
                 get: { state.suggestedReplyQuestion },
                 set: { state.suggestedReplyQuestion = $0 }
             ),
+            localModel: Binding(
+                get: { state.selectedModel },
+                set: { state.selectedModel = $0 }
+            ),
             onClose: nil,
             onNewChat: onNewChat,
             onSendFollowUp: { message in
@@ -295,6 +299,8 @@ class DetachedChatWindowController {
         let height: Double
         /// Per-window workspace directory (empty = global default). Added in v0.3+; older snapshots decode as "".
         var workspace: String = ""
+        /// Per-window model selection. Added in a later version; older snapshots decode as the current global model.
+        var selectedModel: String = ShortcutSettings.shared.selectedModel
     }
 
     private var entries: [ObjectIdentifier: WindowEntry] = [:]
@@ -317,7 +323,8 @@ class DetachedChatWindowController {
                 sessionKey: entry.sessionKey,
                 x: f.origin.x, y: f.origin.y,
                 width: f.size.width, height: f.size.height,
-                workspace: entry.window.state.workspaceDirectory
+                workspace: entry.window.state.workspaceDirectory,
+                selectedModel: entry.window.state.selectedModel
             )
         }
         if let data = try? JSONEncoder().encode(snapshots) {
@@ -475,7 +482,8 @@ class DetachedChatWindowController {
                 detachedState.showingAIResponse = true
                 detachedState.isAILoading = false
 
-                // Restore per-window workspace
+                // Restore per-window model selection and workspace
+                detachedState.selectedModel = snapshot.selectedModel
                 detachedState.workspaceDirectory = snapshot.workspace
                 if !snapshot.workspace.isEmpty {
                     Task {
@@ -519,7 +527,8 @@ class DetachedChatWindowController {
                         sessionKey: entry.sessionKey,
                         x: f.origin.x, y: f.origin.y,
                         width: f.size.width, height: f.size.height,
-                        workspace: entry.window.state.workspaceDirectory
+                        workspace: entry.window.state.workspaceDirectory,
+                        selectedModel: entry.window.state.selectedModel
                     )
                 } + failedSnapshots
                 if let data = try? JSONEncoder().encode(allSnapshots) {
