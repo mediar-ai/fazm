@@ -11,7 +11,7 @@ struct PushToTalkButton: View {
     var frameSize: CGFloat = 28
 
     /// Spins continuously while finalizing transcription.
-    @State private var spinAngle: Double = 0
+    @State private var isSpinning = false
 
     var body: some View {
         ZStack {
@@ -21,13 +21,13 @@ struct PushToTalkButton: View {
                     .trim(from: 0, to: 0.65)
                     .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .frame(width: frameSize - 4, height: frameSize - 4)
-                    .rotationEffect(.degrees(spinAngle))
-                    .onAppear { spinAngle = 0 }
+                    .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                    .onAppear { isSpinning = true }
+                    .onDisappear { isSpinning = false }
                     .animation(
                         .linear(duration: 0.8).repeatForever(autoreverses: false),
-                        value: spinAngle
+                        value: isSpinning
                     )
-                    .onAppear { spinAngle = 360 }
 
                 Image(systemName: "mic.fill")
                     .scaledFont(size: iconSize * 0.75)
