@@ -1443,6 +1443,8 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           staleTaskNotificationCount = 0;
           currentTurnTaskIds.clear();
           pendingTools.length = 0;
+        clearAllToolTimers();
+          clearAllToolTimers();
           // Re-send the same prompt; the stale task notification is now consumed
           promptStartTime = Date.now();
           const retryPayload = { sessionId, prompt: [{ type: "text", text: fullPrompt }] };
@@ -1458,6 +1460,8 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
           }
           pendingTools.length = 0;
+        clearAllToolTimers();
+          clearAllToolTimers();
 
           if (sessionKey !== "observer" && sessions.has("observer")) {
             bufferChatObserverTurn("user", fullPrompt);
@@ -1483,6 +1487,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
+        clearAllToolTimers();
 
         // Buffer conversation turns for the observer session (skip if this IS the observer)
         if (sessionKey !== "observer" && sessions.has("observer")) {
@@ -1540,6 +1545,8 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
           }
           pendingTools.length = 0;
+        clearAllToolTimers();
+          clearAllToolTimers();
 
           if (sessionKey !== "observer" && sessions.has("observer")) {
             bufferChatObserverTurn("user", fullPrompt);
@@ -1576,6 +1583,8 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
           }
           pendingTools.length = 0;
+        clearAllToolTimers();
+          clearAllToolTimers();
           logErr(
             `Query interrupted by user, sending partial result (${fullText.length} chars)`
           );
@@ -1621,6 +1630,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
+        clearAllToolTimers();
         sendWithSession(sessionId, { type: "credit_exhausted", message: errMsg });
         lastApiRetry = null;
         return;
@@ -1636,6 +1646,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
+        clearAllToolTimers();
 
         // Retry with a hint
         retryingWithHint = true;
@@ -1694,6 +1705,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
+        clearAllToolTimers();
         const isBillingOrRate = isStructuredNonRetryable
           && (apiRetryErrorType === "billing_error" || apiRetryErrorType === "rate_limit");
         const isRegexBilling = /credit|balance|quota|exhausted|hit your.*limit|out of extra usage/i.test(errMsg);
@@ -1714,6 +1726,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
+        clearAllToolTimers();
         sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
       }
       return;
@@ -1814,6 +1827,7 @@ function handleSessionUpdate(
             sendWithSession(sid, { type: "tool_activity", name, status: "completed" });
           }
           pendingTools.length = 0;
+          clearAllToolTimers();
         }
 
         // Signal a boundary between text blocks:
