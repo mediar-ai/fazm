@@ -1449,6 +1449,7 @@ actor ACPBridge {
         "Call browser_snapshot to verify the extension is connected. Only call that one tool, then report success or failure.",
       systemPrompt:
         "You are a connection test agent. Call the browser_snapshot tool exactly once. If it succeeds, respond with exactly 'CONNECTED'. If it fails, respond with 'FAILED' followed by the error.",
+      sessionKey: "connection-test",
       mode: "ask",
       onTextDelta: { _ in },
       onToolCall: { _, _, _ in "" },
