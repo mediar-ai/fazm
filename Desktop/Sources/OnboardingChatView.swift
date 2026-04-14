@@ -426,13 +426,33 @@ struct OnboardingChatView: View {
         }
         .onAppear {
             startChat()
-            skipButtonTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { _ in
-                withAnimation { skipButtonVisible = true }
-            }
+            resetSkipTimer()
         }
         .onDisappear {
             skipButtonTimer?.invalidate()
             skipButtonTimer = nil
+        }
+        // Hide skip when quick-reply options appear (user has a clear next action)
+        .onChange(of: quickReplyOptions) { _, options in
+            if !options.isEmpty {
+                withAnimation { skipButtonVisible = false }
+                skipButtonTimer?.invalidate()
+            } else if !chatProvider.isSending {
+                // Options cleared and AI not responding: restart inactivity timer
+                resetSkipTimer()
+            }
+        }
+        // Hide skip when AI starts responding
+        .onChange(of: chatProvider.isSending) { _, isSending in
+            if isSending {
+                withAnimation { skipButtonVisible = false }
+                skipButtonTimer?.invalidate()
+            }
+        }
+        // Reset timer when a new message arrives
+        .onChange(of: chatProvider.messages.count) { _, _ in
+            if !quickReplyOptions.isEmpty || chatProvider.isSending { return }
+            resetSkipTimer()
         }
         .onReceive(permissionCheckTimer) { _ in
             appState.checkScreenRecordingPermission()
@@ -533,6 +553,18 @@ struct OnboardingChatView: View {
 
     private var canSend: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chatProvider.isSending
+    }
+
+    /// Only show skip after 120s of inactivity (no messages, no quick-reply options, no AI responding).
+    private func resetSkipTimer() {
+        skipButtonTimer?.invalidate()
+        withAnimation { skipButtonVisible = false }
+        skipButtonTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { _ in
+            // Only show if user has no pending actions
+            if self.quickReplyOptions.isEmpty && !self.chatProvider.isSending {
+                withAnimation { self.skipButtonVisible = true }
+            }
+        }
     }
 
     // MARK: - Scroll
