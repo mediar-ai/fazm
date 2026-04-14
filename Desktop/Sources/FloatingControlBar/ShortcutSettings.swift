@@ -241,10 +241,12 @@ class ShortcutSettings: ObservableObject {
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
         self.pttSoundsEnabled = UserDefaults.standard.object(forKey: "shortcut_pttSoundsEnabled") as? Bool ?? true
-        // Migrate existing users from Opus to Sonnet (Opus burns through rate limits too fast)
+        // One-time migration: switch existing Opus users to Sonnet (Opus burns through rate limits too fast)
         let savedModel = UserDefaults.standard.string(forKey: "shortcut_selectedModel")
-        if savedModel == "claude-opus-4-6" {
+        let didMigrateOpus = UserDefaults.standard.bool(forKey: "shortcut_didMigrateFromOpus")
+        if savedModel == "claude-opus-4-6" && !didMigrateOpus {
             UserDefaults.standard.set("claude-sonnet-4-6", forKey: "shortcut_selectedModel")
+            UserDefaults.standard.set(true, forKey: "shortcut_didMigrateFromOpus")
             self.selectedModel = "claude-sonnet-4-6"
         } else {
             self.selectedModel = savedModel ?? "claude-sonnet-4-6"
