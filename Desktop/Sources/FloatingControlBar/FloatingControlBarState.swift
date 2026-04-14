@@ -161,6 +161,10 @@ class FloatingControlBarState: NSObject, ObservableObject {
 
     func clearLastConversation() { lastConversation = nil }
 
+    // Per-window model selection (defaults to the current global model).
+    // Each pop-out window tracks its own model independently.
+    @Published var selectedModel: String = ShortcutSettings.shared.selectedModel
+
     // Per-window workspace directory (empty = home directory / no project)
     // Each pop-out window tracks its own workspace independently.
     @Published var workspaceDirectory: String = ""
