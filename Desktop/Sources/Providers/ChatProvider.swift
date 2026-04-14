@@ -996,9 +996,9 @@ class ChatProvider: ObservableObject {
                 databaseSchema: cachedDatabaseSchema
             )
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
-                .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
-                .init(key: "floating", model: "claude-opus-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
-                .init(key: "observer", model: "claude-opus-4-6", systemPrompt: chatObserverSystemPrompt)
+                .init(key: "main", model: "claude-sonnet-4-6", systemPrompt: mainSystemPrompt),
+                .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
+                .init(key: "observer", model: "claude-sonnet-4-6", systemPrompt: chatObserverSystemPrompt)
             ])
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
