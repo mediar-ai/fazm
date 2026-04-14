@@ -766,7 +766,7 @@ class DetachedChatWindowController {
         Task { @MainActor in
             await provider.sendMessage(
                 message,
-                model: ShortcutSettings.shared.selectedModel,
+                model: state.selectedModel,
                 systemPromptSuffix: nil,
                 systemPromptPrefix: ChatProvider.floatingBarSystemPromptPrefixCurrent,
                 sessionKey: sessionKey,
