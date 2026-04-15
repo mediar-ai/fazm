@@ -147,6 +147,22 @@ enum ChatQueryLifecycle {
                 }
         )
 
+        // Clear "Upgrade Plan" button when rate limit resets to "allowed"
+        cancellables.append(
+            provider.$rateLimitStatus
+                .receive(on: DispatchQueue.main)
+                .sink { [weak state] status in
+                    guard let state else { return }
+                    if status == "allowed" || status == nil {
+                        if state.showUpgradeClaudeButton {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                state.showUpgradeClaudeButton = false
+                            }
+                        }
+                    }
+                }
+        )
+
         // Sync compaction indicator, scoped to this session's key.
         // sessionKeyProvider is preferred (handles session key changes from "new chat"),
         // falls back to the static sessionKey, falls back to unfiltered.
