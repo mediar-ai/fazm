@@ -115,7 +115,7 @@ if [ -d "$ACP_BRIDGE_DIR" ]; then
     cd "$ACP_BRIDGE_DIR"
     if [ ! -d "node_modules" ] || [ "package.json" -nt "node_modules/.package-lock.json" ]; then
         substep "Installing npm dependencies"
-        npm install --no-fund --no-audit 2>&1 | tail -1
+        timeout 120 npm install --no-fund --no-audit 2>&1 | tail -1
     fi
     substep "Compiling TypeScript and copying assets"
     npm run build --silent
@@ -180,7 +180,11 @@ step "Checking search coverage..."
 bash scripts/check_search_coverage.sh
 
 step "Building Swift app (swift build -c debug)..."
-xcrun swift build -c debug --package-path Desktop
+# 10-minute timeout prevents hangs (e.g. git submodule fetch stalling on network issues)
+if ! timeout 600 xcrun swift build -c debug --package-path Desktop; then
+    echo "[run.sh] ERROR: swift build failed or timed out after 10 minutes"
+    exit 1
+fi
 
 auth_debug "AFTER swift build: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
@@ -197,7 +201,7 @@ cp -f "Desktop/.build/debug/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NA
 MCP_REPO="$HOME/mcp-server-macos-use"
 if [ -d "$MCP_REPO" ]; then
     substep "Building mcp-server-macos-use..."
-    xcrun swift build -c debug --package-path "$MCP_REPO"
+    timeout 300 xcrun swift build -c debug --package-path "$MCP_REPO"
     cp -f "$MCP_REPO/.build/debug/mcp-server-macos-use" "$APP_BUNDLE/Contents/MacOS/mcp-server-macos-use"
     substep "Bundled mcp-server-macos-use ($(du -h "$APP_BUNDLE/Contents/MacOS/mcp-server-macos-use" | cut -f1))"
 else
@@ -208,7 +212,7 @@ fi
 MCP_WHATSAPP="$HOME/whatsapp-mcp-skill-macos"
 if [ -d "$MCP_WHATSAPP" ]; then
     substep "Building whatsapp-mcp..."
-    xcrun swift build -c debug --package-path "$MCP_WHATSAPP"
+    timeout 300 xcrun swift build -c debug --package-path "$MCP_WHATSAPP"
     cp -f "$MCP_WHATSAPP/.build/debug/whatsapp-mcp" "$APP_BUNDLE/Contents/MacOS/whatsapp-mcp"
     substep "Bundled whatsapp-mcp ($(du -h "$APP_BUNDLE/Contents/MacOS/whatsapp-mcp" | cut -f1))"
 else
