@@ -92,6 +92,10 @@ class FloatingControlBarState: NSObject, ObservableObject {
     /// Pre-filled text for the follow-up input (set by PTT, consumed by AIResponseView)
     @Published var pendingFollowUpText: String = ""
 
+    // Attachment state (shared between input views and chat area)
+    @Published var pendingAttachments: [ChatAttachment] = []
+    @Published var isDragOverChat: Bool = false
+
     /// Task queue: messages waiting to be sent after current query completes (max 10)
     @Published var messageQueue: [QueuedMessage] = []
 
