@@ -596,6 +596,15 @@ class ChatProvider: ObservableObject {
         if newMode == "personal" {
             log("ChatProvider: Starting personal bridge eagerly")
             _ = await ensureBridgeStarted()
+
+            // If the bridge started successfully with existing credentials (no auth_required
+            // event fired), clear the credit exhaustion alert since the user can already use
+            // their personal account without any further action.
+            if !isClaudeAuthRequired {
+                log("ChatProvider: Personal bridge started with existing creds, clearing credit exhaustion alert")
+                showCreditExhaustedAlert = false
+                isClaudeConnected = true
+            }
         }
     }
 
