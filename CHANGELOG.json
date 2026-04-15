@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Tightened privacy language in onboarding and system prompts to accurately say \"local-first\" instead of \"nothing leaves your device\""
+  ],
   "releases": [
     {
       "version": "2.2.1",
