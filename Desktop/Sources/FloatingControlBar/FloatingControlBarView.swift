@@ -52,25 +52,39 @@ struct FloatingControlBarView: View {
                     for provider in providers {
                         NSLog("FloatingBar: provider types: %@", provider.registeredTypeIdentifiers)
                         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, error in
+                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
                                 if let error { NSLog("FloatingBar: drop fileURL error: %@", "\(error)"); return }
-                                guard let data = data as? Data, let urlStr = String(data: data, encoding: .utf8),
-                                      let url = URL(string: urlStr) else {
-                                    NSLog("FloatingBar: drop fileURL parse failed")
-                                    return
+                                // loadItem may return URL, Data, or NSSecureCoding depending on source app
+                                let resolvedURL: URL?
+                                if let url = item as? URL {
+                                    resolvedURL = url
+                                } else if let data = item as? Data,
+                                          let urlStr = String(data: data, encoding: .utf8),
+                                          let url = URL(string: urlStr) {
+                                    resolvedURL = url
+                                } else {
+                                    NSLog("FloatingBar: drop fileURL parse failed (item type: %@)", "\(type(of: item))")
+                                    resolvedURL = nil
                                 }
+                                guard let url = resolvedURL else { return }
                                 NSLog("FloatingBar: drop fileURL: %@", url.lastPathComponent)
                                 DispatchQueue.main.async {
                                     ChatAttachmentHelper.addFiles(from: [url], to: &state.pendingAttachments)
                                 }
                             }
                         } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                            provider.loadItem(forTypeIdentifier: UTType.png.identifier, options: nil) { data, error in
+                            provider.loadItem(forTypeIdentifier: UTType.png.identifier, options: nil) { item, error in
                                 if let error { NSLog("FloatingBar: drop image error: %@", "\(error)"); return }
-                                guard let data = data as? Data else {
-                                    NSLog("FloatingBar: drop image data nil")
-                                    return
+                                let imageData: Data?
+                                if let data = item as? Data {
+                                    imageData = data
+                                } else if let url = item as? URL, let data = try? Data(contentsOf: url) {
+                                    imageData = data
+                                } else {
+                                    NSLog("FloatingBar: drop image data failed (item type: %@)", "\(type(of: item))")
+                                    imageData = nil
                                 }
+                                guard let data = imageData else { return }
                                 NSLog("FloatingBar: drop image data: %d bytes", data.count)
                                 DispatchQueue.main.async {
                                     ChatAttachmentHelper.addPastedImage(data, to: &state.pendingAttachments)
