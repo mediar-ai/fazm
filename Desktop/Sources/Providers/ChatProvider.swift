@@ -991,13 +991,14 @@ class ChatProvider: ObservableObject {
             cachedMainSystemPrompt = mainSystemPrompt
             let floatingSystemPrompt = Self.floatingBarSystemPromptPrefixCurrent + "\n\n" + mainSystemPrompt
             let savedFloatingSessionId = UserDefaults.standard.string(forKey: floatingSessionIdKey)
+            let savedMainSessionId = UserDefaults.standard.string(forKey: mainSessionIdKey)
             let chatObserverUserName = AuthService.shared.displayName.isEmpty ? "the user" : AuthService.shared.givenName
             let chatObserverSystemPrompt = ChatPromptBuilder.buildChatObserverSession(
                 userName: chatObserverUserName,
                 databaseSchema: cachedDatabaseSchema
             )
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
-                .init(key: "main", model: "claude-sonnet-4-6", systemPrompt: mainSystemPrompt),
+                .init(key: "main", model: "claude-sonnet-4-6", systemPrompt: mainSystemPrompt, resume: savedMainSessionId),
                 .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
                 .init(key: "observer", model: "claude-sonnet-4-6", systemPrompt: chatObserverSystemPrompt)
             ])
@@ -1025,6 +1026,9 @@ class ChatProvider: ObservableObject {
     /// Messages are kept in the DB for history — only the in-memory and ACP state is cleared.
     func resetSession(key: String) async {
         await acpBridge.resetSession(key: key)
+        if key == "main" {
+            UserDefaults.standard.removeObject(forKey: mainSessionIdKey)
+        }
         if key == "floating" {
             UserDefaults.standard.removeObject(forKey: floatingSessionIdKey)
             UserDefaults.standard.set(true, forKey: Self.floatingChatClearedKey)
@@ -2207,6 +2211,13 @@ class ChatProvider: ObservableObject {
             if let savedId = detachedSessionResumeId(for: key) {
                 resume = savedId
                 log("ChatProvider: Using saved detached session ID for resume: \(savedId)")
+            }
+        }
+        // Auto-resume main chat session after ACP restart (e.g. OAuth re-login)
+        if (sessionKey == nil || sessionKey == "main"), resume == nil {
+            if let savedId = UserDefaults.standard.string(forKey: mainSessionIdKey), !savedId.isEmpty {
+                resume = savedId
+                log("ChatProvider: Using saved main session ID for resume: \(savedId)")
             }
         }
 
