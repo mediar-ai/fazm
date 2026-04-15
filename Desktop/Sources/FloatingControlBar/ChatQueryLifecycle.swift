@@ -63,13 +63,16 @@ enum ChatQueryLifecycle {
             let isPersonalMode = provider.bridgeMode == "personal"
 
             if isRateLimit && isPersonalMode {
+                log("ChatQueryLifecycle: rate limit error in personal mode — showing upgrade banner")
                 state.showUpgradeClaudeButton = true
             }
 
             let hasContent = !state.aiResponseText.isEmpty || !(state.currentAIMessage?.contentBlocks.isEmpty ?? true)
             if state.currentAIMessage != nil && hasContent {
+                log("ChatQueryLifecycle: appending error to partial response (\(state.aiResponseText.count) chars): \(errorText.prefix(80))")
                 state.currentAIMessage?.text += "\n\n⚠️ \(errorText)"
             } else {
+                log("ChatQueryLifecycle: creating error-only AI message: \(errorText.prefix(80))")
                 state.currentAIMessage = ChatMessage(text: "⚠️ \(errorText)", sender: .ai)
             }
         } else if provider.showPaywall {
@@ -155,6 +158,7 @@ enum ChatQueryLifecycle {
                     guard let state else { return }
                     if status == "allowed" || status == nil {
                         if state.showUpgradeClaudeButton {
+                            log("ChatQueryLifecycle: rate limit reset to '\(status ?? "nil")' — clearing upgrade banner")
                             withAnimation(.easeOut(duration: 0.3)) {
                                 state.showUpgradeClaudeButton = false
                             }
