@@ -1,6 +1,44 @@
 import Cocoa
 import SwiftUI
 
+/// NSTextView subclass that intercepts paste to handle image content.
+private class FazmNSTextView: NSTextView {
+    var onPasteFiles: (([URL]) -> Void)?
+    var onPasteImageData: ((Data) -> Void)?
+
+    override func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+
+        // Check for file URLs first
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true,
+            .urlReadingContentsConformToTypes: [
+                "public.image", "com.adobe.pdf", "public.plain-text", "public.source-code"
+            ]
+        ]) as? [URL], !urls.isEmpty {
+            onPasteFiles?(urls)
+            return
+        }
+
+        // Check for image data (e.g. screenshot from clipboard)
+        if let data = pb.data(forType: .png) {
+            onPasteImageData?(data)
+            return
+        }
+        if let data = pb.data(forType: .tiff) {
+            // Convert TIFF to PNG for consistency
+            if let rep = NSBitmapImageRep(data: data),
+               let pngData = rep.representation(using: .png, properties: [:]) {
+                onPasteImageData?(pngData)
+                return
+            }
+        }
+
+        // Fall through to normal text paste
+        super.paste(sender)
+    }
+}
+
 /// NSScrollView subclass that auto-focuses its NSTextView when added to a window.
 private class AutoFocusScrollView: NSScrollView {
     var shouldFocusOnAppear = false
@@ -31,6 +69,10 @@ struct FazmTextEditor: NSViewRepresentable {
     // Behavior
     var onSubmit: (() -> Void)? = nil
     var focusOnAppear: Bool = true
+    /// Called when user pastes file URLs (images, PDFs, text files)
+    var onPasteFiles: (([URL]) -> Void)? = nil
+    /// Called when user pastes raw image data (e.g. screenshot)
+    var onPasteImageData: ((Data) -> Void)? = nil
 
     // Optional height tracking (for floating bar's window resize flow)
     var minHeight: CGFloat? = nil
@@ -38,7 +80,14 @@ struct FazmTextEditor: NSViewRepresentable {
     var onHeightChange: ((CGFloat) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
+        let textView = FazmNSTextView()
+        let coordinator = context.coordinator
+        textView.onPasteFiles = { urls in
+            coordinator.onPasteFiles?(urls)
+        }
+        textView.onPasteImageData = { data in
+            coordinator.onPasteImageData?(data)
+        }
         let scaledSize = round(fontSize * fontScale)
         textView.font = .systemFont(ofSize: scaledSize)
         textView.textColor = textColor
@@ -130,6 +179,8 @@ struct FazmTextEditor: NSViewRepresentable {
 
         // Keep closures fresh so they capture the latest SwiftUI state
         context.coordinator.onSubmit = onSubmit
+        context.coordinator.onPasteFiles = onPasteFiles
+        context.coordinator.onPasteImageData = onPasteImageData
 
         let scaledSize = round(fontSize * fontScale)
         let newFont = NSFont.systemFont(ofSize: scaledSize)
@@ -168,6 +219,8 @@ struct FazmTextEditor: NSViewRepresentable {
     class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
         var onSubmit: (() -> Void)?
+        var onPasteFiles: (([URL]) -> Void)?
+        var onPasteImageData: ((Data) -> Void)?
         var isUpdating = false
 
         func updateTextBinding(_ binding: Binding<String>) {
