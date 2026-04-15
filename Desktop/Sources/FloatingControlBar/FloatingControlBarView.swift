@@ -313,7 +313,7 @@ struct FloatingControlBarView: View {
                     get: { state.aiInputText },
                     set: { state.aiInputText = $0 }
                 ),
-                onSend: { message in
+                onSend: { message, attachments in
                     state.aiInputText = ""
                     state.displayedQuery = message
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -321,7 +321,7 @@ struct FloatingControlBarView: View {
                         state.isAILoading = true
                         state.currentAIMessage = nil
                     }
-                    onSendQuery(message)
+                    onSendQuery(message, attachments)
                     // Focus the follow-up input after the view transition settles
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         (window as? FloatingControlBarWindow)?.focusInputField()
@@ -404,7 +404,7 @@ struct FloatingControlBarView: View {
                     state.isAILoading = true
                     state.currentAIMessage = nil
                 }
-                onSendQuery(message)
+                onSendQuery(message, [])
             },
             onEnqueueMessage: { message in
                 guard state.messageQueue.count < FloatingControlBarState.maxQueueSize else { return }
