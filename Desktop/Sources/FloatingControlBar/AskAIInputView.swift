@@ -73,6 +73,26 @@ struct AskAIInputView: View {
                             sendCurrentMessage()
                         },
                         focusOnAppear: true,
+                        onPasteFiles: { urls in
+                            addFiles(from: urls)
+                        },
+                        onPasteImageData: { data in
+                            let tempDir = FileManager.default.temporaryDirectory
+                            let filename = "paste-\(UUID().uuidString.prefix(8)).png"
+                            let tempURL = tempDir.appendingPathComponent(filename)
+                            try? data.write(to: tempURL)
+                            var thumbnail: Data?
+                            if let img = NSImage(data: data) {
+                                thumbnail = generateThumbnail(from: img, maxSize: 80)
+                            }
+                            let att = ChatAttachment(
+                                path: tempURL.path,
+                                name: filename,
+                                mimeType: "image/png",
+                                thumbnailData: thumbnail
+                            )
+                            pendingAttachments.append(att)
+                        },
                         minHeight: minHeight,
                         maxHeight: maxHeight,
                         onHeightChange: { newHeight in
