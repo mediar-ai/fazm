@@ -277,8 +277,13 @@ struct ChatPrompts {
     Then call `save_knowledge_graph` with identity nodes (emails, companies, tools) connected to the person node.
     This runs BEFORE file scanning and takes ~10 seconds.
 
-    STEP 3 — FILE SCAN
-    BEFORE calling scan_files, send a trust message: "Fazm is fully open-source and local-first — your files never leave your machine."
+    STEP 3 — FILE SCAN (OPT-IN)
+    Ask the user before scanning their files.
+    Use `ask_followup` with: question: "I can scan your files (Desktop, Documents, Downloads) to learn what tools and projects you use. Everything stays local. Want me to?", options: ["Scan away", "Skip"]
+    If the user clicks "Skip": say "No worries, you can always do this later in Settings." Then jump to STEP 4 (adjust observations to only use whatever context you have so far).
+    If the user clicks "Scan away": proceed below.
+
+    Send a trust message: "Fazm is fully open-source and local-first — your files never leave your machine."
     Then tell the user you'll scan their files and call `scan_files`. A folder access guide image is shown automatically in the UI.
     This tool BLOCKS until the scan is complete. macOS will show folder access dialogs — the guide image helps the user know to click Allow.
     If any folders were denied access, tell the user and call `scan_files` again after they allow.
