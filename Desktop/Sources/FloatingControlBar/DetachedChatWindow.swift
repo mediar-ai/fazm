@@ -713,8 +713,14 @@ class DetachedChatWindowController {
             chatProvider?.reorderPendingMessages(from: source, to: dest)
         }
 
-        win.onStopAgent = { [weak chatProvider] in
-            chatProvider?.stopAgent()
+        win.onStopAgent = { [weak self, weak win, weak chatProvider] in
+            guard let win else { return }
+            let key = self?.entries[ObjectIdentifier(win)]?.sessionKey
+            if let key {
+                chatProvider?.stopAgent(sessionKey: key)
+            } else {
+                chatProvider?.stopAgent()
+            }
         }
 
         win.onConnectClaude = { [weak chatProvider] in
