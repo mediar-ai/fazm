@@ -281,16 +281,36 @@ struct DetachedChatView: View {
         .onDrop(of: [.fileURL, .image], isTargeted: $state.isDragOverChat) { providers in
             for provider in providers {
                 if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
-                        guard let data = data as? Data, let urlStr = String(data: data, encoding: .utf8),
-                              let url = URL(string: urlStr) else { return }
+                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
+                        // loadItem may return URL, Data, or NSSecureCoding depending on source app
+                        let resolvedURL: URL?
+                        if let url = item as? URL {
+                            resolvedURL = url
+                        } else if let data = item as? Data,
+                                  let urlStr = String(data: data, encoding: .utf8),
+                                  let url = URL(string: urlStr) {
+                            resolvedURL = url
+                        } else {
+                            NSLog("[Attachment] Drop failed: could not resolve file URL (item=%@, error=%@)", "\(type(of: item))", "\(String(describing: error))")
+                            resolvedURL = nil
+                        }
+                        guard let url = resolvedURL else { return }
                         DispatchQueue.main.async {
                             ChatAttachmentHelper.addFiles(from: [url], to: &state.pendingAttachments)
                         }
                     }
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.png.identifier, options: nil) { data, _ in
-                        guard let data = data as? Data else { return }
+                    provider.loadItem(forTypeIdentifier: UTType.png.identifier, options: nil) { item, error in
+                        let imageData: Data?
+                        if let data = item as? Data {
+                            imageData = data
+                        } else if let url = item as? URL, let data = try? Data(contentsOf: url) {
+                            imageData = data
+                        } else {
+                            AppLog.shared.log("[Attachment] Drop failed: could not resolve image data (item=\(type(of: item)), error=\(String(describing: error)))")
+                            imageData = nil
+                        }
+                        guard let data = imageData else { return }
                         DispatchQueue.main.async {
                             ChatAttachmentHelper.addPastedImage(data, to: &state.pendingAttachments)
                         }
