@@ -143,6 +143,7 @@ struct SettingsContentView: View {
 
     enum SettingsSection: String, CaseIterable {
         case home = "Home"
+        case conversationHistory = "Conversations"
         case chatWithFounder = "Chat with Founder"
         case discoveredTasks = "Discovered Tasks"
         case remoteControl = "Remote Control"
@@ -193,6 +194,8 @@ struct SettingsContentView: View {
                 switch selectedSection {
                 case .home:
                     HomeSection(appState: appState)
+                case .conversationHistory:
+                    ConversationHistorySection(chatProvider: chatProvider)
                 case .chatWithFounder:
                     FounderChatPage()
                 case .discoveredTasks:
