@@ -857,6 +857,7 @@ class DetachedChatWindowController {
 
             // Cancel the streaming subscription before post-query handling so the
             // Combine sink can't overwrite error text appended by handlePostQuery.
+            log("[DetachedChat] cancelling response subscription before handlePostQuery session=\(sessionKey)")
             self.entries[winId]?.chatCancellable?.cancel()
             self.entries[winId]?.chatCancellable = nil
 
@@ -904,6 +905,7 @@ class DetachedChatWindowController {
                     // Ensure the response is visible even if we never saw isStreaming=true
                     // (e.g., response completed before the Combine sink fired).
                     if !state.showingAIResponse {
+                        log("[DetachedChat] setting showingAIResponse=true for non-streaming message id=\(aiMessage.id)")
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             state.showingAIResponse = true
                         }
