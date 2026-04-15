@@ -20,6 +20,9 @@ struct SettingsSearchItem: Identifiable {
     }
 
     static let allSearchableItems: [SettingsSearchItem] = [
+        // Conversations
+        SettingsSearchItem(name: "Conversation History", subtitle: "View and reopen past AI conversations", keywords: ["conversations", "history", "chat history", "past chats", "sessions", "previous"], section: .conversationHistory, advancedSubsection: nil, icon: "clock.arrow.circlepath", settingId: "conversationhistory.list"),
+
         // General
         SettingsSearchItem(name: "Microphone", subtitle: "Select which microphone to use for Push to Talk", keywords: ["microphone", "mic", "audio input", "recording device"], section: .general, advancedSubsection: nil, icon: "mic.fill", settingId: "general.microphone"),
         SettingsSearchItem(name: "Language Mode", subtitle: "Choose auto-detect or single language for transcription", keywords: ["language", "transcription", "auto-detect", "multi-language", "single language"], section: .general, advancedSubsection: nil, icon: "globe", settingId: "general.languagemode"),
@@ -395,6 +398,7 @@ struct SettingsSidebarItem: View {
     private var icon: String {
         switch section {
         case .home: return "house"
+        case .conversationHistory: return "clock.arrow.circlepath"
         case .chatWithFounder: return "bubble.left.and.bubble.right"
         case .discoveredTasks: return "wand.and.stars"
         case .remoteControl: return "iphone"
