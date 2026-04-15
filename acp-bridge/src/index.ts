@@ -1408,14 +1408,19 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             const fileData = readFileSync(att.path);
 
             if (mime.startsWith("image/")) {
+              // ACP expects flat {type, data, mimeType}, NOT the Anthropic API nested {source: {type, media_type, data}} format
               promptBlocks.push({
                 type: "image",
-                source: { type: "base64", media_type: mime, data: fileData.toString("base64") },
+                data: fileData.toString("base64"),
+                mimeType: mime,
               });
             } else if (mime === "application/pdf") {
+              // ACP has no "document" content type; inline PDFs as base64-encoded text reference
+              // so the model can use the Read tool on the file path instead
+              const sizeMBStr = (stats.size / 1024 / 1024).toFixed(1);
               promptBlocks.push({
-                type: "document",
-                source: { type: "base64", media_type: mime, data: fileData.toString("base64") },
+                type: "text",
+                text: `[Attached PDF: ${att.name} (${sizeMBStr}MB) at path: ${att.path}]\nPlease use the Read tool to read this PDF file.`,
               });
             } else {
               // text/* files: inline as UTF-8
