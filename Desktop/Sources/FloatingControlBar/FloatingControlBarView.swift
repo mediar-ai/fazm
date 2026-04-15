@@ -48,18 +48,30 @@ struct FloatingControlBarView: View {
                     }
                 }
                 .onDrop(of: [.fileURL, .image], isTargeted: $state.isDragOverChat) { providers in
+                    NSLog("FloatingBar: onDrop received %d providers", providers.count)
                     for provider in providers {
+                        NSLog("FloatingBar: provider types: %@", provider.registeredTypeIdentifiers)
                         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
+                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, error in
+                                if let error { NSLog("FloatingBar: drop fileURL error: %@", "\(error)"); return }
                                 guard let data = data as? Data, let urlStr = String(data: data, encoding: .utf8),
-                                      let url = URL(string: urlStr) else { return }
+                                      let url = URL(string: urlStr) else {
+                                    NSLog("FloatingBar: drop fileURL parse failed")
+                                    return
+                                }
+                                NSLog("FloatingBar: drop fileURL: %@", url.lastPathComponent)
                                 DispatchQueue.main.async {
                                     ChatAttachmentHelper.addFiles(from: [url], to: &state.pendingAttachments)
                                 }
                             }
                         } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                            provider.loadItem(forTypeIdentifier: UTType.png.identifier, options: nil) { data, _ in
-                                guard let data = data as? Data else { return }
+                            provider.loadItem(forTypeIdentifier: UTType.png.identifier, options: nil) { data, error in
+                                if let error { NSLog("FloatingBar: drop image error: %@", "\(error)"); return }
+                                guard let data = data as? Data else {
+                                    NSLog("FloatingBar: drop image data nil")
+                                    return
+                                }
+                                NSLog("FloatingBar: drop image data: %d bytes", data.count)
                                 DispatchQueue.main.async {
                                     ChatAttachmentHelper.addPastedImage(data, to: &state.pendingAttachments)
                                 }
