@@ -368,7 +368,26 @@ struct OnboardingChatView: View {
                 ExplorationProfileCard(
                     text: explorationText,
                     isRunning: explorationRunning,
-                    isCompleted: explorationCompleted
+                    isCompleted: explorationCompleted,
+                    onSkip: {
+                        explorationTask?.cancel()
+                        explorationTask = nil
+                        graphTask?.cancel()
+                        graphTask = nil
+                        if let bridge = explorationBridge {
+                            Task { await bridge.stop() }
+                        }
+                        explorationBridge = nil
+                        if let bridge = graphBridge {
+                            Task { await bridge.stop() }
+                        }
+                        graphBridge = nil
+                        explorationRunning = false
+                        explorationCompleted = true
+                        if onboardingCompleted && !chatProvider.isSending {
+                            handleOnboardingComplete()
+                        }
+                    }
                 )
                 .padding(.horizontal, 20)
             }
@@ -1410,6 +1429,7 @@ struct ExplorationProfileCard: View {
     let text: String
     let isRunning: Bool
     let isCompleted: Bool
+    var onSkip: (() -> Void)? = nil
 
     @State private var isExpanded = false
     @State private var pulseScale: CGFloat = 1.0
@@ -1469,6 +1489,15 @@ struct ExplorationProfileCard: View {
                     }
 
                     Spacer(minLength: 4)
+
+                    if isRunning, let onSkip {
+                        Button(action: onSkip) {
+                            Text("Skip")
+                                .scaledFont(size: 12, weight: .medium)
+                                .foregroundColor(FazmColors.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     if !text.isEmpty {
                         // Toggle button with pulse animation
