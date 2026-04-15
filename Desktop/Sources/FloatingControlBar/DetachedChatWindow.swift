@@ -381,7 +381,8 @@ class DetachedChatWindowController {
         isAILoading: Bool,
         chatProvider: ChatProvider,
         messageCountBefore: Int,
-        sessionKey: String
+        sessionKey: String,
+        skipPersist: Bool = false
     ) {
         // Create a fresh state for the detached window, copying conversation data
         let detachedState = FloatingControlBarState()
@@ -472,22 +473,33 @@ class DetachedChatWindowController {
         // Persist the initial conversation to the detached session's DB context
         // so it can be restored on next launch. The floating bar already saved these
         // under __floating__, but we need them under the detached key.
-        let context = "__\(sessionKey)__"
-        Task {
-            for exchange in chatHistory {
-                // Use a timestamp just before the AI message so ordering is correct
-                let userDate = exchange.aiMessage.createdAt.addingTimeInterval(-0.1)
-                let userMsg = ChatMessage(text: exchange.question, createdAt: userDate, sender: .user, sessionKey: sessionKey)
-                await ChatMessageStore.saveMessage(userMsg, context: context)
-                await ChatMessageStore.saveMessage(exchange.aiMessage, context: context)
-            }
-            if !displayedQuery.isEmpty {
-                let userDate = currentAIMessage?.createdAt.addingTimeInterval(-0.1) ?? Date()
-                let userMsg = ChatMessage(text: displayedQuery, createdAt: userDate, sender: .user, sessionKey: sessionKey)
-                await ChatMessageStore.saveMessage(userMsg, context: context)
-            }
-            if let aiMsg = currentAIMessage, !aiMsg.text.isEmpty {
-                await ChatMessageStore.saveMessage(aiMsg, context: context)
+        // Skip if reopening an existing detached session (messages already persisted).
+        if !skipPersist {
+            let context = "__\(sessionKey)__"
+            Task {
+                for exchange in chatHistory {
+                    // Skip empty AI placeholder messages (from unpaired consecutive user messages)
+                    guard !exchange.aiMessage.text.isEmpty else {
+                        // Still save the user message
+                        let userDate = exchange.aiMessage.createdAt.addingTimeInterval(-0.1)
+                        let userMsg = ChatMessage(text: exchange.question, createdAt: userDate, sender: .user, sessionKey: sessionKey)
+                        await ChatMessageStore.saveMessage(userMsg, context: context)
+                        continue
+                    }
+                    // Use a timestamp just before the AI message so ordering is correct
+                    let userDate = exchange.aiMessage.createdAt.addingTimeInterval(-0.1)
+                    let userMsg = ChatMessage(text: exchange.question, createdAt: userDate, sender: .user, sessionKey: sessionKey)
+                    await ChatMessageStore.saveMessage(userMsg, context: context)
+                    await ChatMessageStore.saveMessage(exchange.aiMessage, context: context)
+                }
+                if !displayedQuery.isEmpty {
+                    let userDate = currentAIMessage?.createdAt.addingTimeInterval(-0.1) ?? Date()
+                    let userMsg = ChatMessage(text: displayedQuery, createdAt: userDate, sender: .user, sessionKey: sessionKey)
+                    await ChatMessageStore.saveMessage(userMsg, context: context)
+                }
+                if let aiMsg = currentAIMessage, !aiMsg.text.isEmpty {
+                    await ChatMessageStore.saveMessage(aiMsg, context: context)
+                }
             }
         }
     }
