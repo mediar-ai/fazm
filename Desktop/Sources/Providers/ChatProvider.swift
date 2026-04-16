@@ -2620,9 +2620,11 @@ class ChatProvider: ObservableObject {
             )
 
             // Flush any remaining buffered streaming text before finalizing
-            streamingFlushWorkItem?.cancel()
-            streamingFlushWorkItem = nil
-            flushStreamingBuffer()
+            if let buf = streamingBuffers[aiMessageId] {
+                buf.flushWorkItem?.cancel()
+                streamingBuffers[aiMessageId]?.flushWorkItem = nil
+            }
+            flushStreamingBuffer(messageId: aiMessageId)
 
             // Determine the final text to display and save
             let messageText: String
@@ -2836,9 +2838,11 @@ class ChatProvider: ObservableObject {
             }
 
             // Flush any remaining buffered streaming text before handling the error
-            streamingFlushWorkItem?.cancel()
-            streamingFlushWorkItem = nil
-            flushStreamingBuffer()
+            if let buf = streamingBuffers[aiMessageId] {
+                buf.flushWorkItem?.cancel()
+                streamingBuffers[aiMessageId]?.flushWorkItem = nil
+            }
+            flushStreamingBuffer(messageId: aiMessageId)
 
             // Keep the AI message in the array (even if empty) so Combine subscribers
             // and handlePostQuery can find it. Removing it broke detached window error
@@ -3031,33 +3035,33 @@ class ChatProvider: ObservableObject {
         streamingBuffers[messageId, default: StreamingBuffer()].forceNewTextBlock = true
     }
 
-    /// Flush accumulated text and thinking deltas to the published messages array.
-    private func flushStreamingBuffer() {
-        streamingFlushWorkItem = nil
+    /// Flush accumulated text and thinking deltas for a specific message to the published messages array.
+    private func flushStreamingBuffer(messageId id: String) {
+        streamingBuffers[id]?.flushWorkItem = nil
 
-        guard let id = streamingBufferMessageId,
-              let index = messages.firstIndex(where: { $0.id == id }) else {
-            streamingTextBuffer = ""
-            streamingThinkingBuffer = ""
+        guard let index = messages.firstIndex(where: { $0.id == id }) else {
+            streamingBuffers.removeValue(forKey: id)
             return
         }
 
+        let forceNewTextBlock = streamingBuffers[id]?.forceNewTextBlock ?? false
+
         // Flush text buffer
-        if !streamingTextBuffer.isEmpty {
-            let buffered = streamingTextBuffer
-            streamingTextBuffer = ""
+        let textBuffered = streamingBuffers[id]?.textBuffer ?? ""
+        if !textBuffered.isEmpty {
+            streamingBuffers[id]?.textBuffer = ""
 
             if !forceNewTextBlock,
                let lastBlockIndex = messages[index].contentBlocks.indices.last,
                case .text(let blockId, let existing) = messages[index].contentBlocks[lastBlockIndex] {
-                messages[index].contentBlocks[lastBlockIndex] = .text(id: blockId, text: existing + buffered)
-                messages[index].text += buffered
+                messages[index].contentBlocks[lastBlockIndex] = .text(id: blockId, text: existing + textBuffered)
+                messages[index].text += textBuffered
             } else {
                 // Deduplicate: when the model repeats the same text after an
                 // internal tool call (e.g. ToolSearch for deferred tool loading),
                 // the second text block is identical to the last one. Skip it to
                 // avoid showing the same message twice in the UI.
-                let trimmed = buffered.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmed = textBuffered.trimmingCharacters(in: .whitespacesAndNewlines)
                 let isDuplicate: Bool = {
                     // Find the last text block (may not be the very last block if tool calls are in between)
                     for block in messages[index].contentBlocks.reversed() {
@@ -3071,29 +3075,34 @@ class ChatProvider: ObservableObject {
                 if isDuplicate {
                     // Skip the duplicate text block entirely
                 } else {
-                    messages[index].contentBlocks.append(.text(id: UUID().uuidString, text: buffered))
+                    messages[index].contentBlocks.append(.text(id: UUID().uuidString, text: textBuffered))
                     // Add separator to plain text when starting a new text block
                     // so copy-paste and fallback rendering have proper paragraph breaks
                     if !messages[index].text.isEmpty {
                         messages[index].text += "\n\n"
                     }
-                    messages[index].text += buffered
+                    messages[index].text += textBuffered
                 }
             }
-            forceNewTextBlock = false
+            streamingBuffers[id]?.forceNewTextBlock = false
         }
 
         // Flush thinking buffer
-        if !streamingThinkingBuffer.isEmpty {
-            let buffered = streamingThinkingBuffer
-            streamingThinkingBuffer = ""
+        let thinkingBuffered = streamingBuffers[id]?.thinkingBuffer ?? ""
+        if !thinkingBuffered.isEmpty {
+            streamingBuffers[id]?.thinkingBuffer = ""
 
             if let lastBlockIndex = messages[index].contentBlocks.indices.last,
                case .thinking(let thinkId, let existing) = messages[index].contentBlocks[lastBlockIndex] {
-                messages[index].contentBlocks[lastBlockIndex] = .thinking(id: thinkId, text: existing + buffered)
+                messages[index].contentBlocks[lastBlockIndex] = .thinking(id: thinkId, text: existing + thinkingBuffered)
             } else {
-                messages[index].contentBlocks.append(.thinking(id: UUID().uuidString, text: buffered))
+                messages[index].contentBlocks.append(.thinking(id: UUID().uuidString, text: thinkingBuffered))
             }
+        }
+
+        // Clean up buffer entry if fully drained
+        if let buf = streamingBuffers[id], buf.textBuffer.isEmpty && buf.thinkingBuffer.isEmpty && buf.flushWorkItem == nil {
+            streamingBuffers.removeValue(forKey: id)
         }
     }
 
@@ -3114,13 +3123,12 @@ class ChatProvider: ObservableObject {
         // Without this, text from before the tool call (e.g. "work!") and text from
         // after (e.g. "What are you working on?") get concatenated in the buffer
         // and rendered as one jammed block ("work!What are you working on?").
-        if streamingBufferMessageId == messageId &&
-            (!streamingTextBuffer.isEmpty || !streamingThinkingBuffer.isEmpty) {
-            flushStreamingBuffer()
+        if let buf = streamingBuffers[messageId], !buf.textBuffer.isEmpty || !buf.thinkingBuffer.isEmpty {
+            flushStreamingBuffer(messageId: messageId)
         }
         // Ensure text after the tool call starts a new content block, even if
         // the text_block_boundary message hasn't arrived yet.
-        forceNewTextBlock = true
+        streamingBuffers[messageId, default: StreamingBuffer()].forceNewTextBlock = true
 
         guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
 
@@ -3474,17 +3482,16 @@ class ChatProvider: ObservableObject {
         log("ChatProvider: Tool progress — \(toolName) (\(toolUseId)) elapsed \(String(format: "%.1f", elapsed))s")
     }
 
-    /// Append thinking text to the streaming message via the shared buffer.
+    /// Append thinking text to the streaming message via a per-message buffer.
     private func appendThinking(messageId: String, text: String) {
-        streamingBufferMessageId = messageId
-        streamingThinkingBuffer += text
+        streamingBuffers[messageId, default: StreamingBuffer()].thinkingBuffer += text
 
-        // Schedule a flush if one isn't already pending
-        if streamingFlushWorkItem == nil {
+        // Schedule a flush if one isn't already pending for this message
+        if streamingBuffers[messageId]?.flushWorkItem == nil {
             let workItem = DispatchWorkItem { [weak self] in
-                self?.flushStreamingBuffer()
+                self?.flushStreamingBuffer(messageId: messageId)
             }
-            streamingFlushWorkItem = workItem
+            streamingBuffers[messageId]?.flushWorkItem = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + streamingFlushInterval, execute: workItem)
         }
     }
