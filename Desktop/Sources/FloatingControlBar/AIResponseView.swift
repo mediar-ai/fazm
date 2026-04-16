@@ -588,24 +588,23 @@ struct AIResponseView: View {
     private func handleChatObserverCardAction(activityId: Int64, action: String) {
         onChatObserverCardAction?(activityId, action)
         // Persist the action in the content block so it survives view recreation
-        if let barState = FloatingControlBarManager.shared.barState {
-            for i in barState.chatHistory.indices {
-                for j in barState.chatHistory[i].aiMessage.contentBlocks.indices {
-                    if case .observerCard(let id, let aId, let type, let content, let buttons, _) = barState.chatHistory[i].aiMessage.contentBlocks[j],
-                       aId == activityId {
-                        barState.chatHistory[i].aiMessage.contentBlocks[j] = .observerCard(id: id, activityId: aId, type: type, content: content, buttons: buttons, actedAction: action)
-                        return
-                    }
+        // Use the view's own state (via @EnvironmentObject) so pop-outs update their own state, not the global bar
+        for i in state.chatHistory.indices {
+            for j in state.chatHistory[i].aiMessage.contentBlocks.indices {
+                if case .observerCard(let id, let aId, let type, let content, let buttons, _) = state.chatHistory[i].aiMessage.contentBlocks[j],
+                   aId == activityId {
+                    state.chatHistory[i].aiMessage.contentBlocks[j] = .observerCard(id: id, activityId: aId, type: type, content: content, buttons: buttons, actedAction: action)
+                    return
                 }
             }
-            // Also check pending chat observer exchanges
-            for i in barState.pendingChatObserverExchanges.indices {
-                for j in barState.pendingChatObserverExchanges[i].aiMessage.contentBlocks.indices {
-                    if case .observerCard(let id, let aId, let type, let content, let buttons, _) = barState.pendingChatObserverExchanges[i].aiMessage.contentBlocks[j],
-                       aId == activityId {
-                        barState.pendingChatObserverExchanges[i].aiMessage.contentBlocks[j] = .observerCard(id: id, activityId: aId, type: type, content: content, buttons: buttons, actedAction: action)
-                        return
-                    }
+        }
+        // Also check pending chat observer exchanges
+        for i in state.pendingChatObserverExchanges.indices {
+            for j in state.pendingChatObserverExchanges[i].aiMessage.contentBlocks.indices {
+                if case .observerCard(let id, let aId, let type, let content, let buttons, _) = state.pendingChatObserverExchanges[i].aiMessage.contentBlocks[j],
+                   aId == activityId {
+                    state.pendingChatObserverExchanges[i].aiMessage.contentBlocks[j] = .observerCard(id: id, activityId: aId, type: type, content: content, buttons: buttons, actedAction: action)
+                    return
                 }
             }
         }
@@ -630,20 +629,20 @@ struct AIResponseView: View {
     }
 
     /// Collects all chat observer cards from pending chat observer exchanges into one stack.
+    /// Collects all chat observer cards from pending chat observer exchanges into one stack.
+    /// Uses the view's own @EnvironmentObject state so pop-outs only show their own pending cards.
     @ViewBuilder
     private var consolidatedPendingChatObserverCards: some View {
-        if let state = FloatingControlBarManager.shared.barState {
-            let cards = extractChatObserverCards(from: state.pendingChatObserverExchanges)
-            if !cards.isEmpty {
-                ObserverCardStackView(
-                    cards: cards,
-                    onAction: { id, action in
-                        handleChatObserverCardAction(activityId: id, action: action)
-                    }
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
-            }
+        let cards = extractChatObserverCards(from: state.pendingChatObserverExchanges)
+        if !cards.isEmpty {
+            ObserverCardStackView(
+                cards: cards,
+                onAction: { id, action in
+                    handleChatObserverCardAction(activityId: id, action: action)
+                }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
         }
     }
 
