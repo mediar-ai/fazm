@@ -34,12 +34,20 @@ struct ConversationHistorySection: View {
                     .padding(.bottom, 16)
             }
 
-            // Header with New Chat button + shortcut hint
+            // Header with New Chat button (shortcut inside)
             HStack {
                 Spacer()
                 Button(action: startNewChat) {
                     HStack(spacing: 6) {
-                        Image(systemName: "plus.bubble")
+                        Text(shortcutSettings.newPopOutChatKey.rawValue)
+                            .scaledFont(size: 11, weight: .semibold)
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.white.opacity(0.15))
+                            )
                         Text("New Chat")
                     }
                     .scaledFont(size: 13, weight: .medium)
@@ -50,16 +58,6 @@ struct ConversationHistorySection: View {
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-
-                Text(shortcutSettings.newPopOutChatKey.rawValue)
-                    .scaledFont(size: 12, weight: .medium)
-                    .foregroundColor(FazmColors.textTertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(FazmColors.backgroundTertiary)
-                    )
             }
             .padding(.bottom, 16)
 
