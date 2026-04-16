@@ -1254,13 +1254,16 @@ struct OnboardingChatBubble: View {
                                     .cornerRadius(18)
                             }
                         } else {
-                            // Render content blocks in order — interleaving tool indicators with text
-                            ForEach(message.contentBlocks) { block in
-                                switch block {
-                                case .toolCall(_, let name, let status, _, let input, _):
-                                    let indicator = OnboardingToolIndicator(toolName: name, status: status, input: input)
-                                    if !indicator.isHidden {
-                                        indicator
+                            // Group consecutive text blocks into single bubbles (matches main chat behavior)
+                            let grouped = ContentBlockGroup.group(message.contentBlocks)
+                            ForEach(grouped) { group in
+                                switch group {
+                                case .toolCalls(_, let calls):
+                                    ForEach(calls) { call in
+                                        let indicator = OnboardingToolIndicator(toolName: call.name, status: call.status, input: call.input)
+                                        if !indicator.isHidden {
+                                            indicator
+                                        }
                                     }
                                 case .text(_, let text):
                                     if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
