@@ -1013,7 +1013,7 @@ class ChatProvider: ObservableObject {
                 }
             }
             // Set up dynamic model list handler — ACP SDK reports available models after session/new
-            acpBridge.onModelsAvailable = { models in
+            await acpBridge.setModelsAvailableHandler { models in
                 Task { @MainActor in
                     ShortcutSettings.shared.updateModels(models)
                 }
