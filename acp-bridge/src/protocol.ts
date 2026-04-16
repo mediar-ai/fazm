@@ -271,6 +271,12 @@ export interface ChatObserverPollMessage {
   type: "observer_poll";
 }
 
+/** Available models reported by the ACP SDK after session creation */
+export interface ModelsAvailableMessage {
+  type: "models_available";
+  models: Array<{ modelId: string; name: string; description?: string }>;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -294,4 +300,5 @@ export type OutboundMessage =
   | ToolUseSummaryMessage
   | RateLimitMessage
   | ApiRetryMessage
-  | ChatObserverPollMessage;
+  | ChatObserverPollMessage
+  | ModelsAvailableMessage;
