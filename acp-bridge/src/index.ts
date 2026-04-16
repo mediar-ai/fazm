@@ -883,7 +883,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   if (cwd) {
     fazmToolsEnv.push({ name: "FAZM_WORKSPACE", value: cwd });
   }
-  if (sessionKey === "onboarding" || sessionKey === "browser-migration") {
+  if (sessionKey === "onboarding" || sessionKey === "browser-migration" || sessionKey === "graph-exploration" || sessionKey === "profile-exploration") {
     fazmToolsEnv.push({ name: "FAZM_ONBOARDING", value: "true" });
   }
   if (sessionKey === "observer") {
