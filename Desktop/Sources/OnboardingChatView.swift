@@ -330,6 +330,22 @@ struct OnboardingChatView: View {
                             .padding(.top, 12)
                         }
 
+                        // "Skip the rest" — shown when mandatory steps are done but AI hasn't called complete_onboarding yet
+                        // This prevents users from getting trapped if the AI is slow, stuck, or still running exploration
+                        if !onboardingCompleted && canSkipRemainingSteps && !chatProvider.isSending {
+                            Button(action: {
+                                log("OnboardingChatView: User chose to skip remaining onboarding steps")
+                                handleOnboardingComplete()
+                            }) {
+                                Text("Skip the rest →")
+                                    .scaledFont(size: 13)
+                                    .foregroundColor(FazmColors.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 8)
+                            .transition(.opacity)
+                        }
+
                         // Extra spacing so quick replies / buttons don't sit against the input field
                         Spacer().frame(height: 20)
                     }
@@ -574,6 +590,17 @@ struct OnboardingChatView: View {
 
     private var canSend: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chatProvider.isSending
+    }
+
+    /// User has completed enough mandatory onboarding steps to safely skip the rest.
+    /// Shows "Skip the rest" button so they aren't trapped waiting for complete_onboarding.
+    private var canSkipRemainingSteps: Bool {
+        let steps = OnboardingChatPersistence.completedSteps
+        // Minimum: user_preferences (name/language set) + at least 6 messages exchanged
+        // (welcome + user reply + name + language + source = ~6 messages minimum)
+        let hasMinimumSteps = steps.contains("user_preferences")
+        let hasEnoughMessages = chatProvider.messages.count >= 6
+        return hasMinimumSteps && hasEnoughMessages
     }
 
     /// Only show skip after 120s of inactivity (no messages, no quick-reply options, no AI responding).
