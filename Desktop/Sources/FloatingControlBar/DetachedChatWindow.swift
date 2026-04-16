@@ -886,7 +886,8 @@ class DetachedChatWindowController {
                     log("Auto-sending follow-up (detached): \(message)")
                     self.sendQuery(message, for: win)
                 }
-            }
+            },
+            sessionKey: sessionKey
         )
 
         subscribeToResponse(provider: provider, state: state, winId: winId, messageCountBefore: messageCountBefore)
