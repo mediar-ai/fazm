@@ -205,24 +205,38 @@ enum ChatQueryLifecycle {
     ///   - hasScreenshot: Whether a screenshot is attached.
     ///   - sendFollowUp: Closure to send an auto-follow-up (e.g., after OAuth in browser).
     ///                   Pass nil if auto-follow-ups are not supported in this context.
+    ///   - sessionKey: The ACP session key for this query. When provided, callbacks are
+    ///                 registered per-session to prevent cross-contamination between pop-out windows.
     static func prepareForQuery(
         state: FloatingControlBarState,
         message: String,
         hasScreenshot: Bool,
-        sendFollowUp: ((String) -> Void)?
+        sendFollowUp: ((String) -> Void)?,
+        sessionKey: String? = nil
     ) {
         state.suggestedReplies = []
         state.suggestedReplyQuestion = ""
 
-        ChatToolExecutor.onQuickReplyOptions = { [weak state] question, options in
+        let quickReplyHandler: (String, [String]) -> Void = { [weak state] question, options in
             Task { @MainActor in
                 state?.suggestedReplyQuestion = question
                 state?.suggestedReplies = options
             }
         }
 
-        if let sendFollowUp {
-            ChatToolExecutor.onSendFollowUp = sendFollowUp
+        if let sessionKey {
+            // Per-session registration prevents cross-contamination between pop-out windows
+            ChatToolExecutor.registerCallbacks(
+                sessionKey: sessionKey,
+                onQuickReply: quickReplyHandler,
+                onFollowUp: sendFollowUp
+            )
+        } else {
+            // Fallback for floating bar / onboarding (single-session contexts)
+            ChatToolExecutor.onQuickReplyOptions = quickReplyHandler
+            if let sendFollowUp {
+                ChatToolExecutor.onSendFollowUp = sendFollowUp
+            }
         }
 
         AnalyticsManager.shared.floatingBarQuerySent(messageLength: message.count, hasScreenshot: hasScreenshot, queryText: message)
