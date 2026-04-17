@@ -1779,29 +1779,49 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Server list
-            if mcpServerManager.servers.isEmpty {
+            // Built-in servers (from bridge)
+            let builtinServers = mcpServerManager.activeServers.filter { $0.builtin }
+            if !builtinServers.isEmpty {
+                Text("Built-in")
+                    .scaledFont(size: 12, weight: .medium)
+                    .foregroundColor(FazmColors.textTertiary)
+                    .padding(.leading, 4)
+                    .padding(.top, 4)
+
+                ForEach(builtinServers) { server in
+                    builtinMcpServerRow(server)
+                }
+            }
+
+            // User-defined servers
+            let userServers = mcpServerManager.servers
+            if !userServers.isEmpty || !builtinServers.isEmpty {
+                Text("Custom")
+                    .scaledFont(size: 12, weight: .medium)
+                    .foregroundColor(FazmColors.textTertiary)
+                    .padding(.leading, 4)
+                    .padding(.top, 4)
+            }
+
+            if userServers.isEmpty {
                 settingsCard {
                     HStack {
                         Spacer()
                         VStack(spacing: 8) {
-                            Image(systemName: "tray")
-                                .scaledFont(size: 24)
-                                .foregroundColor(FazmColors.textTertiary)
-                            Text("No MCP servers configured")
+                            Text("No custom MCP servers")
                                 .scaledFont(size: 14)
                                 .foregroundColor(FazmColors.textTertiary)
-                            Text("Add servers to give AI access to databases, APIs, file systems, and other tools.")
+                            Text("Add servers to connect databases, APIs, and other tools.")
                                 .scaledFont(size: 12)
                                 .foregroundColor(FazmColors.textTertiary)
                                 .multilineTextAlignment(.center)
                         }
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 8)
                         Spacer()
                     }
                 }
             } else {
-                ForEach(mcpServerManager.servers) { server in
+                ForEach(userServers) { server in
                     mcpServerRow(server)
                 }
             }
@@ -1911,6 +1931,42 @@ struct SettingsContentView: View {
                         .foregroundColor(.red.opacity(0.7))
                 }
                 .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func builtinMcpServerRow(_ server: MCPServerManager.ActiveServer) -> some View {
+        settingsCard {
+            HStack(spacing: 16) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(server.name)
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+
+                        Text("built-in")
+                            .scaledFont(size: 10, weight: .medium)
+                            .foregroundColor(FazmColors.textTertiary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(FazmColors.textTertiary.opacity(0.1))
+                            )
+                    }
+
+                    Text(server.command)
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
             }
         }
     }
