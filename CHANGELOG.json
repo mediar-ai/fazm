@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed follow-up message queue not appearing when sending during a streaming response"
+  ],
   "releases": [
     {
       "version": "2.3.2",
