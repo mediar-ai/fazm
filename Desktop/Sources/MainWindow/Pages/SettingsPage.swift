@@ -1781,7 +1781,7 @@ struct SettingsContentView: View {
 
             // Server list
             if mcpServerManager.servers.isEmpty {
-                settingsCard(settingId: "advanced.mcpservers.empty") {
+                settingsCard {
                     HStack {
                         Spacer()
                         VStack(spacing: 8) {
@@ -1807,7 +1807,7 @@ struct SettingsContentView: View {
             }
 
             // Config file location hint
-            settingsCard(settingId: "advanced.mcpservers.configpath") {
+            settingsCard {
                 HStack(spacing: 12) {
                     Image(systemName: "doc.text")
                         .scaledFont(size: 14)
@@ -1867,7 +1867,7 @@ struct SettingsContentView: View {
     }
 
     private func mcpServerRow(_ server: MCPServerManager.MCPServerConfig) -> some View {
-        settingsCard(settingId: "advanced.mcpservers.\(server.name)") {
+        settingsCard {
             HStack(spacing: 16) {
                 // Status indicator
                 Circle()
