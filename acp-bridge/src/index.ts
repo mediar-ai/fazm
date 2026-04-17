@@ -1128,6 +1128,26 @@ const SONNET_MODEL = "claude-sonnet-4-6";
 
 // --- Dynamic model list from ACP SDK ---
 let lastEmittedModelsJson = "";
+let lastEmittedMcpServersJson = "";
+
+function emitMcpServers(servers: McpServerConfig[]): void {
+  const payload = servers.map(s => ({
+    name: s.name,
+    command: s.command,
+    builtin: !isUserMcpServer(s.name),
+  }));
+  const json = JSON.stringify(payload);
+  if (json === lastEmittedMcpServersJson) return;
+  lastEmittedMcpServersJson = json;
+  send({ type: "mcp_servers_available", servers: payload });
+  logErr(`Emitted mcp_servers_available: ${payload.map(s => `${s.name}(${s.builtin ? "builtin" : "user"})`).join(", ")}`);
+}
+
+// Names of built-in MCP servers (hardcoded in buildMcpServers)
+const BUILTIN_MCP_NAMES = new Set(["fazm_tools", "playwright", "macos-use", "whatsapp", "google-workspace"]);
+function isUserMcpServer(name: string): boolean {
+  return !BUILTIN_MCP_NAMES.has(name);
+}
 
 function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: string; description?: string }>): void {
   logErr(`Raw models from ACP SDK: ${JSON.stringify(availableModels)}`);
