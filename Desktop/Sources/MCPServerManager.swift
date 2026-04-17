@@ -7,8 +7,18 @@ final class MCPServerManager: ObservableObject {
     static let shared = MCPServerManager()
 
     @Published var servers: [MCPServerConfig] = []
+    /// All MCP servers currently active in the bridge (built-in + user)
+    @Published var activeServers: [ActiveServer] = []
 
     private let configURL: URL
+
+    /// Represents an MCP server that is currently loaded in the ACP bridge
+    struct ActiveServer: Identifiable, Equatable {
+        var id: String { name }
+        var name: String
+        var command: String
+        var builtin: Bool
+    }
 
     struct MCPServerConfig: Identifiable, Codable, Equatable, Hashable {
         var id: String { name }
@@ -102,6 +112,12 @@ final class MCPServerManager: ObservableObject {
             servers[idx].enabled.toggle()
         }
         save()
+    }
+
+    func updateActiveServers(_ servers: [ActiveServer]) {
+        DispatchQueue.main.async {
+            self.activeServers = servers
+        }
     }
 
     /// JSON structure matching Claude Code's mcpServers format
