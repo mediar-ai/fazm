@@ -974,8 +974,9 @@ struct AIResponseView: View {
         followUpText = ""
         state.pendingAttachments = []
 
-        if isLoading && isThisSessionStreaming {
-            // THIS window is actively streaming a response — queue the message (text only)
+        if isLoading || isThisSessionStreaming {
+            // THIS window is busy (pre-first-token wait OR actively streaming) — queue the message (text only).
+            // isLoading flips to false as soon as the first delta arrives, so && would never fire during streaming.
             onEnqueueMessage?(trimmed)
         } else {
             // Window is idle (or another window is busy) — always render the user
