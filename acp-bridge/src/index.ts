@@ -984,7 +984,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
 
   // Append user-defined MCP servers from ~/.fazm/mcp-servers.json
   // Format mirrors Claude Code's mcpServers: { "name": { "command": "...", "args": [...], "env": {...}, "enabled": true } }
-  const userMcpConfigPath = join(homeDir, ".fazm", "mcp-servers.json");
+  const userMcpConfigPath = join(homedir(), ".fazm", "mcp-servers.json");
   try {
     if (existsSync(userMcpConfigPath)) {
       const raw = readFileSync(userMcpConfigPath, "utf-8");
