@@ -1130,11 +1130,15 @@ const SONNET_MODEL = "claude-sonnet-4-6";
 let lastEmittedModelsJson = "";
 
 function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: string; description?: string }>): void {
-  const json = JSON.stringify(availableModels);
+  logErr(`Raw models from ACP SDK: ${JSON.stringify(availableModels)}`);
+  // Filter out the "default" pseudo-model — it's not a real selectable model
+  const filtered = availableModels.filter(m => m.modelId !== "default");
+  if (filtered.length === 0) return;
+  const json = JSON.stringify(filtered);
   if (json === lastEmittedModelsJson) return;
   lastEmittedModelsJson = json;
-  send({ type: "models_available", models: availableModels });
-  logErr(`Emitted models_available: ${availableModels.map(m => m.modelId).join(", ")}`);
+  send({ type: "models_available", models: filtered });
+  logErr(`Emitted models_available: ${filtered.map(m => `${m.modelId}=${m.name}`).join(", ")}`);
 }
 
 interface WarmupSessionConfig {
