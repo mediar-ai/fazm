@@ -1943,17 +1943,14 @@ function handleSessionUpdate(
           clearAllToolTimers();
         }
 
-        // Signal a boundary between text blocks:
-        // - when content block index changes within a single response
-        // - when resuming text after a tool call (pendingBoundary)
+        // Signal a boundary between text blocks only when resuming text
+        // after a tool call (pendingBoundary). We no longer split on content
+        // block index changes because the API can use multiple text blocks
+        // within a single logical message, causing mid-word/mid-sentence splits.
         const effPendingBoundary = ctx ? ctx.pendingBoundary : pendingBoundary;
-        const effLastIndex = ctx ? ctx.lastTextContentBlockIndex : lastTextContentBlockIndex;
-        if (effPendingBoundary || (blockIndex >= 0 && effLastIndex >= 0 && blockIndex !== effLastIndex)) {
+        if (effPendingBoundary) {
           sendWithSession(sid, { type: "text_block_boundary" });
           if (ctx) ctx.pendingBoundary = false; else pendingBoundary = false;
-        }
-        if (blockIndex >= 0) {
-          if (ctx) ctx.lastTextContentBlockIndex = blockIndex; else lastTextContentBlockIndex = blockIndex;
         }
 
         onText(text);
