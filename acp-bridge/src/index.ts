@@ -1134,7 +1134,7 @@ let lastEmittedMcpServersJson = "";
 function emitMcpServers(servers: McpServerConfig[]): void {
   const payload = servers.map(s => ({
     name: s.name,
-    command: s.command,
+    command: "command" in s ? s.command : ("url" in s ? s.url : "unknown"),
     builtin: !isUserMcpServer(s.name),
   }));
   const json = JSON.stringify(payload);
