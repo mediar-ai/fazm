@@ -2169,6 +2169,31 @@ function handleSessionUpdate(
       // ToolSearch is hidden from UI (see tool_call case)
       const isInternalTool = title === "ToolSearch";
 
+      // Pending/in_progress updates often carry the *populated* rawInput that
+      // was empty at tool_call time (Claude streams arguments). Record the
+      // new payload and log once per distinct fingerprint so the Bash command
+      // or Write target shows up in the log even if the tool later hangs.
+      if (status === "pending" || status === "in_progress") {
+        const rawInput = update.rawInput as Record<string, unknown> | undefined;
+        const tracked = inFlightTools.get(toolCallId);
+        if (tracked) {
+          tracked.lastStatus = status;
+          if (rawInput && Object.keys(rawInput).length > 0) {
+            const fp = fingerprintInput(rawInput);
+            if (fp !== tracked.lastLoggedInputFingerprint) {
+              tracked.rawInput = rawInput;
+              tracked.lastLoggedInputFingerprint = fp;
+              const summary = summarizeToolInput(title, rawInput);
+              if (summary) {
+                logErr(
+                  `Tool input: ${title} (id=${toolCallId}, session=${tracked.sessionKey ?? tracked.sessionId ?? "?"}) [${summary}]`,
+                );
+              }
+            }
+          }
+        }
+      }
+
       if (status === "completed" || status === "failed" || status === "cancelled") {
         // Cancel the timeout watchdog (tool finished normally)
         clearToolTimer(toolCallId);
@@ -2255,8 +2280,24 @@ function handleSessionUpdate(
           });
         }
 
+        // Pull the final summary + duration from our in-flight tracker,
+        // then drop the entry so it doesn't get flagged as stuck later.
+        const tracked = inFlightTools.get(toolCallId);
+        const finalRawInput =
+          (update.rawInput as Record<string, unknown> | undefined) ?? tracked?.rawInput;
+        const summary = summarizeToolInput(title, finalRawInput);
+        const elapsedStr = tracked
+          ? ` elapsed=${((Date.now() - tracked.startedAt) / 1000).toFixed(1)}s`
+          : "";
+        const sessionTag = tracked
+          ? ` session=${tracked.sessionKey ?? tracked.sessionId ?? "?"}`
+          : "";
+        inFlightTools.delete(toolCallId);
+
         logErr(
-          `Tool completed: ${title} (id=${toolCallId}) output=${output ? output.length + " chars" : "none"}`
+          `Tool completed: ${title} (id=${toolCallId}${sessionTag}) status=${status} ` +
+            `output=${output ? output.length + " chars" : "none"}${elapsedStr}` +
+            (summary ? ` [${summary}]` : ""),
         );
       }
       break;
@@ -2537,6 +2578,7 @@ async function main(): Promise<void> {
           const ctx = activeQueries.get(targetKey);
           if (ctx) {
             logErr(`Interrupt requested for session key=${targetKey} (sessionId=${ctx.sessionId})`);
+            logStuckToolsOnInterrupt(`user interrupt (key=${targetKey})`, ctx.sessionId);
             ctx.interruptRequested = true;
             ctx.abortController.abort();
             acpNotify("session/cancel", { sessionId: ctx.sessionId });
@@ -2548,6 +2590,7 @@ async function main(): Promise<void> {
         } else {
           // Legacy: no sessionKey specified, interrupt all active queries
           logErr("Interrupt requested by user (all sessions)");
+          logStuckToolsOnInterrupt("user interrupt (all sessions)");
           interruptRequested = true;
           if (activeAbort) activeAbort.abort();
           for (const [key, ctx] of activeQueries) {
