@@ -142,6 +142,9 @@ struct SettingsContentView: View {
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
     @ObservedObject private var shortcutSettings = ShortcutSettings.shared
     @ObservedObject private var authState = AuthState.shared
+    @ObservedObject private var mcpServerManager = MCPServerManager.shared
+    @State private var showAddMCPServer = false
+    @State private var editingMCPServer: MCPServerManager.MCPServerConfig?
     @State private var showSignOutAlert = false
 
     enum SettingsSection: String, CaseIterable {
@@ -1735,10 +1738,6 @@ struct SettingsContentView: View {
     // MARK: - Advanced Subsections
 
     // MARK: MCP Servers
-
-    @ObservedObject private var mcpServerManager = MCPServerManager.shared
-    @State private var showAddMCPServer = false
-    @State private var editingMCPServer: MCPServerManager.MCPServerConfig?
 
     private var mcpServersSubsection: some View {
         VStack(spacing: 20) {
