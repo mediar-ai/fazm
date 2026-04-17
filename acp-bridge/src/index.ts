@@ -211,7 +211,6 @@ interface QueryContext {
   sessionKey: string;
   abortController: AbortController;
   interruptRequested: boolean;
-  lastTextContentBlockIndex: number;
   pendingBoundary: boolean;
   mode: "ask" | "act";
 }
@@ -1268,7 +1267,6 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
   const pendingTools: string[] = [];
   // Per-query text tracking is initialized in queryCtx below; keep legacy
   // globals for backward compat with any code paths that don't use ctx.
-  lastTextContentBlockIndex = -1;
   pendingBoundary = false;
 
   // QueryContext will be fully initialized once we have the ACP sessionId
@@ -1366,7 +1364,6 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       sessionKey,
       abortController,
       interruptRequested: false,
-      lastTextContentBlockIndex: -1,
       pendingBoundary: false,
       mode,
     };
@@ -1889,8 +1886,6 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
   }
 }
 
-/** Track the last content block index to detect boundaries between consecutive text blocks */
-let lastTextContentBlockIndex = -1;
 /** Whether the next text delta should be preceded by a boundary (e.g. after tool use) */
 let pendingBoundary = false;
 
@@ -1925,14 +1920,6 @@ function handleSessionUpdate(
       const text = content?.text ?? "";
 
       // Detect content block boundaries: the ACP update may include an index
-      // field indicating which content block this chunk belongs to. When the
-      // index changes, we've crossed into a new text block.
-      const blockIndex = typeof (update as Record<string, unknown>).index === "number"
-        ? (update as Record<string, unknown>).index as number
-        : typeof (content as Record<string, unknown> | undefined)?.index === "number"
-          ? (content as Record<string, unknown>).index as number
-          : -1;
-
       if (text) {
         // If tools were pending, they're now complete
         if (pendingTools.length > 0) {
