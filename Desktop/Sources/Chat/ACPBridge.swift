@@ -218,7 +218,7 @@ actor ACPBridge {
   /// Called when the chat observer starts or stops processing a batch
   var onChatObserverStatusChange: ((_ running: Bool) -> Void)?
   /// Called when the ACP SDK reports available models (after session/new)
-  var onModelsAvailable: ((_ models: [(modelId: String, name: String)]) -> Void)?
+  var onModelsAvailable: ((_ models: [(modelId: String, name: String, description: String?)]) -> Void)?
   /// Global tool call handler for background sessions (chat observer) — processes tool_use even when no query is active
   var onBackgroundToolCall: ToolCallHandler?
 
@@ -230,7 +230,7 @@ actor ACPBridge {
     self.onChatObserverStatusChange = handler
   }
 
-  func setModelsAvailableHandler(_ handler: @escaping @Sendable (_ models: [(modelId: String, name: String)]) -> Void) {
+  func setModelsAvailableHandler(_ handler: @escaping @Sendable (_ models: [(modelId: String, name: String, description: String?)]) -> Void) {
     self.onModelsAvailable = handler
   }
 
@@ -1201,10 +1201,11 @@ actor ACPBridge {
       return
     case .modelsAvailable(let models):
       log("ACPBridge: received models_available with \(models.count) models")
-      let parsed = models.compactMap { dict -> (modelId: String, name: String)? in
+      let parsed = models.compactMap { dict -> (modelId: String, name: String, description: String?)? in
         guard let modelId = dict["modelId"] as? String,
               let name = dict["name"] as? String else { return nil }
-        return (modelId: modelId, name: name)
+        let description = dict["description"] as? String
+        return (modelId: modelId, name: name, description: description)
       }
       if !parsed.isEmpty {
         onModelsAvailable?(parsed)
