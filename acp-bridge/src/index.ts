@@ -162,6 +162,97 @@ function clearAllToolTimers(): void {
   activeToolTimers.clear();
 }
 
+// --- In-flight tool diagnostic tracking ---
+// Keeps a snapshot of every tool call seen on the wire so that when an
+// interrupt fires we can dump what the stuck tool(s) were trying to do
+// (e.g. the exact Bash command or Write target). Cleared on tool completion.
+interface InFlightTool {
+  title: string;
+  kind: string;
+  sessionId: string | undefined;
+  sessionKey: string | undefined;
+  startedAt: number;
+  rawInput: Record<string, unknown> | undefined;
+  lastStatus: string;
+  lastLoggedInputFingerprint: string;
+}
+const inFlightTools = new Map<string, InFlightTool>();
+
+function summarizeToolInput(
+  title: string,
+  rawInput: Record<string, unknown> | undefined,
+): string {
+  if (!rawInput || Object.keys(rawInput).length === 0) return "";
+  const lower = title.toLowerCase();
+  const pick = (k: string): string | undefined => {
+    const v = rawInput[k];
+    return typeof v === "string" ? v : v !== undefined ? JSON.stringify(v) : undefined;
+  };
+  const snip = (s: string, n: number): string =>
+    s.length > n ? s.slice(0, n) + "…" : s;
+  if (lower === "bash" || lower === "terminal") {
+    const cmd = pick("command");
+    const desc = pick("description");
+    const parts: string[] = [];
+    if (cmd) parts.push(`command=${snip(cmd, 300)}`);
+    if (desc) parts.push(`description=${snip(desc, 120)}`);
+    if (parts.length) return parts.join(", ");
+  }
+  if (lower === "write") {
+    const fp = pick("file_path");
+    const content = pick("content");
+    const parts: string[] = [];
+    if (fp) parts.push(`file_path=${fp}`);
+    if (content) parts.push(`content=${content.length}chars`);
+    if (parts.length) return parts.join(", ");
+  }
+  if (lower === "edit") {
+    const fp = pick("file_path");
+    const oldStr = pick("old_string");
+    const parts: string[] = [];
+    if (fp) parts.push(`file_path=${fp}`);
+    if (oldStr) parts.push(`old=${snip(oldStr, 80)}`);
+    if (parts.length) return parts.join(", ");
+  }
+  if (lower === "read") {
+    const fp = pick("file_path");
+    if (fp) return `file_path=${fp}`;
+  }
+  // Generic fallback: first 3 fields, values truncated
+  return Object.entries(rawInput)
+    .slice(0, 3)
+    .map(([k, v]) => {
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      return `${k}=${s && s.length > 120 ? s.slice(0, 120) + "…" : s}`;
+    })
+    .join(", ");
+}
+
+function fingerprintInput(rawInput: Record<string, unknown> | undefined): string {
+  if (!rawInput) return "";
+  try {
+    return JSON.stringify(rawInput);
+  } catch {
+    return String(Object.keys(rawInput).length);
+  }
+}
+
+function logStuckToolsOnInterrupt(reason: string, sessionId?: string): void {
+  if (inFlightTools.size === 0) return;
+  const now = Date.now();
+  for (const [toolCallId, tool] of inFlightTools) {
+    if (sessionId && tool.sessionId !== sessionId) continue;
+    const elapsedMs = now - tool.startedAt;
+    const summary = summarizeToolInput(tool.title, tool.rawInput);
+    logErr(
+      `Tool STUCK on ${reason}: ${tool.title} (id=${toolCallId}, kind=${tool.kind}, ` +
+        `session=${tool.sessionKey ?? tool.sessionId ?? "?"}, ` +
+        `elapsed=${(elapsedMs / 1000).toFixed(1)}s, lastStatus=${tool.lastStatus})` +
+        (summary ? ` [${summary}]` : " [no input captured]"),
+    );
+  }
+}
+
 // --- Helpers ---
 
 function send(msg: OutboundMessage): void {
@@ -2035,11 +2126,25 @@ function handleSessionUpdate(
 
         // Log tool start with input summary so hung tools are diagnosable
         const rawInput = update.rawInput as Record<string, unknown> | undefined;
-        const inputSummary = rawInput ? Object.entries(rawInput).map(([k, v]) => {
-          const s = typeof v === "string" ? v : JSON.stringify(v);
-          return `${k}=${s && s.length > 120 ? s.slice(0, 120) + "…" : s}`;
-        }).join(", ") : "";
-        logErr(`Tool started: ${title} (id=${toolCallId}, kind=${kind})${inputSummary ? ` [${inputSummary}]` : ""}`);
+        const inputSummary = summarizeToolInput(title, rawInput);
+        const sessionKeyForLog = sid ? sessionIdToKey.get(sid) : undefined;
+        logErr(
+          `Tool started: ${title} (id=${toolCallId}, kind=${kind}, ` +
+            `session=${sessionKeyForLog ?? sid ?? "?"})` +
+            (inputSummary ? ` [${inputSummary}]` : " [no input yet]"),
+        );
+
+        // Track this tool so we can dump what's stuck when an interrupt fires
+        inFlightTools.set(toolCallId, {
+          title,
+          kind,
+          sessionId: sid,
+          sessionKey: sessionKeyForLog,
+          startedAt: Date.now(),
+          rawInput,
+          lastStatus: status,
+          lastLoggedInputFingerprint: fingerprintInput(rawInput),
+        });
 
         // Start timeout watchdog for this tool
         startToolTimer(toolCallId, title, isInternalTool, sid, pendingTools);
