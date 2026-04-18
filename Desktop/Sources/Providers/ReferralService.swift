@@ -78,7 +78,7 @@ final class ReferralService {
     // MARK: - Track Signup (for referred users)
 
     /// Called when the app receives a referral code (via URL scheme or manual entry).
-    /// Stores the code locally and notifies the backend.
+    /// Validates with backend first, only stores locally on success.
     func trackReferralSignup(code: String) async {
         let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard !trimmed.isEmpty else { return }
@@ -89,8 +89,11 @@ final class ReferralService {
             return
         }
 
-        UserDefaults.standard.set(trimmed, forKey: "fazm_referred_by_code")
-        Task { @MainActor in AnalyticsManager.shared.referralSignupTracked(code: trimmed) }
+        // Client-side self-referral check
+        if trimmed == referralCode {
+            log("ReferralService: self-referral blocked (own code \(trimmed))")
+            return
+        }
 
         guard !backendUrl.isEmpty else { return }
 
@@ -107,9 +110,18 @@ final class ReferralService {
             let body = ["referral_code": trimmed]
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             log("ReferralService: track-signup status=\(statusCode)")
+
+            // Only store locally and fire analytics if backend accepted it
+            if statusCode == 200 {
+                UserDefaults.standard.set(trimmed, forKey: "fazm_referred_by_code")
+                Task { @MainActor in AnalyticsManager.shared.referralSignupTracked(code: trimmed) }
+            } else {
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                log("ReferralService: track-signup rejected (\(statusCode)): \(msg)")
+            }
         } catch {
             log("ReferralService: track-signup error: \(error.localizedDescription)")
         }
@@ -175,6 +187,39 @@ final class ReferralService {
         if let code = referralCode {
             Task { @MainActor in AnalyticsManager.shared.referralLinkCopied(code: code) }
         }
+    }
+
+    // MARK: - Referral Status (for Settings panel)
+
+    struct ReferralStatusResponse: Decodable {
+        let code: String
+        let referral_url: String
+        let referred_count: Int
+        let completed_count: Int
+        let reward_months: Int
+    }
+
+    /// Fetches referral stats from the backend.
+    func fetchReferralStatus() async throws -> ReferralStatusResponse {
+        guard !backendUrl.isEmpty else { throw ReferralError.notConfigured }
+
+        let token = try await AuthService.shared.getIdToken(forceRefresh: false)
+        let url = URL(string: "\(backendUrl)/api/referral/status")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(deviceId, forHTTPHeaderField: "X-Device-Id")
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+        guard statusCode == 200 else {
+            let msg = String(data: data, encoding: .utf8) ?? ""
+            throw ReferralError.serverError(msg)
+        }
+
+        return try JSONDecoder().decode(ReferralStatusResponse.self, from: data)
     }
 
     // MARK: - Errors
