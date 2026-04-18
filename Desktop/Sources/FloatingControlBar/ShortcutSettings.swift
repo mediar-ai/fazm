@@ -149,34 +149,29 @@ class ShortcutSettings: ObservableObject {
 
     /// Default models used as fallback until ACP reports the dynamic list.
     static let defaultModels: [ModelOption] = [
-        ModelOption(id: "claude-haiku-4-5-20251001", label: "Scary (Haiku)", shortLabel: "Scary"),
-        ModelOption(id: "claude-sonnet-4-6", label: "Fast (Sonnet)", shortLabel: "Fast"),
-        ModelOption(id: "claude-opus-4-6", label: "Smart (Opus)", shortLabel: "Smart"),
+        ModelOption(id: "haiku", label: "Scary (Haiku, latest)", shortLabel: "Scary"),
+        ModelOption(id: "sonnet", label: "Fast (Sonnet, latest)", shortLabel: "Fast"),
+        ModelOption(id: "opus", label: "Smart (Opus, latest)", shortLabel: "Smart"),
     ]
 
     /// Mapping from model family substring to user-friendly labels and ordering.
     /// Order determines display order in the UI (lowest first).
-    private static let modelFamilyMap: [(substring: String, short: String, order: Int)] = [
-        ("haiku", "Scary", 0),
-        ("sonnet", "Fast", 1),
-        ("opus", "Smart", 2),
+    private static let modelFamilyMap: [(substring: String, short: String, family: String, order: Int)] = [
+        ("haiku", "Scary", "Haiku", 0),
+        ("sonnet", "Fast", "Sonnet", 1),
+        ("opus", "Smart", "Opus", 2),
     ]
 
     /// Available models for Ask Fazm. Updated dynamically from ACP SDK; falls back to defaults.
     @Published var availableModels: [ModelOption] = ShortcutSettings.defaultModels
 
-    /// Normalize a model ID: ACP SDK returns short aliases ("sonnet") while the app
-    /// stores full IDs ("claude-sonnet-4-6"). Map known aliases to their current full IDs.
+    /// Normalize a model ID: maps legacy full IDs to short aliases that the ACP SDK expects.
     static func normalizeModelId(_ modelId: String) -> String {
-        // Already a full ID
-        if modelId.hasPrefix("claude-") { return modelId }
-        // Map short alias to full model ID
-        switch modelId {
-        case "haiku": return "claude-haiku-4-5-20251001"
-        case "sonnet": return "claude-sonnet-4-6"
-        case "opus": return "claude-opus-4-6"
-        default: return modelId
-        }
+        // Map legacy full IDs to short aliases
+        if modelId.contains("haiku") { return "haiku" }
+        if modelId.contains("sonnet") { return "sonnet" }
+        if modelId.contains("opus") { return "opus" }
+        return modelId
     }
 
     /// Update the model list from ACP SDK response. Preserves user-friendly labels for known families.
