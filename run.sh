@@ -8,6 +8,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/scripts/fazm-lock.sh"
 fazm_acquire_lock 300
 
+# Ensure GNU timeout is available (macOS doesn't ship it; coreutils installs gtimeout)
+if ! command -v timeout &>/dev/null; then
+    if command -v gtimeout &>/dev/null; then
+        timeout() { gtimeout "$@"; }
+    elif [ -x /opt/homebrew/opt/coreutils/libexec/gnubin/timeout ]; then
+        timeout() { /opt/homebrew/opt/coreutils/libexec/gnubin/timeout "$@"; }
+    else
+        # Fallback: ignore timeout and just run the command directly
+        timeout() { shift; "$@"; }
+    fi
+fi
+
 # Clear system OPENAI_API_KEY so .env takes precedence
 unset OPENAI_API_KEY
 
