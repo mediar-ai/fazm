@@ -1,8 +1,22 @@
 {
-  "unreleased": [
-    "Fixed follow-up message queue not appearing when sending during a streaming response"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.4.0",
+      "date": "2026-04-20",
+      "changes": [
+        "Added custom MCP server support via ~/.fazm/mcp-servers.json with Settings UI to add, edit, and toggle servers",
+        "Available AI models now populate dynamically from the agent, so newly released Claude models appear without an app update",
+        "Added Referrals section to Settings with a $49 credit banner on the paywall",
+        "Upgraded Claude agent protocol to v0.29.2",
+        "Fixed follow-up messages not appearing when sent during a streaming response",
+        "Fixed AI responses occasionally splitting mid-word into separate bubbles",
+        "Updated default model selection and simplified model labels",
+        "Enlarged the chevron button hit area in AI response view",
+        "Paywall now triggers after 3 messages for all users, including built-in mode",
+        "Shortened free trial from 21 days to 1 day"
+      ]
+    },
     {
       "version": "2.3.2",
       "date": "2026-04-16",
