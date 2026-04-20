@@ -123,11 +123,11 @@ struct PaywallSheet: View {
                                 .scaledFont(size: 14, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
                             if referralCredit > 0 {
-                                Text("21 days free, then $49/mo ($\(referralCredit) credit applied)")
+                                Text("1 day free, then $49/mo ($\(referralCredit) credit applied)")
                                     .scaledFont(size: 12)
                                     .foregroundColor(FazmColors.success)
                             } else {
-                                Text("21 days free, then $49/mo")
+                                Text("1 day free, then $49/mo")
                                     .scaledFont(size: 12)
                                     .foregroundColor(FazmColors.textTertiary)
                             }
