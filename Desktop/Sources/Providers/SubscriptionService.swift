@@ -21,7 +21,7 @@ final class SubscriptionService {
 
     // MARK: - Trial & Paywall
 
-    let trialDays = 21
+    let trialDays = 1
     let freeMessagesPerDay = 3
 
     /// Date the user's trial started — uses Firebase account creation date (actual signup).
