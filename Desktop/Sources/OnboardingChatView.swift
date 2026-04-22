@@ -1270,8 +1270,14 @@ struct OnboardingChatBubble: View {
                                     .cornerRadius(18)
                             }
                         } else {
-                            // Group consecutive text blocks into single bubbles (matches main chat behavior)
-                            let grouped = ContentBlockGroup.group(message.contentBlocks)
+                            // Group consecutive text blocks into single bubbles. `ask_followup`
+                            // is hidden here (its question/buttons render separately via
+                            // QuickReplyButtonsView), so mark it hidden to the grouper to
+                            // merge text blocks the model split around it.
+                            let grouped = ContentBlockGroup.group(
+                                message.contentBlocks,
+                                hiddenToolNames: ["ask_followup"]
+                            )
                             ForEach(grouped) { group in
                                 switch group {
                                 case .toolCalls(_, let calls):
