@@ -538,6 +538,11 @@ class AuthService: NSObject {
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             let responseBody = String(data: data, encoding: .utf8) ?? ""
+            if Self.isPermanentRefreshFailure(statusCode: statusCode, body: responseBody) {
+                log("AuthService: refresh token revoked (status \(statusCode)); signing out for re-auth")
+                signOut()
+                throw AuthError.tokenRefreshFailed("revoked")
+            }
             logError("AuthService: Token refresh failed (status \(statusCode)): \(responseBody)")
             throw AuthError.tokenRefreshFailed("Status \(statusCode)")
         }
@@ -560,6 +565,22 @@ class AuthService: NSObject {
         saveAuthState()
 
         log("AuthService: Token refreshed successfully")
+    }
+
+    /// A refresh-token failure that will never recover without the user re-authenticating.
+    /// Firebase returns 400 with messages like TOKEN_EXPIRED or INVALID_REFRESH_TOKEN
+    /// when the refresh token is revoked; OAuth peers use `invalid_grant`.
+    private static func isPermanentRefreshFailure(statusCode: Int, body: String) -> Bool {
+        guard statusCode == 400 || statusCode == 401 else { return false }
+        let markers = [
+            "TOKEN_EXPIRED",
+            "INVALID_REFRESH_TOKEN",
+            "USER_DISABLED",
+            "USER_NOT_FOUND",
+            "CREDENTIAL_TOO_OLD_LOGIN_AGAIN",
+            "invalid_grant",
+        ]
+        return markers.contains(where: { body.contains($0) })
     }
 
     /// Start a timer that periodically checks and refreshes the token.
@@ -586,6 +607,10 @@ class AuthService: NSObject {
 
     func signOut() {
         log("AuthService: Signing out")
+
+        // Stop the refresh timer so we don't keep ticking after sign-out
+        tokenRefreshTimer?.invalidate()
+        tokenRefreshTimer = nil
 
         // Clear stored tokens
         idToken = nil
