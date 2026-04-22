@@ -1123,7 +1123,7 @@ struct ModelToggleButton: View {
     }
 
     private var selectedModelShortLabel: String {
-        shortcutSettings.availableModels.first(where: { $0.id == selectedModelId })?.shortLabel ?? "Smart"
+        shortcutSettings.shortLabel(for: selectedModelId) ?? "Fast"
     }
 
     var body: some View {
