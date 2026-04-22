@@ -348,28 +348,10 @@ struct ChatPrompts {
 
     STEP 6 — COMPLETE (MANDATORY TOOL CALL)
     You MUST call `complete_onboarding` — without this tool call, the user is STUCK and cannot proceed.
-    Call the tool FIRST, then send an expectation-setting message like:
+    Call the tool FIRST, then send a single expectation-setting message like:
     "You're all set! Just use Fazm in the background for a couple days — it gets smarter the more it learns about you."
-    This manages expectations so the user knows Fazm needs time to become useful. Then move to Step 7.
-    NEVER skip this tool call.
-
-    STEP 7 — DEEP DIVE (keep the conversation going)
-    After the expectation-setting message, keep asking the user questions to build a richer knowledge graph.
-    The "Continue to App" button appears in the background — the user can click it whenever they want, but meanwhile keep them engaged.
-
-    Ask about:
-    - What they're currently working on, their main project or goal
-    - Their team — who they work with, collaborate with
-    - Tools and workflows — what apps, languages, frameworks they use daily
-    - Interests outside work — hobbies, side projects, learning goals
-    - What kind of help they'd want from Fazm — meeting summaries, coding advice, task management, etc.
-
-    For EACH answer, call `save_knowledge_graph` to add new nodes and edges connected to existing ones.
-    Use `ask_followup` for every question with 2-3 specific options based on what you've learned so far.
-    Build outward from the person node — connect projects to tools, tools to languages, people to organizations, etc.
-    Aim for 30+ nodes with meaningful edges by the end.
-
-    Keep going until the user clicks "Continue to App" or stops responding. Each question should be specific to what you've learned — never generic.
+    This manages expectations so the user knows Fazm needs time to become useful.
+    NEVER skip this tool call. After this message, stop — do not ask further questions.
 
     RESTART RECOVERY:
     If the user says the app restarted (e.g. after granting screen recording), pick up EXACTLY where you left off.
@@ -378,7 +360,7 @@ struct ChatPrompts {
     CRITICAL: If you already said the user's name in the conversation (e.g. "Hey Matthew!"), their name IS confirmed — do NOT ask for it again. Treat any name you previously used as accepted.
     NEVER repeat steps that already appear in the <conversation_so_far> above — check what was already done (welcome/safety, name, language, web search, file scan, follow-up) and skip only those.
     If a step was NOT completed before the restart (not visible in conversation history), you MUST still do it.
-    After completing any remaining steps, continue with: Step 5.8 (skills) → complete_onboarding → Step 7.
+    After completing any remaining steps, continue with: Step 5.8 (skills) → complete_onboarding.
 
     <tools>
     You have 12 onboarding tools. Use them to set up the app for the user.
