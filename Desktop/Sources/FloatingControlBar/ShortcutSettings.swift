@@ -199,11 +199,13 @@ class ShortcutSettings: ObservableObject {
             // If the user's selected model is not in the new list, keep it (it may still work)
             // but log a warning
             if !newModels.contains(where: { $0.id == selectedModel }) {
-                // Try normalizing the selected model too
                 let normalizedSelection = Self.normalizeModelId(selectedModel)
                 if newModels.contains(where: { $0.id == normalizedSelection }) {
                     selectedModel = normalizedSelection
                     log("ShortcutSettings: normalized selectedModel to \(normalizedSelection)")
+                } else if let upgraded = newModels.first(where: { $0.id.contains(normalizedSelection) }) {
+                    selectedModel = upgraded.id
+                    log("ShortcutSettings: upgraded selectedModel \(normalizedSelection) -> \(upgraded.id)")
                 } else {
                     log("ShortcutSettings: current selectedModel \(selectedModel) not in new model list")
                 }
