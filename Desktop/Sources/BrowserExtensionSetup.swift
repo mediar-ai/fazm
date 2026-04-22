@@ -345,6 +345,9 @@ struct BrowserExtensionSetup: View {
                             Button(action: {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString("chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html", forType: .string)
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    tokenStepDone = true
+                                }
                             }) {
                                 HStack(spacing: 5) {
                                     Image(systemName: "doc.on.doc")
