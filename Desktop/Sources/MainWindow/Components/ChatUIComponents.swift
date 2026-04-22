@@ -31,8 +31,14 @@ struct ToolCallGroupItem: Equatable, Identifiable {
         }
     }
 
-    /// Groups consecutive content blocks into display groups
-    static func group(_ blocks: [ChatContentBlock]) -> [ContentBlockGroup] {
+    /// Groups consecutive content blocks into display groups.
+    ///
+    /// `hiddenToolNames` lists tool names the caller renders separately (e.g. `ask_followup`
+    /// in onboarding, whose question/buttons are drawn outside the message stream). When a
+    /// run of tool calls between two text blocks is composed entirely of hidden tools, the
+    /// grouper drops them and merges the surrounding text into a single bubble so a thought
+    /// that the model split around a hidden tool doesn't render as two orphan fragments.
+    static func group(_ blocks: [ChatContentBlock], hiddenToolNames: Set<String> = []) -> [ContentBlockGroup] {
         var result: [ContentBlockGroup] = []
         var pendingText = ""
         var pendingTextId = ""
@@ -58,14 +64,25 @@ struct ToolCallGroupItem: Equatable, Identifiable {
         for block in blocks {
             switch block {
             case .text(let id, let text):
-                flushToolCalls()
+                if !pendingToolCalls.isEmpty {
+                    let allHidden = pendingToolCalls.allSatisfy { hiddenToolNames.contains($0.name) }
+                    if allHidden {
+                        // Drop the hidden tool calls so pending text merges with this text.
+                        pendingToolCalls = []
+                        pendingToolCallsId = ""
+                    } else {
+                        flushText()
+                        flushToolCalls()
+                    }
+                }
                 if pendingText.isEmpty {
                     pendingTextId = id
                 }
                 pendingText += (pendingText.isEmpty ? "" : "\n\n") + text
 
             case .toolCall(let id, let name, let status, let toolUseId, let input, let output):
-                flushText()
+                // Defer text flush: if the next block is more text and every tool in this
+                // run is hidden, we'll merge the text across them.
                 if pendingToolCalls.isEmpty {
                     pendingToolCallsId = id
                 }
