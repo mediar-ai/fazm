@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed paywall blocking users mid-onboarding"
+  ],
   "releases": [
     {
       "version": "2.4.0",
