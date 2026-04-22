@@ -1032,7 +1032,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   // Save snapshots to files and strip inline base64 screenshots to reduce context size
   playwrightArgs.push("--output-mode", "file", "--image-responses", "omit", "--output-dir", "/tmp/playwright-mcp");
   // Inject visual overlay on every page to indicate browser is controlled by Fazm
-  const overlayInitPage = join(__dirname, "..", "browser-overlay-init-page.js");
+  const overlayInitPage = join(__dirname, "..", "browser-overlay-init-page.cjs");
   if (existsSync(overlayInitPage)) {
     playwrightArgs.push("--init-page", overlayInitPage);
     logErr(`Browser overlay init-page: ${overlayInitPage}`);
