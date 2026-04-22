@@ -191,7 +191,7 @@ struct PaywallSheet: View {
                 // Option 3: Chat with founder
                 Button(action: {
                     AnalyticsManager.shared.paywallFounderCallTapped()
-                    if let url = URL(string: "https://cal.com/team/mediar/onboarding") {
+                    if let url = URL(string: "https://cal.com/team/mediar/fazm") {
                         NSWorkspace.shared.open(url)
                     }
                 }) {
