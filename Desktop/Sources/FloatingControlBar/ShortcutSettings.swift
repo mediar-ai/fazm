@@ -213,11 +213,22 @@ class ShortcutSettings: ObservableObject {
         }
     }
 
+    /// Human-readable short label for an arbitrary model id, falling through
+    /// `availableModels` → `defaultModels` → normalized-alias → `defaultModels`.
+    /// Use this everywhere instead of a local `?? "Smart"` so the label stays
+    /// correct when ACP reports a partial model list (e.g. Sonnet rate-limited).
+    func shortLabel(for modelId: String) -> String? {
+        if let m = availableModels.first(where: { $0.id == modelId }) { return m.shortLabel }
+        if let m = Self.defaultModels.first(where: { $0.id == modelId }) { return m.shortLabel }
+        let normalized = Self.normalizeModelId(modelId)
+        if normalized != modelId,
+           let m = Self.defaultModels.first(where: { $0.id == normalized }) { return m.shortLabel }
+        return nil
+    }
+
     /// Human-readable short label for the currently selected model.
     var selectedModelShortLabel: String {
-        availableModels.first(where: { $0.id == selectedModel })?.shortLabel
-            ?? Self.defaultModels.first(where: { $0.id == selectedModel })?.shortLabel
-            ?? "Smart"
+        shortLabel(for: selectedModel) ?? "Fast"
     }
 
     /// Proactiveness level for the AI assistant.
