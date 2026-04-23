@@ -2,7 +2,8 @@
   "unreleased": [
     "Fixed paywall blocking users mid-onboarding",
     "Fixed a bug where a revoked sign-in would make the app keep retrying in the background; now you are signed out so you can sign in again",
-    "Fixed model label showing \"Smart\" for Sonnet users when Anthropic reports a partial model list"
+    "Fixed model label showing \"Smart\" for Sonnet users when Anthropic reports a partial model list",
+    "Fix onboarding chat messages splitting into multiple bubbles when tool calls occur"
   ],
   "releases": [
     {
