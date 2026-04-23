@@ -189,7 +189,7 @@ final class SubscriptionService {
         Task { @MainActor in AnalyticsManager.shared.subscriptionCheckoutOpened(sessionId: checkout.session_id) }
 
         if let checkoutURL = URL(string: checkout.checkout_url) {
-            await MainActor.run {
+            _ = await MainActor.run {
                 NSWorkspace.shared.open(checkoutURL)
             }
         }
@@ -233,7 +233,7 @@ final class SubscriptionService {
         log("SubscriptionService: opening billing portal")
 
         if let portalURL = URL(string: portal.portal_url) {
-            await MainActor.run {
+            _ = await MainActor.run {
                 NSWorkspace.shared.open(portalURL)
             }
         }
