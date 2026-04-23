@@ -1006,6 +1006,14 @@ struct OnboardingChatView: View {
 
                 await bridge.stop()
                 await MainActor.run { graphBridge = nil }
+            } catch let bridgeError as BridgeError where bridgeError.isCreditOrRateLimitError {
+                let msg = bridgeError.errorDescription ?? bridgeError.localizedDescription
+                log("OnboardingChat: Graph exploration blocked by credit/rate limit: \(msg)")
+                if let bridge = await MainActor.run(body: { graphBridge }) { await bridge.stop() }
+                await MainActor.run {
+                    graphBridge = nil
+                    onboardingError = .general(msg)
+                }
             } catch {
                 log("OnboardingChat: Graph exploration failed (non-fatal): \(error.localizedDescription)")
                 if let bridge = await MainActor.run(body: { graphBridge }) {
