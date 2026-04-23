@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed Smart (Opus) model preference not persisting after app update \u2014 now correctly maps stored \"opus\" to the new ACP model ID"
+  ],
   "releases": [
     {
       "version": "2.4.1",
