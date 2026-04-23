@@ -1578,6 +1578,19 @@ enum BridgeError: LocalizedError {
   case creditExhausted(String)
   case agentError(String)
 
+  /// True when this is a credit or temporary rate-limit exhaustion the user should see.
+  var isCreditOrRateLimitError: Bool {
+    if case .creditExhausted = self { return true }
+    return false
+  }
+
+  /// True when credit exhaustion is a temporary rate limit (has a resets-at timestamp).
+  /// False means actual credits are gone and the user needs to take action.
+  var isRateLimitExhaustion: Bool {
+    guard case .creditExhausted(let msg) = self else { return false }
+    return msg.range(of: #"resets\s+\S"#, options: .regularExpression) != nil
+  }
+
   var errorDescription: String? {
     switch self {
     case .nodeNotFound:
