@@ -2742,7 +2742,7 @@ class ChatProvider: ObservableObject {
                 } else if let key = sessionKey, key.hasPrefix("detached-") {
                     let detachedIdKey = "acpSessionId_\(key)_\(bridgeMode)"
                     UserDefaults.standard.set(queryResult.sessionId, forKey: detachedIdKey)
-                } else if sessionKey == nil || sessionKey == "main" {
+                } else if !isOnboarding && (sessionKey == nil || sessionKey == "main") {
                     UserDefaults.standard.set(queryResult.sessionId, forKey: mainSessionIdKey)
                 }
             }
@@ -2900,7 +2900,7 @@ class ChatProvider: ObservableObject {
                 // so handlePostQuery doesn't suppress the error thinking a retry is pending
                 pendingRetryMessage = nil
                 log("ChatProvider: credit/rate limit exhausted in \(bridgeMode) mode: \(rawMessage)")
-                let isRateLimit = rawMessage.range(of: #"resets\s+\S"#, options: .regularExpression) != nil
+                let isRateLimit = bridgeError.isRateLimitExhaustion
                 if bridgeMode == "builtin" && !isRateLimit {
                     // Actual credit exhaustion — auto-switch to personal mode
                     AnalyticsManager.shared.creditExhausted(previousMode: bridgeMode)
