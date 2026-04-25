@@ -940,7 +940,7 @@ struct SettingsContentView: View {
                                 Task { await chatProvider?.restartBridgeForEndpointChange() }
                             }
 
-                        Text("Route API calls through a custom endpoint (e.g. corporate proxy, GitHub Copilot bridge). Leave empty to use the default Anthropic API.")
+                        Text("Route API calls through a custom endpoint (e.g. local LLM bridge, corporate proxy, or GitHub Copilot bridge). Leave empty to use the default Anthropic API.")
                             .scaledFont(size: 12)
                             .foregroundColor(FazmColors.textTertiary)
                     } else {
@@ -971,6 +971,7 @@ struct SettingsContentView: View {
                             panel.canChooseDirectories = true
                             panel.allowsMultipleSelection = false
                             panel.message = "Select a project directory"
+                            panel.prompt = "Select"
                             if panel.runModal() == .OK, let url = panel.url {
                                 aiChatWorkingDirectory = url.path
                                 refreshAIChatConfig()

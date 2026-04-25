@@ -1195,6 +1195,7 @@ class FloatingControlBarManager {
             panel.canChooseDirectories = true
             panel.allowsMultipleSelection = false
             panel.message = "Select a project directory"
+            panel.prompt = "Select"
             guard panel.runModal() == .OK, let url = panel.url else { return }
 
             let newPath = url.path

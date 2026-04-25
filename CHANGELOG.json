@@ -1,6 +1,8 @@
 {
   "unreleased": [
-    "Fixed Smart (Opus) model preference not persisting after app update \u2014 now correctly maps stored \"opus\" to the new ACP model ID"
+    "Fixed Smart (Opus) model preference not persisting after app update \u2014 now correctly maps stored \"opus\" to the new ACP model ID",
+    "Improved workspace directory picker: Open button now reads Select for clarity",
+    "Updated Custom API Endpoint help text to mention local LLM bridges as an example"
   ],
   "releases": [
     {
