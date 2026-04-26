@@ -520,13 +520,16 @@ extension PostHogManager {
 
     // MARK: - Feedback Events
 
-    func feedbackOpened() {
-        track("Feedback Opened")
+    func feedbackOpened(source: String = "modal") {
+        track("Feedback Opened", properties: [
+            "source": source
+        ])
     }
 
-    func feedbackSubmitted(feedbackLength: Int) {
+    func feedbackSubmitted(feedbackLength: Int, source: String = "modal") {
         track("Feedback Submitted", properties: [
-            "feedback_length": feedbackLength
+            "feedback_length": feedbackLength,
+            "source": source
         ])
     }
 

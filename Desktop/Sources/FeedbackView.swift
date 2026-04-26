@@ -7,7 +7,7 @@ class FeedbackWindow {
     private static var window: NSWindow?
 
     static func sendSilently() {
-        AnalyticsManager.shared.feedbackOpened()
+        AnalyticsManager.shared.feedbackOpened(source: "silent")
 
         let sentryMessage = "User Report (logs only)"
 
@@ -29,7 +29,7 @@ class FeedbackWindow {
             }
         }
 
-        AnalyticsManager.shared.feedbackSubmitted(feedbackLength: 0)
+        AnalyticsManager.shared.feedbackSubmitted(feedbackLength: 0, source: "silent")
         log("Silent user report submitted to Sentry (logs attached)")
     }
 

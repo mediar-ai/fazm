@@ -659,12 +659,12 @@ class AnalyticsManager {
 
     // MARK: - Feedback Events
 
-    func feedbackOpened() {
-        PostHogManager.shared.feedbackOpened()
+    func feedbackOpened(source: String = "modal") {
+        PostHogManager.shared.feedbackOpened(source: source)
     }
 
-    func feedbackSubmitted(feedbackLength: Int) {
-        PostHogManager.shared.feedbackSubmitted(feedbackLength: feedbackLength)
+    func feedbackSubmitted(feedbackLength: Int, source: String = "modal") {
+        PostHogManager.shared.feedbackSubmitted(feedbackLength: feedbackLength, source: source)
     }
 
     // MARK: - Proactive Assistant Events (Desktop-specific)
