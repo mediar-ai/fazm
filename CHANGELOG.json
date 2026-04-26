@@ -1,10 +1,16 @@
 {
-  "unreleased": [
-    "Fixed Smart (Opus) model preference not persisting after app update \u2014 now correctly maps stored \"opus\" to the new ACP model ID",
-    "Improved workspace directory picker: Open button now reads Select for clarity",
-    "Updated Custom API Endpoint help text to mention local LLM bridges as an example"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.4.2",
+      "date": "2026-04-26",
+      "changes": [
+        "Fixed Smart (Opus) model preference not persisting after app update \u2014 now correctly maps stored \"opus\" to the new ACP model ID",
+        "Improved workspace directory picker: Open button now reads Select for clarity",
+        "Updated Custom API Endpoint help text to mention local LLM bridges as an example",
+        "Fixed Stripe checkout cancellation redirect \u2014 returning to the app after cancelling a subscription checkout no longer shows an error page"
+      ]
+    },
     {
       "version": "2.4.1",
       "date": "2026-04-22",
