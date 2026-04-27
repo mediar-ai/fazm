@@ -74,9 +74,16 @@ enum ChatQueryLifecycle {
             }
 
             let hasContent = !state.aiResponseText.isEmpty || !(state.currentAIMessage?.contentBlocks.isEmpty ?? true)
+            let suffix = "\n\n⚠️ \(errorText)"
             if state.currentAIMessage != nil && hasContent {
-                log("ChatQueryLifecycle: appending error to partial response (\(state.aiResponseText.count) chars): \(errorText.prefix(80))")
-                state.currentAIMessage?.text += "\n\n⚠️ \(errorText)"
+                // ChatProvider's catch block also appends this suffix to the underlying
+                // message in `messages[]` and persists it. Skip the in-state append
+                // here if the warning is already present (the sync at line ~46 may
+                // have already pulled in the warning-included text from messages[]).
+                if !(state.currentAIMessage?.text.hasSuffix(suffix) ?? false) {
+                    log("ChatQueryLifecycle: appending error to partial response (\(state.aiResponseText.count) chars): \(errorText.prefix(80))")
+                    state.currentAIMessage?.text += suffix
+                }
             } else {
                 log("ChatQueryLifecycle: creating error-only AI message: \(errorText.prefix(80))")
                 state.currentAIMessage = ChatMessage(text: "⚠️ \(errorText)", sender: .ai)
