@@ -2836,12 +2836,39 @@ class ChatProvider: ObservableObject {
                 } else {
                     await acpBridge.interrupt()
                 }
-                // Purge queued messages for the timed-out session — they are stale
-                let timedOutKey = activeSessionKey
-                let removedCount = pendingMessages.filter { $0.sessionKey == timedOutKey }.count
-                pendingMessages.removeAll { $0.sessionKey == timedOutKey }
-                if removedCount > 0 {
-                    log("ChatProvider: purged \(removedCount) stale queued message(s) for session \(timedOutKey ?? "floating") after timeout")
+                // Purge queued messages for the timed-out session. Use effectiveKey
+                // (the actual timed-out session) — activeSessionKey can be a different
+                // pop-out window by the time the catch runs, which would purge from
+                // the wrong session and leave the real stale messages stuck in queue.
+                // Persist purged messages to the local chat DB so they are not silently
+                // lost; the user typed them and expects to see them in chat history.
+                let normalizedKey: (String?) -> String = { ($0 ?? "__default__") }
+                let stale = pendingMessages.filter { normalizedKey($0.sessionKey) == effectiveKey }
+                pendingMessages.removeAll { normalizedKey($0.sessionKey) == effectiveKey }
+                if !stale.isEmpty {
+                    let storeContext: String?
+                    if effectiveKey == "floating" {
+                        storeContext = "__floating__"
+                    } else if effectiveKey.hasPrefix("detached-") {
+                        storeContext = "__\(effectiveKey)__"
+                    } else {
+                        storeContext = nil
+                    }
+                    if let ctx = storeContext {
+                        let sid: String? = (effectiveKey == "floating")
+                            ? floatingChatSessionId
+                            : UserDefaults.standard.string(forKey: "acpSessionId_\(effectiveKey)_\(bridgeMode)")
+                        for entry in stale where !entry.userMessageAdded {
+                            let stranded = ChatMessage(
+                                id: UUID().uuidString,
+                                text: entry.text,
+                                sender: .user,
+                                sessionKey: entry.sessionKey
+                            )
+                            Task { await ChatMessageStore.saveMessage(stranded, context: ctx, sessionId: sid) }
+                        }
+                    }
+                    log("ChatProvider: purged \(stale.count) stale queued message(s) for session \(effectiveKey) after timeout (persisted to local DB)")
                 }
             }
 
@@ -2955,6 +2982,28 @@ class ChatProvider: ObservableObject {
             } else {
                 pendingRetryMessage = nil
                 errorMessage = error.localizedDescription
+            }
+
+            // Persist the user-visible error to the partial AI bubble so it
+            // survives subscription re-syncs (which would otherwise overwrite
+            // ChatQueryLifecycle's in-state append) and app restart. The error
+            // text becomes part of the underlying message in `messages[]` and
+            // is saved to the local DB. Idempotent.
+            if let errText = errorMessage,
+               let aiIndex = messages.firstIndex(where: { $0.id == aiMessageId }),
+               !messages[aiIndex].text.isEmpty {
+                let suffix = "\n\n⚠️ \(errText)"
+                if !messages[aiIndex].text.hasSuffix(suffix) {
+                    messages[aiIndex].text += suffix
+                    let updatedMessage = messages[aiIndex]
+                    if effectiveKey == "floating" {
+                        let sid = floatingChatSessionId
+                        Task { await ChatMessageStore.saveMessage(updatedMessage, context: "__floating__", sessionId: sid) }
+                    } else if effectiveKey.hasPrefix("detached-") {
+                        let sid = UserDefaults.standard.string(forKey: "acpSessionId_\(effectiveKey)_\(bridgeMode)")
+                        Task { await ChatMessageStore.saveMessage(updatedMessage, context: "__\(effectiveKey)__", sessionId: sid) }
+                    }
+                }
             }
         }
 
