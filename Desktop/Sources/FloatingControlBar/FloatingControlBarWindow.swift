@@ -1010,6 +1010,10 @@ class FloatingControlBarManager {
     /// File URL of a pre-captured screenshot, taken when the bar opens (PTT or keyboard).
     private var pendingScreenshotPath: URL?
 
+    /// Wall-clock time of the last popOutNewChat invocation (uptime seconds).
+    /// Used to debounce duplicate creations from rapid global-shortcut presses.
+    private var lastPopOutNewChatTime: TimeInterval = 0
+
     /// Whether the user has enabled the Ask Fazm bar (persisted across launches).
     /// Defaults to true for new users.
     var isEnabled: Bool {
@@ -1949,6 +1953,16 @@ class FloatingControlBarManager {
     /// Triggered by the global "New Pop-Out Chat" shortcut.
     func popOutNewChat() {
         guard let provider = chatProvider else { return }
+
+        // Debounce rapid double-fires of the global shortcut (e.g. from key
+        // repeat or impatient retap). Without this, two pop-outs are created
+        // side-by-side with the same chatHistory snapshot.
+        let now = ProcessInfo.processInfo.systemUptime
+        if (now - lastPopOutNewChatTime) < 1.0 {
+            log("FloatingControlBarManager: Ignored duplicate pop-out shortcut (\(Int((now - lastPopOutNewChatTime) * 1000))ms since last)")
+            return
+        }
+        lastPopOutNewChatTime = now
 
         log("FloatingControlBarManager: Creating new pop-out chat window via global shortcut")
         AnalyticsManager.shared.floatingBarChatPoppedOut(historyCount: 0)
