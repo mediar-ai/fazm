@@ -89,6 +89,12 @@ enum ChatQueryLifecycle {
                 state.currentAIMessage = ChatMessage(text: "⚠️ \(errorText)", sender: .ai)
             }
         } else if provider.showPaywall {
+            // Paywall blocked the message before it was sent. The slice search
+            // above may have set currentAIMessage to a stale prior AI response
+            // (when messageCountBefore is older than the next exchange), making
+            // it look like the new question got the old answer. Clear the AI
+            // bubble so the only feedback is the paywall popup itself.
+            state.currentAIMessage = nil
             return
         } else if provider.needsBrowserExtensionSetup || provider.pendingRetryMessage != nil {
             log("ChatQueryLifecycle: Suppressing error message — browser setup retry pending")
