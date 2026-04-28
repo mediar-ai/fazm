@@ -616,6 +616,7 @@ class PostOnboardingTutorialWindow: NSWindow {
         self.level = .floating
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isMovableByWindowBackground = false
+        self.applyCrashWorkarounds()  // FAZM-20: disable auto touch bar / tabbing
 
         let hostingView = NSHostingView(rootView: PostOnboardingTutorialView(viewModel: viewModel, onSkip: { [weak self] in
             Task { @MainActor in
