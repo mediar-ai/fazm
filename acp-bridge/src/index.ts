@@ -1527,6 +1527,54 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
 
     fullPrompt = msg.prompt;
 
+    // If session/resume failed and we just created a fresh session, the upstream
+    // conversation history is gone. Tell the UI immediately, and (if the client
+    // supplied recent local history) prepend a compact recovery preamble so the
+    // model can pick up the thread instead of replying as a stranger.
+    if (resumeFailedFromId && isNewSession) {
+      const ctxEntries = Array.isArray(msg.priorContext) ? msg.priorContext : [];
+      // Cap replay to keep token cost bounded; most "what was I doing" recoveries
+      // only need the last handful of turns. Trim from the END (most recent kept).
+      const MAX_REPLAY = 20;
+      const replay = ctxEntries.slice(-MAX_REPLAY);
+      const restoredCount = replay.length;
+
+      if (restoredCount > 0) {
+        const transcript = replay
+          .map((e) => {
+            const who = e.role === "assistant" ? "Assistant" : "User";
+            // Hard-cap each entry to avoid one huge tool dump dominating the preamble.
+            const text = (e.text ?? "").slice(0, 4000);
+            return `${who}: ${text}`;
+          })
+          .join("\n\n");
+        const preamble =
+          `[SESSION RESTORED FROM LOCAL HISTORY]\n` +
+          `Your previous session (${resumeFailedFromId}) expired upstream and was replaced ` +
+          `with a fresh session. The transcript below is the recent conversation, replayed ` +
+          `from the user's local message store so you can continue the work in flight. ` +
+          `Treat it as authoritative context, not a new request.\n\n` +
+          `--- RECENT TRANSCRIPT (${restoredCount} message${restoredCount === 1 ? "" : "s"}, oldest first) ---\n` +
+          transcript +
+          `\n--- END TRANSCRIPT ---\n\n` +
+          `User's current message:\n${fullPrompt}`;
+        fullPrompt = preamble;
+        logErr(`Session expired: replayed ${restoredCount} prior messages into new session ${sessionId}`);
+      } else {
+        logErr(`Session expired: no priorContext provided, starting fresh (key=${sessionKey})`);
+      }
+
+      sendWithSession(sessionId, {
+        type: "session_expired",
+        reason: "Previous session expired upstream; created a new one.",
+        oldSessionId: resumeFailedFromId,
+        newSessionId: sessionId,
+        contextRestored: restoredCount > 0,
+        restoredMessageCount: restoredCount,
+        sessionKey,
+      });
+    }
+
     // Set up notification handler for this query, registered per-session
     // so concurrent queries don't clobber each other's handlers.
     let notificationCount = 0;
