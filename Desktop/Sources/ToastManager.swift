@@ -38,6 +38,7 @@ final class ToastManager {
         p.ignoresMouseEvents = true
         p.contentView = hosting
         p.alphaValue = 0
+        p.applyCrashWorkarounds()  // FAZM-20: disable auto touch bar / tabbing
         p.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup { ctx in
