@@ -1459,6 +1459,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     }
 
     // Reuse existing session if alive, resume a persisted one, or create a new one
+    let resumeFailedFromId: string | null = null;
     if (msg.resume && !sessionId) {
       // Resume a persisted session by ID (survives process restarts via ~/.claude/projects/)
       // Fall back to session/new if the session file is gone or resume fails
@@ -1476,6 +1477,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         logErr(`ACP session resumed: ${sessionId} (key=${sessionKey}, model=${requestedModel})`);
       } catch (resumeErr) {
         logErr(`ACP session resume failed (will create new session): ${resumeErr}`);
+        // Remember the lost session id so we can emit session_expired and (if
+        // the client supplied priorContext) prepend a recovery preamble below.
+        resumeFailedFromId = msg.resume;
         // Fall through to session/new below
       }
     }
