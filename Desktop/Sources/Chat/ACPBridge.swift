@@ -151,6 +151,9 @@ actor ACPBridge {
     case toolUseSummary(summary: String)
     /// Rate limit info from Claude API (utilization warnings & rejections)
     case rateLimit(status: String, resetsAt: Double?, rateLimitType: String?, utilization: Double?)
+    /// Session/resume failed upstream — bridge created a fresh session in its place.
+    /// `contextRestored` is true when the bridge was able to replay local history.
+    case sessionExpired(oldSessionId: String, newSessionId: String, contextRestored: Bool, restoredMessageCount: Int, reason: String)
   }
 
   /// Callback for status events (compaction, tasks, tool progress)
@@ -186,6 +189,7 @@ actor ACPBridge {
     case observerStatus(running: Bool)
     case modelsAvailable(models: [[String: Any]])
     case mcpServersAvailable(servers: [[String: Any]])
+    case sessionExpired(oldSessionId: String, newSessionId: String, contextRestored: Bool, restoredMessageCount: Int, reason: String, sessionKey: String?)
   }
 
   // MARK: - Configuration
