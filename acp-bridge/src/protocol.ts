@@ -338,4 +338,5 @@ export type OutboundMessage =
   | ApiRetryMessage
   | ChatObserverPollMessage
   | ModelsAvailableMessage
-  | McpServersAvailableMessage;
+  | McpServersAvailableMessage
+  | SessionExpiredMessage;
