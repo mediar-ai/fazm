@@ -1969,6 +1969,16 @@ class FloatingControlBarManager {
 
         let detachedSessionKey = "detached-\(UUID().uuidString)"
 
+        // If the user is currently focused on an existing pop-out, inherit its workspace
+        // so the new window opens in the same project context. Falls back to the shared
+        // provider's workspace if no pop-out is focused (e.g. shortcut fired from main app).
+        let focusedPopOut = (NSApp.keyWindow as? DetachedChatWindow)
+            ?? DetachedChatWindowController.shared.lastActiveWindow
+        let inheritState = focusedPopOut?.state
+        if let inheritState = inheritState {
+            log("FloatingControlBarManager: Inheriting workspace from focused pop-out: '\(inheritState.workspaceDirectory)'")
+        }
+
         DetachedChatWindowController.shared.show(
             chatHistory: [],
             displayedQuery: "",
@@ -1976,7 +1986,8 @@ class FloatingControlBarManager {
             isAILoading: false,
             chatProvider: provider,
             messageCountBefore: provider.messages.count,
-            sessionKey: detachedSessionKey
+            sessionKey: detachedSessionKey,
+            inheritWorkspaceFrom: inheritState
         )
     }
 
