@@ -2707,6 +2707,26 @@ class ChatProvider: ObservableObject {
                             } else {
                                 UserDefaults.standard.set(newSessionId, forKey: self.mainSessionIdKey)
                             }
+                            // Inject a small inline AI-side notice so the user can SEE that
+                            // the session was reset rather than wondering why the assistant
+                            // sounds confused. Inserted just above the in-flight AI message
+                            // so it reads in conversation order. Persisted via the normal
+                            // save path so it survives reload.
+                            let noticeText: String = contextRestored
+                                ? "_(Session restored: the upstream chat session expired and was replaced. Replayed the last \(restoredMessageCount) message\(restoredMessageCount == 1 ? "" : "s") from local history so I can keep going.)_"
+                                : "_(Session restored: the upstream chat session expired and was replaced. No prior context was available locally — starting fresh.)_"
+                            let notice = ChatMessage(
+                                text: noticeText,
+                                sender: .ai,
+                                isStreaming: false,
+                                isSynced: false,
+                                sessionKey: sessionKey
+                            )
+                            if let liveIdx = self.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                self.messages.insert(notice, at: liveIdx)
+                            } else {
+                                self.messages.append(notice)
+                            }
                         }
                     }
                 }
