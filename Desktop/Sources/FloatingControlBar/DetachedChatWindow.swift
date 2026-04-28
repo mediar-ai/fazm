@@ -394,6 +394,9 @@ class DetachedChatWindowController {
 
     /// Pop out the current floating bar conversation into a new detached window.
     /// Each call creates a separate window with its own ACP session.
+    /// - Parameter inheritWorkspaceFrom: optional source state whose workspace + project config
+    ///   should be copied onto the new window (instead of using the shared provider's workspace).
+    ///   Used by Cmd+Shift+N so a new pop-out inherits the workspace of the currently focused pop-out.
     func show(
         chatHistory: [FloatingChatExchange],
         displayedQuery: String,
@@ -402,7 +405,8 @@ class DetachedChatWindowController {
         chatProvider: ChatProvider,
         messageCountBefore: Int,
         sessionKey: String,
-        skipPersist: Bool = false
+        skipPersist: Bool = false,
+        inheritWorkspaceFrom: FloatingControlBarState? = nil
     ) {
         // Create a fresh state for the detached window, copying conversation data
         let detachedState = FloatingControlBarState()
@@ -413,11 +417,19 @@ class DetachedChatWindowController {
         detachedState.showingAIConversation = true
         detachedState.showingAIResponse = true
 
-        // Copy workspace from shared provider so the pop-out starts with the same project
-        detachedState.workspaceDirectory = chatProvider.aiChatWorkingDirectory
-        detachedState.projectClaudeMdContent = chatProvider.projectClaudeMdContent
-        detachedState.projectClaudeMdPath = chatProvider.projectClaudeMdPath
-        detachedState.projectDiscoveredSkills = chatProvider.projectDiscoveredSkills
+        // Workspace: prefer inherited (from currently focused pop-out) over shared provider,
+        // so Cmd+Shift+N from a per-window-workspace pop-out keeps that same workspace.
+        if let source = inheritWorkspaceFrom {
+            detachedState.workspaceDirectory = source.workspaceDirectory
+            detachedState.projectClaudeMdContent = source.projectClaudeMdContent
+            detachedState.projectClaudeMdPath = source.projectClaudeMdPath
+            detachedState.projectDiscoveredSkills = source.projectDiscoveredSkills
+        } else {
+            detachedState.workspaceDirectory = chatProvider.aiChatWorkingDirectory
+            detachedState.projectClaudeMdContent = chatProvider.projectClaudeMdContent
+            detachedState.projectClaudeMdPath = chatProvider.projectClaudeMdPath
+            detachedState.projectDiscoveredSkills = chatProvider.projectDiscoveredSkills
+        }
 
         let win = DetachedChatWindow(state: detachedState, sessionKey: sessionKey)
         let winId = ObjectIdentifier(win)
