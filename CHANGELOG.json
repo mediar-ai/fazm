@@ -2,7 +2,8 @@
   "unreleased": [
     "Fixed duplicate pop-out chat windows when the global shortcut fires twice in quick succession",
     "Fixed stale prior AI response showing under a paywall-blocked chat message",
-    "New pop-out windows (Cmd+Shift+N) now inherit the workspace of the currently focused pop-out instead of the global default"
+    "New pop-out windows (Cmd+Shift+N) now inherit the workspace of the currently focused pop-out instead of the global default",
+    "Fixed an intermittent crash on macOS that surfaced during heavy floating-bar and pop-out activity"
   ],
   "releases": [
     {
