@@ -344,6 +344,7 @@ final class ClaudeAuthWindowController {
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
         window.level = .floating
+        window.applyCrashWorkarounds()  // FAZM-20: disable auto touch bar / tabbing
         // Center on the screen that contains the mouse pointer
         // (avoids placing on a secondary display the user isn't looking at)
         let mouseScreen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) })
