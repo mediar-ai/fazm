@@ -49,6 +49,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
         self.titlebarAppearsTransparent = false
         self.titleVisibility = .visible
         self.backgroundColor = NSColor(FazmColors.backgroundPrimary)
+        self.applyCrashWorkarounds()  // FAZM-20: disable auto touch bar / tabbing
 
         // Restore saved position
         if let savedOrigin = savedFrame?.origin {
