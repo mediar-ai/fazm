@@ -1148,7 +1148,33 @@ struct AppIconView: View {
 struct DismissButton: View {
     var action: (() -> Void)? = nil
     var showBackground: Bool = true
-    var body: some View { EmptyView() }
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: { action?() }) {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(isHovering ? FazmColors.textPrimary : FazmColors.textTertiary)
+                .frame(width: 22, height: 22)
+                .background(
+                    Group {
+                        if showBackground || isHovering {
+                            Circle()
+                                .fill(FazmColors.backgroundTertiary.opacity(isHovering ? 0.9 : 0.5))
+                        }
+                    }
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+        .help("Close")
+        .keyboardShortcut(.cancelAction)
+    }
 }
 
 // MARK: - Task Agent Settings
