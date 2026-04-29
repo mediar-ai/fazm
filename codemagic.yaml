@@ -368,6 +368,34 @@ workflows:
                 cp -f "acp-bridge/$f" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
               fi
             done
+            # HARD CHECK: overlay assets MUST be present in the bundle. The "Browser
+            # controlled by Fazm" indicator depends on these. If they are missing,
+            # the patched Playwright silently no-ops and users have no visual cue
+            # that Fazm is driving the browser. Fail the build instead of shipping
+            # a binary with the indicator silently broken (regression seen in v2.6.4).
+            REQUIRED_OVERLAY_FILES="browser-overlay-init.js browser-overlay-init-page.cjs"
+            for f in $REQUIRED_OVERLAY_FILES; do
+              if [ ! -f "$APP_BUNDLE/Contents/Resources/acp-bridge/$f" ]; then
+                echo "FATAL: overlay asset $f missing from app bundle — browser-controlled indicator would be silently broken. Refusing to ship."
+                ls -la "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+                exit 1
+              fi
+            done
+            echo "Verified overlay assets present in bundle: $REQUIRED_OVERLAY_FILES"
+            # HARD CHECK: extensionContextFactory.js must be patched. If postinstall
+            # didn't run or the patch regex failed against a new Playwright version,
+            # the overlay won't inject even if the assets are bundled.
+            EXT_FACTORY="$APP_BUNDLE/Contents/Resources/acp-bridge/node_modules/playwright/lib/mcp/extension/extensionContextFactory.js"
+            if [ ! -f "$EXT_FACTORY" ]; then
+              echo "FATAL: $EXT_FACTORY not found — Playwright MCP layout changed?"
+              exit 1
+            fi
+            if ! grep -q "_fazmOverlayScript" "$EXT_FACTORY"; then
+              echo "FATAL: extensionContextFactory.js is NOT patched with _fazmOverlayScript — overlay injection will silently no-op."
+              echo "Run: cd acp-bridge && node scripts/patch-playwright-overlay.cjs"
+              exit 1
+            fi
+            echo "Verified Playwright extensionContextFactory.js is patched with overlay injection"
           else
             echo "ERROR: acp-bridge/dist not found"
             exit 1
