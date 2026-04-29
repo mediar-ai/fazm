@@ -3,6 +3,12 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
+extension Notification.Name {
+    /// Posted whenever a detached chat window is opened or closed, so observers
+    /// (e.g. the Conversations tab badge) can refresh their open-window count.
+    static let detachedChatWindowsDidChange = Notification.Name("detachedChatWindowsDidChange")
+}
+
 /// A normal macOS window that hosts the chat conversation after "popping out" from the floating bar.
 /// Not always-on-top — behaves like a regular app window.
 class DetachedChatWindow: NSWindow, NSWindowDelegate {
@@ -381,6 +387,16 @@ class DetachedChatWindowController {
     }
 
     var isShowing: Bool { entries.values.contains { $0.window.isVisible } }
+
+    /// Number of detached chat windows currently open. Read this synchronously,
+    /// or observe `Notification.Name.detachedChatWindowsDidChange` for change events.
+    var openWindowCount: Int { entries.count }
+
+    /// Post a notification on the main queue so SwiftUI views can refresh their
+    /// open-window count. Call this after every mutation of `entries`.
+    private func notifyWindowsChanged() {
+        NotificationCenter.default.post(name: .detachedChatWindowsDidChange, object: nil)
+    }
 
     /// Called from applicationWillTerminate to freeze the registry before windows tear down.
     func prepareForTermination() {
