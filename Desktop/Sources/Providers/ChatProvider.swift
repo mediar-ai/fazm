@@ -2682,6 +2682,27 @@ class ChatProvider: ObservableObject {
                             log("ChatProvider: Tool summary — \(summary.prefix(100))")
                         case .rateLimit(let status, let resetsAt, let rateLimitType, let utilization):
                             self.handleRateLimitEvent(status: status, resetsAt: resetsAt, rateLimitType: rateLimitType, utilization: utilization)
+                        case .sessionStarted(let startedSessionId, let evtSessionKey, let isResume):
+                            // Persist the ACP sessionId IMMEDIATELY (before the prompt
+                            // result arrives) so any error mid-stream — rate limit,
+                            // credit exhausted, network — still leaves a resumable id
+                            // in UserDefaults. Mirrors the success-path save below at
+                            // ~line 2845, but runs eagerly. Without this, popouts that
+                            // hit a rate limit on their first long task lose the entire
+                            // conversation when the user sends a follow-up.
+                            guard !startedSessionId.isEmpty else { break }
+                            let routingKey = evtSessionKey ?? sessionKey
+                            log("ChatProvider: session_started \(isResume ? "resumed" : "new") sessionId=\(startedSessionId) key=\(routingKey ?? "nil") (eager-persisting)")
+                            if self.isOnboarding {
+                                OnboardingChatPersistence.saveSessionId(startedSessionId)
+                            } else if routingKey == "floating" {
+                                UserDefaults.standard.set(startedSessionId, forKey: self.floatingSessionIdKey)
+                            } else if let key = routingKey, key.hasPrefix("detached-") {
+                                UserDefaults.standard.set(startedSessionId, forKey: "acpSessionId_\(key)_\(self.bridgeMode)")
+                            } else {
+                                // nil or "main" — main session
+                                UserDefaults.standard.set(startedSessionId, forKey: self.mainSessionIdKey)
+                            }
                         case .sessionExpired(let oldSessionId, let newSessionId, let contextRestored, let restoredMessageCount, let reason):
                             log("ChatProvider: session expired upstream — old=\(oldSessionId) new=\(newSessionId) restored=\(contextRestored)/\(restoredMessageCount) reason=\(reason)")
                             self.sessionExpiredNotice = SessionExpiredNotice(
