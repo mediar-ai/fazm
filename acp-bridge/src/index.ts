@@ -1072,13 +1072,50 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   }
   // Save snapshots to files and strip inline base64 screenshots to reduce context size
   playwrightArgs.push("--output-mode", "file", "--image-responses", "omit", "--output-dir", "/tmp/playwright-mcp");
-  // Inject visual overlay on every page to indicate browser is controlled by Fazm
+  // Inject visual overlay on every page to indicate browser is controlled by Fazm.
+  // This depends on THREE things being present at runtime:
+  //   1. browser-overlay-init-page.cjs       (passed via Playwright --init-page)
+  //   2. browser-overlay-init.js             (read at runtime by both .cjs and patched extensionContextFactory)
+  //   3. extensionContextFactory.js patched  (postinstall step injects overlay in extension/CDP mode)
+  // If any of these are missing, the overlay silently no-ops. Log loudly here so we
+  // see it in Sentry breadcrumbs / dev logs instead of silently shipping a binary
+  // without the "Browser controlled by Fazm" indicator (regression hit in v2.6.4).
   const overlayInitPage = join(__dirname, "..", "browser-overlay-init-page.cjs");
-  if (existsSync(overlayInitPage)) {
+  const overlayInitJs = join(__dirname, "..", "browser-overlay-init.js");
+  const extensionFactoryJs = join(
+    __dirname,
+    "..",
+    "node_modules",
+    "playwright",
+    "lib",
+    "mcp",
+    "extension",
+    "extensionContextFactory.js",
+  );
+  const hasInitPage = existsSync(overlayInitPage);
+  const hasInitJs = existsSync(overlayInitJs);
+  let extensionFactoryPatched = false;
+  try {
+    if (existsSync(extensionFactoryJs)) {
+      extensionFactoryPatched = readFileSync(extensionFactoryJs, "utf-8").includes("_fazmOverlayScript");
+    }
+  } catch {
+    // ignore — treated as unpatched
+  }
+  if (hasInitPage) {
     playwrightArgs.push("--init-page", overlayInitPage);
     logErr(`Browser overlay init-page: ${overlayInitPage}`);
   } else {
-    logErr(`Browser overlay init-page NOT FOUND: ${overlayInitPage}`);
+    logErr(`[FAZM-OVERLAY-MISSING] Browser overlay init-page NOT FOUND: ${overlayInitPage}`);
+  }
+  if (!hasInitJs) {
+    logErr(`[FAZM-OVERLAY-MISSING] browser-overlay-init.js NOT FOUND at ${overlayInitJs} — overlay will silently no-op in extension mode`);
+  }
+  if (!extensionFactoryPatched) {
+    logErr(`[FAZM-OVERLAY-MISSING] extensionContextFactory.js is NOT patched (no _fazmOverlayScript) — overlay will silently no-op in extension mode`);
+  }
+  if (hasInitPage && hasInitJs && extensionFactoryPatched) {
+    logErr(`Browser overlay assets verified: init-page + init-js + patched extensionContextFactory`);
   }
   const playwrightEnv: Array<{ name: string; value: string }> = [];
   if (process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN) {
