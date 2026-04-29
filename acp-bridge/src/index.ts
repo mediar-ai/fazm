@@ -142,6 +142,36 @@ function startToolTimer(
 
     // Log "Tool completed" so the Swift side decrements acpToolsRunning
     logErr(`Tool completed: ${title} (id=${toolCallId}) output=TIMEOUT after ${timeoutMs / 1000}s`);
+
+    // Unblock the agent loop. Without this, the SDK is still waiting for the
+    // hung MCP tool's response, the model can't continue, and the parent
+    // ACPBridge.waitForMessage falls through to its 180s inactivity timeout.
+    // Mirror the user-interrupt cleanup path: abort the in-flight query,
+    // notify the SDK to cancel the session, mark it dirty, and unregister so
+    // the next prompt forces a fresh session via priorContext replay.
+    if (sessionId) {
+      const sessionKey = sessionIdToKey.get(sessionId);
+      const ctx = sessionKey ? activeQueries.get(sessionKey) : undefined;
+      if (ctx && !ctx.interruptRequested) {
+        logErr(
+          `Tool watchdog auto-interrupting session ${sessionId} (key=${sessionKey ?? "?"}) ` +
+            `due to ${title} hang — aborting query and forcing fresh session next prompt`,
+        );
+        ctx.interruptRequested = true;
+        ctx.abortController.abort();
+        acpNotify("session/cancel", { sessionId: ctx.sessionId });
+        interruptedSessions.add(ctx.sessionId);
+        if (sessionKey) {
+          unregisterSession(sessionKey);
+          imageTurnCounts.delete(sessionKey);
+        }
+      } else if (!ctx) {
+        logErr(
+          `Tool watchdog: no active query for session ${sessionId} ` +
+            `(already cleaned up?) — UI notified, agent loop unaffected`,
+        );
+      }
+    }
   }, timeoutMs);
 
   activeToolTimers.set(toolCallId, { toolCallId, title, isInternal, sessionId, timer });
