@@ -26,13 +26,25 @@ export interface QueryMessage {
   resume?: string;
   attachments?: QueryAttachment[];
   /**
-   * Recent local conversation history (most recent last). Only consulted by the
-   * bridge when a `session/resume` attempt fails and we fall back to creating a
-   * new session; in that case the bridge prepends a recovery preamble to the
-   * prompt so context is not silently lost. Sent by Swift only when `resume` is
-   * set, to keep the common case cheap.
+   * Recent local conversation history (most recent last). Consulted by the
+   * bridge in two recovery paths:
+   *   1. `session/resume` fails upstream → bridge creates a new session and
+   *      prepends a transcript preamble so context is not silently lost.
+   *   2. A prior turn returned empty text (poisoned ACP session) → bridge
+   *      forces a new session via `_priorStuckSessionId` and replays history.
+   * Sent by Swift on EVERY query (even without resume) so the bridge always
+   * has a fallback if the upstream session vanishes mid-conversation.
    */
   priorContext?: PriorContextEntry[];
+  /**
+   * Internal field used for stuck-session recovery recursion. When the bridge
+   * detects that a session/prompt resolved with empty text + end_turn (the
+   * "poisoned session" pattern), it re-enters handleQuery with this set to
+   * the dead sessionId so the recovery emits a session_expired event with
+   * the correct old id and replays priorContext into a fresh session. Not
+   * sent by Swift; only set by the bridge during recursion.
+   */
+  _priorStuckSessionId?: string;
 }
 
 export interface ToolResultMessage {
