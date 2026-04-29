@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-out chat windows showing new AI responses paired with the wrong question when a follow-up was sent while the previous response was still streaming"
+  ],
   "releases": [
     {
       "version": "2.6.4",
