@@ -939,30 +939,42 @@ class DetachedChatWindowController {
     }
 
     /// Subscribe to ChatProvider messages for streaming response updates.
+    ///
+    /// Pre-filter pipeline: extract only the latest AI message for THIS window's
+    /// session (returns nil for unrelated changes), then dedupe so we don't
+    /// re-fire on every text mutation if nothing relevant changed.
+    ///
+    /// This kills the N×M render storm when many detached windows are open and
+    /// one session is streaming. Without it, every streaming token in any
+    /// session caused all open detached windows to hop onto main, scan the
+    /// messages array, log, and return — producing 6× fan-out per token in
+    /// production logs and freezing hover/copy-button UI on the main thread.
     private func subscribeToResponse(provider: ChatProvider, state: FloatingControlBarState, winId: ObjectIdentifier, messageCountBefore: Int) {
-        let sessionKey = entries[winId]?.sessionKey
-        log("[DetachedChat] subscribeToResponse: messageCountBefore=\(messageCountBefore) session=\(sessionKey ?? "?")")
+        let initialKey = entries[winId]?.sessionKey
+        log("[DetachedChat] subscribeToResponse: messageCountBefore=\(messageCountBefore) session=\(initialKey ?? "?")")
         entries[winId]?.chatCancellable?.cancel()
         entries[winId]?.chatCancellable = provider.$messages
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak state, weak provider] messages in
-                guard let state else { return }
-                // Filter to messages belonging to this detached window's session
-                let currentKey = self?.entries[winId]?.sessionKey ?? sessionKey
-                guard messages.count > messageCountBefore else { return }
+            // Filter BEFORE the main-queue hop so unrelated streaming events
+            // never reach `.sink`. This is the load-bearing change.
+            .compactMap { [weak self] messages -> ChatMessage? in
+                let currentKey = self?.entries[winId]?.sessionKey ?? initialKey
+                guard messages.count > messageCountBefore else { return nil }
                 // Only examine messages added since this subscription was created.
-                // Searching ALL messages would cause the prior AI response to be re-set
-                // as currentAIMessage when a user follow-up message is added (which
-                // increments messages.count) before the new AI response has arrived,
-                // producing a duplicate bubble in the pop-out window.
+                // Searching ALL messages would cause the prior AI response to be
+                // re-set as currentAIMessage when a user follow-up message is
+                // added (which increments messages.count) before the new AI
+                // response has arrived, producing a duplicate bubble.
                 let newMessages = messages[messageCountBefore...]
-                guard let aiMessage = newMessages.last(where: { $0.sender == .ai && $0.sessionKey == currentKey }) else {
-                    let dump = newMessages.enumerated().map { i, m in
-                        "[\(messageCountBefore + i):\(m.sender) key=\(m.sessionKey ?? "nil") text=\(m.text.prefix(20))]"
-                    }.joined(separator: " ")
-                    log("[DetachedChat] subscribeToResponse: \(messages.count - messageCountBefore) new message(s) but no new AI with session=\(currentKey ?? "?") — \(dump)")
-                    return
-                }
+                return newMessages.last(where: { $0.sender == .ai && $0.sessionKey == currentKey })
+            }
+            // ChatMessage's Equatable compares id + text + isStreaming +
+            // contentBlocks + attachments + rating + isSynced, which is
+            // exactly the streaming-relevant state. Same value → drop.
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak state, weak provider] aiMessage in
+                guard let state else { return }
+                let currentKey = self?.entries[winId]?.sessionKey ?? initialKey
                 log("[DetachedChat] subscribeToResponse: new AI message id=\(aiMessage.id) streaming=\(aiMessage.isStreaming) session=\(currentKey ?? "?")")
                 state.currentAIMessage = aiMessage
                 if aiMessage.isStreaming {
