@@ -339,6 +339,7 @@ function storeCredentials(tokens: OAuthResult, logErr: (msg: string) => void): v
       refreshToken: tokens.refreshToken || null,
       expiresAt: tokens.expiresAt || null,
       scopes: tokens.scopes,
+      storedAt: new Date().toISOString(),
     },
   };
 
@@ -369,5 +370,20 @@ function storeCredentials(tokens: OAuthResult, logErr: (msg: string) => void): v
     } catch (err2) {
       logErr(`Failed to store credentials: ${err2}`);
     }
+  }
+}
+
+/** Read stored OAuth credentials from macOS Keychain (for diagnostics). Returns null if not found. */
+export function readStoredCredentials(): { storedAt?: string; expiresAt?: string | null; scopes?: string[] } | null {
+  try {
+    const username = process.env.USER || userInfo().username;
+    const json = execSync(
+      `security find-generic-password -a "${username}" -s "${KEYCHAIN_SERVICE}" -w`,
+      { stdio: ["pipe", "pipe", "pipe"] }
+    ).toString().trim();
+    const data = JSON.parse(json);
+    return data?.claudeAiOauth ?? null;
+  } catch {
+    return null;
   }
 }
