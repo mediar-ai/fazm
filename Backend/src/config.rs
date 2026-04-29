@@ -36,6 +36,11 @@ pub struct Config {
     pub stripe_trial_days: u32,
     // Resend (email service)
     pub resend_api_key: String,
+    // GitHub PAT for /appcast.xml generation. Optional — when set, the appcast
+    // route uses authenticated GitHub API requests (5,000 req/hr/token vs 60
+    // req/hr/IP unauthenticated), protecting against burst-induced 403s when
+    // many Sparkle clients sync within the same hour.
+    pub github_token: Option<String>,
 }
 
 impl Config {
@@ -99,6 +104,10 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1),
             resend_api_key: std::env::var("RESEND_API_KEY").unwrap_or_default(),
+            github_token: std::env::var("GITHUB_TOKEN")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
         }
     }
 }
