@@ -2311,14 +2311,14 @@ function handleSessionUpdate(
 
       // Detect content block boundaries: the ACP update may include an index
       if (text) {
-        // If tools were pending, they're now complete
-        if (pendingTools.length > 0) {
-          for (const name of pendingTools) {
-            sendWithSession(sid, { type: "tool_activity", name, status: "completed" });
-          }
-          pendingTools.length = 0;
-          clearAllToolTimers();
-        }
+        // NOTE: Do NOT auto-complete pendingTools or clear watchdogs here.
+        // The model can emit text WHILE tools are still in flight (parallel
+        // tool use, interleaved reasoning, etc.). Tool completion is handled
+        // exclusively by the `tool_call_update` case below, which receives a
+        // terminal status (completed/failed/cancelled) per toolCallId. Clearing
+        // watchdogs on text chunks caused 180s ACPBridge inactivity timeouts
+        // because hung MCP tools (e.g. mcp__playwright__browser_tabs) had
+        // their 120s safety net killed by interleaved assistant text.
 
         // Signal a boundary between text blocks only when resuming text
         // after a tool call (pendingBoundary). We no longer split on content
