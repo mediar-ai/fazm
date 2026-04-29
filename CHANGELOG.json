@@ -7,7 +7,8 @@
     "Fixed rate-limit/credit-exhausted errors leaving sessions in a stuck state where the next message returned an empty response. The bridge now drops the ACP session on credit_exhausted and detects zero-output empty turns, recreating the session so follow-up messages reach Claude",
     "Fixed mid-stream rate-limit warnings sometimes missing from the partial response bubble and from backend persistence. The error suffix is now appended before the partial-save runs, so backend, local DB, and UI stay consistent",
     "Improved Fazm self-knowledge so the floating bar can answer common capability questions (what can it do, how to share screen, how to pay, voice control)",
-    "Improved voice transcription accuracy for product names and tech terms (Claude, Sonnet, Opus, MCP, Tauri, Supabase, etc.) by biasing Deepgram with a built-in domain vocabulary"
+    "Improved voice transcription accuracy for product names and tech terms (Claude, Sonnet, Opus, MCP, Tauri, Supabase, etc.) by biasing Deepgram with a built-in domain vocabulary",
+    "Fixed Stop button in pop-out chat not clearing the loading spinner or \"Not Responding\" banner"
   ],
   "releases": [
     {
