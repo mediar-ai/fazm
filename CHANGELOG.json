@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-out chat windows freezing and the copy-on-hover button disappearing when multiple pop-outs were open. Each pop-out used to re-render on every streaming token from every other session; pop-outs now ignore updates that do not belong to their own session"
+  ],
   "releases": [
     {
       "version": "2.6.2",
