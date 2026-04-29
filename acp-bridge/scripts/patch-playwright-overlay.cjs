@@ -131,9 +131,16 @@ code = code.replace(
 
 // Verify the patch was applied
 if (!code.includes("_fazmOverlayScript")) {
-  console.error("[patch-overlay] WARNING: Patch failed to apply — Playwright MCP may have changed.");
-  console.error("[patch-overlay] The overlay won't appear. See comments in this file for how to fix.");
-  process.exit(0); // Exit 0 so npm install doesn't fail
+  console.error("[patch-overlay] FATAL: Patch failed to apply — Playwright MCP internals likely changed.");
+  console.error("[patch-overlay] The overlay won't appear in shipped builds. See comments in this file for how to fix.");
+  // In CI we MUST fail so a broken overlay never ships. In local dev we also fail
+  // so the developer notices immediately instead of debugging a missing overlay later.
+  // Set FAZM_ALLOW_MISSING_OVERLAY=1 to bypass (only for emergency local debugging).
+  if (process.env.FAZM_ALLOW_MISSING_OVERLAY === "1") {
+    console.error("[patch-overlay] FAZM_ALLOW_MISSING_OVERLAY=1 set — continuing without patch (overlay will be missing).");
+    process.exit(0);
+  }
+  process.exit(1);
 }
 
 fs.writeFileSync(targetFile, code);
