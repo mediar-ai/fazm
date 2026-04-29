@@ -313,6 +313,24 @@ export interface SessionExpiredMessage {
   sessionKey?: string;
 }
 
+/**
+ * Emitted immediately after `session/new` or `session/resume` succeeds, BEFORE
+ * the prompt is sent to the SDK. Lets the Swift client persist the resumable
+ * sessionId early, so that any error path (rate limit, credit exhausted,
+ * network failure, mid-stream throw) still leaves a banked sessionId in
+ * UserDefaults. Without this, the only place sessionId was saved was the
+ * success path (`result` event), so any error mid-stream lost the
+ * conversation: the next prompt would call `session/new` again with no
+ * `resume` and the agent would have no memory of prior turns.
+ */
+export interface SessionStartedMessage {
+  type: "session_started";
+  sessionId?: string;
+  sessionKey?: string;
+  /** True when the bridge resumed an existing session, false when it created a new one. */
+  isResume: boolean;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -339,4 +357,5 @@ export type OutboundMessage =
   | ChatObserverPollMessage
   | ModelsAvailableMessage
   | McpServersAvailableMessage
-  | SessionExpiredMessage;
+  | SessionExpiredMessage
+  | SessionStartedMessage;
