@@ -176,6 +176,9 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
                 UserDefaults.standard.set(true, forKey: "hasSeenAppManagementError")
                 // Reset the success flag so the proactive guide shows again next time
                 UserDefaults.standard.set(false, forKey: "hasSuccessfullyInstalledSparkleUpdate")
+                // Re-surface the sidebar warning in red (a fresh error overrides
+                // any previous "X" dismissal in the sidebar widget).
+                UserDefaults.standard.set(false, forKey: "appManagementWarningDismissed")
                 Task { @MainActor in
                     let version = self.viewModel?.availableVersion ?? "unknown"
                     AppManagementSetupWindowController.shared.show(
