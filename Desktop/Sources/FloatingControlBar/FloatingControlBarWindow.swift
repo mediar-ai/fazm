@@ -442,8 +442,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         removeGlobalClickOutsideMonitor()
         globalClickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, self.isVisible, self.state.showingAIConversation, !self.suppressClickOutsideDismiss, !self.state.isCollapsed, !self.state.isVoiceListening else { return }
-            // Don't collapse while AI is generating a response
-            if self.state.showingAIResponse, self.state.currentAIMessage?.isStreaming == true || self.state.isAILoading { return }
+            // Don't dismiss while ACP is listening for agent output (covers tool calls
+            // between streamed text — see windowDidResignKey for full reasoning).
+            if FloatingControlBarManager.shared.isChatActive { return }
             self.dismissConversationAnimated()
         }
     }
