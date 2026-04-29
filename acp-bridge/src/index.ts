@@ -1479,6 +1479,19 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       recoveryCause = "stuck_session";
       logErr(`Stuck-session recovery: forcing session/new for key=${sessionKey} (dead session was ${msg._priorStuckSessionId})`);
     }
+    // If the persisted resume id was previously interrupted (timeout / user
+    // cancel / mid-tool-call abort), the upstream SDK session is dirty: the
+    // next session/resume + session/prompt would replay the cancelled prior
+    // prompt's chunks as the response to the NEW prompt (Apr 29 2026 incident).
+    // Skip resume entirely and route through the existing stuck-session
+    // recovery: session/new + priorContext replay + session_expired notice.
+    if (msg.resume && !sessionId && interruptedSessions.has(msg.resume)) {
+      logErr(`Skipping resume of interrupted session ${msg.resume} (would replay stale chunks); forcing fresh session with priorContext replay (key=${sessionKey})`);
+      resumeFailedFromId = msg.resume;
+      recoveryCause = "stuck_session";
+      interruptedSessions.delete(msg.resume);
+      msg.resume = undefined;
+    }
     if (msg.resume && !sessionId) {
       // Resume a persisted session by ID (survives process restarts via ~/.claude/projects/)
       // Fall back to session/new if the session file is gone or resume fails
@@ -1796,6 +1809,48 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         const promptDurationMs = Date.now() - promptStartTime;
         const outputTokens = promptResult.usage?.outputTokens ?? 0;
         logErr(`Prompt completed: stopReason=${promptResult.stopReason} duration=${promptDurationMs}ms`);
+
+        // Detect interrupt-replay: this session was previously interrupted
+        // (mid-stream cancel) and the prompt completed in a way that suggests
+        // the SDK delivered the cancelled prior prompt's deferred chunks as
+        // this prompt's response. Defense in depth — Fix 1 (interrupt
+        // invalidates session) should already have routed us through stuck-
+        // session recovery before getting here, but if a session got marked
+        // wasInterrupted via other paths (e.g., a session lingering in
+        // interruptedSessions from a prior process state), catch the replay
+        // here. Signal: previously-interrupted session, fast completion, and
+        // either no streaming chunks (input=8 tokens means prompt-shell only)
+        // or token counts that don't match the user's prompt size.
+        if (
+          wasInterrupted &&
+          !isNewSession &&
+          _retryDepth < MAX_QUERY_RETRIES
+        ) {
+          const inputTokens = promptResult.usage?.inputTokens ?? 0;
+          // Heuristic: a real prompt has at least ~5 input tokens of overhead
+          // plus the user content. If inputTokens is tiny (≤ 20) AND the
+          // prompt was non-trivial (> 50 chars), the SDK didn't actually send
+          // our prompt — it's replaying a deferred result.
+          const looksLikeReplay = inputTokens <= 20 && fullPrompt.length > 50;
+          if (looksLikeReplay) {
+            logErr(`[INTERRUPT-REPLAY] Detected deferred-response replay on previously-interrupted session ${sessionId} (duration=${promptDurationMs}ms, inputTokens=${inputTokens}, outputTokens=${outputTokens}, fullTextLen=${fullText.length}, promptLen=${fullPrompt.length}). Forcing fresh session with priorContext replay (depth=${_retryDepth}).`);
+            const stuckSessionId = sessionId;
+            unregisterSession(sessionKey);
+            imageTurnCounts.delete(sessionKey);
+            interruptedSessions.delete(sessionId);
+            activeSessionId = "";
+            for (const name of pendingTools) {
+              sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
+            }
+            pendingTools.length = 0;
+            clearAllToolTimers();
+            // Skip resume entirely; recurse with stuck-session marker so the
+            // next call goes straight to session/new + priorContext replay.
+            msg.resume = undefined;
+            msg._priorStuckSessionId = stuckSessionId;
+            return handleQuery(msg, _retryDepth + 1);
+          }
+        }
 
         // Detect stale-task-response: prompt completed very fast with stale task
         // notifications and minimal output. This means Claude responded to a background
@@ -2779,7 +2834,18 @@ async function main(): Promise<void> {
             ctx.abortController.abort();
             acpNotify("session/cancel", { sessionId: ctx.sessionId });
             interruptedSessions.add(ctx.sessionId);
-            logErr(`Session ${ctx.sessionId} marked as interrupted (will apply TTFT watchdog on next reuse)`);
+            // Invalidate the cached session entry so the next prompt forces a
+            // fresh session via stuck-session recovery (priorContext replay).
+            // Reusing a mid-stream-cancelled session is unsafe: the upstream
+            // SDK may keep producing chunks for the cancelled prompt and
+            // deliver them as the result of the NEXT prompt on the same
+            // sessionId, contaminating the new turn (Apr 29 2026 incident —
+            // Q1's deferred response was served as Q2's answer). The resume
+            // path below picks this up via interruptedSessions.has(msg.resume)
+            // and skips resume entirely.
+            unregisterSession(targetKey);
+            imageTurnCounts.delete(targetKey);
+            logErr(`Session ${ctx.sessionId} marked as interrupted and invalidated (next prompt will force fresh session with priorContext replay)`);
           } else {
             logErr(`Interrupt requested for session key=${targetKey} but no active query found`);
           }
@@ -2794,7 +2860,11 @@ async function main(): Promise<void> {
             ctx.abortController.abort();
             acpNotify("session/cancel", { sessionId: ctx.sessionId });
             interruptedSessions.add(ctx.sessionId);
-            logErr(`Session ${ctx.sessionId} (key=${key}) marked as interrupted`);
+            // Same invalidation as the per-session branch above: drop the
+            // cached entry so the next prompt cannot reuse a dirty session.
+            unregisterSession(key);
+            imageTurnCounts.delete(key);
+            logErr(`Session ${ctx.sessionId} (key=${key}) marked as interrupted and invalidated`);
           }
           if (activeSessionId && !activeQueries.size) {
             // Fallback for legacy single-query path
