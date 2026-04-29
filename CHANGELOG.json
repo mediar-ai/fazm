@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Restored the on-screen indicator that shows when Fazm is controlling your browser; it was silently missing in recent releases due to a CI bundling gap"
+  ],
   "releases": [
     {
       "version": "2.6.6",
