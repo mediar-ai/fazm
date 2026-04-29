@@ -4,7 +4,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::firestore;
@@ -17,6 +19,44 @@ const GITHUB_API: &str = "https://api.github.com";
 /// Raise this when a newly shipped enforcement (paywall, auth gate, etc.) must not be
 /// bypassable by running an older binary. Clients at or above this version are unaffected.
 const MIN_SUPPORTED_VERSION: &str = "2.1.0";
+
+/// Cache the generated appcast XML for this long. Sparkle clients re-check every 24h
+/// per install, so a 5 minute cache is invisible to users but eliminates per-request
+/// GitHub + Firestore round trips and protects against the 60 req/hr unauthenticated
+/// GitHub rate limit on shared Cloud Run egress IPs.
+const CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// If the upstream fetch (GitHub or Firestore) fails, serve a stale cached XML up to
+/// this old. Better to deliver yesterday's appcast than a 500 that triggers Sparkle
+/// SUAppcastError 2001 on every client.
+const STALE_TTL: Duration = Duration::from_secs(24 * 3600);
+
+/// Per-request timeout for upstream calls. Sparkle's default fetch timeout is generous
+/// (~30s) but we want to fail fast and serve stale rather than hold a connection open.
+const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(8);
+
+#[derive(Clone)]
+struct CacheEntry {
+    xml: String,
+    fetched_at: Instant,
+}
+
+/// In-memory cache of the rendered appcast XML. Per-process, so each Cloud Run
+/// instance maintains its own copy. With min=2..max=3 instances and a 5 min TTL,
+/// upstream fetches drop to ~24/hr, well under GitHub's 60 req/hr unauthenticated cap.
+static APPCAST_CACHE: LazyLock<Mutex<Option<CacheEntry>>> = LazyLock::new(|| Mutex::new(None));
+
+/// Shared HTTP client. Constructing a `reqwest::Client` per request triggered a fresh
+/// TLS handshake every time (~500-800ms TTFB). One client = pooled connections =
+/// negligible TLS cost on warm requests.
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("fazm-backend/1.0")
+        .timeout(UPSTREAM_TIMEOUT)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .build()
+        .expect("failed to build appcast HTTP client")
+});
 
 #[derive(Deserialize)]
 struct GitHubRelease {
@@ -38,19 +78,58 @@ struct GitHubAsset {
 /// Dynamically generates a Sparkle-compatible appcast from GitHub releases.
 /// Channels are read from Firestore `desktop_releases` collection.
 /// Fallback: if Firestore is unavailable, uses GitHub's isPrerelease flag.
+///
+/// Caching strategy:
+///   1. Fresh cache (<5 min old): return immediately, no upstream calls.
+///   2. Stale cache + upstream succeeds: refresh and return new XML.
+///   3. Stale cache + upstream fails: return stale XML (up to 24h old) with a warning log.
+///   4. No cache + upstream fails: return 500 (Sparkle will retry on next 24h check).
 pub async fn appcast(Extension(config): Extension<Arc<Config>>) -> Response {
+    // Fast path: serve fresh cache without touching upstream.
+    {
+        let guard = APPCAST_CACHE.lock().await;
+        if let Some(entry) = guard.as_ref() {
+            if entry.fetched_at.elapsed() < CACHE_TTL {
+                return ok_response(entry.xml.clone());
+            }
+        }
+    }
+
+    // Slow path: regenerate from GitHub + Firestore.
     match generate_appcast(&config).await {
-        Ok(xml) => (
-            StatusCode::OK,
-            [
-                (header::CONTENT_TYPE, "application/rss+xml; charset=utf-8"),
-                (header::CACHE_CONTROL, "public, max-age=60"),
-            ],
-            xml,
-        )
-            .into_response(),
+        Ok(xml) => {
+            let mut guard = APPCAST_CACHE.lock().await;
+            *guard = Some(CacheEntry {
+                xml: xml.clone(),
+                fetched_at: Instant::now(),
+            });
+            ok_response(xml)
+        }
         Err(e) => {
-            tracing::error!("Failed to generate appcast: {}", e);
+            // Fall back to stale cache if we have anything reasonably recent.
+            let stale = APPCAST_CACHE.lock().await.as_ref().and_then(|entry| {
+                if entry.fetched_at.elapsed() < STALE_TTL {
+                    Some(entry.xml.clone())
+                } else {
+                    None
+                }
+            });
+
+            if let Some(xml) = stale {
+                tracing::warn!(
+                    "Appcast upstream failed ({}), serving stale cache (age {:?})",
+                    e,
+                    APPCAST_CACHE
+                        .lock()
+                        .await
+                        .as_ref()
+                        .map(|c| c.fetched_at.elapsed())
+                        .unwrap_or_default()
+                );
+                return ok_response(xml);
+            }
+
+            tracing::error!("Failed to generate appcast (no cache to fall back on): {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to generate appcast: {}", e),
@@ -60,12 +139,27 @@ pub async fn appcast(Extension(config): Extension<Arc<Config>>) -> Response {
     }
 }
 
+fn ok_response(xml: String) -> Response {
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/rss+xml; charset=utf-8"),
+            // 60s public cache lets browsers and proxies smooth burst traffic too.
+            (header::CACHE_CONTROL, "public, max-age=60"),
+        ],
+        xml,
+    )
+        .into_response()
+}
+
 async fn generate_appcast(
     config: &Arc<Config>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     // Fetch Firestore channel map (tag → channel) in parallel with GitHub releases
-    let (firestore_result, github_result) =
-        tokio::join!(fetch_firestore_channels(config), fetch_github_releases());
+    let (firestore_result, github_result) = tokio::join!(
+        fetch_firestore_channels(config),
+        fetch_github_releases(config.github_token.as_deref())
+    );
 
     let channel_map = firestore_result.unwrap_or_else(|e| {
         tracing::warn!(
@@ -237,21 +331,24 @@ async fn fetch_firestore_channels(
 }
 
 async fn fetch_github_releases(
+    token: Option<&str>,
 ) -> Result<Vec<GitHubRelease>, Box<dyn std::error::Error + Send + Sync>> {
-    let client = reqwest::Client::builder()
-        .user_agent("fazm-backend/1.0")
-        .build()?;
+    let mut req = HTTP_CLIENT.get(format!(
+        "{}/repos/{}/releases?per_page=20",
+        GITHUB_API, GITHUB_REPO
+    ));
 
-    Ok(client
-        .get(format!(
-            "{}/repos/{}/releases?per_page=20",
-            GITHUB_API, GITHUB_REPO
-        ))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?)
+    // Authenticated requests bump the rate limit from 60/hr/IP to 5,000/hr/token.
+    // Optional: if no token is configured we fall back to unauthenticated, which
+    // is fine when the in-memory cache is doing its job.
+    if let Some(t) = token {
+        if !t.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", t));
+            req = req.header("X-GitHub-Api-Version", "2022-11-28");
+        }
+    }
+
+    Ok(req.send().await?.error_for_status()?.json().await?)
 }
 
 /// Convert GitHub release body markdown into simple HTML for Sparkle release notes.
