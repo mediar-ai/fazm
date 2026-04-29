@@ -111,6 +111,11 @@ struct SettingsSidebar: View {
     // (via `hasSuccessfullyInstalledSparkleUpdate`) once an update installs cleanly.
     @AppStorage("hasSeenAppManagementError") private var hasSeenAppManagementError: Bool = false
     @AppStorage("hasSuccessfullyInstalledSparkleUpdate") private var hasInstalledSparkleUpdate: Bool = false
+    // Dismissed = user clicked the X. We still render the widget but grayed out,
+    // so the issue stays visible (still tappable) without nagging them in red.
+    // Cleared when a fresh 4005 error fires (UpdaterViewModel) and when an
+    // update installs successfully.
+    @AppStorage("appManagementWarningDismissed") private var appManagementWarningDismissed: Bool = false
 
     private var showAppManagementWarning: Bool {
         hasSeenAppManagementError && !hasInstalledSparkleUpdate
@@ -285,57 +290,81 @@ struct SettingsSidebar: View {
     }
 
     // MARK: - App Management Warning Widget
-    // Shown when a Sparkle 4005 install error occurred and the user dismissed
-    // the recovery guide. Tapping reopens the guide so they can grant App
-    // Management permission. Auto-hides once an update installs successfully.
+    // Shown when a Sparkle 4005 install error occurred. Tapping the body
+    // reopens the recovery guide. The X button dismisses the warning into a
+    // grayed-out state so it stays visible (still tappable) without nagging
+    // in red. Auto-hides only after an update installs successfully.
     private var appManagementWarningWidget: some View {
-        Button(action: {
-            let version = updaterViewModel.availableVersion.isEmpty
-                ? Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-                : updaterViewModel.availableVersion
-            AppManagementSetupWindowController.shared.show(
-                version: version,
-                onDone: {
-                    UserDefaults.standard.set(true, forKey: "hasSuccessfullyInstalledSparkleUpdate")
-                    UpdaterViewModel.shared.checkForUpdatesInBackground()
-                },
-                onDismiss: { /* keep widget visible until permission granted */ }
-            )
-        }) {
-            HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .scaledFont(size: 17)
-                    .foregroundColor(.red)
-                    .frame(width: iconWidth)
+        let dismissed = appManagementWarningDismissed
+        let accent: Color = dismissed ? FazmColors.textTertiary : .red
+        let titleColor: Color = dismissed ? FazmColors.textSecondary : FazmColors.textPrimary
+        let subtitleColor: Color = dismissed ? FazmColors.textTertiary : FazmColors.textSecondary
+        let strokeOpacity: Double = dismissed ? 0.18 : 0.35
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Auto-updates blocked")
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundColor(FazmColors.textPrimary)
+        return HStack(spacing: 12) {
+            Button(action: {
+                let version = updaterViewModel.availableVersion.isEmpty
+                    ? Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+                    : updaterViewModel.availableVersion
+                AppManagementSetupWindowController.shared.show(
+                    version: version,
+                    onDone: {
+                        UserDefaults.standard.set(true, forKey: "hasSuccessfullyInstalledSparkleUpdate")
+                        UserDefaults.standard.set(false, forKey: "appManagementWarningDismissed")
+                        UpdaterViewModel.shared.checkForUpdatesInBackground()
+                    },
+                    onDismiss: { /* keep widget visible until permission granted */ }
+                )
+            }) {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .scaledFont(size: 17)
+                        .foregroundColor(accent)
+                        .frame(width: iconWidth)
 
-                    Text("App Management permission needed")
-                        .scaledFont(size: 11)
-                        .foregroundColor(FazmColors.textSecondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-updates blocked")
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundColor(titleColor)
+
+                        Text("App Management permission needed")
+                            .scaledFont(size: 11)
+                            .foregroundColor(subtitleColor)
+                    }
+
+                    Spacer(minLength: 4)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .scaledFont(size: 12)
-                    .foregroundColor(FazmColors.textTertiary)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(FazmColors.backgroundTertiary)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.red.opacity(0.35), lineWidth: 1)
-                    )
-            )
+            .buttonStyle(.plain)
+
+            if !dismissed {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        appManagementWarningDismissed = true
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundColor(FazmColors.textTertiary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss (still accessible, will gray out)")
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(FazmColors.backgroundTertiary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(accent.opacity(strokeOpacity), lineWidth: 1)
+                )
+        )
+        .opacity(dismissed ? 0.6 : 1.0)
     }
 
     // MARK: - Update Available Widget
