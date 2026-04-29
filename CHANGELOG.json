@@ -2,6 +2,14 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "2.6.6",
+      "date": "2026-04-29",
+      "changes": [
+        "Improved the New Chat Window button: it now shows a count of open chat windows and renames itself contextually",
+        "Fixed agent loops getting stuck when a tool call timed out: the session now auto-interrupts on tool timeout (and skips the synthetic timeout when the tool already completed) so the next message goes through instead of hanging"
+      ]
+    },
+    {
       "version": "2.6.5",
       "date": "2026-04-29",
       "changes": [
