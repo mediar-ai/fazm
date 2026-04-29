@@ -39,7 +39,7 @@ import type {
   WarmupMessage,
   AuthMethod,
 } from "./protocol.js";
-import { startOAuthFlow, OAuthTokenExchangeError, type OAuthFlowHandle } from "./oauth-flow.js";
+import { startOAuthFlow, OAuthTokenExchangeError, readStoredCredentials, type OAuthFlowHandle } from "./oauth-flow.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -773,6 +773,7 @@ function registerSession(sessionKey: string, entry: { sessionId: string; cwd: st
   }
   sessions.set(sessionKey, entry);
   sessionIdToKey.set(entry.sessionId, sessionKey);
+  logErr(`[SESSIONS] registered key=${sessionKey} sid=${entry.sessionId.slice(0, 8)} total=${sessions.size}`);
 }
 
 /** Unregister a session, maintaining the reverse map */
@@ -782,6 +783,7 @@ function unregisterSession(sessionKey: string): void {
     sessionIdToKey.delete(entry.sessionId);
   }
   sessions.delete(sessionKey);
+  logErr(`[SESSIONS] unregistered key=${sessionKey} total=${sessions.size}`);
 }
 /**
  * Tracks how many image-bearing turns each session key has had.
@@ -1293,7 +1295,7 @@ interface WarmupSessionConfig {
 // CLI sessions started from home.
 const DEFAULT_CWD = homedir();
 
-async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[]): Promise<void> {
+async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[], stagger?: boolean): Promise<void> {
   const warmCwd = cwd || DEFAULT_CWD;
   try { mkdirSync(warmCwd, { recursive: true }); } catch {}
 
@@ -1317,8 +1319,14 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
   try {
     await initializeAcp();
 
+    if (stagger && toWarm.length > 1) {
+      logErr(`Pre-warming ${toWarm.length} sessions with stagger (post-OAuth restart)...`);
+    }
     await Promise.all(
-      toWarm.map(async (cfg) => {
+      toWarm.map(async (cfg, i) => {
+        if (stagger && i > 0) {
+          await new Promise((r) => setTimeout(r, i * 500));
+        }
         try {
           const sessionParams: Record<string, unknown> = {
             cwd: warmCwd,
@@ -1374,6 +1382,13 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
         } catch (err) {
           if (isAcpAuthError(err)) {
             logErr(`Pre-warm failed with auth error (code=${(err as AcpError).code}), starting OAuth flow`);
+            try {
+              const creds = readStoredCredentials();
+              const tokenAgeSec = creds?.storedAt
+                ? Math.round((Date.now() - new Date(creds.storedAt).getTime()) / 1000)
+                : null;
+              logErr(`[AUTH-DIAG] pre-warm sessions=${sessions.size} warmup, activeQueries=${activeQueries.size} concurrent, tokenAge=${tokenAgeSec != null ? tokenAgeSec + "s" : "unknown"}, key=${cfg.key}`);
+            } catch { /* ignore diagnostic errors */ }
             await startAuthFlow();
             return;
           }
@@ -2066,6 +2081,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
         authRetryCount++;
         logErr(`session/prompt failed with auth error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
+        // Diagnostics: log concurrent session state and token age to help identify root cause
+        try {
+          const creds = readStoredCredentials();
+          const tokenAgeSec = creds?.storedAt
+            ? Math.round((Date.now() - new Date(creds.storedAt).getTime()) / 1000)
+            : null;
+          logErr(`[AUTH-DIAG] sessions=${sessions.size} warmup, activeQueries=${activeQueries.size} concurrent, tokenAge=${tokenAgeSec != null ? tokenAgeSec + "s" : "unknown"}, sessionKey=${sessionKey}`);
+        } catch { /* ignore diagnostic errors */ }
         unregisterSession(sessionKey);
         imageTurnCounts.delete(sessionKey);
         activeSessionId = "";
