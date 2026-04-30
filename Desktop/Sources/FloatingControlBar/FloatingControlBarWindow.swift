@@ -1561,8 +1561,6 @@ class FloatingControlBarManager {
         let state = window?.state
         let voiceEnabled = UserDefaults.standard.bool(forKey: "voiceResponseEnabled")
         let workspace = UserDefaults.standard.string(forKey: "aiChatWorkingDirectory") ?? ""
-        let models = ShortcutSettings.shared.availableModels
-        log("FloatingControlBarManager: writeControlState reading availableModels count=\(models.count) ids=\(models.map { $0.id })")
 
         var dict: [String: Any] = [
             "model": ShortcutSettings.shared.selectedModel,
@@ -1578,7 +1576,7 @@ class FloatingControlBarManager {
             "displayedQuery": state?.displayedQuery ?? "",
             "queueCount": state?.messageQueue.count ?? 0,
             "isTutorialActive": state?.isTutorialChatActive ?? false,
-            "availableModels": models.map { ["id": $0.id, "label": $0.label, "shortLabel": $0.shortLabel] }
+            "availableModels": ShortcutSettings.shared.availableModels.map { ["id": $0.id, "label": $0.label, "shortLabel": $0.shortLabel] }
         ]
 
         if let currentMessage = state?.currentAIMessage {
