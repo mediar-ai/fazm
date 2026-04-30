@@ -33,7 +33,7 @@ actor GeminiAnalysisService {
         CRITICAL: If you see terminal, IDE, or browser activity that looks automated (fast typing, command sequences, file edits happening rapidly), call `read_dev_log` or `get_active_sessions` FIRST to check whether Fazm's AI agent is already doing that work. Do NOT suggest automating something that is already being automated by the agent. This is the most common false positive — avoid it.
 
         MANDATORY — before making any decision, you MUST run these two queries:
-        1. Check previously discovered tasks: `SELECT content, status, createdAt FROM observer_activity WHERE type='gemini_analysis' ORDER BY createdAt DESC LIMIT 10`
+        1. Check previously discovered tasks: `SELECT type, category, content, status, createdAt FROM observer_activity WHERE type IN ('gemini_analysis', 'system_signal') ORDER BY createdAt DESC LIMIT 10`
         2. Check recent chat messages: `SELECT sender, messageText, createdAt FROM chat_messages ORDER BY createdAt DESC LIMIT 10`
 
         If the observer_activity query returns tasks that are similar to what you'd suggest (same app, same type of work, same general activity), return NO_TASK. Users find it annoying to be shown the same suggestion repeatedly. A task is "similar" if it involves the same application AND the same category of work — even if the specific details differ. For example, if a previous task was about "refactoring route files in VS Code" and you'd suggest "updating middleware files in VS Code", those are similar (same app, same category: code editing). Err on the side of NO_TASK when in doubt about similarity.
