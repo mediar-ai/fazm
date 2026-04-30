@@ -107,16 +107,9 @@ function sqliteValue(v) {
 }
 
 function exec(query, params = []) {
-  let idx = 0;
-  const finalQuery = query.replace(/\?/g, () => `:p${idx++}`);
-  const cmds = [".mode json", "PRAGMA busy_timeout = 5000;", "PRAGMA journal_mode = WAL;"];
-  for (let i = 0; i < params.length; i++) {
-    cmds.push(`.param set :p${i} ${sqliteValue(params[i])}`);
-  }
-  cmds.push(finalQuery);
   try {
     execFileSync(SQLITE_BIN, [USER_DB], {
-      input: cmds.join("\n") + "\n",
+      input: buildScript(query, params, "list"),
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     });
