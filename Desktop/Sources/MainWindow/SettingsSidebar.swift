@@ -23,6 +23,9 @@ struct SettingsSearchItem: Identifiable {
         // Conversations
         SettingsSearchItem(name: "Conversation History", subtitle: "View and reopen past AI conversations", keywords: ["conversations", "history", "chat history", "past chats", "sessions", "previous"], section: .conversationHistory, advancedSubsection: nil, icon: "clock.arrow.circlepath", settingId: "conversationhistory.list"),
 
+        // Routines
+        SettingsSearchItem(name: "Routines", subtitle: "Recurring AI tasks that run on a schedule", keywords: ["routines", "schedule", "scheduled", "cron", "recurring", "automation", "every day", "every week", "morning", "agent", "background"], section: .routines, advancedSubsection: nil, icon: "repeat.circle", settingId: "routines.list"),
+
         // General
         SettingsSearchItem(name: "Microphone", subtitle: "Select which microphone to use for Push to Talk", keywords: ["microphone", "mic", "audio input", "recording device"], section: .general, advancedSubsection: nil, icon: "mic.fill", settingId: "general.microphone"),
         SettingsSearchItem(name: "Language Mode", subtitle: "Choose auto-detect or single language for transcription", keywords: ["language", "transcription", "auto-detect", "multi-language", "single language"], section: .general, advancedSubsection: nil, icon: "globe", settingId: "general.languagemode"),
