@@ -9,7 +9,24 @@ final class KeyService {
     private(set) var anthropicAPIKey: String?
     private(set) var deepgramAPIKey: String?
     private(set) var geminiAPIKey: String?
+    private(set) var elevenlabsAPIKey: String?
     private var hasFetched = false
+
+    /// Resolve the ElevenLabs API key, waiting for KeyService if needed.
+    /// Mirrors `TranscriptionService.resolveDeepgramKey` so callers have the
+    /// same env-var-then-backend lookup order.
+    static func resolveElevenLabsKey() async throws -> String {
+        if let envKey = getenv("ELEVENLABS_API_KEY").flatMap({ String(validatingUTF8: $0) }), !envKey.isEmpty {
+            return envKey
+        }
+        await KeyService.shared.ensureKeys()
+        if let k = KeyService.shared.elevenlabsAPIKey, !k.isEmpty { return k }
+        throw NSError(
+            domain: "KeyService",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "ELEVENLABS_API_KEY not set"]
+        )
+    }
 
     /// Task that represents the in-flight fetchKeys() call, so callers can await it.
     private var fetchTask: Task<Void, Never>?
@@ -127,6 +144,7 @@ final class KeyService {
                     let anthropic_api_key: String
                     let deepgram_api_key: String
                     let gemini_api_key: String?
+                    let elevenlabs_api_key: String?
                 }
 
                 let keys = try JSONDecoder().decode(KeysResponse.self, from: data)
@@ -139,8 +157,11 @@ final class KeyService {
                 if let gemini = keys.gemini_api_key, !gemini.isEmpty {
                     geminiAPIKey = gemini
                 }
+                if let elevenlabs = keys.elevenlabs_api_key, !elevenlabs.isEmpty {
+                    elevenlabsAPIKey = elevenlabs
+                }
                 hasFetched = true
-                log("KeyService: fetched keys (anthropic=\(anthropicAPIKey != nil), deepgram=\(deepgramAPIKey != nil), gemini=\(geminiAPIKey != nil))")
+                log("KeyService: fetched keys (anthropic=\(anthropicAPIKey != nil), deepgram=\(deepgramAPIKey != nil), gemini=\(geminiAPIKey != nil), elevenlabs=\(elevenlabsAPIKey != nil))")
                 return
             } catch {
                 if attempt < 2 {
