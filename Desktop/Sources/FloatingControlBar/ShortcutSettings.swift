@@ -164,7 +164,17 @@ class ShortcutSettings: ObservableObject {
     ]
 
     /// Available models for Ask Fazm. Updated dynamically from ACP SDK; falls back to defaults.
+    /// This is the MERGED list of Claude + Codex (Phase 3.4). Use the
+    /// `updateModels` (Claude) and `updateCodexModels` (Codex) helpers — do not
+    /// assign directly so the two backends don't overwrite each other.
     @Published var availableModels: [ModelOption] = ShortcutSettings.defaultModels
+
+    /// Last Claude models reported by ACP. Source of truth for the Claude half
+    /// of `availableModels`. Defaults to the static fallback.
+    private var lastClaudeModels: [ModelOption] = ShortcutSettings.defaultModels
+    /// Last Codex models reported via `codex_probe_result`. Empty until the
+    /// CodexBackendManager probe succeeds.
+    private var lastCodexModels: [ModelOption] = []
 
     /// Normalize a model ID: maps legacy full IDs to short aliases that the ACP SDK expects.
     static func normalizeModelId(_ modelId: String) -> String {
