@@ -44,11 +44,11 @@ enum VoiceLanguageRouter {
     ]
 
     /// Default ElevenLabs voice for languages outside Deepgram coverage.
-    /// "Sarah" (`EXAVITQu4vr4xnSDxMaL`) — mature, reassuring, confident female
-    /// voice. Available on free-tier ElevenLabs accounts (Rachel and Bella
-    /// require a paid plan), and pairs well with Deepgram's Luna so the user
-    /// doesn't get jarring timbre changes when switching languages.
-    static let elevenLabsDefaultVoiceId = "EXAVITQu4vr4xnSDxMaL"
+    /// "Charlotte" (`XB0fDUnXU5powFXDhCwa`), warm Swedish-accented multilingual
+    /// female voice. Pairs well with Deepgram's Luna so users don't get jarring
+    /// timbre changes when switching languages, and renders Slavic languages
+    /// (Russian, Polish, Ukrainian) noticeably more naturally than Sarah.
+    static let elevenLabsDefaultVoiceId = "XB0fDUnXU5powFXDhCwa"
     static let elevenLabsModelId = "eleven_multilingual_v2"
 
     /// Languages eleven_multilingual_v2 covers natively. Anything outside this
