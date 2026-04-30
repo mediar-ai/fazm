@@ -501,6 +501,77 @@ function killAcpProcessTree(): void {
   acpProcess = null;
 }
 
+// --- Codex provider (Phase 2.1) ---
+// Lazily instantiated; only spawned when first needed (probe or codex-prefixed
+// model query). Until then, zero impact on the existing Claude-only flow.
+let codexProvider: CodexProvider | null = null;
+
+function getCodexProvider(): CodexProvider {
+  if (!codexProvider) {
+    codexProvider = new CodexProvider({
+      logErr: (m) => logErr(`[codex] ${m}`),
+      onNotification: (method, params) => {
+        // Phase 2.1: log unrouted codex notifications. Per-session routing is
+        // wired in Phase 2.3 when query handlers register their own handlers.
+        const p = params as Record<string, unknown> | undefined;
+        const sid = (p?.sessionId as string | undefined)
+          ?? ((p?.update as Record<string, unknown> | undefined)?.sessionId as string | undefined);
+        logErr(`[codex] unrouted notification method=${method} sessionId=${sid ?? "?"}`);
+      },
+    });
+  }
+  return codexProvider;
+}
+
+function readCodexAuthMode(): "chatgpt" | "api_key" | "none" {
+  try {
+    const path = join(homedir(), ".codex", "auth.json");
+    if (!existsSync(path)) return "none";
+    const data = JSON.parse(readFileSync(path, "utf8")) as { auth_mode?: string };
+    if (data.auth_mode === "chatgpt") return "chatgpt";
+    if (data.auth_mode) return "api_key";
+    return "none";
+  } catch {
+    return "none";
+  }
+}
+
+async function handleCodexInitProbe(): Promise<void> {
+  try {
+    const provider = getCodexProvider();
+    provider.start();
+    const init = await provider.initialize();
+    // Open a transient session purely to learn the default model id (codex-acp
+    // returns it on session/new but not on initialize).
+    let currentModelId: string | undefined;
+    try {
+      const probeSession = (await provider.request("session/new", {
+        cwd: homedir(),
+        mcpServers: [],
+      })) as { sessionId: string; models?: { currentModelId?: string } };
+      currentModelId = probeSession.models?.currentModelId;
+      // No need to clean up — codex-acp drops the session when this provider is shut down.
+    } catch (probeErr) {
+      logErr(`[codex] probe session/new failed: ${probeErr}`);
+    }
+    send({
+      type: "codex_probe_result",
+      ok: true,
+      agent: init.agentInfo ? `${init.agentInfo.name}@${init.agentInfo.version}` : undefined,
+      authMethods: init.authMethods?.map((m) => m.id),
+      currentModelId,
+      authMode: readCodexAuthMode(),
+    });
+  } catch (err) {
+    send({
+      type: "codex_probe_result",
+      ok: false,
+      authMode: readCodexAuthMode(),
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 let acpProcess: ChildProcess | null = null;
 let acpStdinWriter: ((line: string) => void) | null = null;
 let acpResponseHandlers = new Map<
