@@ -3123,6 +3123,12 @@ async function main(): Promise<void> {
         process.exit(0);
         break;
 
+      case "codex_init_probe":
+        handleCodexInitProbe().catch((err) => {
+          logErr(`codex probe handler threw: ${err}`);
+        });
+        break;
+
       default:
         logErr(`Unknown message type: ${(msg as any).type}`);
     }
