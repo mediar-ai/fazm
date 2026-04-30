@@ -43,17 +43,16 @@ enum VoiceLanguageRouter {
         "ja": "aura-2-izanami-ja",
     ]
 
-    /// Default ElevenLabs voice for languages outside Deepgram coverage.
-    /// "Charlotte" (`XB0fDUnXU5powFXDhCwa`), warm Swedish-accented multilingual
-    /// female voice. Pairs well with Deepgram's Luna so users don't get jarring
-    /// timbre changes when switching languages, and renders Slavic languages
-    /// (Russian, Polish, Ukrainian) noticeably more naturally than Sarah.
-    static let elevenLabsDefaultVoiceId = "XB0fDUnXU5powFXDhCwa"
+    /// Default ElevenLabs voice. Used across every supported language so users
+    /// hear the same character no matter what language the response is in.
+    /// User-selected from the ElevenLabs voice library on 2026-04-30.
+    static let elevenLabsDefaultVoiceId = "EST9Ui6982FZPSi7gCHi"
     static let elevenLabsModelId = "eleven_multilingual_v2"
 
     /// Languages eleven_multilingual_v2 covers natively. Anything outside this
     /// set falls back to AVSpeechSynthesizer.
     static let elevenLabsLanguages: Set<String> = [
+        "en", "es", "fr", "de", "it", "nl", "ja",
         "ru", "zh", "ko", "pt", "ar", "hi", "tr", "pl", "uk",
         "th", "vi", "id", "he", "sv", "da", "fi", "no", "cs",
         "el", "ro", "hu", "sk", "ms", "bg", "hr", "ta", "fil",
@@ -148,11 +147,11 @@ enum VoiceLanguageRouter {
     // MARK: - Voice selection
 
     private static func mapToVoice(languageCode: String) -> Resolution {
-        if let model = deepgramVoices[languageCode] {
-            return .deepgram(model: model, languageCode: languageCode)
-        }
         if elevenLabsLanguages.contains(languageCode) {
             return .elevenlabs(voiceId: elevenLabsDefaultVoiceId, languageCode: languageCode)
+        }
+        if let model = deepgramVoices[languageCode] {
+            return .deepgram(model: model, languageCode: languageCode)
         }
         let bcp47 = bcp47(for: languageCode)
         let voice = AVSpeechSynthesisVoice(language: bcp47)
