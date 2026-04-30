@@ -132,8 +132,14 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         let nsError = error as NSError
         let isUpToDate = nsError.domain == SUSparkleErrorDomain
             && nsError.code == 1001 /* SUNoUpdateError */
+        // Our own gating error from shouldProceedWithUpdate — not a real failure,
+        // we throw it deliberately so we can show the App Management permission
+        // guide instead of Sparkle's default dialog. Don't log or report it.
+        let isAppManagementGate = nsError.domain == "com.fazm.updater" && nsError.code == 1
         if isUpToDate {
             logSync("Sparkle: Already up to date")
+        } else if isAppManagementGate {
+            logSync("Sparkle: Update gated, showing App Management guide instead")
         } else {
             logSync("Sparkle: Update check failed - \(message) [domain=\(nsError.domain) code=\(nsError.code)]")
             if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
