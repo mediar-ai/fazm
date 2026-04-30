@@ -969,8 +969,72 @@ class ChatToolExecutor {
         switch resolution {
         case .deepgram(let model, let lang):
             return await speakViaDeepgram(text: text, model: model, languageCode: lang, speed: clampedSpeed)
+        case .elevenlabs(let voiceId, let lang):
+            // Try ElevenLabs first; if the API call fails (no key, network, 4xx),
+            // fall back to system voice so the user still hears something.
+            let result = await speakViaElevenLabs(text: text, voiceId: voiceId, languageCode: lang, speed: clampedSpeed)
+            if result.hasPrefix("OK:") {
+                return result
+            }
+            log("speak_response: elevenlabs failed (\(result)), falling back to system voice for \(lang)")
+            if let voice = AVSpeechSynthesisVoice(language: VoiceLanguageRouter.bcp47Public(for: lang))
+                ?? AVSpeechSynthesisVoice(language: lang)
+                ?? AVSpeechSynthesisVoice(language: "en-US") {
+                return speakViaSystem(text: text, voice: voice, languageCode: lang, speed: clampedSpeed)
+            }
+            return result
         case .system(let voice, let lang):
             return speakViaSystem(text: text, voice: voice, languageCode: lang, speed: clampedSpeed)
+        }
+    }
+
+    private static func speakViaElevenLabs(text: String, voiceId: String, languageCode: String, speed: Double) async -> String {
+        do {
+            let apiKey = try await KeyService.resolveElevenLabsKey()
+            let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+            request.timeoutInterval = 30
+
+            let body: [String: Any] = [
+                "text": text,
+                "model_id": VoiceLanguageRouter.elevenLabsModelId,
+                "voice_settings": [
+                    "stability": 0.5,
+                    "similarity_boost": 0.75,
+                    "style": 0.0,
+                    "use_speaker_boost": true,
+                ],
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+                log("speak_response: ElevenLabs API error \(status) (voice=\(voiceId), lang=\(languageCode)): \(errorBody)")
+                return "Error: ElevenLabs TTS failed with status \(status)"
+            }
+            guard data.count > 1000 else {
+                log("speak_response: ElevenLabs returned suspiciously small payload (\(data.count) bytes)")
+                return "Error: ElevenLabs returned empty audio"
+            }
+
+            log("speak_response: received \(data.count) bytes (elevenlabs, lang=\(languageCode), voice=\(voiceId)), playing at speed \(speed)...")
+
+            let player = try AVAudioPlayer(data: data)
+            player.enableRate = true
+            player.rate = Float(speed)
+            ttsAudioPlayer = player
+            player.play()
+
+            return "OK: speaking \(text.count) chars (elevenlabs, \(languageCode))"
+        } catch {
+            log("speak_response: elevenlabs error: \(error)")
+            return "Error: \(error.localizedDescription)"
         }
     }
 
