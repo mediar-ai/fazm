@@ -3,7 +3,8 @@
     "Restored the on-screen indicator that shows when Fazm is controlling your browser; it was silently missing in recent releases due to a CI bundling gap",
     "Fixed AI chat being cancelled mid-task when clicking another window during tool calls (Playwright, Terminal, macos-use). The conversation now stays alive while the agent is working; only explicit close (Esc, X button) ends it",
     "Made the open chat window count clearer (now reads \"X chat windows currently open\" instead of just \"X open\")",
-    "Discovered Tasks now surfaces both Automate and Heal cards. Heal cards (orange stethoscope) flag Mac health symptoms (kernel panics for now) and route the conversation through a Mac Doctor system prompt that runs read-only diagnostics first and asks before any destructive action."
+    "Discovered Tasks now surfaces both Automate and Heal cards. Heal cards (orange stethoscope) flag Mac health symptoms (kernel panics for now) and route the conversation through a Mac Doctor system prompt that runs read-only diagnostics first and asks before any destructive action.",
+    "Fixed false update_check_failed analytics events caused by our own internal App Management permission gate"
   ],
   "releases": [
     {
