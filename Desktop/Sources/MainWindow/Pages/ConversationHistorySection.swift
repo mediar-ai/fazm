@@ -47,7 +47,9 @@ struct ConversationHistorySection: View {
             // count badge to the left, so it's clear that each click spawns another
             // window and that multiple can be open at once.
             HStack(spacing: 10) {
-                Text("\(openWindowCount) open")
+                Text(openWindowCount == 1
+                    ? "1 chat window currently open"
+                    : "\(openWindowCount) chat windows currently open")
                     .scaledFont(size: 12, weight: .medium)
                     .foregroundColor(FazmColors.textTertiary)
                     .help(openWindowCount == 1
