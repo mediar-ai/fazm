@@ -95,6 +95,11 @@ export interface TransferSessionMessage {
   toKey: string;
 }
 
+/** Diagnostic probe — initialize the codex-acp adapter and report agent + auth state. */
+export interface CodexInitProbeMessage {
+  type: "codex_init_probe";
+}
+
 export interface CancelAuthMessage {
   type: "cancel_auth";
 }
@@ -108,7 +113,8 @@ export type InboundMessage =
   | WarmupMessage
   | ResetSessionMessage
   | TransferSessionMessage
-  | CancelAuthMessage;
+  | CancelAuthMessage
+  | CodexInitProbeMessage;
 
 // === Bridge → Swift (stdout) ===
 
@@ -343,6 +349,20 @@ export interface SessionStartedMessage {
   isResume: boolean;
 }
 
+/** Result of `codex_init_probe` — reports whether codex-acp is reachable and authenticated. */
+export interface CodexProbeResultMessage {
+  type: "codex_probe_result";
+  ok: boolean;
+  /** Adapter version when reachable, e.g. "codex-acp@0.12.0". */
+  agent?: string;
+  authMethods?: string[];
+  /** Default/current model id reported by the adapter, e.g. "gpt-5.4/high". */
+  currentModelId?: string;
+  /** Auth modes detected on disk (~/.codex/auth.json `auth_mode`). */
+  authMode?: "chatgpt" | "api_key" | "none";
+  error?: string;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -370,4 +390,5 @@ export type OutboundMessage =
   | ModelsAvailableMessage
   | McpServersAvailableMessage
   | SessionExpiredMessage
-  | SessionStartedMessage;
+  | SessionStartedMessage
+  | CodexProbeResultMessage;
