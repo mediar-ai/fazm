@@ -592,6 +592,136 @@ const TOOLS = ALL_TOOLS.filter((t) => {
   return !ONBOARDING_TOOL_NAMES.has(t.name);
 });
 
+// --- Routines (recurring AI tasks) ---
+
+function sqlNullable(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "NULL";
+  return `'${sqlStringEscape(String(v))}'`;
+}
+
+async function handleRoutinesTool(toolName: string, args: Record<string, unknown>): Promise<string> {
+  try {
+    if (toolName === "routines_create") return await routinesCreate(args);
+    if (toolName === "routines_list") return await routinesList();
+    if (toolName === "routines_update") return await routinesUpdate(args);
+    if (toolName === "routines_remove") return await routinesRemove(args);
+    if (toolName === "routines_runs") return await routinesRuns(args);
+    return `Unknown routines tool: ${toolName}`;
+  } catch (err) {
+    logErr(`routines tool error: ${err}`);
+    return `Error: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+async function routinesCreate(args: Record<string, unknown>): Promise<string> {
+  const name = String(args.name ?? "").trim();
+  const prompt = String(args.prompt ?? "").trim();
+  const schedule = String(args.schedule ?? "").trim();
+  if (!name || !prompt || !schedule) {
+    return "Error: name, prompt, and schedule are all required.";
+  }
+  const scheduleErr = validateSchedule(schedule);
+  if (scheduleErr) return `Error: ${scheduleErr}`;
+
+  const id = randomUUID();
+  const now = Date.now() / 1000;
+  const next = computeNextRun(schedule, new Date());
+  const nextEpoch = next ? next.getTime() / 1000 : null;
+  const sessionMode = args.session_mode === "resume" ? "resume" : "new";
+  const model = args.model ? String(args.model) : null;
+  const workspace = args.workspace ? String(args.workspace) : null;
+
+  const insert = `INSERT INTO cron_jobs
+    (id, name, prompt, schedule, timezone, enabled, model, workspace, session_mode,
+     acp_session_id, created_at, updated_at, next_run_at, last_run_at, last_status,
+     last_error, run_count)
+    VALUES (
+      '${sqlStringEscape(id)}',
+      '${sqlStringEscape(name)}',
+      '${sqlStringEscape(prompt)}',
+      '${sqlStringEscape(schedule)}',
+      'America/Los_Angeles',
+      1,
+      ${sqlNullable(model)},
+      ${sqlNullable(workspace)},
+      '${sessionMode}',
+      NULL,
+      ${now},
+      ${now},
+      ${nextEpoch ?? "NULL"},
+      NULL,
+      NULL,
+      NULL,
+      0
+    )`;
+  await requestSwiftTool("execute_sql", { query: insert });
+  const nextHuman = next ? next.toISOString() : "never (one-shot already past)";
+  return `Created routine "${name}" (id=${id}). Next run: ${nextHuman}.`;
+}
+
+async function routinesList(): Promise<string> {
+  const sql = `SELECT id, name, schedule, enabled, last_status, last_run_at, next_run_at, run_count, last_error
+               FROM cron_jobs ORDER BY enabled DESC, COALESCE(next_run_at, 9e15) ASC, name ASC`;
+  const result = await requestSwiftTool("execute_sql", { query: sql });
+  return result || "No routines yet. Use routines_create to add one.";
+}
+
+async function routinesUpdate(args: Record<string, unknown>): Promise<string> {
+  const id = String(args.id ?? "").trim();
+  if (!id) return "Error: id is required";
+
+  const sets: string[] = [];
+  if (typeof args.name === "string") sets.push(`name = '${sqlStringEscape(args.name)}'`);
+  if (typeof args.prompt === "string") sets.push(`prompt = '${sqlStringEscape(args.prompt)}'`);
+  if (typeof args.schedule === "string") {
+    const err = validateSchedule(args.schedule);
+    if (err) return `Error: ${err}`;
+    const next = computeNextRun(args.schedule, new Date());
+    sets.push(`schedule = '${sqlStringEscape(args.schedule)}'`);
+    sets.push(`next_run_at = ${next ? next.getTime() / 1000 : "NULL"}`);
+  }
+  if (typeof args.enabled === "boolean") {
+    sets.push(`enabled = ${args.enabled ? 1 : 0}`);
+    // When re-enabling without a schedule change, recompute next_run_at from the existing schedule
+    // so the routine doesn't keep its stale (possibly past) value. Done in two queries —
+    // we issue this UPDATE first, then a second one for next_run_at if needed. Simpler: skip;
+    // the launchd poller treats enabled=1 + past next_run_at as "due now" and will fire it,
+    // which is the desired behaviour for "resume my morning email routine right now".
+  }
+  if (typeof args.model === "string") sets.push(`model = '${sqlStringEscape(args.model)}'`);
+  if (typeof args.workspace === "string") sets.push(`workspace = '${sqlStringEscape(args.workspace)}'`);
+  if (args.session_mode === "new" || args.session_mode === "resume") {
+    sets.push(`session_mode = '${args.session_mode}'`);
+  }
+
+  if (sets.length === 0) return "Nothing to update — pass at least one field besides id.";
+  sets.push(`updated_at = ${Date.now() / 1000}`);
+
+  const sql = `UPDATE cron_jobs SET ${sets.join(", ")} WHERE id = '${sqlStringEscape(id)}'`;
+  await requestSwiftTool("execute_sql", { query: sql });
+  return `Updated routine ${id}.`;
+}
+
+async function routinesRemove(args: Record<string, unknown>): Promise<string> {
+  const id = String(args.id ?? "").trim();
+  if (!id) return "Error: id is required";
+  await requestSwiftTool("execute_sql", { query: `DELETE FROM cron_runs WHERE job_id = '${sqlStringEscape(id)}'` });
+  await requestSwiftTool("execute_sql", { query: `DELETE FROM cron_jobs WHERE id = '${sqlStringEscape(id)}'` });
+  return `Deleted routine ${id} and its run history.`;
+}
+
+async function routinesRuns(args: Record<string, unknown>): Promise<string> {
+  const limitArg = Number(args.limit);
+  const limit = Number.isFinite(limitArg) && limitArg > 0 ? Math.min(100, Math.floor(limitArg)) : 20;
+  const jobId = typeof args.job_id === "string" && args.job_id ? String(args.job_id) : null;
+  const where = jobId ? `WHERE job_id = '${sqlStringEscape(jobId)}'` : "";
+  const sql = `SELECT id, job_id, started_at, finished_at, status, cost_usd, input_tokens, output_tokens, duration_ms,
+                      substr(COALESCE(output_text, error_message, ''), 1, 500) AS preview
+               FROM cron_runs ${where} ORDER BY started_at DESC LIMIT ${limit}`;
+  const result = await requestSwiftTool("execute_sql", { query: sql });
+  return result || "No runs yet for that filter.";
+}
+
 // --- JSON-RPC handling ---
 
 function send(msg: Record<string, unknown>): void {
