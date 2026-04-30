@@ -1105,6 +1105,19 @@ class ChatProvider: ObservableObject {
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
 
+            // Phase 3.5 — auto-probe Codex at startup when the backend is enabled.
+            // Without this, GPT models never appear in the model picker until the
+            // user manually toggles Settings → Advanced → Codex Backend or clicks
+            // "Check connection". The probe is fire-and-forget; results land in
+            // CodexBackendManager.shared via the codex_probe_result handler set
+            // up earlier in this method, which then calls
+            // ShortcutSettings.shared.updateCodexModels.
+            if CodexBackendManager.shared.enabled {
+                log("ChatProvider: Codex backend enabled at startup, auto-probing")
+                CodexBackendManager.shared.markProbing()
+                Task { await acpBridge.sendCodexProbe() }
+            }
+
             // Track if the bundled node binary was broken (Sparkle update corruption)
             if NodeBinaryHelper.bundledNodeWasBroken {
                 let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
