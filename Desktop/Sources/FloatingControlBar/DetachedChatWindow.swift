@@ -1020,7 +1020,13 @@ class DetachedChatWindowController {
                 log("[DetachedChat] subscribeToResponse: new AI message id=\(aiMessage.id) streaming=\(aiMessage.isStreaming) session=\(currentKey ?? "?")")
                 state.currentAIMessage = aiMessage
                 if aiMessage.isStreaming {
-                    state.isAILoading = false
+                    // Keep "thinking" indicator visible until the first text or
+                    // tool/thinking block arrives. The placeholder lands with
+                    // isStreaming=true but empty content; flipping isAILoading
+                    // off here would leave the user staring at near-blank UI
+                    // during TTFT (sometimes >60s).
+                    let hasContent = !aiMessage.text.isEmpty || !aiMessage.contentBlocks.isEmpty
+                    state.isAILoading = !hasContent
                     if !state.showingAIResponse {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             state.showingAIResponse = true
