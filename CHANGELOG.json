@@ -7,6 +7,7 @@
     "Fixed false update_check_failed analytics events caused by our own internal App Management permission gate",
     "Wired PostHog tracking for the discovered tasks funnel: created, overlay shown/discuss/dismiss/auto-dismiss, tab opened, card expanded/discussed/dismissed, all tagged with category and status",
     "Added experimental Codex backend (Settings > Advanced > Codex Backend) that routes GPT-5 family models through OpenAI's Codex CLI using your ChatGPT subscription. Text-only for now; tools and MCP support coming",
+    "Codex backend now gets the same MCP servers as Claude (fazm_tools, Playwright, macos-use, WhatsApp, Google Workspace), the same system prompt, plus session resume across app restarts and proper interrupt handling",
     "Fixed missing thinking indicator in pop-out chat and floating bar while waiting for first AI token",
     "Sticky stack of recent user messages at the top of the chat (floating bar and popout): your past prompts stay visible as you scroll deeper, capped at 50% of the chat height. Click any peek to jump back to that message"
   ],
