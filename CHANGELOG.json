@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Restored the on-screen indicator that shows when Fazm is controlling your browser; it was silently missing in recent releases due to a CI bundling gap",
-    "Fixed AI chat being cancelled mid-task when clicking another window during tool calls (Playwright, Terminal, macos-use). The conversation now stays alive while the agent is working; only explicit close (Esc, X button) ends it"
+    "Fixed AI chat being cancelled mid-task when clicking another window during tool calls (Playwright, Terminal, macos-use). The conversation now stays alive while the agent is working; only explicit close (Esc, X button) ends it",
+    "Made the open chat window count clearer (now reads \"X chat windows currently open\" instead of just \"X open\")"
   ],
   "releases": [
     {
