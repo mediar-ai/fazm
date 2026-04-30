@@ -664,6 +664,21 @@ struct AIResponseView: View {
             // Question bubble (hidden for observer-only entries with no user question)
             if !exchange.question.isEmpty {
                 ExpandableQuestionBubble(question: exchange.question)
+                    .opacity(stackedBubbleIDs.contains(exchange.id) ? 0 : 1)
+                    .background(
+                        GeometryReader { geo in
+                            let frame = geo.frame(in: .named(Self.chatScrollSpace))
+                            Color.clear.preference(
+                                key: StackedBubblesPreferenceKey.self,
+                                value: [StackedBubbleInfo(
+                                    id: exchange.id,
+                                    question: exchange.question,
+                                    topY: frame.minY,
+                                    height: frame.height
+                                )]
+                            )
+                        }
+                    )
             }
 
             // Response with content blocks
@@ -682,6 +697,7 @@ struct AIResponseView: View {
             Divider()
                 .background(FazmColors.overlayForeground.opacity(0.1))
         }
+        .id(exchange.id)
     }
 
     // MARK: - Current Question & Response
@@ -1441,6 +1457,163 @@ extension View {
     /// Shows a small floating label below the view on hover.
     func floatingHint(_ label: String) -> some View {
         modifier(FloatingHintModifier(label: label))
+    }
+}
+
+// MARK: - Sticky Stacked User Bubbles
+
+/// One user-question bubble's geometry, collected via PreferenceKey from the chat list.
+/// `topY` and `height` are in the named "chatScroll" coordinate space — values are stable
+/// while content layout doesn't change, regardless of scroll offset.
+struct StackedBubbleInfo: Equatable {
+    let id: UUID
+    let question: String
+    let topY: CGFloat
+    let height: CGFloat
+}
+
+private struct StackedBubblesPreferenceKey: PreferenceKey {
+    static var defaultValue: [StackedBubbleInfo] = []
+    static func reduce(value: inout [StackedBubbleInfo], nextValue: () -> [StackedBubbleInfo]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Visible scroll viewport bounds in document coordinates.
+struct ScrollBoundsInfo: Equatable {
+    var offsetY: CGFloat
+    var viewportHeight: CGFloat
+}
+
+/// Reads the enclosing NSScrollView's clip-view bounds and reports offset + height.
+/// Same pattern as `ScrollPositionDetector` — must be placed inside the ScrollView content.
+struct ScrollBoundsObserver: NSViewRepresentable {
+    let onChange: (ScrollBoundsInfo) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            context.coordinator.attach(to: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
+
+    class Coordinator: NSObject {
+        let onChange: (ScrollBoundsInfo) -> Void
+        private weak var scrollView: NSScrollView?
+        private var boundsObs: NSObjectProtocol?
+        private var frameObs: NSObjectProtocol?
+        private var lastInfo: ScrollBoundsInfo?
+
+        init(onChange: @escaping (ScrollBoundsInfo) -> Void) {
+            self.onChange = onChange
+        }
+
+        func attach(to view: NSView) {
+            var current: NSView? = view
+            while let v = current {
+                if let sv = v as? NSScrollView { scrollView = sv; break }
+                current = v.superview
+            }
+            guard let sv = scrollView else { return }
+            sv.contentView.postsBoundsChangedNotifications = true
+            sv.contentView.postsFrameChangedNotifications = true
+            boundsObs = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: sv.contentView, queue: .main
+            ) { [weak self] _ in self?.report() }
+            frameObs = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: sv.contentView, queue: .main
+            ) { [weak self] _ in self?.report() }
+            report()
+        }
+
+        func report() {
+            guard let sv = scrollView else { return }
+            let bounds = sv.contentView.bounds
+            let info = ScrollBoundsInfo(offsetY: bounds.origin.y, viewportHeight: bounds.height)
+            guard info != lastInfo else { return }
+            lastInfo = info
+            onChange(info)
+        }
+
+        deinit {
+            if let o = boundsObs { NotificationCenter.default.removeObserver(o) }
+            if let o = frameObs { NotificationCenter.default.removeObserver(o) }
+        }
+    }
+}
+
+/// Single peek tab in the stacked overlay — shows the top line of a user question
+/// with the same gray pill styling as the inline bubble.
+struct StackedBubblePeek: View {
+    let question: String
+    let height: CGFloat
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Text(question)
+            .font(.system(size: 13))
+            .foregroundColor(FazmColors.overlayForeground)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .frame(height: height, alignment: .center)
+            .background(
+                FazmColors.overlayForeground.opacity(isHovered ? 0.18 : 0.12)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+            .onTapGesture(perform: onTap)
+            .help("Jump back to this message")
+    }
+}
+
+/// Top-aligned overlay that pins user-question bubbles as the user scrolls past them.
+/// Capped at 50% of the viewport height; on overflow, the oldest bubble drops (FIFO).
+struct StackedBubblesOverlay: View {
+    let bubbles: [StackedBubbleInfo]
+    let peekHeight: CGFloat
+    let onTap: (UUID) -> Void
+
+    var body: some View {
+        if bubbles.isEmpty {
+            EmptyView()
+        } else {
+            VStack(spacing: 2) {
+                ForEach(bubbles, id: \.id) { bubble in
+                    StackedBubblePeek(
+                        question: bubble.question,
+                        height: peekHeight,
+                        onTap: { onTap(bubble.id) }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
+            .background(
+                LinearGradient(
+                    colors: [
+                        FazmColors.backgroundPrimary,
+                        FazmColors.backgroundPrimary.opacity(0.92),
+                        FazmColors.backgroundPrimary.opacity(0)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .padding(.bottom, -8)
+                .allowsHitTesting(false)
+            )
+            .animation(.easeInOut(duration: 0.18), value: bubbles.map { $0.id })
+        }
     }
 }
 
