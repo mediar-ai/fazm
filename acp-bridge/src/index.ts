@@ -3144,6 +3144,9 @@ async function main(): Promise<void> {
         logErr("Received stop signal, exiting");
         if (activeAbort) activeAbort.abort();
         killAcpProcessTree();
+        if (codexProvider?.isRunning()) {
+          try { codexProvider.shutdown(); } catch { /* already gone */ }
+        }
         process.exit(0);
         break;
 
