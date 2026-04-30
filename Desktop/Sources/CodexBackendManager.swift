@@ -94,8 +94,32 @@ final class CodexBackendManager: ObservableObject {
 
     /// Convenience: only return models if the user has enabled the backend AND
     /// the last probe reported reachable. This is what the model picker reads.
+    /// Filters out older generations (< 5.5) so the picker stays focused on the
+    /// current frontier; the raw `availableModels` list remains available for
+    /// diagnostics.
     var modelsForPicker: [CodexModel] {
         guard enabled, lastProbe?.ok == true else { return [] }
-        return availableModels
+        return availableModels.filter { Self.isPickerEligible(modelId: $0.modelId) }
+    }
+
+    /// Returns true when the modelId belongs to the current frontier generation
+    /// the picker should expose (gpt-5.5 or newer). Older generations like
+    /// gpt-5.4, gpt-5.3-codex, gpt-5.2 are hidden once a newer generation works.
+    /// Inputs look like "gpt-5.5/high", "gpt-5.4-mini/low", "gpt-5.3-codex/high".
+    static func isPickerEligible(modelId: String) -> Bool {
+        let family = modelId.split(separator: "/").first.map(String.init) ?? modelId
+        // Strip variant suffixes ("-mini", "-codex") so we only compare base version
+        let base = family.split(separator: "-").prefix(2).joined(separator: "-")
+        // base is "gpt-5.5", "gpt-5.4", etc. Extract major.minor.
+        guard base.hasPrefix("gpt-") else { return false }
+        let version = String(base.dropFirst("gpt-".count))
+        let parts = version.split(separator: ".")
+        guard parts.count == 2,
+              let major = Int(parts[0]),
+              let minor = Int(parts[1]) else { return false }
+        // Keep gpt-5.5 and newer (e.g. 5.5, 5.6, 6.0)
+        if major > 5 { return true }
+        if major == 5 && minor >= 5 { return true }
+        return false
     }
 }
