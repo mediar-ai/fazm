@@ -888,22 +888,30 @@ const sessionIdToKey = new Map<string, string>();
 
 /** Register a session, maintaining the reverse map */
 function registerSession(sessionKey: string, entry: { sessionId: string; cwd: string; model?: string }): void {
-  // Clean up old reverse mapping if this sessionKey had a different sessionId
-  const old = sessions.get(sessionKey);
-  if (old && old.sessionId !== entry.sessionId) {
-    sessionIdToKey.delete(old.sessionId);
+  // Clean up any stale reverse-map entries that pointed to this key from a
+  // prior unregister. unregisterSession intentionally leaves them so that a
+  // late result/cancellation message for the unregistered sessionId can still
+  // be routed back to its sessionKey (otherwise the per-pop-out continuation
+  // never gets resumed and the loading spinner spins for the full 180s
+  // inactivity timeout). When the same key gets a new sessionId we drop the
+  // dangling pointers.
+  for (const [sid, k] of sessionIdToKey) {
+    if (k === sessionKey && sid !== entry.sessionId) {
+      sessionIdToKey.delete(sid);
+    }
   }
   sessions.set(sessionKey, entry);
   sessionIdToKey.set(entry.sessionId, sessionKey);
   logErr(`[SESSIONS] registered key=${sessionKey} sid=${entry.sessionId.slice(0, 8)} total=${sessions.size}`);
 }
 
-/** Unregister a session, maintaining the reverse map */
+/** Unregister a session. Keeps the sessionId→sessionKey reverse mapping so
+ *  any in-flight or deferred messages (e.g. the cancellation `result` emitted
+ *  from a catch block after this unregister ran) can still be tagged with the
+ *  correct sessionKey by sendWithSession. registerSession prunes stale
+ *  entries when the key is reused.
+ */
 function unregisterSession(sessionKey: string): void {
-  const entry = sessions.get(sessionKey);
-  if (entry) {
-    sessionIdToKey.delete(entry.sessionId);
-  }
   sessions.delete(sessionKey);
   logErr(`[SESSIONS] unregistered key=${sessionKey} total=${sessions.size}`);
 }
