@@ -197,6 +197,7 @@ actor ACPBridge {
     case mcpServersAvailable(servers: [[String: Any]])
     case sessionExpired(oldSessionId: String, newSessionId: String, contextRestored: Bool, restoredMessageCount: Int, reason: String, sessionKey: String?)
     case sessionStarted(sessionId: String, sessionKey: String?, isResume: Bool)
+    case codexProbeResult(ok: Bool, agent: String?, authMethods: [String], currentModelId: String?, availableModels: [[String: Any]], authMode: String, error: String?)
   }
 
   // MARK: - Configuration
@@ -230,6 +231,8 @@ actor ACPBridge {
   var onChatObserverStatusChange: ((_ running: Bool) -> Void)?
   /// Called when the ACP SDK reports available models (after session/new)
   var onModelsAvailable: ((_ models: [(modelId: String, name: String, description: String?)]) -> Void)?
+  /// Called when the bridge reports codex_probe_result (Codex backend reachability + auth state)
+  var onCodexProbeResult: ((_ ok: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ authMode: String, _ error: String?) -> Void)?
   /// Global tool call handler for background sessions (chat observer) — processes tool_use even when no query is active
   var onBackgroundToolCall: ToolCallHandler?
 
@@ -243,6 +246,10 @@ actor ACPBridge {
 
   func setModelsAvailableHandler(_ handler: @escaping @Sendable (_ models: [(modelId: String, name: String, description: String?)]) -> Void) {
     self.onModelsAvailable = handler
+  }
+
+  func setCodexProbeResultHandler(_ handler: @escaping @Sendable (_ ok: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ authMode: String, _ error: String?) -> Void) {
+    self.onCodexProbeResult = handler
   }
 
   func setBackgroundToolCallHandler(_ handler: @escaping ToolCallHandler) {
@@ -970,6 +977,14 @@ actor ACPBridge {
     sendLine("{\"type\":\"cancel_auth\"}")
   }
 
+  /// Phase 3.2 — ask the bridge to lazy-spawn codex-acp and report its
+  /// reachability + auth state + available models. The result arrives via
+  /// `onCodexProbeResult`. No-op if the bridge isn't running.
+  func sendCodexProbe() {
+    guard isRunning else { return }
+    sendLine("{\"type\":\"codex_init_probe\"}")
+  }
+
   // MARK: - Private
 
   private func sendLine(_ line: String) {
@@ -1181,6 +1196,16 @@ actor ACPBridge {
       let isResume = dict["isResume"] as? Bool ?? false
       return .sessionStarted(sessionId: sessionId, sessionKey: sessionKey, isResume: isResume)
 
+    case "codex_probe_result":
+      let ok = dict["ok"] as? Bool ?? false
+      let agent = dict["agent"] as? String
+      let authMethods = dict["authMethods"] as? [String] ?? []
+      let currentModelId = dict["currentModelId"] as? String
+      let availableModels = dict["availableModels"] as? [[String: Any]] ?? []
+      let authMode = dict["authMode"] as? String ?? "none"
+      let error = dict["error"] as? String
+      return .codexProbeResult(ok: ok, agent: agent, authMethods: authMethods, currentModelId: currentModelId, availableModels: availableModels, authMode: authMode, error: error)
+
     default:
       log("ACPBridge: unknown message type: \(type)")
       return nil
@@ -1265,6 +1290,10 @@ actor ACPBridge {
         return MCPServerManager.ActiveServer(name: name, command: command, builtin: builtin)
       }
       MCPServerManager.shared.updateActiveServers(parsed)
+      return
+    case .codexProbeResult(let ok, let agent, let authMethods, let currentModelId, let availableModels, let authMode, let error):
+      log("ACPBridge: received codex_probe_result ok=\(ok) authMode=\(authMode) models=\(availableModels.count) error=\(error ?? "-")")
+      onCodexProbeResult?(ok, agent, authMethods, currentModelId, availableModels, authMode, error)
       return
     case .toolUse(let callId, let name, let input):
       // If a per-session query is waiting for this tool call, let it fall through
