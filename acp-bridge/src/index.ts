@@ -41,7 +41,14 @@ import type {
 } from "./protocol.js";
 import { startOAuthFlow, OAuthTokenExchangeError, readStoredCredentials, type OAuthFlowHandle } from "./oauth-flow.js";
 import { CodexProvider } from "./codex-provider.js";
-import { handleCodexQuery, isCodexModel } from "./codex-query.js";
+import {
+  handleCodexQuery,
+  isCodexModel,
+  dropCodexSession,
+  interruptCodexSession,
+  interruptAllCodexSessions,
+  codexSessionCount,
+} from "./codex-query.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -3049,6 +3056,9 @@ async function main(): Promise<void> {
             unregisterSession(targetKey);
             imageTurnCounts.delete(targetKey);
             logErr(`Session ${ctx.sessionId} marked as interrupted and invalidated (next prompt will force fresh session with priorContext replay)`);
+          } else if (codexProvider && interruptCodexSession(targetKey, codexProvider)) {
+            // Same key may be a codex session — interrupt and drop it.
+            logErr(`Interrupt requested for codex session key=${targetKey} (cancelled + dropped)`);
           } else {
             logErr(`Interrupt requested for session key=${targetKey} but no active query found`);
           }
@@ -3074,6 +3084,11 @@ async function main(): Promise<void> {
             acpNotify("session/cancel", { sessionId: activeSessionId });
             interruptedSessions.add(activeSessionId);
             logErr(`Session ${activeSessionId} marked as interrupted (legacy fallback)`);
+          }
+          // Cancel any in-flight codex sessions too.
+          if (codexProvider && codexSessionCount() > 0) {
+            const n = interruptAllCodexSessions(codexProvider);
+            logErr(`Interrupted ${n} codex session(s)`);
           }
         }
         break;
@@ -3121,6 +3136,11 @@ async function main(): Promise<void> {
 
       case "resetSession": {
         const key = (msg as any).sessionKey;
+        // Drop any codex session under this key first — same key can map to
+        // either provider depending on the user's selected model.
+        if (key && codexProvider) {
+          dropCodexSession(key, codexProvider);
+        }
         if (key && sessions.has(key)) {
           const oldSessionId = sessions.get(key)?.sessionId;
           if (oldSessionId) interruptedSessions.delete(oldSessionId);
