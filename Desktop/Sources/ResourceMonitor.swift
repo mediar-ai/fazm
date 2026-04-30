@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import PostHog
 import Sentry
 import MachO
 
@@ -766,6 +767,19 @@ class ResourceMonitor {
                 return db.lastInsertedRowID
             }
             log("ResourceMonitor: persisted kernel panic heal card id=\(activityId)")
+
+            // Track creation so we can measure heal-card discovery rate and the funnel
+            // from created → shown → investigated/dismissed/ignored.
+            await MainActor.run {
+                PostHogSDK.shared.capture("discovered_task_created", properties: [
+                    "task_id": activityId,
+                    "task_category": "heal",
+                    "task_title": String(task.prefix(100)),
+                    "source": "kernel_panic",
+                    "type": "system_signal",
+                    "panic_count_7d": totalCount,
+                ])
+            }
 
             let savedId = activityId
             let savedTask = task
