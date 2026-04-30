@@ -865,9 +865,25 @@ class ChatProvider: ObservableObject {
                 Task.detached { await bridge.stop() }
             }
         }
+
+        // Listen for routine mutations so the <routines> briefing in the system prompt
+        // refreshes after the agent (or any other component) creates/updates/deletes a
+        // row in `cron_jobs`. The notification is posted by ChatToolExecutor when an
+        // execute_sql write touches that table; using DistributedNotificationCenter
+        // means the launchd routine runner could post the same name later if needed.
+        routinesChangedObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.fazm.routinesChanged"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.invalidateRoutinesBriefing()
+            }
+        }
     }
 
     private var terminationObserver: NSObjectProtocol?
+    private var routinesChangedObserver: NSObjectProtocol?
 
     // MARK: - Web Relay Setup
 
@@ -1856,6 +1872,7 @@ class ChatProvider: ObservableObject {
         await loadDefaultChatMessages()
         await loadAIProfileIfNeeded()
         await loadSchemaIfNeeded()
+        await loadRoutinesBriefingIfNeeded()
         await discoverClaudeConfig()
 
         // Set working directory for Claude Agent SDK if workspace is configured
