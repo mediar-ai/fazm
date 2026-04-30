@@ -1033,6 +1033,23 @@ class ChatProvider: ObservableObject {
                     ShortcutSettings.shared.updateModels(models)
                 }
             }
+            // Phase 3.2 — codex backend probe result handler. Updates the
+            // CodexBackendManager singleton; the SettingsPage subsection and
+            // model picker observe it.
+            await acpBridge.setCodexProbeResultHandler { ok, agent, authMethods, currentModelId, availableModels, authMode, error in
+                Task { @MainActor in
+                    CodexBackendManager.shared.consumeProbeResult(
+                        ok: ok,
+                        agent: agent,
+                        authMethods: authMethods,
+                        currentModelId: currentModelId,
+                        availableModels: availableModels,
+                        authMode: authMode,
+                        error: error
+                    )
+                    ShortcutSettings.shared.updateCodexModels(CodexBackendManager.shared.modelsForPicker)
+                }
+            }
             // Set up background tool call handler for observer session tool calls
             // (execute_sql, etc.) that arrive when no main query is active
             await acpBridge.setBackgroundToolCallHandler { callId, name, input in
