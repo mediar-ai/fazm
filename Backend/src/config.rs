@@ -20,6 +20,7 @@ pub struct Config {
     pub anthropic_api_key: String,
     pub deepgram_api_key: String,
     pub gemini_api_key: String,
+    pub elevenlabs_api_key: String,
     // Comma-separated list of Firebase UIDs or device IDs that should NOT receive the builtin API key.
     // Set to "*" to block ALL users (global kill switch).
     pub builtin_key_blocklist: Vec<String>,
@@ -85,6 +86,7 @@ impl Config {
             anthropic_api_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
             deepgram_api_key: std::env::var("DEEPGRAM_API_KEY").unwrap_or_default(),
             gemini_api_key: std::env::var("GEMINI_API_KEY").unwrap_or_default(),
+            elevenlabs_api_key: std::env::var("ELEVENLABS_API_KEY").unwrap_or_default(),
             builtin_key_blocklist: std::env::var("BUILTIN_KEY_BLOCKLIST")
                 .unwrap_or_default()
                 .split(',')
