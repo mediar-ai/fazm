@@ -763,12 +763,19 @@ class DetachedChatWindowController {
 
         win.onStopAgent = { [weak self, weak win, weak chatProvider] in
             guard let win else { return }
-            // Eagerly clear loading state so the UI feels responsive. Without this,
-            // the spinner and "Not Responding" banner stay until the bridge finishes
-            // aborting, which can be never if the SDK promise is stuck after a hang.
-            // Bridge cleanup still runs async; any partial response that arrives later
-            // is handled by the existing $messages subscriber.
+            // Eagerly clear loading state AND flip the streaming message off so the
+            // UI feels responsive. The spinner is driven by `isLoading || message.isStreaming`
+            // (AIResponseView.swift:820), so we have to clear both — clearing only
+            // isAILoading leaves the spinner visible while the in-progress AI message
+            // still has isStreaming=true. Without this, if the bridge cancellation
+            // result is dropped or delayed, the spinner spins for the full 180s
+            // inactivity timeout. Bridge cleanup still runs async; any partial
+            // response that arrives later is handled by the existing $messages
+            // subscriber and merely overwrites our eager clear.
             win.state.isAILoading = false
+            if win.state.currentAIMessage?.isStreaming == true {
+                win.state.currentAIMessage?.isStreaming = false
+            }
             let key = self?.entries[ObjectIdentifier(win)]?.sessionKey
             if let key {
                 chatProvider?.stopAgent(sessionKey: key)
