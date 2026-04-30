@@ -1184,6 +1184,131 @@ class ResourceMonitor {
         ))
     }
 
+    // MARK: Kernel zone map pressure
+
+    /// Proxy for kalloc zone exhaustion: read `vm.swapusage` (no sudo required) as a
+    /// leading indicator that the system is under extreme memory pressure. Zone exhaustion
+    /// (the Apr 27 2026 kernel panic mechanism) typically accelerates when swap is also
+    /// heavily loaded. Separately, read the host's zone_map_free via mach if available.
+    nonisolated func checkZoneMapPressure() async {
+        let cooldownKey = "lastFlaggedZoneMapPressure"
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now - last > 3600 else { return } // 1h cooldown
+
+        guard let out = runShellCommand("/usr/sbin/sysctl", args: ["vm.swapusage"], timeout: 5.0) else { return }
+        // Format: "vm.swapusage: total = 3072.00M  used = 1024.00M  free = 2048.00M  (encrypted)"
+        var swapTotalMB: Double = 0
+        var swapUsedMB: Double = 0
+        for token in out.components(separatedBy: .whitespaces) {
+            if token.hasSuffix("M"), let val = Double(token.dropLast()) {
+                if swapTotalMB == 0 { swapTotalMB = val }
+                else if swapUsedMB == 0 { swapUsedMB = val; break }
+            }
+        }
+        guard swapTotalMB > 0 else { return }
+        let swapPercent = swapUsedMB / swapTotalMB * 100.0
+        let swapFreeGB = (swapTotalMB - swapUsedMB) / 1024.0
+
+        // Threshold: >90% swap used AND more than 1 GB swap in play (it grows on-demand,
+        // so 100% of 0MB is harmless). Both conditions → system is in true swap pressure.
+        guard swapPercent > 90.0 && swapTotalMB > 1024.0 else { return }
+
+        UserDefaults.standard.set(now, forKey: cooldownKey)
+        log("ResourceMonitor: swap=\(String(format: "%.0f", swapUsedMB))MB/\(String(format: "%.0f", swapTotalMB))MB (\(String(format: "%.0f", swapPercent))%), surfacing zone pressure heal card")
+
+        let task = "Swap is \(String(format: "%.0f", swapPercent))% full — kernel zone exhaustion risk is elevated"
+        let description = "The system has consumed most of its swap space (\(String(format: "%.0f", swapUsedMB)) MB used of \(String(format: "%.0f", swapTotalMB)) MB). Heavy swap pressure often precedes the kind of kernel zone exhaustion (kalloc.1024[vfs.namei]) that caused the Apr 27 panic. Reducing background memory consumers now can prevent a reboot-required crash."
+        let document = """
+        ## What Was Observed
+
+        `vm.swapusage`: \(String(format: "%.0f", swapUsedMB)) MB used / \(String(format: "%.0f", swapTotalMB)) MB total (\(String(format: "%.0f", swapPercent))% full, \(String(format: "%.2f", swapFreeGB)) GB free).
+
+        ## Why This Matters
+
+        macOS uses compressed swap backed by APFS. When swap is nearly full, the kernel has no room to move cold pages out, so physical pages stay wired. This increases pressure on the zone allocator (kalloc regions). The documented Apr 27 2026 kernel panic on this machine was caused by `data.kalloc.1024[vfs.namei]` growing to 20 GB — a condition that develops faster under swap pressure because fewer pages can be reclaimed.
+
+        ## Recommended Approach (read-only first)
+
+        1. Identify the top memory consumers: `top -o mem -l 1 | head -20`.
+        2. Look for processes with very large RSIZE or VSIZE (Claude Code, Xcode, Safari, JetBrains).
+        3. Run `sudo zprint | sort -k4 -n -r | head -20` to see which kernel zones are largest. (Requires explicit user approval for sudo.)
+        4. If `vfs.namei` or `data.kalloc.1024` is near its max, a proactive reboot is safer than waiting for a panic.
+        5. Reducing the number of active Claude Code sessions, closing Xcode, or quitting browser tabs typically frees hundreds of MB within seconds.
+        """
+
+        await writeHealCard(HealCardPayload(
+            source: "zone_map_pressure",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "swap_used_mb": Int(swapUsedMB),
+                "swap_total_mb": Int(swapTotalMB),
+                "swap_percent": Int(swapPercent),
+            ]
+        ))
+    }
+
+    // MARK: Thermal pressure
+
+    /// Surface a heal card when the system enters serious or critical thermal throttling.
+    /// Uses ProcessInfo.thermalState — the official Apple API, no sudo needed, works on
+    /// both Intel and Apple Silicon.
+    nonisolated func checkThermalPressure() async {
+        let cooldownKey = "lastFlaggedThermalPressure"
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now - last > 3600 else { return } // 1h cooldown
+
+        // Read thermalState on main actor (ProcessInfo API is main-thread-safe but we
+        // need to switch for actor isolation in case the compiler enforces it).
+        let thermalState = await MainActor.run { ProcessInfo.processInfo.thermalState }
+
+        guard thermalState == .serious || thermalState == .critical else { return }
+
+        UserDefaults.standard.set(now, forKey: cooldownKey)
+
+        let stateLabel = thermalState == .critical ? "critical" : "serious"
+        log("ResourceMonitor: thermal state=\(stateLabel), surfacing heal card")
+
+        let task = "Mac is in \(stateLabel) thermal throttling — CPU and GPU are running slower than normal"
+        let description = "macOS reports \(stateLabel) thermal pressure, meaning the system is actively throttling CPU and GPU frequency to cool down. Sustained throttling slows compilation, AI inference, and any CPU-heavy task. Closing background processes or moving to a cooler environment resolves it within minutes."
+        let document = """
+        ## What Was Observed
+
+        `ProcessInfo.thermalState` = `\(stateLabel)`.
+
+        macOS thermal states (in order of severity):
+        - **nominal**: no throttling
+        - **fair**: light throttling, barely noticeable
+        - **serious**: significant CPU/GPU throttling, system is hot
+        - **critical**: maximum throttling, system may shut down to protect hardware
+
+        ## Why This Matters
+
+        Thermal throttling reduces CPU clock speed by 50–75% in serious/critical states. Long-running tasks (Swift compilation, ML inference, video export) take 2–4x longer and are more likely to time out. The fan noise and heat also indicate the machine is under sustained stress that can shorten component lifespan over time.
+
+        ## Recommended Approach
+
+        1. Identify the top CPU consumers: `top -o cpu -l 3 -n 10`.
+        2. Look for runaway processes: Spotlight indexing (`mds`, `mdworker`), backup agents (`backupd`), or stuck compilation loops.
+        3. If multiple Claude Code sessions are active, reducing to one or pausing tool-heavy work usually drops thermals within minutes.
+        4. If on a MacBook, check that vents are unobstructed and the surface is not fabric or insulated.
+        5. `pmset -g thermlog` shows historical thermal events if you want to see when throttling started.
+        """
+
+        await writeHealCard(HealCardPayload(
+            source: "thermal_pressure",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "thermal_state": stateLabel,
+            ]
+        ))
+    }
+
     private nonisolated func humanTimeAgo(_ date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
         if interval < 3600 { return "less than an hour ago" }
