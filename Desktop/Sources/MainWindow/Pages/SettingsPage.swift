@@ -148,6 +148,7 @@ struct SettingsContentView: View {
     @ObservedObject private var shortcutSettings = ShortcutSettings.shared
     @ObservedObject private var authState = AuthState.shared
     @ObservedObject private var mcpServerManager = MCPServerManager.shared
+    @ObservedObject private var codexBackend = CodexBackendManager.shared
     @State private var showAddMCPServer = false
     @State private var editingMCPServer: MCPServerManager.MCPServerConfig?
     @State private var showSignOutAlert = false
@@ -174,6 +175,7 @@ struct SettingsContentView: View {
     enum AdvancedSubsection: String, CaseIterable {
         case aiChat = "AI Chat"
         case mcpServers = "MCP Servers"
+        case codexBackend = "Codex Backend"
         case preferences = "Preferences"
         case troubleshooting = "Troubleshooting"
 
@@ -181,6 +183,7 @@ struct SettingsContentView: View {
             switch self {
             case .aiChat: return "cpu"
             case .mcpServers: return "server.rack"
+            case .codexBackend: return "sparkles"
             case .preferences: return "slider.horizontal.3"
             case .troubleshooting: return "wrench.and.screwdriver"
             }
@@ -1825,6 +1828,8 @@ struct SettingsContentView: View {
                 aiChatSection
             case .mcpServers:
                 mcpServersSubsection
+            case .codexBackend:
+                codexBackendSubsection
             case .preferences:
                 preferencesSubsection
             case .troubleshooting:
