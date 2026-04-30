@@ -48,12 +48,13 @@ function parseArgs(argv) {
   return out;
 }
 
-const args = parseArgs(process.argv.slice(2));
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+const args = isMain ? parseArgs(process.argv.slice(2)) : {};
 const USER_DB = args["user-db"];
 const JOB_ID = args["job-id"];
 const TIMEOUT_SEC = parseInt(args["timeout"] || "600", 10); // 10 min default
 
-if (!USER_DB || !JOB_ID) {
+if (isMain && (!USER_DB || !JOB_ID)) {
   console.error("Usage: cron-runner.mjs --user-db <path> --job-id <uuid> [--timeout <sec>]");
   process.exit(2);
 }
@@ -460,7 +461,9 @@ async function main() {
   process.exit(runStatus === "ok" ? 0 : 1);
 }
 
-main().catch((err) => {
-  log(`Fatal: ${err.stack || err.message || err}`);
-  process.exit(1);
-});
+if (isMain) {
+  main().catch((err) => {
+    log(`Fatal: ${err.stack || err.message || err}`);
+    process.exit(1);
+  });
+}
