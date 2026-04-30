@@ -1014,6 +1014,14 @@ actor AppDatabase {
             """)
         }
 
+        // V6: Add category to observer_activity ('automate' vs 'heal') so the same surface
+        // can carry both AI-takes-this-off-your-plate cards and Mac-doctor-style health cards.
+        migrator.registerMigration("fazmV6") { db in
+            try db.execute(sql: "ALTER TABLE observer_activity ADD COLUMN category TEXT NOT NULL DEFAULT 'automate'")
+            try db.create(index: "idx_observer_activity_category",
+                          on: "observer_activity", columns: ["category"])
+        }
+
         try migrator.migrate(queue)
     }
 
