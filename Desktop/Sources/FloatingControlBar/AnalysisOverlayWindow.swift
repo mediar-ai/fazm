@@ -43,6 +43,7 @@ class AnalysisOverlayWindow {
                         "task_title": String(task.prefix(100)),
                         "activity_id": activityId,
                         "category": category,
+                        "source": "popup_overlay",
                     ])
                     self?.dismiss()
 
@@ -60,6 +61,7 @@ class AnalysisOverlayWindow {
                         "task_title": String(task.prefix(100)),
                         "activity_id": activityId,
                         "category": category,
+                        "source": "popup_overlay",
                     ])
                     self?.dismiss()
                     Task {
@@ -102,6 +104,7 @@ class AnalysisOverlayWindow {
             "task_title": String(task.prefix(100)),
             "activity_id": activityId,
             "category": category,
+            "auto_dismiss_delay_seconds": Int(Self.autoDismissDelay),
         ])
 
         // Auto-dismiss after 15 seconds
@@ -109,6 +112,15 @@ class AnalysisOverlayWindow {
             Task { @MainActor in
                 guard let self, self.isShowing else { return }
                 log("AnalysisOverlay: auto-dismissed after \(Int(Self.autoDismissDelay))s")
+                // Distinct from explicit "Hide" — measures passive ignore vs. active dismiss.
+                // Status stays "pending" since the user never engaged; the card remains
+                // in the Discovered Tasks tab until they act on it there.
+                PostHogSDK.shared.capture("discovered_task_overlay_auto_dismissed", properties: [
+                    "task_title": String(task.prefix(100)),
+                    "activity_id": activityId,
+                    "category": category,
+                    "auto_dismiss_delay_seconds": Int(Self.autoDismissDelay),
+                ])
                 self.dismiss()
             }
         }
