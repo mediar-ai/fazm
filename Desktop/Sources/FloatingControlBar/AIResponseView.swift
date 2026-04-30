@@ -1634,6 +1634,9 @@ struct StackedBubblePeek: View {
 
 /// Top-aligned overlay that pins user-question bubbles as the user scrolls past them.
 /// Capped at 50% of the viewport height; on overflow, the oldest bubble drops (FIFO).
+/// The background is fully opaque so chat content scrolls cleanly underneath without
+/// bleeding through the peek pills; a soft fade just below the stack acts as a visual
+/// separator from the live scroll content.
 struct StackedBubblesOverlay: View {
     let bubbles: [StackedBubbleInfo]
     let peekHeight: CGFloat
@@ -1654,19 +1657,21 @@ struct StackedBubblesOverlay: View {
                 }
             }
             .padding(.horizontal, 4)
-            .padding(.top, 2)
-            .background(
+            .padding(.top, 4)
+            .padding(.bottom, 4)
+            .background(FazmColors.backgroundPrimary)
+            .overlay(alignment: .bottom) {
                 LinearGradient(
                     colors: [
                         FazmColors.backgroundPrimary,
-                        FazmColors.backgroundPrimary.opacity(0.92),
                         FazmColors.backgroundPrimary.opacity(0)
                     ],
                     startPoint: .top, endPoint: .bottom
                 )
-                .padding(.bottom, -8)
+                .frame(height: 10)
+                .offset(y: 10)
                 .allowsHitTesting(false)
-            )
+            }
             .animation(.easeInOut(duration: 0.18), value: bubbles.map { $0.id })
         }
     }
