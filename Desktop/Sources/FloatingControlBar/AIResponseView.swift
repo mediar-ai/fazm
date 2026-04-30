@@ -23,6 +23,33 @@ struct AIResponseView: View {
     @State private var debouncedIsLoading = false
     @State private var loadingHideTask: Task<Void, Never>? = nil
 
+    /// Per-bubble geometry collected from chatExchangeView via PreferenceKey.
+    @State private var bubbleInfos: [StackedBubbleInfo] = []
+    /// Live scroll viewport bounds reported by ScrollBoundsObserver.
+    @State private var scrollBounds = ScrollBoundsInfo(offsetY: 0, viewportHeight: 0)
+
+    /// Named coordinate space for the chat content; user-bubble frames are reported here.
+    static let chatScrollSpace = "fazmChatScrollContent"
+    /// Visible height of one peeked bubble in the sticky stack at the top.
+    private let bubblePeekHeight: CGFloat = 22
+
+    /// Bubbles whose top has scrolled above the current viewport, sorted oldest→newest.
+    /// Capped to fit within 50% of viewport height; overflow drops the oldest (FIFO).
+    private var stackedBubbles: [StackedBubbleInfo] {
+        guard scrollBounds.viewportHeight > 0 else { return [] }
+        let viewportTop = scrollBounds.offsetY
+        let scrolledPast = bubbleInfos
+            .filter { $0.height > 0 && $0.topY < viewportTop }
+            .sorted { $0.topY < $1.topY }
+        let peekUnit = bubblePeekHeight + 2 // matches VStack spacing in overlay
+        let cap = max(2, Int((scrollBounds.viewportHeight * 0.5) / peekUnit))
+        return Array(scrolledPast.suffix(cap))
+    }
+
+    private var stackedBubbleIDs: Set<UUID> {
+        Set(stackedBubbles.map { $0.id })
+    }
+
     let userInput: String
     let chatHistory: [FloatingChatExchange]
     @Binding var isVoiceFollowUp: Bool
@@ -110,6 +137,12 @@ struct AIResponseView: View {
                                 }
                             }
                         )
+                        .background(
+                            ScrollBoundsObserver { info in
+                                scrollBounds = info
+                            }
+                        )
+                        .coordinateSpace(name: Self.chatScrollSpace)
                     }
                     // Pin scroll to the bottom of content. When content grows or
                     // reflows (markdown re-layout during streaming), SwiftUI keeps
@@ -118,6 +151,28 @@ struct AIResponseView: View {
                     // no scrollbar thumb jumping. If the user scrolls up manually,
                     // their offset-from-bottom stays stable, so they aren't yanked.
                     .defaultScrollAnchor(.bottom)
+                    .onPreferenceChange(StackedBubblesPreferenceKey.self) { value in
+                        // Dedupe by id (preferences accumulate across updates) and
+                        // sort once so consumers can binary-search later if needed.
+                        var byId: [UUID: StackedBubbleInfo] = [:]
+                        for info in value { byId[info.id] = info }
+                        bubbleInfos = byId.values.sorted { $0.topY < $1.topY }
+                    }
+                    .overlay(alignment: .top) {
+                        StackedBubblesOverlay(
+                            bubbles: stackedBubbles,
+                            peekHeight: bubblePeekHeight,
+                            onTap: { id in
+                                isProgrammaticScroll = true
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    proxy.scrollTo(id, anchor: .top)
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                    isProgrammaticScroll = false
+                                }
+                            }
+                        )
+                    }
                     .onChange(of: chatHistory.count) {
                         shouldFollowContent = true
                         scrollToBottom(proxy: proxy)
