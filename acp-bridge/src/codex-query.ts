@@ -193,6 +193,22 @@ export async function handleCodexQuery(msg: QueryMessage, deps: CodexQueryDeps):
   };
 
   provider.registerSessionHandler(sessionId, (method, params) => {
+    // DEBUG (Phase 2.4): surface every codex notification so we can see what
+    // codex-acp emits for MCP startup, errors, available commands, etc. The
+    // translator only handles the well-known sessionUpdate variants; this
+    // log catches everything else.
+    try {
+      const p = params as Record<string, unknown> | undefined;
+      const update = p?.update as Record<string, unknown> | undefined;
+      const su = update?.sessionUpdate as string | undefined;
+      const known = su === "agent_message_chunk" || su === "agent_thought_chunk"
+        || su === "tool_call" || su === "tool_call_update" || su === "plan"
+        || su === "usage_update" || su === "available_commands_update" || su === "current_mode_update";
+      if (!known) {
+        const preview = JSON.stringify(update ?? p ?? {}).slice(0, 400);
+        logErr(`[codex-query] notify method=${method} sessionUpdate=${su ?? "?"} preview=${preview}`);
+      }
+    } catch { /* ignore log failure */ }
     if (method !== "session/update") return;
     translateCodexUpdate(params as Record<string, unknown>, translator);
   });
