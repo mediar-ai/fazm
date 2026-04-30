@@ -176,18 +176,18 @@ actor GeminiAnalysisService {
             return
         }
 
-        // Read file data now, before upload deletes the local file
-        guard let data = try? Data(contentsOf: info.localURL) else {
-            log("GeminiAnalysis: failed to read chunk at \(info.localURL.path)")
-            return
-        }
-
-        // Store in stable Application Support directory
+        // Move (not copy) the chunk into Application Support. We need a stable
+        // location because the buffer can hold chunks for up to ~1h before Gemini
+        // analysis runs, and macOS may purge ~/Library/Caches under disk pressure.
+        // Moving instead of copying also ensures observer-recordings/ doesn't grow
+        // unbounded — observer mode has no uploader, so the library never deletes
+        // the original from Caches on its own.
         let stableFile = chunksDir.appendingPathComponent("chunk_\(info.chunkIndex)_\(Int(info.startTimestamp.timeIntervalSince1970)).mp4")
         do {
-            try data.write(to: stableFile)
+            try? FileManager.default.removeItem(at: stableFile)  // clear any leftover at target
+            try FileManager.default.moveItem(at: info.localURL, to: stableFile)
         } catch {
-            log("GeminiAnalysis: failed to write chunk to \(stableFile.path): \(error)")
+            log("GeminiAnalysis: failed to move chunk \(info.localURL.lastPathComponent) -> \(stableFile.lastPathComponent): \(error)")
             return
         }
 
