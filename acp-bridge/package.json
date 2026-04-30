@@ -10,7 +10,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@playwright/mcp": "^0.0.68",
+    "@playwright/mcp": "^0.0.71",
     "@types/ws": "^8.18.1",
     "@agentclientprotocol/claude-agent-acp": "^0.29.2",
     "@zed-industries/codex-acp": "^0.12.0",
