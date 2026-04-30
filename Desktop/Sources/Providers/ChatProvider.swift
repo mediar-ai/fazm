@@ -1446,6 +1446,96 @@ class ChatProvider: ObservableObject {
         return "\n<ai_user_profile>\n\(cachedAIProfile)\n</ai_user_profile>"
     }
 
+    // MARK: - Load Routines Briefing
+
+    /// Reads the user's `cron_jobs` table via CronJobStore and renders a briefing
+    /// the agent can use to know what's scheduled. Cheap (one indexed query against
+    /// a small table); the cache mostly exists so we don't pay the DB hit on every
+    /// `buildSystemPrompt` call. Invalidated by `com.fazm.routinesChanged`, which
+    /// `ChatToolExecutor.executeWriteQuery` posts whenever a routines tool mutates
+    /// `cron_jobs`.
+    private func loadRoutinesBriefingIfNeeded() async {
+        guard !routinesLoaded else { return }
+        let jobs = await CronJobStore.listJobs()
+        cachedRoutinesBriefing = formatRoutinesBriefing(jobs)
+        routinesLoaded = true
+        log("ChatProvider loaded routines briefing (\(jobs.count) routines, \(cachedRoutinesBriefing.count) chars)")
+    }
+
+    /// Renders the `<routines>` block. Always emits the feature blurb (so the agent
+    /// proactively offers to schedule repeatable tasks) and lists each active routine
+    /// with the fields the agent realistically needs to reason about: name, schedule,
+    /// last status / last run, next run, last_error preview.
+    private func formatRoutinesBriefing(_ jobs: [CronJob]) -> String {
+        var lines: [String] = []
+        lines.append("Routines are recurring AI tasks you (the agent) can schedule via the `routines_create` tool.")
+        lines.append("They run headlessly on a launchd timer (60s polling) and write results back to chat history under taskId=\"routine-<id>\".")
+        lines.append("After completing a multi-step task that the user might want to repeat (daily email check, folder watch, scheduled report, weekly metrics pull), proactively offer: \"Want me to save this as a routine?\"")
+        lines.append("Schedule format: `cron:<expr>` (e.g. `cron:0 9 * * 1-5`), `every:<seconds>` (e.g. `every:1800`), or `at:<iso8601>` (one-shot).")
+        lines.append("To investigate failures, call `routines_runs` with the job_id; for the per-run launchd log read `~/fazm/inbox/skill/logs/routine-run-<short-id>-*.log`.")
+        lines.append("")
+
+        if jobs.isEmpty {
+            lines.append("Currently active routines: none.")
+            return lines.joined(separator: "\n")
+        }
+
+        let enabled = jobs.filter { $0.enabled }
+        let disabled = jobs.filter { !$0.enabled }
+        lines.append("Currently active routines (\(enabled.count) enabled, \(disabled.count) disabled):")
+
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
+
+        for job in jobs {
+            var parts: [String] = ["• \(job.name)"]
+            parts.append("id=\(job.id)")
+            parts.append("schedule=\(job.schedule)")
+            if !job.enabled { parts.append("DISABLED") }
+            if let last = job.lastRunAt {
+                let status = job.lastStatus ?? "?"
+                parts.append("last_run=\(formatter.string(from: last)) (\(status))")
+            } else {
+                parts.append("last_run=never")
+            }
+            if let next = job.nextRunAt, job.enabled {
+                let delta = next.timeIntervalSince(now)
+                let relative: String
+                if delta < 0 {
+                    relative = "due now"
+                } else if delta < 3600 {
+                    relative = "in \(Int(delta / 60))m"
+                } else if delta < 86400 {
+                    relative = "in \(Int(delta / 3600))h"
+                } else {
+                    relative = formatter.string(from: next)
+                }
+                parts.append("next_run=\(relative)")
+            }
+            if job.runCount > 0 { parts.append("runs=\(job.runCount)") }
+            if let err = job.lastError, !err.isEmpty {
+                let snippet = err.count > 120 ? String(err.prefix(120)) + "..." : err
+                parts.append("last_error=\(snippet)")
+            }
+            lines.append("  " + parts.joined(separator: " | "))
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Marks the routines briefing as stale so the next `loadRoutinesBriefingIfNeeded`
+    /// re-reads from the DB. Posted by the SQL executor when a write touches `cron_jobs`,
+    /// and also exposed as a `com.fazm.routinesChanged` distributed notification so other
+    /// processes (e.g. the launchd routine runner) could trigger a refresh later.
+    func invalidateRoutinesBriefing() {
+        routinesLoaded = false
+        Task { @MainActor in
+            await loadRoutinesBriefingIfNeeded()
+        }
+    }
+
     // MARK: - Load Database Schema
 
     /// Queries sqlite_master to build an up-to-date schema description for the prompt
@@ -1607,6 +1697,13 @@ class ChatProvider: ObservableObject {
             }
         }
 
+        // Append routines briefing so the agent knows the feature exists and what's
+        // currently scheduled (avoids duplicate routines and "you don't have any"
+        // hallucinations when the user actually does).
+        if !cachedRoutinesBriefing.isEmpty {
+            prompt += "\n\n<routines>\n\(cachedRoutinesBriefing)\n</routines>"
+        }
+
         // Append current app settings so the AI can read and change them
         let currentLang = AssistantSettings.shared.transcriptionLanguage
         let autoDetect = AssistantSettings.shared.transcriptionAutoDetect
@@ -1673,6 +1770,10 @@ class ChatProvider: ObservableObject {
             if !skillNames.isEmpty {
                 prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the Skill tool to load full instructions for any skill before using it.\n</available_skills>"
             }
+        }
+
+        if !cachedRoutinesBriefing.isEmpty {
+            prompt += "\n\n<routines>\n\(cachedRoutinesBriefing)\n</routines>"
         }
 
         log("ChatProvider: task chat prompt built — prompt_length: \(prompt.count) chars")
