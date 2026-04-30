@@ -832,8 +832,8 @@ class ResourceMonitor {
         await persistKernelPanicHealCard(panicURL: mostRecent.0, mtime: mostRecent.1, totalCount: panics.count)
     }
 
-    /// Insert a heal-category row into observer_activity for a kernel panic, and surface the
-    /// floating overlay if the bar is visible. Schema mirrors what GeminiAnalysisService writes.
+    /// Build a heal-card payload for a kernel panic and hand it to the shared writer.
+    /// Schema mirrors what GeminiAnalysisService writes for visual heal signals.
     nonisolated private func persistKernelPanicHealCard(panicURL: URL, mtime: Date, totalCount: Int) async {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -868,56 +868,270 @@ class ResourceMonitor {
         5. Read-only first. Never run `sudo`, `kextunload`, or anything destructive without explicit user approval.
         """
 
-        let contentJson: [String: Any] = [
-            "task": task,
-            "category": "heal",
-            "description": description,
-            "document": document,
-            "panic_path": panicURL.path,
-            "panic_mtime": ISO8601DateFormatter().string(from: mtime),
-            "panic_count_7d": totalCount,
-        ]
+        await writeHealCard(HealCardPayload(
+            source: "kernel_panic",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "panic_path": panicURL.path,
+                "panic_mtime": ISO8601DateFormatter().string(from: mtime),
+                "panic_count_7d": totalCount,
+            ]
+        ))
+    }
 
-        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
-        do {
-            let contentString = String(data: try JSONSerialization.data(withJSONObject: contentJson), encoding: .utf8) ?? task
-            let activityId = try await dbQueue.write { db -> Int64 in
-                try db.execute(
-                    sql: """
-                        INSERT INTO observer_activity (type, category, content, status, createdAt)
-                        VALUES (?, ?, ?, 'pending', datetime('now'))
-                    """,
-                    arguments: ["system_signal", "heal", contentString]
-                )
-                return db.lastInsertedRowID
-            }
-            log("ResourceMonitor: persisted kernel panic heal card id=\(activityId)")
+    // MARK: fseventsd memory leak
 
-            // Track creation so we can measure heal-card discovery rate and the funnel
-            // from created → shown → investigated/dismissed/ignored.
-            await MainActor.run {
-                PostHogManager.shared.track("discovered_task_created", properties: [
-                    "task_id": activityId,
-                    "task_category": "heal",
-                    "task_title": String(task.prefix(100)),
-                    "source": "kernel_panic",
-                    "type": "system_signal",
-                    "panic_count_7d": totalCount,
-                ])
-            }
+    /// Surface a heal card when fseventsd has been running >24h with >1GB RSS. This is
+    /// a documented recurring pattern on this user's machine; the daemon enters a retry
+    /// loop watching a contaminated directory and leaks memory until killed.
+    nonisolated func checkFseventsdMemory() async {
+        let cooldownKey = "lastFlaggedFseventsdMemory"
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now - last > 86400 else { return }
 
-            let savedId = activityId
-            let savedTask = task
-            let savedDesc = description
-            let savedDoc = document
-            await MainActor.run {
-                if let barFrame = FloatingControlBarManager.shared.barWindowFrame {
-                    AnalysisOverlayWindow.shared.show(below: barFrame, task: savedTask, category: "heal", description: savedDesc, document: savedDoc, activityId: savedId)
-                }
-            }
-        } catch {
-            log("ResourceMonitor: failed to persist kernel panic heal card: \(error)")
+        guard let stats = readFseventsdStats() else { return }
+        let rssMB = stats.rssBytes / 1024 / 1024
+        let uptimeHours = Int(stats.uptimeSeconds / 3600)
+
+        // Threshold: >1024 MB RSS AND running >24h. Both conditions must hold — fresh
+        // fseventsd processes can briefly spike high during reindex and recover.
+        guard rssMB > 1024, stats.uptimeSeconds > 86400 else { return }
+
+        UserDefaults.standard.set(now, forKey: cooldownKey)
+        log("ResourceMonitor: fseventsd RSS=\(rssMB)MB uptime=\(uptimeHours)h, surfacing heal card")
+
+        let task = "fseventsd is using \(rssMB) MB RAM after \(uptimeHours) hours, this often indicates a leak"
+        let description = "fseventsd is the macOS file-events daemon. When it grows past 1 GB after running for many hours it usually means it is stuck in a retry loop watching a corrupted or contaminated directory. Restarting it clears the leak (file events resume in ~3 seconds), but Fazm can investigate the trigger first so the leak does not return."
+        let document = """
+        ## What Was Observed
+
+        The system file-events daemon `fseventsd` (PID \(stats.pid)) is using \(rssMB) MB of RAM and has been running for \(uptimeHours) hours.
+
+        ## Why This Happens
+
+        fseventsd watches the filesystem for changes. If a directory it monitors becomes corrupted or contains thousands of churning artifacts (Rust `target/`, Next.js `.next/`, node_modules, build outputs synced to iCloud), fseventsd ends up in a retry loop and its memory grows without bound.
+
+        ## Recommended Approach (read-only first)
+
+        1. Run `brctl status` to check whether iCloud Drive has a stuck pending-scan queue (a high count is the usual trigger).
+        2. Inspect `~/Library/Mobile Documents/com~apple~CloudDocs/` root for unexpected build artifacts. Normal iCloud root has fewer than 30 entries.
+        3. If contamination is found, recommend the user move the artifacts out of iCloud (set `CARGO_TARGET_DIR` outside iCloud, exclude `.next/`, etc.).
+        4. Restarting fseventsd requires `sudo killall fseventsd`. Never run sudo without explicit user approval.
+        """
+
+        await writeHealCard(HealCardPayload(
+            source: "fseventsd_memory",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "fseventsd_pid": stats.pid,
+                "fseventsd_rss_mb": rssMB,
+                "fseventsd_uptime_hours": uptimeHours,
+            ]
+        ))
+    }
+
+    /// Parse `ps -axo pid,rss,etimes,comm` and return the fseventsd row if present.
+    /// fseventsd runs as root with a stable command name; only one instance exists.
+    nonisolated private func readFseventsdStats() -> (pid: Int, rssBytes: UInt64, uptimeSeconds: TimeInterval)? {
+        guard let out = runShellCommand("/bin/ps", args: ["-axo", "pid,rss,etimes,comm"]) else { return nil }
+        for line in out.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("PID") { continue }
+            let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            guard parts.count >= 4 else { continue }
+            let comm = parts[parts.count - 1]
+            guard comm.hasSuffix("fseventsd") else { continue }
+            guard let pid = Int(parts[0]),
+                  let rssKB = UInt64(parts[1]),
+                  let etimes = Int(parts[2]) else { continue }
+            return (pid, rssKB * 1024, TimeInterval(etimes))
         }
+        return nil
+    }
+
+    // MARK: iCloud root contamination
+
+    /// Documented as the user's 5-day freeze cycle root cause (Mar 9 2026): dev tools
+    /// dump build artifacts (Rust `target/`, Next.js `.next/`) into iCloud root, fseventsd
+    /// and fileproviderd enter a permanent retry loop. Normal iCloud root has <30 items;
+    /// >50 means something is contaminating it.
+    nonisolated func checkICloudRootContamination() async {
+        let cooldownKey = "lastFlaggedICloudRootContamination"
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now - last > 86400 else { return }
+
+        let path = NSString(string: "~/Library/Mobile Documents/com~apple~CloudDocs").expandingTildeInPath
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let count = entries.count
+
+        // Threshold: >50 entries. Below that, even noisy users sit comfortably; above
+        // is almost always a sync explosion in progress.
+        guard count > 50 else { return }
+
+        let suspiciousNames: Set<String> = ["target", ".next", "node_modules", "build", "dist", ".swiftpm", ".git", ".turbo", ".cache"]
+        let suspicious = entries.compactMap { entry -> String? in
+            let name = entry.lastPathComponent
+            return suspiciousNames.contains(name.lowercased()) ? name : nil
+        }.prefix(10).map { $0 }
+
+        UserDefaults.standard.set(now, forKey: cooldownKey)
+        log("ResourceMonitor: iCloud root has \(count) items (suspicious=\(suspicious)), surfacing heal card")
+
+        let task = "iCloud Drive root has \(count) items (normal is fewer than 30), dev artifacts may be leaking in"
+        let description = "Your iCloud Drive root contains \(count) entries. Normal usage keeps this under 30. Excess entries usually mean a dev tool is dumping build output (Rust `target/`, Next.js `.next/`, node_modules) into iCloud, which causes fseventsd / fileproviderd / cloudd to spin permanently and triggers the recurring slowdowns."
+        let document = """
+        ## What Was Observed
+
+        `~/Library/Mobile Documents/com~apple~CloudDocs/` contains \(count) top-level entries (normal is fewer than 30).
+        \(suspicious.isEmpty ? "" : "\nSuspicious build-artifact entries detected: \(suspicious.joined(separator: ", "))")
+
+        ## Why This Matters
+
+        iCloud syncs every file in this directory. When a dev tool writes a `target/` (thousands of Rust object files) or a `.next/` directory to iCloud root, every change forces a sync attempt. fseventsd, fileproviderd, and cloudd then enter a retry loop, leaking memory and burning CPU until reboot. This is a documented multi-day freeze cycle root cause on this machine.
+
+        ## Recommended Approach
+
+        1. List the iCloud root with `ls -la "~/Library/Mobile Documents/com~apple~CloudDocs/"` to see all entries with sizes.
+        2. Identify entries that look like build artifacts (`target`, `.next`, `node_modules`, `build`, `dist`) or test scratch directories.
+        3. Move them out of iCloud (they should never be synced). For Rust set `CARGO_TARGET_DIR` outside iCloud; for Node add the build directory to `.gitignore`-equivalent exclusions.
+        4. If `~/scripts/cleanup-icloud-dev-artifacts.sh` exists on this machine, recommend running it; otherwise build a one-off cleanup plan with the user.
+
+        Read-only first. Never delete files in iCloud without explicit user approval.
+        """
+
+        await writeHealCard(HealCardPayload(
+            source: "icloud_root_contamination",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "icloud_root_count": count,
+                "icloud_suspicious_names": Array(suspicious),
+            ]
+        ))
+    }
+
+    // MARK: iCloud pending-scan queue stuck
+
+    /// `brctl status` reports per-document sync state; pending-scan entries that are
+    /// hours old indicate cloudd / fileproviderd are wedged and the user is bleeding
+    /// CPU until they reboot or kill the daemons.
+    nonisolated func checkICloudPendingScans() async {
+        let cooldownKey = "lastFlaggedICloudPendingScans"
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now - last > 43200 else { return } // 12h
+
+        guard let out = runShellCommand("/usr/bin/brctl", args: ["status"], timeout: 10.0) else { return }
+        var pendingCount = 0
+        for line in out.split(separator: "\n") {
+            if line.contains("pending-scan") { pendingCount += 1 }
+        }
+
+        // Threshold: >100 pending-scan entries. A handful is normal during active sync.
+        guard pendingCount > 100 else { return }
+
+        UserDefaults.standard.set(now, forKey: cooldownKey)
+        log("ResourceMonitor: iCloud pending-scan count=\(pendingCount), surfacing heal card")
+
+        let task = "iCloud Drive has \(pendingCount) items stuck in the pending-scan queue, sync may be wedged"
+        let description = "`brctl status` shows \(pendingCount) entries in the pending-scan state. When this count is large and persistent, cloudd / fileproviderd are stuck in a retry loop, burning CPU and stalling iCloud sync until they are restarted or the underlying contamination is cleaned up."
+        let document = """
+        ## What Was Observed
+
+        `brctl status` reports \(pendingCount) entries in the pending-scan state.
+
+        ## Why This Matters
+
+        A small pending-scan count is normal during active sync. A persistent large count means the iCloud daemons (cloudd, fileproviderd, bird) are unable to make progress on these items and are retrying in a loop. This burns CPU and blocks the rest of iCloud sync.
+
+        ## Recommended Approach (read-only first)
+
+        1. Re-run `brctl status` and inspect which paths are stuck — they often share a common parent (a contaminated directory in iCloud root).
+        2. Cross-check against `~/Library/Mobile Documents/com~apple~CloudDocs/` for build artifacts that should not be there.
+        3. Recommended fix is `sudo killall fseventsd bird cloudd fileproviderd` (all four simultaneously). The daemons respawn and start fresh. Requires explicit user approval — never run sudo silently.
+        4. If still stuck after restart, deleting `~/Library/Application Support/CloudDocs/session/db` is safe (files are server-side) and forces a fresh session, but again requires user approval.
+        """
+
+        await writeHealCard(HealCardPayload(
+            source: "icloud_pending_scans",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "icloud_pending_count": pendingCount,
+            ]
+        ))
+    }
+
+    // MARK: Disk pressure
+
+    /// Below 5% free or 5 GB free on `/`, macOS starts failing to launch apps, killing
+    /// background processes, and corrupting iCloud sync. Surface early so the user can
+    /// clean up before the system degrades.
+    nonisolated func checkDiskPressure() async {
+        let cooldownKey = "lastFlaggedDiskPressure"
+        let now = Date().timeIntervalSince1970
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now - last > 86400 else { return }
+
+        let path = "/"
+        guard let attrs = try? FileManager.default.attributesOfFileSystem(forPath: path),
+              let totalBytes = (attrs[.systemSize] as? NSNumber)?.uint64Value,
+              let freeBytes = (attrs[.systemFreeSize] as? NSNumber)?.uint64Value,
+              totalBytes > 0 else { return }
+
+        let freeGB = Double(freeBytes) / 1_073_741_824.0
+        let totalGB = Double(totalBytes) / 1_073_741_824.0
+        let freePercent = Double(freeBytes) / Double(totalBytes) * 100.0
+
+        // Threshold: <5 GB free OR <5% free. Either alone is uncomfortable.
+        guard freeGB < 5.0 || freePercent < 5.0 else { return }
+
+        UserDefaults.standard.set(now, forKey: cooldownKey)
+        log("ResourceMonitor: disk free=\(String(format: "%.1f", freeGB))GB (\(String(format: "%.1f", freePercent))%), surfacing heal card")
+
+        let task = "Startup disk has only \(String(format: "%.1f", freeGB)) GB free (\(String(format: "%.1f", freePercent))%), low-disk failures imminent"
+        let description = "macOS uses free disk space for swap, APFS snapshots, and Time Machine local copies. Below 5% free, you will see apps refusing to launch, background services killed, and iCloud sync corrupted. Cleaning out caches, downloads, or stuck snapshots restores headroom."
+        let document = """
+        ## What Was Observed
+
+        Disk `/` has \(String(format: "%.1f", freeGB)) GB free out of \(String(format: "%.1f", totalGB)) GB total (\(String(format: "%.1f", freePercent))% free).
+
+        ## Why This Matters
+
+        macOS reserves disk for swap and APFS snapshots. Below 5% free, the system can fail to launch apps, kill background processes, and corrupt iCloud sync. Below 1% free, the entire system can hang.
+
+        ## Recommended Approach (read-only first)
+
+        1. Run `du -sh ~/Library/Caches ~/Library/Containers/*/Data/Library/Caches 2>/dev/null | sort -h | tail -10` to find the biggest cache offenders.
+        2. Check `tmutil listlocalsnapshots /` for stuck Time Machine local snapshots that are eating space.
+        3. Identify the largest files in the user's home with `du -sh ~/* 2>/dev/null | sort -h | tail -20`.
+        4. Suggest specific cleanups (clearing caches, removing old downloads, deleting old build artifacts). Never delete files without explicit user approval.
+        """
+
+        await writeHealCard(HealCardPayload(
+            source: "disk_pressure",
+            task: task,
+            description: description,
+            document: document,
+            metadata: [
+                "disk_free_gb": Int(freeGB),
+                "disk_free_percent": Int(freePercent),
+                "disk_total_gb": Int(totalGB),
+            ]
+        ))
     }
 
     private nonisolated func humanTimeAgo(_ date: Date) -> String {
