@@ -13,7 +13,8 @@
     "Fixed pop-out windows growing taller on every restart (titlebar height was being double-counted when restoring saved frame)",
     "GPT-5 family models (Codex backend) now appear in the model picker automatically at startup when the toggle is on, no need to re-toggle Settings \u2192 Advanced \u2192 Codex Backend",
     "Routines now report failure when the agent ends a turn without producing any text response, instead of being silently marked successful",
-    "Reclaim disk space from leftover screen recording chunks; observer recordings now move (instead of copy) into a stable location and stale chunks are cleaned up at launch"
+    "Reclaim disk space from leftover screen recording chunks; observer recordings now move (instead of copy) into a stable location and stale chunks are cleaned up at launch",
+    "Streamlined GPT model picker to show only the latest generation (GPT-5.5)"
   ],
   "releases": [
     {
