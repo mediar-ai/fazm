@@ -1751,7 +1751,8 @@ class ChatProvider: ObservableObject {
             "history:\(history.count)c, " +
             "claude_md:\(claudeMdContent?.count ?? 0)c, " +
             "project_claude_md:\(projectClaudeMdContent?.count ?? 0)c, " +
-            "skills:\(skillsSectionSize)c")
+            "skills:\(skillsSectionSize)c, " +
+            "routines:\(cachedRoutinesBriefing.count)c")
 
         return prompt
     }
