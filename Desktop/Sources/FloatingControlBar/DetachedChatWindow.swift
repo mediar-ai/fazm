@@ -36,8 +36,12 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
         self.state = state
         self.sessionKey = sessionKey
 
-        let size = savedFrame?.size ?? DetachedChatWindow.defaultSize
-        let contentRect = NSRect(origin: .zero, size: size)
+        // Always init with the default content size. When restoring a saved frame,
+        // we apply it via setFrame(_:display:) below — that method takes a full
+        // window frame (content + titlebar), so we must NOT use savedFrame.size as
+        // the contentRect here (doing so adds the titlebar height a second time,
+        // making the window grow by ~28pt on every restart).
+        let contentRect = NSRect(origin: .zero, size: DetachedChatWindow.defaultSize)
 
         super.init(
             contentRect: contentRect,
@@ -57,13 +61,14 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
         self.backgroundColor = NSColor(FazmColors.backgroundPrimary)
         self.applyCrashWorkarounds()  // FAZM-20: disable auto touch bar / tabbing
 
-        // Restore saved position
-        if let savedOrigin = savedFrame?.origin {
+        // Restore saved frame (full window frame including titlebar) directly.
+        // setFrame(_:display:) expects the full frame, so the saved height is used as-is.
+        if let saved = savedFrame {
             let onScreen = NSScreen.screens.contains {
-                $0.visibleFrame.contains(NSPoint(x: savedOrigin.x + 50, y: savedOrigin.y + 50))
+                $0.visibleFrame.contains(NSPoint(x: saved.origin.x + 50, y: saved.origin.y + 50))
             }
             if onScreen {
-                setFrameOrigin(savedOrigin)
+                setFrame(saved, display: false)
             } else {
                 center()
             }
