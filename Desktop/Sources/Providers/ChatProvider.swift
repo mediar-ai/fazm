@@ -1331,6 +1331,17 @@ class ChatProvider: ObservableObject {
         }
     }
 
+    /// Disconnect Codex (ChatGPT) — bridge deletes `~/.codex/auth.json`
+    /// and re-probes, which flips CodexBackendManager.authMode to "none".
+    func disconnectCodex() {
+        Task { @MainActor in
+            CodexBackendManager.shared.markProbing()
+        }
+        Task {
+            await acpBridge.sendCodexLogout()
+        }
+    }
+
     /// Start Claude OAuth authentication
     /// Opens the OAuth URL (provided by the bridge) in Chrome (where the user's sessions live).
     /// The bridge handles the full OAuth flow: local callback server, token exchange,
