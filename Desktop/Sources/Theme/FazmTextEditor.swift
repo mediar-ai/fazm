@@ -164,6 +164,12 @@ struct FazmTextEditor: NSViewRepresentable {
                 let end = (text as NSString).length
                 textView.setSelectedRange(NSRange(location: end, length: 0))
                 textView.scrollRangeToVisible(NSRange(location: end, length: 0))
+                NSLog("[FazmTextEditor] cursor→end len=%d firstResponder=%@", end, "\(textView.window?.firstResponder === textView)")
+                DispatchQueue.main.async {
+                    let endLen = (textView.string as NSString).length
+                    textView.setSelectedRange(NSRange(location: endLen, length: 0))
+                    NSLog("[FazmTextEditor] cursor→end async len=%d selectedRange=%@", endLen, "\(textView.selectedRange())")
+                }
             }
 
             if onHeightChange != nil {
