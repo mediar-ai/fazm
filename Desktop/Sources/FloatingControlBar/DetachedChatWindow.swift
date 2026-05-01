@@ -28,6 +28,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     var onStopAgent: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onConnectClaude: (() -> Void)?
+    var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: (() -> Void)?
     var onWindowClose: (() -> Void)?
@@ -88,6 +89,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             onReorderQueue: { [weak self] src, dst in self?.onReorderQueue?(src, dst) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
+            onCodexLogin: { [weak self] in self?.onCodexLogin?() },
             onChatObserverCardAction: { [weak self] id, action in self?.onChatObserverCardAction?(id, action) },
             onChangeWorkspace: onChangeWorkspace != nil ? { [weak self] in self?.onChangeWorkspace?() } : nil
         ).environmentObject(state)
@@ -185,6 +187,7 @@ struct DetachedChatView: View {
     var onReorderQueue: (IndexSet, Int) -> Void
     var onStopAgent: () -> Void
     var onConnectClaude: () -> Void
+    var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: (Int64, String) -> Void
     var onChangeWorkspace: (() -> Void)?
 
@@ -280,6 +283,7 @@ struct DetachedChatView: View {
             },
             onStopAgent: onStopAgent,
             onConnectClaude: onConnectClaude,
+            onCodexLogin: onCodexLogin,
             onChatObserverCardAction: onChatObserverCardAction,
             onChangeWorkspace: onChangeWorkspace
         )
@@ -792,6 +796,10 @@ class DetachedChatWindowController {
         win.onConnectClaude = { [weak chatProvider] in
             guard let provider = chatProvider else { return }
             ClaudeAuthWindowController.shared.show(chatProvider: provider)
+        }
+
+        win.onCodexLogin = { [weak chatProvider] in
+            chatProvider?.startCodexLogin()
         }
 
         win.onChatObserverCardAction = { [weak chatProvider] activityId, action in
