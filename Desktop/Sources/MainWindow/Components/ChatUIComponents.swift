@@ -513,6 +513,12 @@ struct ObserverCardStackView: View {
 
     @State private var expanded: Bool = false
     @State private var pulseOpacity: Double = 0.7
+    @Environment(\.fazmWindowIsVisible) private var windowIsVisible
+
+    /// Only run the `repeatForever` pulse when the window is actually on screen.
+    /// Otherwise SwiftUI keeps re-laying out every frame for occluded pop-outs,
+    /// burning CPU. See `WindowVisibility.swift`.
+    private var pulseAnimationActive: Bool { isChatObserverRunning && windowIsVisible }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -520,13 +526,16 @@ struct ObserverCardStackView: View {
             HStack(spacing: 6) {
                 Image(systemName: "eye.circle.fill")
                     .scaledFont(size: 11)
-                    .foregroundColor(FazmColors.purplePrimary.opacity(isChatObserverRunning ? pulseOpacity : 0.7))
-                    .animation(isChatObserverRunning ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .default, value: pulseOpacity)
+                    .foregroundColor(FazmColors.purplePrimary.opacity(pulseAnimationActive ? pulseOpacity : 0.7))
+                    .animation(pulseAnimationActive ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .default, value: pulseOpacity)
                     .onAppear {
-                        if isChatObserverRunning { pulseOpacity = 0.3 }
+                        pulseOpacity = pulseAnimationActive ? 0.3 : 0.7
                     }
-                    .onChange(of: isChatObserverRunning) { _, running in
-                        pulseOpacity = running ? 0.3 : 0.7
+                    .onChange(of: pulseAnimationActive) { _, active in
+                        // Toggling between 0.3 and 0.7 with the new animation
+                        // value snaps the in-flight repeatForever to a static
+                        // value when the window goes occluded.
+                        pulseOpacity = active ? 0.3 : 0.7
                     }
 
                 if isChatObserverRunning && cards.isEmpty {
@@ -591,6 +600,7 @@ struct ObserverCardStackView: View {
 
 struct TypingIndicator: View {
     @State private var animating = false
+    @Environment(\.fazmWindowIsVisible) private var windowIsVisible
 
     var body: some View {
         HStack(spacing: 4) {
@@ -601,15 +611,23 @@ struct TypingIndicator: View {
                     .offset(y: animating ? -4 : 0)
                     .opacity(animating ? 1.0 : 0.4)
                     .animation(
-                        .easeInOut(duration: 0.4)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.15),
+                        windowIsVisible
+                            ? .easeInOut(duration: 0.4)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.15)
+                            : .default,
                         value: animating
                     )
             }
         }
         .onAppear {
-            animating = true
+            animating = windowIsVisible
+        }
+        .onChange(of: windowIsVisible) { _, visible in
+            // Restart from the steady state when the window becomes visible
+            // again. When hidden, snap to the non-animated frame so SwiftUI
+            // doesn't keep ticking the repeatForever loop on an offscreen view.
+            animating = visible
         }
     }
 }
