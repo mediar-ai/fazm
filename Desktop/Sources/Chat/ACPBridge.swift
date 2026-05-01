@@ -402,6 +402,13 @@ actor ACPBridge {
     proc.executableURL = URL(fileURLWithPath: nodePath)
     proc.arguments = ["--max-old-space-size=256", "--max-semi-space-size=16", bridgePath]
 
+    // Pin the bridge's working directory to the user's home, not whatever cwd
+    // LaunchServices handed us (often /private/var/folders/... when launched from
+    // Finder or LaunchAgent). Without this, `process.cwd()` inside the Node bridge
+    // becomes a temp dir, which then leaks through as the chat workspace whenever
+    // the Swift side sends a nil/empty cwd (new chat, no inherited workspace).
+    proc.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+
     // Build environment based on auth mode
     var env = ProcessInfo.processInfo.environment
     env["NODE_NO_WARNINGS"] = "1"
