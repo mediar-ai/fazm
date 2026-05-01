@@ -77,7 +77,7 @@ struct PaywallSheet: View {
                         .foregroundColor(FazmColors.textPrimary)
                         .multilineTextAlignment(.center)
 
-                    Text("Start your free trial to continue")
+                    Text("Subscribe to continue using Fazm")
                         .scaledFont(size: 13)
                         .foregroundColor(FazmColors.textTertiary)
                         .multilineTextAlignment(.center)
@@ -119,15 +119,15 @@ struct PaywallSheet: View {
                             .frame(width: 32)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Start Free Trial")
+                            Text("Subscribe Now")
                                 .scaledFont(size: 14, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
                             if referralCredit > 0 {
-                                Text("1 day free, then $49/mo ($\(referralCredit) credit applied)")
+                                Text("$9.99/mo ($\(referralCredit) credit applied)")
                                     .scaledFont(size: 12)
                                     .foregroundColor(FazmColors.success)
                             } else {
-                                Text("1 day free, then $49/mo")
+                                Text("$9.99/mo, billed monthly")
                                     .scaledFont(size: 12)
                                     .foregroundColor(FazmColors.textTertiary)
                             }
