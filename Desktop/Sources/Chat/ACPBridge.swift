@@ -335,6 +335,15 @@ actor ACPBridge {
   /// Counts ACP tools currently running (incremented on "Tool started", decremented on "Tool completed").
   /// Used by waitForMessage to avoid timing out while ACP tools are actively executing. (legacy)
   private var acpToolsRunning: Int = 0
+  /// Timestamp of the most recent Tool started/completed event from ACP stderr.
+  /// The deferral logic in waitForMessage uses a sliding activity window (toolActivityWindow)
+  /// in addition to the instantaneous count, so a brief gap between two tool calls
+  /// (count momentarily 0) doesn't trip a premature timeout.
+  private var lastToolActivityAt: Date?
+  /// How recently a tool start/complete must have happened to keep deferring the timeout.
+  /// 60s is comfortably longer than the typical inter-tool gap but well short of the 600s
+  /// inactivity timeout, so genuine stalls still terminate.
+  private let toolActivityWindow: TimeInterval = 60
 
   /// Whether the bridge subprocess is alive and ready
   var isAlive: Bool { isRunning }
@@ -859,6 +868,7 @@ actor ACPBridge {
     } else {
       isInterrupted = false
       acpToolsRunning = 0
+      lastToolActivityAt = nil
       if !pendingMessages.isEmpty {
         log("ACPBridge: clearing \(pendingMessages.count) stale pending messages before new query")
         pendingMessages.removeAll()
@@ -1593,7 +1603,13 @@ actor ACPBridge {
         if let timeout = timeout {
           Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-            // Defer timeout if ACP tools are running for this session.
+            // Defer timeout while ACP tool activity is ongoing.
+            // We treat "tools running RIGHT NOW" OR "tool start/complete in the
+            // last toolActivityWindow seconds (60s)" as ongoing activity. The
+            // sliding window closes the gap-between-tools race: when one tool
+            // ends a fraction of a second before the next starts, the
+            // instantaneous count momentarily drops to 0, and a strict count>0
+            // check would fire a premature timeout.
             // Up to 6 deferrals × 600s base = 1 hour budget when tools keep
             // running. This gives long-running operations (deep research,
             // multi-step Task sub-agents, large refactors) room to complete
@@ -1601,7 +1617,10 @@ actor ACPBridge {
             var deferrals = 0
             let maxDeferrals = 6
             while box.isPending(generation: gen),
-                  (await self?.getSessionAcpToolsRunning(sessionKey) ?? 0) > 0,
+                  (
+                    (await self?.getSessionAcpToolsRunning(sessionKey) ?? 0) > 0
+                    || (await self?.hasRecentToolActivity() ?? false)
+                  ),
                   deferrals < maxDeferrals {
               deferrals += 1
               log("ACPBridge: waitForMessage[\(sessionKey)] timeout deferred (\(deferrals)/\(maxDeferrals))")
@@ -1650,13 +1669,18 @@ actor ACPBridge {
             // ACP's own tools (Terminal, text_editor) don't send bridge messages,
             // so waitForMessage would time out even though work is progressing.
             // Defer up to 6 times (matching the per-session waitForMessage variant,
-            // total ~1 hour at 600s base) while tools are actively running.
+            // total ~1 hour at 600s base) while tools are actively running OR
+            // a tool start/complete fired within the last toolActivityWindow (60s).
+            // The activity window closes the gap-between-tools race where one
+            // tool ends just before the next starts and the instantaneous count
+            // momentarily reads 0.
             var deferrals = 0
             let maxDeferrals = 6
             while box.isPending(generation: expectedGeneration),
-                  self.acpToolsRunning > 0, deferrals < maxDeferrals {
+                  (self.acpToolsRunning > 0 || self.hasRecentToolActivity()),
+                  deferrals < maxDeferrals {
               deferrals += 1
-              log("ACPBridge: waitForMessage timeout deferred (\(deferrals)/\(maxDeferrals)) — \(self.acpToolsRunning) ACP tool(s) still running")
+              log("ACPBridge: waitForMessage timeout deferred (\(deferrals)/\(maxDeferrals)) — running=\(self.acpToolsRunning), recentActivity=\(self.hasRecentToolActivity())")
               try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             }
             if box.resume(throwing: BridgeError.timeout, ifGeneration: expectedGeneration) {
@@ -1680,6 +1704,12 @@ actor ACPBridge {
 
   private func adjustAcpToolCount(delta: Int) {
     acpToolsRunning = max(0, acpToolsRunning + delta)
+    lastToolActivityAt = Date()
+  }
+
+  private func hasRecentToolActivity() -> Bool {
+    guard let last = lastToolActivityAt else { return false }
+    return Date().timeIntervalSince(last) < toolActivityWindow
   }
 
   private func handleTermination(
