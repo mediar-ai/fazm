@@ -86,16 +86,19 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
   const { server, port } = await startCallbackServer();
   logErr(`Codex OAuth callback server listening on port ${port}`);
 
-  const redirectUri = `http://localhost:${port}/callback`;
+  const redirectUri = `http://localhost:${port}/auth/callback`;
 
   const authUrl = new URL(AUTHORIZE_URL);
-  authUrl.searchParams.set("client_id", CLIENT_ID);
   authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("client_id", CLIENT_ID);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("scope", SCOPES);
   authUrl.searchParams.set("code_challenge", codeChallenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("id_token_add_organizations", "true");
+  authUrl.searchParams.set("codex_cli_simplified_flow", "true");
   authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("originator", "codex_cli_rs");
 
   let cancelled = false;
   let cancelReject: ((err: Error) => void) | null = null;
@@ -161,7 +164,7 @@ function waitForCallback(
     server.on("request", (req: IncomingMessage, res: ServerResponse) => {
       const parsed = new URL(req.url || "", "http://localhost");
 
-      if (parsed.pathname !== "/callback") {
+      if (parsed.pathname !== "/auth/callback") {
         res.writeHead(404);
         res.end("Not Found");
         return;
