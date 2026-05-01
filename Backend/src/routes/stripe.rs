@@ -29,7 +29,7 @@ pub struct CreateCheckoutResponse {
 
 /// POST /api/stripe/create-checkout-session
 /// Creates a Stripe Checkout Session for the Fazm subscription.
-/// First month $9, then $49/month using a coupon on the first payment.
+/// Flat $9.99/month, no free trial. Card is charged immediately on checkout.
 pub async fn create_checkout_session(
     Extension(config): Extension<Arc<Config>>,
     Extension(auth): Extension<AuthDevice>,
@@ -70,8 +70,8 @@ pub async fn create_checkout_session(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    // Create checkout session with a free trial subscription.
-    // Card is collected upfront but not charged until the trial ends.
+    // Create checkout session. By default, no free trial: card is charged immediately.
+    // STRIPE_TRIAL_DAYS env var can override (set > 0 to re-enable a trial period).
     let trial_days = config.stripe_trial_days;
     let mut params = vec![
         ("mode", "subscription".to_string()),
