@@ -25,7 +25,8 @@
     "Hide 1M-context model variants in built-in mode to prevent picking a tier without entitlement",
     "Auto-fall-back to standard context when Claude rejects a request for the 1M-context tier",
     "Stop chat agent on floating-bar close and detached-window close so abandoned queries no longer hang for 10 minutes and surface a stray error",
-    "Capture model, bridge mode, duration, and running tools when chat agent errors fire, so timeouts can be diagnosed"
+    "Capture model, bridge mode, duration, and running tools when chat agent errors fire, so timeouts can be diagnosed",
+    "Fixed premature timeout when ACP tool calls run back-to-back; the inactivity deferral now considers tool activity within the last 60s, not just tools running at the exact moment"
   ],
   "releases": [
     {
