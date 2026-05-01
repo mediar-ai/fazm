@@ -103,6 +103,7 @@ struct FazmApp: App {
         Window(windowTitle, id: "main") {
             DesktopHomeView()
                 .withFontScaling()
+                .trackWindowVisibility()
                 .onAppear {
                     log("FazmApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
                 }
