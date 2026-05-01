@@ -49,6 +49,7 @@ import {
   interruptCodexSession,
   interruptAllCodexSessions,
   codexSessionCount,
+  clearCodexSessions,
 } from "./codex-query.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -629,6 +630,9 @@ async function handleCodexLogout(): Promise<void> {
     try { codexProvider.shutdown(); } catch { /* already gone */ }
   }
   codexProvider = null;
+  // The cached session pool points at sessionIds that just died with the
+  // subprocess; wipe it so the next prompt starts a fresh session.
+  clearCodexSessions();
   const authPath = join(homedir(), ".codex", "auth.json");
   try {
     if (existsSync(authPath)) {
@@ -664,6 +668,9 @@ async function handleCodexLogin(): Promise<void> {
       try { codexProvider.shutdown(); } catch { /* already gone */ }
       codexProvider = null;
     }
+    // Drop cached session entries — they reference sessionIds on the now-dead
+    // codex-acp subprocess and would trip "Resource not found" on the next prompt.
+    clearCodexSessions();
     send({ type: "codex_login_complete" });
     logErr("[codex-oauth] login complete, auth.json written");
   } catch (err) {
