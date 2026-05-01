@@ -21,8 +21,8 @@ final class SubscriptionService {
 
     // MARK: - Trial & Paywall
 
-    let trialDays = 1
-    let freeMessagesPerDay = 3
+    let trialDays = 0
+    let freeMessagesPerDay = 0
 
     /// Date the user's trial started — uses Firebase account creation date (actual signup).
     /// Returns cached value if available; otherwise falls back to now (fetchAccountCreationDate
@@ -122,13 +122,10 @@ final class SubscriptionService {
     }
 
     /// Whether the paywall should be shown right now.
-    /// Returns true when: no active Stripe subscription AND daily free limit exceeded.
+    /// Hard paywall: any user without an active Stripe subscription is gated immediately.
+    /// No free trial, no free daily messages.
     func shouldShowPaywall() -> Bool {
-        // Active subscribers (including trialing) never see the paywall
-        if isActive { return false }
-
-        // No subscription: allow 3 free messages per day, block on the 4th+
-        return dailyMessageCount > freeMessagesPerDay
+        return !isActive
     }
 
     private init() {
