@@ -2407,6 +2407,30 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
         return;
       }
+      // 1M-context entitlement error: API rejects requests when the model has a [1m]
+      // suffix but the user's Claude account isn't on the 1M-context tier. Auto-fall-back
+      // to the standard-context variant by stripping [1m] and retrying once. Without
+      // this, the user sees a raw "Extra usage is required for 1M context · enable
+      // extra usage at claude.ai/settings/usage" message and is stuck.
+      const is1mContextError = /extra usage is required for 1m context|enable extra usage at claude\.ai\/settings\/usage/i.test(errMsg);
+      const has1mSuffix = /\[1m\]/i.test(requestedModel);
+      if (is1mContextError && has1mSuffix && _retryDepth < MAX_QUERY_RETRIES) {
+        const downgraded = requestedModel.replace(/\s*\[1m\]/gi, "");
+        logErr(`1M context not available, retrying with downgraded model: ${requestedModel} -> ${downgraded}`);
+        for (const name of pendingTools) {
+          sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
+        }
+        pendingTools.length = 0;
+        clearAllToolTimers();
+        unregisterSession(sessionKey);
+        imageTurnCounts.delete(sessionKey);
+        activeSessionId = "";
+        msg.resume = undefined;
+        msg.model = downgraded;
+        lastApiRetry = null;
+        return handleQuery(msg, _retryDepth + 1);
+      }
+
       // If session/prompt failed while reusing an existing session, retry once.
       // Try to resume the same session first (session files on disk may still be valid
       // even if the ACP process died). The resume path (line ~755) has its own try/catch
