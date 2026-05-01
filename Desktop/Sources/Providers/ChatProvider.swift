@@ -2908,7 +2908,14 @@ class ChatProvider: ObservableObject {
                 }
             }
 
-            let effectiveCwd = cwd ?? workingDirectory
+            // Resolve workspace, falling back to $HOME so a brand-new chat (no
+            // inherited workspace, empty aiChatWorkingDirectory) doesn't end up
+            // with the bridge's process.cwd() — which can be /private/var/folders/...
+            // when the app is launched via Finder/LaunchAgent.
+            let resolvedCwd = (cwd?.isEmpty == false ? cwd : nil)
+                ?? (workingDirectory?.isEmpty == false ? workingDirectory : nil)
+                ?? NSHomeDirectory()
+            let effectiveCwd: String? = resolvedCwd
             log("Chat query started (session=\(sessionKey ?? "main"), mode=\(bridgeMode), model=\(model ?? modelOverride ?? "default"), cwd=\(effectiveCwd ?? "nil"))")
             let queryResult = try await acpBridge.query(
                 prompt: trimmedText,
