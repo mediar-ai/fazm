@@ -1093,6 +1093,13 @@ class ChatProvider: ObservableObject {
                         error: error
                     )
                     ShortcutSettings.shared.updateCodexModels(CodexBackendManager.shared.modelsForPicker)
+                    // If the user picked a GPT model from the picker before authenticating,
+                    // promote it to the active selection now that we're connected.
+                    if authMode == "chatgpt", let pending = CodexBackendManager.shared.pendingPickerModelId {
+                        ShortcutSettings.shared.selectedModel = pending
+                        CodexBackendManager.shared.pendingPickerModelId = nil
+                        log("ChatProvider: promoted pending Codex model \(pending) after OAuth")
+                    }
                 }
             }
             // Codex login flow handlers — open browser URL, then re-probe on completion.
@@ -1115,6 +1122,9 @@ class ChatProvider: ObservableObject {
                 onError: { error in
                     Task { @MainActor in
                         CodexBackendManager.shared.loginFailed(error: error)
+                        // OAuth never landed — drop the pending picker selection so the
+                        // dropdown stops showing "Connecting…" and the user can retry.
+                        CodexBackendManager.shared.pendingPickerModelId = nil
                     }
                 }
             )
@@ -1152,15 +1162,12 @@ class ChatProvider: ObservableObject {
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
 
-            // Phase 3.5 — auto-probe Codex at startup when the backend is enabled.
-            // Without this, GPT models never appear in the model picker until the
-            // user manually toggles Settings → Advanced → Codex Backend or clicks
-            // "Check connection". The probe is fire-and-forget; results land in
-            // CodexBackendManager.shared via the codex_probe_result handler set
-            // up earlier in this method, which then calls
-            // ShortcutSettings.shared.updateCodexModels.
+            // Always auto-probe Codex at startup so GPT models appear in the picker
+            // even before the user authenticates. Picking a GPT model then triggers
+            // the OAuth flow via ModelToggleButton.onCodexLogin. Probe is fire-and-forget;
+            // results land in CodexBackendManager via the codex_probe_result handler.
             if CodexBackendManager.shared.enabled {
-                log("ChatProvider: Codex backend enabled at startup, auto-probing")
+                log("ChatProvider: Auto-probing Codex backend at startup")
                 CodexBackendManager.shared.markProbing()
                 Task { await acpBridge.sendCodexProbe() }
             }
