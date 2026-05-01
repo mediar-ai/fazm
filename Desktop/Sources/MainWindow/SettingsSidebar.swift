@@ -82,9 +82,8 @@ struct SettingsSearchItem: Identifiable {
         // Advanced > MCP Servers
         SettingsSearchItem(name: "MCP Servers", subtitle: "Connect external tools via the Model Context Protocol", keywords: ["mcp", "server", "tools", "protocol", "integration", "external", "plugin"], section: .advanced, advancedSubsection: .mcpServers, icon: "server.rack", settingId: "advanced.mcpservers.info"),
 
-        // Advanced > Codex Backend
-        SettingsSearchItem(name: "Codex Backend", subtitle: "Route GPT-5 family models through OpenAI's Codex CLI", keywords: ["codex", "openai", "chatgpt", "gpt", "gpt-5", "gpt5", "openai api", "openai backend"], section: .advanced, advancedSubsection: .codexBackend, icon: "sparkles", settingId: "advanced.codex.toggle"),
-        SettingsSearchItem(name: "Codex Status", subtitle: "Connection state and detected models for the Codex backend", keywords: ["codex", "openai", "chatgpt", "status", "connected", "models"], section: .advanced, advancedSubsection: .codexBackend, icon: "sparkles", settingId: "advanced.codex.status"),
+        // Advanced > AI Chat > Codex Backend (lives in the AI Chat subsection)
+        SettingsSearchItem(name: "Codex Backend", subtitle: "Route GPT-5 family models through OpenAI's Codex CLI", keywords: ["codex", "openai", "chatgpt", "gpt", "gpt-5", "gpt5", "openai api", "openai backend", "disconnect"], section: .advanced, advancedSubsection: .aiChat, icon: "sparkles", settingId: "advanced.codex.toggle"),
 
         // Account
         SettingsSearchItem(name: "Account", subtitle: "Your signed-in account and sign out", keywords: ["account", "sign out", "email", "profile", "user"], section: .about, advancedSubsection: nil, icon: "person.crop.circle", settingId: "about.account"),
