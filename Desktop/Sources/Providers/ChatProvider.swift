@@ -1187,11 +1187,9 @@ class ChatProvider: ObservableObject {
             // even before the user authenticates. Picking a GPT model then triggers
             // the OAuth flow via ModelToggleButton.onCodexLogin. Probe is fire-and-forget;
             // results land in CodexBackendManager via the codex_probe_result handler.
-            if CodexBackendManager.shared.enabled {
-                log("ChatProvider: Auto-probing Codex backend at startup")
-                CodexBackendManager.shared.markProbing()
-                Task { await acpBridge.sendCodexProbe() }
-            }
+            log("ChatProvider: Auto-probing Codex backend at startup")
+            CodexBackendManager.shared.markProbing()
+            Task { await acpBridge.sendCodexProbe() }
 
             // Track if the bundled node binary was broken (Sparkle update corruption)
             if NodeBinaryHelper.bundledNodeWasBroken {
