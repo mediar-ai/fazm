@@ -158,6 +158,12 @@ struct FazmTextEditor: NSViewRepresentable {
             // so the empty input isn't left in a scrolled-down position.
             if text.isEmpty {
                 textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            } else {
+                // Place cursor at the end so PTT transcripts and other programmatic
+                // injections leave the user ready to keep typing or hit Enter.
+                let end = (text as NSString).length
+                textView.setSelectedRange(NSRange(location: end, length: 0))
+                textView.scrollRangeToVisible(NSRange(location: end, length: 0))
             }
 
             if onHeightChange != nil {
