@@ -1256,6 +1256,17 @@ actor ACPBridge {
       let error = dict["error"] as? String
       return .codexProbeResult(ok: ok, agent: agent, authMethods: authMethods, currentModelId: currentModelId, availableModels: availableModels, authMode: authMode, error: error)
 
+    case "codex_login_url":
+      let url = dict["url"] as? String ?? ""
+      return .codexLoginUrl(url: url)
+
+    case "codex_login_complete":
+      return .codexLoginComplete
+
+    case "codex_login_error":
+      let error = dict["error"] as? String ?? "Unknown error"
+      return .codexLoginError(error: error)
+
     default:
       log("ACPBridge: unknown message type: \(type)")
       return nil
