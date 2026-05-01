@@ -76,6 +76,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onPopOut: (() -> Void)?
     var onResetSession: (() -> Void)?
     var onConnectClaude: (() -> Void)?
+    var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: (() -> Void)?
 
@@ -238,6 +239,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onStopAgent: { [weak self] in self?.onStopAgent?() },
             onPopOut: { [weak self] in self?.onPopOut?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
+            onCodexLogin: { [weak self] in self?.onCodexLogin?() },
             onChatObserverCardAction: { [weak self] activityId, action in self?.onChatObserverCardAction?(activityId, action) },
             onChangeWorkspace: { [weak self] in self?.onChangeWorkspace?() }
         ).environmentObject(state)
@@ -1192,6 +1194,10 @@ class FloatingControlBarManager {
         barWindow.onConnectClaude = { [weak chatProvider] in
             guard let provider = chatProvider else { return }
             ClaudeAuthWindowController.shared.show(chatProvider: provider)
+        }
+
+        barWindow.onCodexLogin = { [weak chatProvider] in
+            chatProvider?.startCodexLogin()
         }
 
         barWindow.onChatObserverCardAction = { [weak chatProvider] activityId, action in
