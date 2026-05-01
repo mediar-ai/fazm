@@ -620,6 +620,27 @@ async function handleCodexInitProbe(): Promise<void> {
 // Active Codex login flow handle (only one at a time)
 let activeCodexLogin: CodexOAuthFlowHandle | null = null;
 
+async function handleCodexLogout(): Promise<void> {
+  if (activeCodexLogin) {
+    activeCodexLogin.cancel();
+    activeCodexLogin = null;
+  }
+  if (codexProvider?.isRunning()) {
+    try { codexProvider.shutdown(); } catch { /* already gone */ }
+  }
+  codexProvider = null;
+  const authPath = join(homedir(), ".codex", "auth.json");
+  try {
+    if (existsSync(authPath)) {
+      unlinkSync(authPath);
+      logErr("[codex-oauth] auth.json deleted");
+    }
+  } catch (err) {
+    logErr(`[codex-oauth] failed to delete auth.json: ${err}`);
+  }
+  await handleCodexInitProbe();
+}
+
 async function handleCodexLogin(): Promise<void> {
   // Cancel any in-progress login
   if (activeCodexLogin) {
@@ -3313,6 +3334,12 @@ async function main(): Promise<void> {
           activeCodexLogin = null;
           logErr("[codex-oauth] login cancelled by user");
         }
+        break;
+
+      case "codex_logout":
+        handleCodexLogout().catch((err) => {
+          logErr(`codex logout handler threw: ${err}`);
+        });
         break;
 
       default:
