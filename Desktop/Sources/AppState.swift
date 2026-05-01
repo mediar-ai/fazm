@@ -5,19 +5,18 @@ import SwiftUI
 /// Tracks pending relaunch helper subprocesses spawned by `restartApp()` /
 /// `relaunchApp()`. The helpers run `sleep N && open <bundle>` detached, so a
 /// user-initiated quit (Cmd-Q, menu Quit) needs to kill them or the app will
-/// "relaunch" against the user's intent. `applicationShouldTerminate` reads
-/// `programmaticTerminateScheduled` to tell its own restart-driven terminate
-/// from a real user quit.
+/// "relaunch" against the user's intent. The programmatic-terminate flag is
+/// set immediately before the restart code calls `NSApp.terminate(nil)` and
+/// consumed by `applicationShouldTerminate`, so any *other* terminate path
+/// (Cmd-Q, dock Quit, etc.) is treated as a real user quit and cancels the
+/// helpers before exit.
 enum RelaunchSupervisor {
     static let queue = DispatchQueue(label: "com.fazm.relaunch-supervisor")
     nonisolated(unsafe) private static var _helperPIDs: [pid_t] = []
-    nonisolated(unsafe) private static var _programmaticTerminateScheduled = false
+    nonisolated(unsafe) private static var _programmaticTerminatePending = false
 
     static func register(helperPID: pid_t) {
-        queue.sync {
-            _helperPIDs.append(helperPID)
-            _programmaticTerminateScheduled = true
-        }
+        queue.sync { _helperPIDs.append(helperPID) }
     }
 
     static func cancelPendingHelpers() -> Int {
@@ -31,8 +30,19 @@ enum RelaunchSupervisor {
         }
     }
 
-    static var programmaticTerminateScheduled: Bool {
-        queue.sync { _programmaticTerminateScheduled }
+    /// Call right before invoking `NSApp.terminate(nil)` from a code path that
+    /// expects a relaunch helper to bring the app back.
+    static func markProgrammaticTerminate() {
+        queue.sync { _programmaticTerminatePending = true }
+    }
+
+    /// Returns true exactly once per `markProgrammaticTerminate()` call.
+    static func consumeProgrammaticTerminateFlag() -> Bool {
+        queue.sync {
+            let pending = _programmaticTerminatePending
+            _programmaticTerminatePending = false
+            return pending
+        }
     }
 }
 
@@ -463,6 +473,7 @@ class AppState: ObservableObject {
         } catch {
             log("relaunchApp: failed to spawn relaunch helper: \(error)")
         }
+        RelaunchSupervisor.markProgrammaticTerminate()
         NSApplication.shared.terminate(nil)
     }
 
@@ -708,6 +719,7 @@ class AppState: ObservableObject {
 
             // Terminate the current app
             DispatchQueue.main.async {
+                RelaunchSupervisor.markProgrammaticTerminate()
                 NSApplication.shared.terminate(nil)
             }
         } catch {
