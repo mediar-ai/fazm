@@ -21,7 +21,11 @@
     "Switched to flat $9.99/month subscription with no free trial; paywall now appears immediately on launch for users without an active subscription",
     "Fixed empty AI message bubbles in detached chat windows when streaming buffers were silently dropped during long tool-heavy responses",
     "Check subscription at sign-in instead of post-onboarding so the paywall gates new users immediately",
-    "Stop built-in cost cap from being bypassed \u2014 Settings picker can no longer flip back to built-in once the cap is reached, and disconnecting Claude no longer drops users with exhausted credits back into built-in mode"
+    "Stop built-in cost cap from being bypassed \u2014 Settings picker can no longer flip back to built-in once the cap is reached, and disconnecting Claude no longer drops users with exhausted credits back into built-in mode",
+    "Hide 1M-context model variants in built-in mode to prevent picking a tier without entitlement",
+    "Auto-fall-back to standard context when Claude rejects a request for the 1M-context tier",
+    "Stop chat agent on floating-bar close and detached-window close so abandoned queries no longer hang for 10 minutes and surface a stray error",
+    "Capture model, bridge mode, duration, and running tools when chat agent errors fire, so timeouts can be diagnosed"
   ],
   "releases": [
     {
