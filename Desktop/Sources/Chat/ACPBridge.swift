@@ -972,6 +972,10 @@ actor ACPBridge {
         // Handled immediately in deliverMessage(); should never reach here
         break
 
+      case .codexLoginUrl, .codexLoginComplete, .codexLoginError:
+        // Handled immediately in deliverMessage(); should never reach here
+        break
+
       case .sessionExpired(let oldSessionId, let newSessionId, let contextRestored, let restoredMessageCount, let reason, _):
         log("ACPBridge: session_expired old=\(oldSessionId) new=\(newSessionId) restored=\(contextRestored) count=\(restoredMessageCount)")
         onStatusEvent(.sessionExpired(oldSessionId: oldSessionId, newSessionId: newSessionId, contextRestored: contextRestored, restoredMessageCount: restoredMessageCount, reason: reason))
@@ -1391,6 +1395,18 @@ actor ACPBridge {
     case .codexProbeResult(let ok, let agent, let authMethods, let currentModelId, let availableModels, let authMode, let error):
       log("ACPBridge: received codex_probe_result ok=\(ok) authMode=\(authMode) models=\(availableModels.count) error=\(error ?? "-")")
       onCodexProbeResult?(ok, agent, authMethods, currentModelId, availableModels, authMode, error)
+      return
+    case .codexLoginUrl(let url):
+      log("ACPBridge: received codex_login_url")
+      onCodexLoginUrl?(url)
+      return
+    case .codexLoginComplete:
+      log("ACPBridge: received codex_login_complete")
+      onCodexLoginComplete?()
+      return
+    case .codexLoginError(let error):
+      log("ACPBridge: received codex_login_error: \(error)")
+      onCodexLoginError?(error)
       return
     case .toolUse(let callId, let name, let input):
       // If a per-session query is waiting for this tool call, let it fall through
