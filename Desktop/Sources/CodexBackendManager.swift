@@ -131,12 +131,14 @@ final class CodexBackendManager: ObservableObject {
     /// current frontier; the raw `availableModels` list remains available for
     /// diagnostics.
     ///
-    /// When authMode is "none" the codex-acp adapter doesn't return a model
-    /// list, so we substitute a known fallback set so the user sees GPT options
-    /// in the dropdown — picking one triggers the OAuth flow.
+    /// codex-acp doesn't return a model list when unauthenticated, and the
+    /// first probe right after OAuth often comes back with 0 models too while
+    /// the adapter warms up. In either case we substitute a known fallback set
+    /// so the picker stays populated; once a later probe brings real models,
+    /// they take over.
     var modelsForPicker: [CodexModel] {
         guard enabled, lastProbe?.ok == true else { return [] }
-        if availableModels.isEmpty && authMode == "none" {
+        if availableModels.isEmpty {
             return Self.fallbackUnauthedGptModels
         }
         return availableModels.filter { Self.isPickerEligible(modelId: $0.modelId) }
