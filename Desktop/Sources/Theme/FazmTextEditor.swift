@@ -142,7 +142,10 @@ struct FazmTextEditor: NSViewRepresentable {
         // correct task's draftText when SwiftUI reuses this NSView across tasks.
         context.coordinator.updateTextBinding($text)
 
-        if textView.string != text {
+        let textsDiffer = textView.string != text
+        log("[FazmTextEditor.updateNSView] called textLen=\(text.count) viewLen=\(textView.string.count) differ=\(textsDiffer) focusOnAppear=\(focusOnAppear) isFR=\(textView.window?.firstResponder === textView)")
+
+        if textsDiffer {
             context.coordinator.isUpdating = true
             textView.string = text
             context.coordinator.isUpdating = false
@@ -164,11 +167,11 @@ struct FazmTextEditor: NSViewRepresentable {
                 let end = (text as NSString).length
                 textView.setSelectedRange(NSRange(location: end, length: 0))
                 textView.scrollRangeToVisible(NSRange(location: end, length: 0))
-                NSLog("[FazmTextEditor] cursor→end len=%d firstResponder=%@", end, "\(textView.window?.firstResponder === textView)")
+                log("[FazmTextEditor] cursor→end sync len=\(end) sel=\(NSStringFromRange(textView.selectedRange()))")
                 DispatchQueue.main.async {
                     let endLen = (textView.string as NSString).length
                     textView.setSelectedRange(NSRange(location: endLen, length: 0))
-                    NSLog("[FazmTextEditor] cursor→end async len=%d selectedRange=%@", endLen, "\(textView.selectedRange())")
+                    log("[FazmTextEditor] cursor→end async len=\(endLen) sel=\(NSStringFromRange(textView.selectedRange())) isFR=\(textView.window?.firstResponder === textView)")
                 }
             }
 
