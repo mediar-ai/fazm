@@ -40,6 +40,7 @@ import type {
   AuthMethod,
 } from "./protocol.js";
 import { startOAuthFlow, OAuthTokenExchangeError, readStoredCredentials, type OAuthFlowHandle } from "./oauth-flow.js";
+import { startCodexOAuthFlow, type CodexOAuthFlowHandle } from "./codex-oauth-flow.js";
 import { CodexProvider } from "./codex-provider.js";
 import {
   handleCodexQuery,
@@ -587,6 +588,33 @@ async function handleCodexInitProbe(): Promise<void> {
       authMode: readCodexAuthMode(),
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+// Active Codex login flow handle (only one at a time)
+let activeCodexLogin: CodexOAuthFlowHandle | null = null;
+
+async function handleCodexLogin(): Promise<void> {
+  // Cancel any in-progress login
+  if (activeCodexLogin) {
+    activeCodexLogin.cancel();
+    activeCodexLogin = null;
+  }
+  try {
+    const flow = await startCodexOAuthFlow((msg) => logErr(`[codex-oauth] ${msg}`));
+    activeCodexLogin = flow;
+    // Send URL to Swift so it can open the browser
+    send({ type: "codex_login_url", url: flow.authUrl });
+    // Wait for the user to complete the OAuth flow in the browser
+    await flow.complete;
+    activeCodexLogin = null;
+    send({ type: "codex_login_complete" });
+    logErr("[codex-oauth] login complete, auth.json written");
+  } catch (err) {
+    activeCodexLogin = null;
+    const msg = err instanceof Error ? err.message : String(err);
+    send({ type: "codex_login_error", error: msg });
+    logErr(`[codex-oauth] login failed: ${msg}`);
   }
 }
 
@@ -3221,6 +3249,20 @@ async function main(): Promise<void> {
         handleCodexInitProbe().catch((err) => {
           logErr(`codex probe handler threw: ${err}`);
         });
+        break;
+
+      case "codex_login":
+        handleCodexLogin().catch((err) => {
+          logErr(`codex login handler threw: ${err}`);
+        });
+        break;
+
+      case "codex_login_cancel":
+        if (activeCodexLogin) {
+          activeCodexLogin.cancel();
+          activeCodexLogin = null;
+          logErr("[codex-oauth] login cancelled by user");
+        }
         break;
 
       default:
