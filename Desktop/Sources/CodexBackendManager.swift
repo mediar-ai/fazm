@@ -130,10 +130,27 @@ final class CodexBackendManager: ObservableObject {
     /// Filters out older generations (< 5.5) so the picker stays focused on the
     /// current frontier; the raw `availableModels` list remains available for
     /// diagnostics.
+    ///
+    /// When authMode is "none" the codex-acp adapter doesn't return a model
+    /// list, so we substitute a known fallback set so the user sees GPT options
+    /// in the dropdown — picking one triggers the OAuth flow.
     var modelsForPicker: [CodexModel] {
         guard enabled, lastProbe?.ok == true else { return [] }
+        if availableModels.isEmpty && authMode == "none" {
+            return Self.fallbackUnauthedGptModels
+        }
         return availableModels.filter { Self.isPickerEligible(modelId: $0.modelId) }
     }
+
+    /// Stand-in GPT-5.5 list shown in the picker before the user connects their
+    /// ChatGPT subscription. Mirrors the variants codex-acp returns post-auth.
+    /// Update if codex-acp ships a newer frontier generation as the default.
+    static let fallbackUnauthedGptModels: [CodexModel] = [
+        CodexModel(modelId: "gpt-5.5/low", name: "GPT-5.5 (low)", description: nil),
+        CodexModel(modelId: "gpt-5.5/medium", name: "GPT-5.5 (medium)", description: nil),
+        CodexModel(modelId: "gpt-5.5/high", name: "GPT-5.5 (high)", description: nil),
+        CodexModel(modelId: "gpt-5.5/xhigh", name: "GPT-5.5 (xhigh)", description: nil),
+    ]
 
     /// Returns true when the modelId belongs to the current frontier generation
     /// the picker should expose (gpt-5.5 or newer). Older generations like
