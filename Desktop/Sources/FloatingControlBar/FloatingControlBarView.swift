@@ -21,6 +21,7 @@ struct FloatingControlBarView: View {
     var onStopAgent: (() -> Void)?
     var onPopOut: (() -> Void)?
     var onConnectClaude: (() -> Void)?
+    var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: (() -> Void)?
 
@@ -509,6 +510,7 @@ struct FloatingControlBarView: View {
             onStopAgent: onStopAgent,
             onPopOut: onPopOut,
             onConnectClaude: onConnectClaude,
+            onCodexLogin: onCodexLogin,
             onChatObserverCardAction: onChatObserverCardAction,
             onChangeWorkspace: onChangeWorkspace
         )
