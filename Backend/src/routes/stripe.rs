@@ -202,12 +202,13 @@ pub struct SubscriptionStatusResponse {
     pub current_period_end: Option<i64>,
 }
 
-/// GET /api/stripe/subscription-status
-/// Returns the subscription status for the authenticated user.
-pub async fn subscription_status(
-    Extension(config): Extension<Arc<Config>>,
-    Extension(auth): Extension<AuthDevice>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+/// Core lookup used by both `GET /api/stripe/subscription-status` and the
+/// builtin-key gate in `routes::keys`. Returns the user's current subscription
+/// status, or an error if Stripe is misconfigured / unreachable.
+pub(crate) async fn lookup_subscription_status(
+    config: &Config,
+    auth: &AuthDevice,
+) -> Result<SubscriptionStatusResponse, (StatusCode, String)> {
     let stripe_secret = &config.stripe_secret_key;
     if stripe_secret.is_empty() {
         return Err((
@@ -216,7 +217,7 @@ pub async fn subscription_status(
         ));
     }
 
-    let firebase_uid = auth.firebase_uid.unwrap_or_default();
+    let firebase_uid = auth.firebase_uid.clone().unwrap_or_default();
     let firebase_email = auth.firebase_email.clone().unwrap_or_default();
     let client = reqwest::Client::new();
 
@@ -252,11 +253,11 @@ pub async fn subscription_status(
     }
 
     let Some(customer_id) = customer_id else {
-        return Ok(Json(SubscriptionStatusResponse {
+        return Ok(SubscriptionStatusResponse {
             active: false,
             status: "none".to_string(),
             current_period_end: None,
-        }));
+        });
     };
 
     // List active subscriptions for this customer
@@ -279,19 +280,28 @@ pub async fn subscription_status(
             let status = sub["status"].as_str().unwrap_or("none").to_string();
             let active = matches!(status.as_str(), "active" | "trialing");
             let period_end = sub["current_period_end"].as_i64();
-            return Ok(Json(SubscriptionStatusResponse {
+            return Ok(SubscriptionStatusResponse {
                 active,
                 status,
                 current_period_end: period_end,
-            }));
+            });
         }
     }
 
-    Ok(Json(SubscriptionStatusResponse {
+    Ok(SubscriptionStatusResponse {
         active: false,
         status: "none".to_string(),
         current_period_end: None,
-    }))
+    })
+}
+
+/// GET /api/stripe/subscription-status
+/// Returns the subscription status for the authenticated user.
+pub async fn subscription_status(
+    Extension(config): Extension<Arc<Config>>,
+    Extension(auth): Extension<AuthDevice>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    lookup_subscription_status(&config, &auth).await.map(Json)
 }
 
 // ---------- Billing Portal ----------
