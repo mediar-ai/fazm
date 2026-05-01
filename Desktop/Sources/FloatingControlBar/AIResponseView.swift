@@ -1215,9 +1215,10 @@ struct ModelToggleButton: View {
                 Button {
                     if let localModel {
                         localModel.wrappedValue = model.id
-                    } else {
-                        shortcutSettings.selectedModel = model.id
                     }
+                    // Always write through to the global default so new pop-outs
+                    // and the floating bar inherit the most recent model choice.
+                    shortcutSettings.selectedModel = model.id
                 } label: {
                     if selectedModelId == model.id {
                         Label(model.label, systemImage: "checkmark")
