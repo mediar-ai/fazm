@@ -2101,6 +2101,8 @@ struct SettingsContentView: View {
                             }
                         }
                     ))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
                     .labelsHidden()
                 }
 
