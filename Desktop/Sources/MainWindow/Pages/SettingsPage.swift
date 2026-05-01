@@ -175,7 +175,6 @@ struct SettingsContentView: View {
     enum AdvancedSubsection: String, CaseIterable {
         case aiChat = "AI Chat"
         case mcpServers = "MCP Servers"
-        case codexBackend = "Codex Backend"
         case preferences = "Preferences"
         case troubleshooting = "Troubleshooting"
 
@@ -183,7 +182,6 @@ struct SettingsContentView: View {
             switch self {
             case .aiChat: return "cpu"
             case .mcpServers: return "server.rack"
-            case .codexBackend: return "sparkles"
             case .preferences: return "slider.horizontal.3"
             case .troubleshooting: return "wrench.and.screwdriver"
             }
@@ -949,6 +947,9 @@ struct SettingsContentView: View {
                     }
                 }
             }
+
+            // Codex (ChatGPT) backend
+            codexAccountCard
 
             // Custom API Endpoint (advanced)
             settingsCard(settingId: "aichat.endpoint") {
@@ -1828,8 +1829,6 @@ struct SettingsContentView: View {
                 aiChatSection
             case .mcpServers:
                 mcpServersSubsection
-            case .codexBackend:
-                codexBackendSubsection
             case .preferences:
                 preferencesSubsection
             case .troubleshooting:
@@ -2074,27 +2073,19 @@ struct SettingsContentView: View {
         }
     }
 
-    // MARK: Codex Backend (Phase 3.3)
+    // MARK: Codex Backend (rendered inside AI Chat section)
 
-    private var codexBackendSubsection: some View {
-        VStack(spacing: 20) {
-            // Header card with toggle
-            settingsCard(settingId: "advanced.codex.toggle") {
-                HStack(spacing: 16) {
+    private var codexAccountCard: some View {
+        settingsCard(settingId: "advanced.codex.toggle") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
                     Image(systemName: "sparkles")
                         .scaledFont(size: 16)
-                        .foregroundColor(FazmColors.textSecondary)
-                        .frame(width: 24, height: 24)
+                        .foregroundColor(FazmColors.textTertiary)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Codex Backend (experimental)")
-                            .scaledFont(size: 16, weight: .semibold)
-                            .foregroundColor(FazmColors.textPrimary)
-                        Text("Route GPT-5 family models through OpenAI's Codex CLI using your ChatGPT subscription. Text-only for now; tools and MCP support coming.")
-                            .scaledFont(size: 13)
-                            .foregroundColor(FazmColors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("Codex Backend (experimental)")
+                        .scaledFont(size: 15, weight: .semibold)
+                        .foregroundColor(FazmColors.textPrimary)
 
                     Spacer()
 
@@ -2112,20 +2103,33 @@ struct SettingsContentView: View {
                     ))
                     .labelsHidden()
                 }
-            }
 
-            if codexBackend.enabled {
-                // Status card
-                settingsCard(settingId: "advanced.codex.status") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(codexStatusColor)
-                                .frame(width: 8, height: 8)
-                            Text(codexStatusText)
-                                .scaledFont(size: 14, weight: .medium)
-                                .foregroundColor(FazmColors.textPrimary)
-                            Spacer()
+                Text("Route GPT-5 family models through OpenAI's Codex CLI using your ChatGPT subscription. Text-only for now; tools and MCP support coming.")
+                    .scaledFont(size: 12)
+                    .foregroundColor(FazmColors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if codexBackend.enabled {
+                    Divider()
+
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(codexStatusColor)
+                            .frame(width: 8, height: 8)
+                        Text(codexStatusText)
+                            .scaledFont(size: 12)
+                            .foregroundColor(FazmColors.textSecondary)
+
+                        Spacer()
+
+                        if codexBackend.authMode == "chatgpt" || codexBackend.authMode == "api_key" {
+                            Button("Disconnect") {
+                                chatProvider?.disconnectCodex()
+                            }
+                            .buttonStyle(.plain)
+                            .scaledFont(size: 12, weight: .medium)
+                            .foregroundColor(.red)
+                        } else {
                             Button(action: {
                                 codexBackend.markProbing()
                                 chatProvider?.probeCodexBackend()
@@ -2144,63 +2148,41 @@ struct SettingsContentView: View {
                             .buttonStyle(.plain)
                             .disabled(codexBackend.probing)
                         }
+                    }
 
-                        if let probe = codexBackend.lastProbe {
-                            VStack(alignment: .leading, spacing: 4) {
-                                if let agent = probe.agent {
-                                    codexInfoRow(label: "Adapter", value: agent)
-                                }
-                                codexInfoRow(label: "Auth mode", value: probe.authMode)
-                                if let current = codexBackend.currentModelId {
-                                    codexInfoRow(label: "Default model", value: current)
-                                }
-                                if !codexBackend.availableModels.isEmpty {
-                                    codexInfoRow(label: "Models", value: "\(codexBackend.availableModels.count) available")
-                                }
-                                if let err = probe.error {
-                                    codexInfoRow(label: "Error", value: err)
+                    if codexBackend.authMode == "none" {
+                        if let loginErr = codexBackend.loginError {
+                            Text("Login failed: \(loginErr)")
+                                .scaledFont(size: 12)
+                                .foregroundColor(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button(action: {
+                            if codexBackend.loginInProgress {
+                                chatProvider?.cancelCodexLogin()
+                            } else {
+                                chatProvider?.startCodexLogin()
+                            }
+                        }) {
+                            HStack(spacing: 6) {
+                                if codexBackend.loginInProgress {
+                                    ProgressView().controlSize(.mini)
+                                    Text("Connecting... (click to cancel)")
+                                } else {
+                                    Image(systemName: "person.badge.key")
+                                    Text("Connect ChatGPT subscription")
                                 }
                             }
-                            .padding(.top, 4)
+                            .scaledFont(size: 12, weight: .medium)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(codexBackend.loginInProgress ? Color.gray : Color(red: 0.063, green: 0.639, blue: 0.498))
+                            )
                         }
-
-                        if codexBackend.authMode == "none" {
-                            VStack(alignment: .leading, spacing: 8) {
-                                if let loginErr = codexBackend.loginError {
-                                    Text("Login failed: \(loginErr)")
-                                        .scaledFont(size: 12)
-                                        .foregroundColor(.red)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                Button(action: {
-                                    if codexBackend.loginInProgress {
-                                        chatProvider?.cancelCodexLogin()
-                                    } else {
-                                        chatProvider?.startCodexLogin()
-                                    }
-                                }) {
-                                    HStack(spacing: 6) {
-                                        if codexBackend.loginInProgress {
-                                            ProgressView().controlSize(.mini)
-                                            Text("Connecting... (click to cancel)")
-                                        } else {
-                                            Image(systemName: "person.badge.key")
-                                            Text("Connect ChatGPT subscription")
-                                        }
-                                    }
-                                    .scaledFont(size: 12, weight: .medium)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 7)
-                                            .fill(codexBackend.loginInProgress ? Color.gray : Color(red: 0.063, green: 0.639, blue: 0.498))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.top, 4)
-                            }
-                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
