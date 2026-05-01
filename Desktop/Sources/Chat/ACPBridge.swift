@@ -363,6 +363,12 @@ actor ACPBridge {
     continuationBox.resumeAny(throwing: BridgeError.stopped)
     lastExitWasOOM = false
 
+    // Sweep any orphaned bridge / ACP / codex-acp processes left over from prior
+    // app runs that crashed without graceful shutdown. Each orphan can hold ~600MB
+    // of `claude` CLI + MCP servers, so this is critical hygiene before launching
+    // a new bridge. Belt-and-suspenders alongside the in-bridge PPID watchdog.
+    Self.sweepOrphanedBridges()
+
     let nodePath = findNodeBinary()
     guard let nodePath else {
       throw BridgeError.nodeNotFound
@@ -580,6 +586,83 @@ actor ACPBridge {
     }
     // Kill the root process itself
     kill(pid, SIGTERM)
+  }
+
+  /// Find and kill orphaned ACP-related processes from previous app runs.
+  /// When the Swift app crashes / is force-killed, the bridge subprocess (and its
+  /// patched-acp-entry / claude / MCP descendants) get re-parented to launchd
+  /// (PPID=1) and survive forever. Each orphan holds ~600MB. We sweep them here
+  /// before spawning a new bridge so they don't accumulate across user sessions.
+  ///
+  /// The in-bridge PPID watchdog handles the "next 5s after crash" case; this
+  /// handles the "user just opened the app after a prior crash" case.
+  static func sweepOrphanedBridges() {
+    // Match the script names of every process in our ACP subtree:
+    //   - dist/index.js          → the bridge itself (Node)
+    //   - patched-acp-entry.mjs  → ACP server (spawned by bridge with detached:true)
+    //   - codex-acp              → third-party ACP server (Zed)
+    // We deliberately do NOT match every Node process; only ones whose argv contains
+    // an acp-bridge path or codex-acp binary path.
+    let needles = [
+      "acp-bridge/dist/index.js",
+      "acp-bridge/dist/patched-acp-entry.mjs",
+      "patched-acp-entry.mjs",
+      "codex-acp-darwin",
+      "/codex-acp",
+    ]
+
+    // Snapshot all processes with PID, PPID, and full command line.
+    let pipe = Pipe()
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+    proc.arguments = ["-axo", "pid=,ppid=,command="]
+    proc.standardOutput = pipe
+    proc.standardError = FileHandle.nullDevice
+    do { try proc.run() } catch {
+      log("ACPBridge: sweep — failed to run ps: \(error)")
+      return
+    }
+    proc.waitUntilExit()
+
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    guard let output = String(data: data, encoding: .utf8) else { return }
+
+    let myPid = Int32(ProcessInfo.processInfo.processIdentifier)
+    var orphanPids: [Int32] = []
+
+    for rawLine in output.split(separator: "\n") {
+      let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+      // ps format: "<pid> <ppid> <command>"
+      let parts = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+      guard parts.count == 3,
+            let pid = Int32(parts[0]),
+            let ppid = Int32(parts[1])
+      else { continue }
+      let cmd = String(parts[2])
+
+      // Skip ourselves and our descendants — only target actual orphans.
+      // PPID==1 means the original parent (a previous Fazm.app instance) is gone.
+      // We also catch PPID==<dead-bridge-pid> by intersecting with needle match.
+      guard ppid == 1 else { continue }
+      guard pid != myPid else { continue }
+
+      let matched = needles.contains { cmd.contains($0) }
+      if matched {
+        orphanPids.append(pid)
+      }
+    }
+
+    if orphanPids.isEmpty {
+      log("ACPBridge: sweep — no orphaned bridge processes found")
+      return
+    }
+
+    log("ACPBridge: sweep — found \(orphanPids.count) orphaned process(es): \(orphanPids)")
+    for orphanPid in orphanPids {
+      // Kill the entire subtree (the orphan plus any children it spawned —
+      // claude CLI, playwright-mcp, whatsapp-mcp, macos-use, google-workspace).
+      killProcessTree(orphanPid)
+    }
   }
 
   // MARK: - Authentication
