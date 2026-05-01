@@ -111,6 +111,7 @@ struct SettingsSidebar: View {
     @State private var updateGlowAnimating = false
     @State private var discoveredTasksUnread = 0
     @FocusState private var isSearchFocused: Bool
+    @Environment(\.fazmWindowIsVisible) private var windowIsVisible
 
     // Surfaces the Sparkle 4005 install error state so users can recover after
     // dismissing the setup guide. Set in UpdaterViewModel when 4005 fires; cleared
@@ -422,9 +423,26 @@ struct SettingsSidebar: View {
         .buttonStyle(.plain)
         .disabled(updaterViewModel.updateSessionInProgress)
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                updateGlowAnimating = true
+            startGlowIfVisible()
+        }
+        .onChange(of: windowIsVisible) { _, visible in
+            // Pause the repeatForever pulse when the window is occluded —
+            // SwiftUI's animation would otherwise keep the AttributeGraph
+            // dirty every frame and force AppKit to re-layout (CPU burn).
+            if visible {
+                startGlowIfVisible()
+            } else {
+                withAnimation(.default) {
+                    updateGlowAnimating = false
+                }
             }
+        }
+    }
+
+    private func startGlowIfVisible() {
+        guard windowIsVisible else { return }
+        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+            updateGlowAnimating = true
         }
     }
 
