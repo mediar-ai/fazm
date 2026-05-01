@@ -97,6 +97,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
         let hosting = NSHostingView(rootView: AnyView(
             chatView
                 .withFontScaling()
+                .trackWindowVisibility()
         ))
         // Use a container view with explicit Auto Layout constraints so the
         // hosting view fills the window content area. Without this, the default
