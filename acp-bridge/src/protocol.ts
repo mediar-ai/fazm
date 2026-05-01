@@ -100,6 +100,16 @@ export interface CodexInitProbeMessage {
   type: "codex_init_probe";
 }
 
+/** Start the Codex (ChatGPT) OAuth login flow. */
+export interface CodexLoginMessage {
+  type: "codex_login";
+}
+
+/** Cancel an in-progress Codex OAuth login flow. */
+export interface CodexLoginCancelMessage {
+  type: "codex_login_cancel";
+}
+
 export interface CancelAuthMessage {
   type: "cancel_auth";
 }
@@ -114,7 +124,9 @@ export type InboundMessage =
   | ResetSessionMessage
   | TransferSessionMessage
   | CancelAuthMessage
-  | CodexInitProbeMessage;
+  | CodexInitProbeMessage
+  | CodexLoginMessage
+  | CodexLoginCancelMessage;
 
 // === Bridge → Swift (stdout) ===
 
@@ -365,6 +377,23 @@ export interface CodexProbeResultMessage {
   error?: string;
 }
 
+/** OAuth URL for the Codex (ChatGPT) login flow — open this in the browser. */
+export interface CodexLoginUrlMessage {
+  type: "codex_login_url";
+  url: string;
+}
+
+/** Codex OAuth login completed and auth.json has been written. */
+export interface CodexLoginCompleteMessage {
+  type: "codex_login_complete";
+}
+
+/** Codex OAuth login failed. */
+export interface CodexLoginErrorMessage {
+  type: "codex_login_error";
+  error: string;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -393,4 +422,7 @@ export type OutboundMessage =
   | McpServersAvailableMessage
   | SessionExpiredMessage
   | SessionStartedMessage
-  | CodexProbeResultMessage;
+  | CodexProbeResultMessage
+  | CodexLoginUrlMessage
+  | CodexLoginCompleteMessage
+  | CodexLoginErrorMessage;
