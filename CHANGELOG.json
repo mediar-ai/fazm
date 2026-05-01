@@ -17,7 +17,8 @@
     "Streamlined GPT model picker to show only the latest generation (GPT-5.5)",
     "Fixed conversations dying with \"AI took too long\" when sub-agents legitimately ran long; bumped inactivity timeout to 10 min with deferral up to 1 hour, and bridge now heartbeats long-running tools so the wait timer resets",
     "Fixed session recovery replaying messages from old conversations instead of the current session",
-    "Fixed memory leak from orphan ACP bridge processes that accumulated across crashes (each consumed ~600MB)"
+    "Fixed memory leak from orphan ACP bridge processes that accumulated across crashes (each consumed ~600MB)",
+    "Switched to flat $9.99/month subscription with no free trial; paywall now appears immediately on launch for users without an active subscription"
   ],
   "releases": [
     {
