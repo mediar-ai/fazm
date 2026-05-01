@@ -1102,13 +1102,26 @@ class ChatProvider: ObservableObject {
                     }
                 }
             }
-            // Codex login flow handlers — open browser URL, then re-probe on completion.
-            // Open in Chrome (not default browser) so the user's existing ChatGPT/OpenAI
-            // session cookies are reused, and so we can drive it via Playwright if needed.
+            // Codex login flow handlers — surface a modal with the auth URL so the
+            // user can pick their browser (Chrome reuses ChatGPT cookies; default
+            // browser respects user preference).
             await acpBridge.setCodexLoginHandlers(
-                onUrl: { url in
+                onUrl: { [weak self] url in
                     Task { @MainActor in
-                        BrowserExtensionSetup.openURLInChrome(url)
+                        CodexAuthWindowController.shared.show(
+                            url: url,
+                            onOpenChrome: {
+                                BrowserExtensionSetup.openURLInChrome(url)
+                            },
+                            onOpenDefault: {
+                                if let nsUrl = URL(string: url) {
+                                    NSWorkspace.shared.open(nsUrl)
+                                }
+                            },
+                            onCancel: {
+                                self?.cancelCodexLogin()
+                            }
+                        )
                     }
                 },
                 onComplete: {
