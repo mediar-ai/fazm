@@ -16,11 +16,17 @@ echo ""
 echo "=== Release started at $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
 echo "Log file: $RELEASE_LOG"
 
-# Load .env if present (for SPARKLE_PRIVATE_KEY, NOTARIZE_PASSWORD, etc.)
+# Load .env if present (for SPARKLE_PRIVATE_KEY, NOTARIZE_PASSWORD, RELEASE_SECRET, etc.)
 # Using set -a/source instead of xargs to handle multiline values (APPLE_PRIVATE_KEY)
 if [ -f ".env" ]; then
     set -a
     source .env
+    set +a
+fi
+# Load .env.app for runtime config (FAZM_BACKEND_URL needed for Firestore registration)
+if [ -f ".env.app" ]; then
+    set -a
+    source .env.app
     set +a
 fi
 
@@ -800,6 +806,40 @@ if command -v gh &> /dev/null; then
 else
     echo "  Warning: GitHub CLI (gh) not found"
     echo "  Install with: brew install gh"
+fi
+
+# -----------------------------------------------------------------------------
+# Register release in Firestore so the Cloud Run /appcast.xml serves it.
+# Mirrors codemagic.yaml's "Register release in Firestore" step. Without this,
+# installed Fazm clients (which read from FAZM_BACKEND_URL/appcast.xml) will
+# never see the new version, regardless of what is on GitHub.
+# -----------------------------------------------------------------------------
+echo "  Registering release in Firestore (staging channel)..."
+FAZM_BACKEND_URL="${FAZM_BACKEND_URL:-https://fazm-backend-472661769323.us-east5.run.app}"
+if [ -z "$RELEASE_SECRET" ]; then
+    echo "  ✗ RELEASE_SECRET not set in .env — cannot register release with backend."
+    echo "    Aborting: live Fazm clients would not see this update."
+    exit 1
+fi
+REG_RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $RELEASE_SECRET" \
+    -d "{\"tag\":\"$RELEASE_TAG\",\"version\":\"$VERSION\",\"build\":\"$BUILD_NUMBER\"}" \
+    "${FAZM_BACKEND_URL}/api/releases/register")
+REG_HTTP=$(echo "$REG_RESPONSE" | tail -n1)
+REG_BODY=$(echo "$REG_RESPONSE" | sed '$d')
+if [ "$REG_HTTP" = "200" ] || [ "$REG_HTTP" = "201" ]; then
+    echo "  ✓ Release registered in Firestore (channel=staging)"
+else
+    echo "  ✗ Firestore registration failed (HTTP $REG_HTTP): $REG_BODY"
+    echo "    The GitHub release was created but live Fazm clients will not auto-update."
+    echo "    Investigate the backend, then re-register manually with:"
+    echo "      curl -X POST -H \"Authorization: Bearer \$RELEASE_SECRET\" \\"
+    echo "        -H \"Content-Type: application/json\" \\"
+    echo "        -d '{\"tag\":\"$RELEASE_TAG\",\"version\":\"$VERSION\",\"build\":\"$BUILD_NUMBER\"}' \\"
+    echo "        ${FAZM_BACKEND_URL}/api/releases/register"
+    exit 1
 fi
 
 # -----------------------------------------------------------------------------

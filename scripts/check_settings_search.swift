@@ -74,6 +74,7 @@ let ignoredTextLabels: Set<String> = [
     // Display-only / informational text
     "The quick brown fox jumps over the lazy dog",  // Font size preview string
     "Loading...",                    // Loading state indicator
+    "Connecting... (click to cancel)", // Codex login transient state
     "Coming Soon",                  // Feature not yet available label
     "Automatically detects and transcribes:",  // Transcription info label
 
