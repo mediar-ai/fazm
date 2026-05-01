@@ -38,6 +38,10 @@ final class CodexBackendManager: ObservableObject {
     @Published private(set) var loginInProgress: Bool = false
     /// Error message from the last failed login attempt. nil on success or no attempt.
     @Published private(set) var loginError: String?
+    /// Model id the user picked from the dropdown while unauthenticated. After
+    /// OAuth completes, ChatProvider promotes this to the active model so the
+    /// click-to-connect flow lands on the model the user wanted.
+    @Published var pendingPickerModelId: String?
 
     static let enabledKey = "fazm.codex.enabled"
 
@@ -58,7 +62,14 @@ final class CodexBackendManager: ObservableObject {
     }
 
     private init() {
-        self.enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        // Default ON for new installs so GPT models appear in the picker out of the box.
+        // Existing users who explicitly toggled off keep their preference.
+        if UserDefaults.standard.object(forKey: Self.enabledKey) == nil {
+            UserDefaults.standard.set(true, forKey: Self.enabledKey)
+            self.enabled = true
+        } else {
+            self.enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        }
     }
 
     /// Called from ACPBridge's onCodexProbeResult handler.
