@@ -2990,6 +2990,29 @@ class ChatProvider: ObservableObject {
                 messageText = messages[index].text.isEmpty ? queryResult.text : messages[index].text
                 messages[index].text = messageText
                 messages[index].isStreaming = false
+
+                // Safety net: streaming buffers and addToolActivity silently
+                // drop their writes when messages.firstIndex(...) returns nil
+                // (e.g. the bubble briefly slips out of the array on a session
+                // transition or a Combine sink reordering). When that happens,
+                // `messageText` still gets the right answer via queryResult.text
+                // but contentBlocks stays empty, so the bubble renders blank.
+                // Synthesize a text block from the final text so the user sees
+                // the answer that was already saved to disk and to backend.
+                let hasRenderableText = messages[index].contentBlocks.contains { block in
+                    if case .text(_, let t) = block, !t.isEmpty { return true }
+                    return false
+                }
+                if !hasRenderableText && !messageText.isEmpty {
+                    messages[index].contentBlocks.append(
+                        .text(id: UUID().uuidString, text: messageText)
+                    )
+                    log("ChatProvider: stream_blocks_recovered — contentBlocks had no text but result.text=\(messageText.count) chars, synthesized fallback block (tools=\(toolNames.count))")
+                    let breadcrumb = Breadcrumb(level: .warning, category: "chat")
+                    breadcrumb.message = "stream_blocks_recovered (len=\(messageText.count), tools=\(toolNames.count), mode=\(bridgeMode))"
+                    SentrySDK.addBreadcrumb(breadcrumb)
+                }
+
                 completeRemainingToolCalls(messageId: aiMessageId)
 
                 // Forward final result to phone
@@ -3473,6 +3496,19 @@ class ChatProvider: ObservableObject {
         streamingBuffers[id]?.flushWorkItem = nil
 
         guard let index = messages.firstIndex(where: { $0.id == id }) else {
+            // Silent-drop: the message slot has gone away (window closed,
+            // session switched, etc.). Surface the loss as a breadcrumb so
+            // we can see when the result-text safety net at the end of the
+            // query loop is masking real streaming-pipeline drops.
+            let buf = streamingBuffers[id]
+            let textLen = buf?.textBuffer.count ?? 0
+            let thinkingLen = buf?.thinkingBuffer.count ?? 0
+            if textLen > 0 || thinkingLen > 0 {
+                log("ChatProvider: stream_buffer_dropped — id=\(id) textLen=\(textLen) thinkingLen=\(thinkingLen) (message no longer in array)")
+                let breadcrumb = Breadcrumb(level: .warning, category: "chat")
+                breadcrumb.message = "stream_buffer_dropped (textLen=\(textLen), thinkingLen=\(thinkingLen))"
+                SentrySDK.addBreadcrumb(breadcrumb)
+            }
             streamingBuffers.removeValue(forKey: id)
             return
         }
@@ -3563,7 +3599,16 @@ class ChatProvider: ObservableObject {
         // the text_block_boundary message hasn't arrived yet.
         streamingBuffers[messageId, default: StreamingBuffer()].forceNewTextBlock = true
 
-        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else {
+            // Silent-drop: tool activity arrived for a message that's no longer
+            // in the array. This is what causes the empty-bubble bug — 17 tool
+            // blocks vanish without a trace. Breadcrumb so it shows up in Sentry.
+            log("ChatProvider: tool_activity_dropped — id=\(messageId) tool=\(toolName) status=\(status) (message no longer in array)")
+            let breadcrumb = Breadcrumb(level: .warning, category: "chat")
+            breadcrumb.message = "tool_activity_dropped (tool=\(toolName), status=\(status))"
+            SentrySDK.addBreadcrumb(breadcrumb)
+            return
+        }
 
         let toolInput = input.flatMap { ChatContentBlock.toolInputSummary(for: toolName, input: $0) }
 
