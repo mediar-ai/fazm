@@ -101,6 +101,20 @@ struct DesktopHomeView: View {
         .background(FazmColors.backgroundPrimary)
         .frame(minWidth: 900, minHeight: 600)
         .tint(FazmColors.purplePrimary)
+        // Hard paywall at sign-in: the moment auth flips to signed-in, refresh
+        // subscription status and gate the user before onboarding can start.
+        // Re-runs on every sign-in (also fires once at launch when cached auth
+        // restores isSignedIn = true).
+        .task(id: authState.isSignedIn) {
+            guard authState.isSignedIn else { return }
+            log("DesktopHomeView: sign-in detected — checking subscription")
+            await SubscriptionService.shared.refreshStatus()
+            if SubscriptionService.shared.shouldShowPaywall() {
+                log("DesktopHomeView: sign-in gate — no active subscription, showing paywall")
+                viewModelContainer.chatProvider.showPaywall = true
+                PaywallWindowController.shared.show(chatProvider: viewModelContainer.chatProvider)
+            }
+        }
         // Observe ChatProvider flags
         .onReceive(viewModelContainer.chatProvider.$needsBrowserExtensionSetup) { needs in
             if needs {
