@@ -401,6 +401,15 @@ class DetachedChatWindowController {
     /// or observe `Notification.Name.detachedChatWindowsDidChange` for change events.
     var openWindowCount: Int { entries.count }
 
+    /// Apply a model id to every open detached window's per-window selection.
+    /// Used after the Codex OAuth flow promotes a pending GPT pick so the visible
+    /// dropdowns flip to the requested model immediately.
+    func applyModelToAllWindows(_ modelId: String) {
+        for entry in entries.values {
+            entry.window.state.selectedModel = modelId
+        }
+    }
+
     /// Post a notification on the main queue so SwiftUI views can refresh their
     /// open-window count. Call this after every mutation of `entries`.
     private func notifyWindowsChanged() {
