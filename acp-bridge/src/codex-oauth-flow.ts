@@ -135,11 +135,31 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
 
 // --- Callback Server ---
 
+// OpenAI only accepts these specific ports as registered redirect URIs for the Codex client.
+// Match the same port selection logic used by the codex-rs login/src/server.rs.
+const CALLBACK_PORT_DEFAULT = 1455;
+const CALLBACK_PORT_FALLBACK = 1457;
+
 async function startCallbackServer(): Promise<{ server: Server; port: number }> {
+  for (const port of [CALLBACK_PORT_DEFAULT, CALLBACK_PORT_FALLBACK]) {
+    try {
+      const result = await tryBindPort(port);
+      return result;
+    } catch {
+      // Try next port
+    }
+  }
+  throw new Error(`Failed to bind OAuth callback server on ports ${CALLBACK_PORT_DEFAULT} or ${CALLBACK_PORT_FALLBACK}. Another process may be using them.`);
+}
+
+function tryBindPort(port: number): Promise<{ server: Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.once("error", (err) => {
+      server.close();
+      reject(err);
+    });
+    server.listen(port, "127.0.0.1", () => {
       const addr = server.address();
       if (!addr || typeof addr === "string") {
         reject(new Error("Failed to get server address"));
