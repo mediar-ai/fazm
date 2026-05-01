@@ -618,8 +618,30 @@ class AnalyticsManager {
         PostHogManager.shared.track("chat_tool_call_completed", properties: props)
     }
 
-    func chatAgentError(error: String) {
-        let props: [String: Any] = ["error": error]
+    func chatAgentError(
+        error: String,
+        durationMs: Int? = nil,
+        hadTokens: Bool? = nil,
+        bridgeMode: String? = nil,
+        model: String? = nil,
+        toolsRunning: [String]? = nil,
+        toolsUsed: [String]? = nil,
+        sessionKey: String? = nil
+    ) {
+        var props: [String: Any] = ["error": error]
+        if let durationMs = durationMs { props["duration_ms"] = durationMs }
+        if let hadTokens = hadTokens { props["had_tokens"] = hadTokens }
+        if let bridgeMode = bridgeMode { props["bridge_mode"] = bridgeMode }
+        if let model = model { props["model"] = model }
+        if let toolsRunning = toolsRunning, !toolsRunning.isEmpty {
+            props["tools_running"] = toolsRunning.joined(separator: ",")
+            props["tools_running_count"] = toolsRunning.count
+        }
+        if let toolsUsed = toolsUsed, !toolsUsed.isEmpty {
+            props["tools_used"] = toolsUsed.joined(separator: ",")
+            props["tools_used_count"] = toolsUsed.count
+        }
+        if let sessionKey = sessionKey { props["session_key"] = sessionKey }
         PostHogManager.shared.track("chat_agent_error", properties: props)
     }
 
