@@ -193,7 +193,14 @@ class ShortcutSettings: ObservableObject {
             let modelId = model.modelId
             // Try to match a known model family
             if let match = Self.modelFamilyMap.first(where: { modelId.contains($0.substring) }) {
-                let label = "\(match.short) (\(match.family), latest)"
+                // Surface bracket annotations (e.g. "[1m]" in "sonnet[1m]") so variants are distinguishable
+                let bracketSuffix: String
+                if let range = modelId.range(of: #"\[[^\]]+\]"#, options: .regularExpression) {
+                    bracketSuffix = " " + String(modelId[range])
+                } else {
+                    bracketSuffix = ""
+                }
+                let label = "\(match.short) (\(match.family)\(bracketSuffix), latest)"
                 return (ModelOption(id: modelId, label: label, shortLabel: match.short), match.order)
             }
             // Unknown model family: use the API name directly
