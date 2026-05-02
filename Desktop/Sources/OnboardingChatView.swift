@@ -1250,6 +1250,8 @@ struct OnboardingChatBubble: View {
                 return true
             case .observerCard:
                 return true
+            case .systemEvent:
+                return true
             }
         }
     }
@@ -1310,6 +1312,13 @@ struct OnboardingChatBubble: View {
                                 return nil
                             }
 
+                            // System event cards (session recovery, tool hang cancel, etc.) — rendered
+                            // distinct from regular AI bubbles so the user can SEE the event happened.
+                            let systemEvents = message.contentBlocks.compactMap { block -> SystemEvent? in
+                                if case .systemEvent(_, let event) = block { return event }
+                                return nil
+                            }
+
                             if !combinedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Markdown(combinedText)
                                     .markdownTheme(.aiMessage())
@@ -1329,6 +1338,10 @@ struct OnboardingChatBubble: View {
 
                             ForEach(discoveryCards, id: \.title) { card in
                                 DiscoveryCard(title: card.title, summary: card.summary, fullText: card.fullText)
+                            }
+
+                            ForEach(Array(systemEvents.enumerated()), id: \.offset) { _, event in
+                                SystemEventCardView(event: event)
                             }
                         }
                     } else {
