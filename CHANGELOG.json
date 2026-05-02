@@ -1,11 +1,16 @@
 {
-  "unreleased": [
-    "Fixed popout chat recovery losing context after a second rate limit or bridge restart (added a per-window session-id chain so the priorContext replay spans every ACP session the conversation has held)",
-    "Fixed Send Now on a queued message bleeding across pop-out windows when multiple pop-outs were streaming concurrently",
-    "Improved session resume reliability: phantom session IDs (created but never written to disk) no longer trigger spurious session-expired notices on bridge restart",
-    "Fixed Chrome extension detection in Playwright MCP: browser tabs and browser automation now work correctly when Chrome uses a non-default profile (e.g. Profile 1)"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.7.2",
+      "date": "2026-05-02",
+      "changes": [
+        "Fixed popout chat recovery losing context after a second rate limit or bridge restart (added a per-window session-id chain so the priorContext replay spans every ACP session the conversation has held)",
+        "Fixed Send Now on a queued message bleeding across pop-out windows when multiple pop-outs were streaming concurrently",
+        "Improved session resume reliability: phantom session IDs (created but never written to disk) no longer trigger spurious session-expired notices on bridge restart",
+        "Fixed Chrome extension detection in Playwright MCP: browser tabs and browser automation now work correctly when Chrome uses a non-default profile (e.g. Profile 1)"
+      ]
+    },
     {
       "version": "2.7.1",
       "date": "2026-05-01",
