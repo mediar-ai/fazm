@@ -41,6 +41,79 @@ struct ObserverCardButton: Identifiable, Equatable {
     let action: String  // "dismiss" (rollback), "approve" (internal only)
 }
 
+// MARK: - System Event Card
+//
+// SystemEvent describes an out-of-band thing that happened to a conversation
+// (session abandoned + replaced, tool call hung + canceled, etc.) so the user
+// can see WHY the chat changed mid-stream instead of an unexplained switch in
+// the assistant's tone or capability. Persisted into messageText as a magic-
+// prefixed JSON string so the card survives reload of a conversation.
+
+struct SystemEvent: Equatable, Codable {
+    /// Discriminator the renderer uses to pick an icon / color / accent.
+    /// Add new kinds in `SystemEvent.Kind` rather than overloading existing ones.
+    enum Kind: String, Codable, Equatable {
+        case sessionRecovered     // upstream session expired, fresh session created and history replayed
+        case sessionRecoveryEmpty // upstream session expired, no local history available to replay
+        case toolHangCanceled     // a tool call exceeded its timeout, ACP session was canceled
+        case userInterrupted      // user manually interrupted, surfaced as a card so it's visible later
+    }
+
+    let kind: Kind
+    /// Short bold label rendered inside the card (e.g. "Session restored").
+    let title: String
+    /// Body text under the title; one or two sentences max.
+    let body: String
+    /// Optional structured detail values (sessionId pair, tool name, durations, etc.).
+    /// Rendered as a disclosure under the body so the card stays compact by default.
+    let details: [String: String]
+    /// Wall-clock time the event was generated (set by the producer, not the renderer).
+    let firedAt: Date
+
+    init(kind: Kind, title: String, body: String, details: [String: String] = [:], firedAt: Date = Date()) {
+        self.kind = kind
+        self.title = title
+        self.body = body
+        self.details = details
+        self.firedAt = firedAt
+    }
+
+    // MARK: - Persistence
+    //
+    // We don't have a separate column for content blocks in chat_messages, so we
+    // round-trip through `messageText` with a magic prefix. This means a system
+    // event message has empty/cosmetic text and the real payload is in the
+    // prefix. ChatMessageStore handles encode/decode transparently.
+
+    static let messageTextPrefix = "<<FAZM_SYSTEM_EVENT_V1>>"
+
+    /// Encode as a `messageText` string. Returns the prefix + base64(JSON).
+    /// We base64 the JSON so we never have to worry about embedded newlines or
+    /// quote escaping inside SQLite TEXT.
+    func encodeForMessageText() -> String {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(self),
+              let _ = String(data: data, encoding: .utf8) else {
+            // Fall back to a human-readable line so we never silently drop the event.
+            return Self.messageTextPrefix + "FALLBACK:" + title + " — " + body
+        }
+        return Self.messageTextPrefix + data.base64EncodedString()
+    }
+
+    /// Decode from a `messageText` string. Returns nil if the prefix is missing
+    /// or the payload is malformed; callers should fall back to plain text.
+    static func decodeFromMessageText(_ text: String) -> SystemEvent? {
+        guard text.hasPrefix(messageTextPrefix) else { return nil }
+        let body = String(text.dropFirst(messageTextPrefix.count))
+        if body.hasPrefix("FALLBACK:") { return nil } // legacy fallback rows; render as text
+        guard let data = Data(base64Encoded: body) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(SystemEvent.self, from: data)
+    }
+}
+
 /// A block of content within an AI message (text or tool call indicator)
 enum ChatContentBlock: Identifiable, Equatable {
     case text(id: String, text: String)
@@ -53,6 +126,12 @@ enum ChatContentBlock: Identifiable, Equatable {
     case discoveryCard(id: String, title: String, summary: String, fullText: String)
     /// Chat observer card — auto-accepted inline element, user can deny to rollback
     case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String? = nil)
+    /// System event card — out-of-band event that affected the conversation
+    /// (session expired, recovery succeeded, tool hung & was canceled, etc.).
+    /// Rendered as a distinct centered card so the user understands WHY the
+    /// conversation flow looks the way it does, instead of an italicized line
+    /// of markdown that's easy to miss.
+    case systemEvent(id: String, event: SystemEvent)
 
     var id: String {
         switch self {
@@ -61,6 +140,7 @@ enum ChatContentBlock: Identifiable, Equatable {
         case .thinking(let id, _): return id
         case .discoveryCard(let id, _, _, _): return id
         case .observerCard(let id, _, _, _, _, _): return id
+        case .systemEvent(let id, _): return id
         }
     }
 
