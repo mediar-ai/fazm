@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed popout chat recovery losing context after a second rate limit or bridge restart (added a per-window session-id chain so the priorContext replay spans every ACP session the conversation has held)"
+    "Fixed popout chat recovery losing context after a second rate limit or bridge restart (added a per-window session-id chain so the priorContext replay spans every ACP session the conversation has held)",
+    "Fixed Send Now on a queued message bleeding across pop-out windows when multiple pop-outs were streaming concurrently"
   ],
   "releases": [
     {
