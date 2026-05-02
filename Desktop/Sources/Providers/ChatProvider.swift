@@ -2501,29 +2501,50 @@ class ChatProvider: ObservableObject {
 
     /// Interrupt the current query and send a message immediately.
     /// If the AI is idle, sends the message directly without interrupting.
-    func interruptAndSend(_ text: String) async {
+    ///
+    /// Pass the caller's `sessionKey` so the send-now is scoped to the correct
+    /// pop-out / floating bar. Without a key we fall back to `activeSessionKey`,
+    /// which is whichever session most recently started a query (could belong
+    /// to a different window) — that fallback is what caused the message to
+    /// surface in the wrong pop-out and the bridge to interrupt all concurrent
+    /// sessions instead of just the targeted one.
+    func interruptAndSend(_ text: String, sessionKey: String? = nil) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
+        let targetKey = sessionKey ?? activeSessionKey
 
         // Remove any existing enqueued copy to avoid sending the same message twice
-        // (e.g. user enqueues a follow-up, then taps "Send Now" on the queued item)
-        if let existingIdx = pendingMessages.firstIndex(where: { $0.text == trimmedText }) {
+        // (e.g. user enqueues a follow-up, then taps "Send Now" on the queued item).
+        // Match on (text, sessionKey) so we don't yank a sibling pop-out's queued
+        // message with the same text.
+        if let existingIdx = pendingMessages.firstIndex(where: { $0.text == trimmedText && $0.sessionKey == targetKey }) {
             pendingMessages.remove(at: existingIdx)
         }
 
-        // If idle, send directly as a follow-up
-        if !isSending {
-            log("ChatProvider: send-now (idle), sending directly")
-            NotificationCenter.default.post(name: .chatProviderDidDequeue, object: nil, userInfo: ["text": trimmedText, "sessionKey": activeSessionKey ?? ""])
-            await sendMessage(trimmedText, isFollowUp: false, sessionKey: activeSessionKey)
+        // If THIS session isn't currently sending, send directly as a follow-up.
+        // We check sendingSessionKeys for the target key (not the global isSending)
+        // so a busy sibling pop-out doesn't force this session through the
+        // interrupt path.
+        let targetBusy: Bool = {
+            if let key = targetKey {
+                return sendingSessionKeys.contains(key)
+            }
+            return isSending
+        }()
+        if !targetBusy {
+            log("ChatProvider: send-now (session idle), sending directly to session=\(targetKey ?? "default")")
+            NotificationCenter.default.post(name: .chatProviderDidDequeue, object: nil, userInfo: ["text": trimmedText, "sessionKey": targetKey ?? ""])
+            await sendMessage(trimmedText, isFollowUp: false, sessionKey: targetKey)
             return
         }
 
-        // Add as user message in UI
+        // Add as user message in UI, tagged to the target session so it doesn't
+        // bleed across windows in any consumer that filters by sessionKey.
         let userMessage = ChatMessage(
             id: UUID().uuidString,
             text: trimmedText,
-            sender: .user
+            sender: .user,
+            sessionKey: targetKey
         )
         messages.append(userMessage)
 
@@ -2550,10 +2571,18 @@ class ChatProvider: ObservableObject {
             }
         }
 
-        // Insert at front of queue and interrupt — userMessageAdded=true because we added it above
-        pendingMessages.insert((text: trimmedText, sessionKey: activeSessionKey, userMessageAdded: true), at: 0)
-        await acpBridge.interrupt()
-        log("ChatProvider: interrupt+send, \(pendingMessages.count) pending")
+        // Insert at front of queue and interrupt — userMessageAdded=true because
+        // we added it above. Scope both to the target session so the natural
+        // drain path picks the right entry and dispatches the chatProviderDidDequeue
+        // notification with the correct sessionKey (which the matching pop-out
+        // listens for to update displayedQuery and remove the queue chip).
+        pendingMessages.insert((text: trimmedText, sessionKey: targetKey, userMessageAdded: true), at: 0)
+        if let key = targetKey {
+            await acpBridge.interrupt(sessionKey: key)
+        } else {
+            await acpBridge.interrupt()
+        }
+        log("ChatProvider: interrupt+send for session=\(targetKey ?? "default"), \(pendingMessages.count) pending")
     }
 
     /// Remove a pending message by matching text (used when UI deletes from queue).
