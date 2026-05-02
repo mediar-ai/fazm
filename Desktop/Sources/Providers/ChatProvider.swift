@@ -2663,18 +2663,40 @@ class ChatProvider: ObservableObject {
             }
 
             if let ctx = storeContext {
-                // Resolve the current session ID for this window so we only replay
-                // messages from the active conversation, not from previous chats
-                // that share the same taskId (e.g. multiple __floating__ sessions).
-                let currentSessionId: String?
+                // Resolve the *set* of session IDs that belong to the active conversation
+                // so we replay history across upstream session-id rollovers.
+                //
+                // Floating bar: messages are stamped with `floatingChatSessionId`
+                //   (a client-generated UUID that's stable across ACP rollovers and only
+                //   resets on "New Chat" / pop-out), so a single-id filter is correct
+                //   and chain-aware-by-design.
+                //
+                // Detached popouts: messages are stamped with the upstream ACP session id,
+                //   which rolls forward whenever session/resume fails (rate limit, credit
+                //   exhaust, bridge restart, upstream expiry). The chain
+                //   (`acpSessionId_<key>_<mode>_chain`) tracks every ACP id this popout
+                //   has ever held, so loading by chain spans the full conversation
+                //   instead of stranding pre-rollover messages.
+                let recent: [ChatMessage]
                 if sessionKey == "floating" {
-                    currentSessionId = floatingChatSessionId
+                    recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: floatingChatSessionId, limit: 20)
                 } else if let key = sessionKey, key.hasPrefix("detached-") {
-                    currentSessionId = UserDefaults.standard.string(forKey: "acpSessionId_\(key)_\(bridgeMode)")
+                    let storageKey = "acpSessionId_\(key)_\(bridgeMode)"
+                    var ids = Self.loadSessionChain(storageKey: storageKey)
+                    if let head = UserDefaults.standard.string(forKey: storageKey),
+                       !head.isEmpty,
+                       !ids.contains(head) {
+                        ids.append(head)
+                    }
+                    if ids.isEmpty {
+                        // No chain yet (first turn ever in this popout) — load by context only.
+                        recent = await ChatMessageStore.loadMessages(context: ctx, sessionIds: nil, limit: 20)
+                    } else {
+                        recent = await ChatMessageStore.loadMessages(context: ctx, sessionIds: ids, limit: 20)
+                    }
                 } else {
-                    currentSessionId = nil
+                    recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: nil, limit: 20)
                 }
-                let recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: currentSessionId, limit: 20)
                 let mapped = recent.compactMap { msg -> (role: String, text: String)? in
                     let role = msg.sender == .user ? "user" : "assistant"
                     let text = msg.text.trimmingCharacters(in: .whitespacesAndNewlines)
