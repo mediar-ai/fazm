@@ -10,6 +10,7 @@ enum ContentBlockGroup: Identifiable, Equatable {
     case thinking(id: String, text: String)
     case discoveryCard(id: String, title: String, summary: String, fullText: String)
     case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String? = nil)
+    case systemEvent(id: String, event: SystemEvent)
 
 /// Equatable wrapper for tool call data in a group.
 struct ToolCallGroupItem: Equatable, Identifiable {
@@ -28,6 +29,7 @@ struct ToolCallGroupItem: Equatable, Identifiable {
         case .thinking(let id, _): return id
         case .discoveryCard(let id, _, _, _): return id
         case .observerCard(let id, _, _, _, _, _): return id
+        case .systemEvent(let id, _): return id
         }
     }
 
@@ -102,6 +104,11 @@ struct ToolCallGroupItem: Equatable, Identifiable {
                 flushText()
                 flushToolCalls()
                 result.append(.observerCard(id: id, activityId: activityId, type: type, content: content, buttons: buttons, actedAction: actedAction))
+
+            case .systemEvent(let id, let event):
+                flushText()
+                flushToolCalls()
+                result.append(.systemEvent(id: id, event: event))
             }
         }
 
@@ -367,6 +374,104 @@ struct DiscoveryCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - System Event Card
+
+/// Renders a `SystemEvent` (session recovery, tool hang cancellation, etc.)
+/// as a centered card inside the conversation. The goal is to make it
+/// obvious to the user that something out-of-band happened to the chat,
+/// instead of an italicized line of markdown that's easy to miss.
+///
+/// Visual style intentionally deviates from regular AI message bubbles:
+/// thin border, muted icon-led header, optional collapsible details.
+struct SystemEventCardView: View {
+    let event: SystemEvent
+    @State private var detailsExpanded: Bool = false
+
+    private var iconName: String {
+        switch event.kind {
+        case .sessionRecovered:     return "arrow.triangle.2.circlepath"
+        case .sessionRecoveryEmpty: return "exclamationmark.triangle"
+        case .toolHangCanceled:     return "xmark.octagon"
+        case .userInterrupted:      return "stop.circle"
+        }
+    }
+
+    private var accentColor: Color {
+        switch event.kind {
+        case .sessionRecovered:     return .blue
+        case .sessionRecoveryEmpty: return .orange
+        case .toolHangCanceled:     return .orange
+        case .userInterrupted:      return .gray
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: iconName)
+                    .scaledFont(size: 11)
+                    .foregroundColor(accentColor)
+                Text(event.title)
+                    .scaledFont(size: 12, weight: .semibold)
+                    .foregroundColor(.primary)
+                Spacer(minLength: 4)
+            }
+
+            Text(event.body)
+                .scaledFont(size: 12)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !event.details.isEmpty {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        detailsExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: detailsExpanded ? "chevron.down" : "chevron.right")
+                            .scaledFont(size: 9)
+                        Text(detailsExpanded ? "Hide details" : "Show details")
+                            .scaledFont(size: 11, weight: .medium)
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+
+                if detailsExpanded {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(event.details.sorted(by: { $0.key < $1.key }), id: \.key) { kv in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("\(kv.key):")
+                                    .scaledFont(size: 11, weight: .medium)
+                                    .foregroundColor(.secondary)
+                                    .frame(minWidth: 80, alignment: .leading)
+                                Text(kv.value)
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(.primary.opacity(0.85))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(accentColor.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(accentColor.opacity(0.25), lineWidth: 1)
                 )
         )
     }
