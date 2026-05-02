@@ -752,10 +752,16 @@ class DetachedChatWindowController {
             chatProvider?.enqueueMessage(message, sessionKey: key)
         }
 
-        win.onSendNowQueued = { [weak chatProvider] item in
-            guard let provider = chatProvider else { return }
+        win.onSendNowQueued = { [weak self, weak win, weak chatProvider] item in
+            guard let provider = chatProvider, let win else { return }
+            // Scope to THIS pop-out's session so the message lands in the right
+            // window. Without this, ChatProvider falls back to activeSessionKey
+            // (whichever session last started a query) — when two pop-outs are
+            // both streaming, the message ends up in the wrong window and the
+            // bare interrupt() call cancels both responses instead of just one.
+            let key = self?.entries[ObjectIdentifier(win)]?.sessionKey
             Task { @MainActor in
-                await provider.interruptAndSend(item.text)
+                await provider.interruptAndSend(item.text, sessionKey: key)
             }
         }
 
