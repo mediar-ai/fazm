@@ -611,6 +611,9 @@ struct AIResponseView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .observerCard:
                     EmptyView() // handled below
+                case .systemEvent(_, let event):
+                    SystemEventCardView(event: event)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
