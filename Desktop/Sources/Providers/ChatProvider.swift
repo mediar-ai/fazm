@@ -3295,6 +3295,52 @@ class ChatProvider: ObservableObject {
                             Task {
                                 await ChatMessageStore.saveMessage(notice, context: persistContext, sessionId: newSessionId)
                             }
+                        case .toolHangCanceled(let toolName, _, let durationSeconds, let reason):
+                            log("ChatProvider: tool_hang_canceled tool=\(toolName) duration=\(durationSeconds)s — surfacing system card")
+                            // Tool watchdog already canceled the ACP session and
+                            // unblocked the agent loop. We still need to make
+                            // the cancel VISIBLE: insert a system event card so
+                            // the user understands the turn was halted and why,
+                            // not just that everything went silent.
+                            let cleanToolName: String = {
+                                if toolName.hasPrefix("mcp__") {
+                                    return String(toolName.split(separator: "__").last ?? Substring(toolName))
+                                }
+                                return toolName
+                            }()
+                            let event = SystemEvent(
+                                kind: .toolHangCanceled,
+                                title: "Tool canceled",
+                                body: reason,
+                                details: [
+                                    "tool": cleanToolName,
+                                    "timeout": String(format: "%.0fs", durationSeconds),
+                                    "scope": sessionKey ?? "main",
+                                ]
+                            )
+                            let cancelId = UUID().uuidString
+                            let cancelNotice = ChatMessage(
+                                id: cancelId,
+                                text: "",
+                                sender: .ai,
+                                isStreaming: false,
+                                isSynced: false,
+                                contentBlocks: [.systemEvent(id: cancelId, event: event)],
+                                sessionKey: sessionKey
+                            )
+                            if let liveIdx = self.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                self.messages.insert(cancelNotice, at: liveIdx)
+                            } else {
+                                self.messages.append(cancelNotice)
+                            }
+                            let persistContext: String = sessionKey ?? "main"
+                            Task {
+                                await ChatMessageStore.saveMessage(cancelNotice, context: persistContext, sessionId: nil)
+                            }
+                            // Flip loading state off so the spinner stops; the
+                            // bridge already aborted the query but the UI was
+                            // still waiting for the result handler to fire.
+                            self.isAILoading = false
                         }
                     }
                 }
