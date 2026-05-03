@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Show silence overlay (mic picker + audio level) for short PTT taps so users get visible feedback when nothing was captured"
+  ],
   "releases": [
     {
       "version": "2.7.2",

@@ -1,222 +1,223 @@
 ---
 name: release
-description: Use when the user says "release", "cut a release", "ship a new version", "release new version", "do the desktop release", or "tag a release". Analyzes changes since the last release, generates the changelog, and runs the full release pipeline for OMI Desktop.
+description: Use when the user says "release", "cut a release", "ship a new version", "release new version", "do the desktop release", or "tag a release". Computes the next version, generates the changelog, pushes a `v*-macos` tag, and monitors the Codemagic CI build that produces and publishes the macOS desktop release. NEVER builds locally.
 allowed-tools: Bash, Read, Edit, Grep
 ---
 
-# OMI Desktop Release Skill
+# Fazm Desktop Release Skill (Codemagic-only)
 
-Release a new version of the OMI Desktop app with auto-generated changelog.
+Cut a new Fazm Desktop release. **All builds run in Codemagic CI** triggered by a `v*-macos` git tag. There is no local build path.
 
 ## CRITICAL RULES
 
-**NEVER run release.sh more than once.** Each run generates a unique EdDSA signature for the Sparkle ZIP. If you run it twice, the second run creates a new ZIP with a different signature but GitHub keeps the old ZIP — causing "improperly signed" errors for all users.
+1. **NEVER build the .app locally for a release.** No `xcodebuild`, no `xcrun swift build`, no shell wrapper that produces release artifacts. The local build path (`release.sh`) was deleted on purpose 2026-05-02. It silently stripped overlay assets and shipped two broken versions (v2.7.0 and v2.7.1) without `browser-overlay-init.js` because it lacked the codemagic.yaml hard-check. Codemagic has stricter checks; use it.
+2. **NEVER push the same `v*-macos` tag twice.** Each Codemagic build generates a fresh EdDSA signature for the Sparkle ZIP. Re-pushing the tag (or re-running the build) produces a new ZIP with a different signature while the OLD ZIP can still be cached on the appcast — Sparkle then refuses the update with "improperly signed" for every user. If you need to retry, **bump to the next patch version** (e.g. `v2.7.2+2007002-macos`).
+3. **NEVER edit `codemagic.yaml` mid-release.** If a step fails, root-cause first; do not patch CI to silence it. Once you know the fix, land it on `main`, bump version, push a fresh tag.
+4. **NEVER skip the changelog step.** Codemagic's "Prepare changelog" step commits the consolidated CHANGELOG.json back to `main`; if `unreleased` is empty, the GitHub release notes will be empty too.
+5. **Do not promote to beta or stable without explicit user approval.** Each promotion (staging → beta → stable) is a separate user decision.
 
-**NEVER run release steps manually.** Always use `./release.sh` for the entire pipeline.
+## How a release works (architecture)
 
-If `release.sh` fails mid-way:
-1. **DO NOT** manually run the remaining steps (staple, DMG, upload, etc.)
-2. **DO NOT** edit `release.sh` during a release to fix the issue
-3. **INVESTIGATE** why it failed
-4. **PROPOSE** changes to `release.sh` for the user to approve
-5. **RE-RUN** `./release.sh [version]` from the beginning after fixes
-
-**Why?** Manual steps lead to errors (wrong entitlements, wrong endpoints, missing signatures). The script is designed to run as a complete unit.
-
-**Exception:** If the failure is in the project code itself (not release.sh), fix the project code, then re-run release.sh.
-
-## Monitoring a Release
-
-release.sh logs all output to `/private/tmp/omi-release.log`. Use this to check progress:
-
-```bash
-# Check current step
-tail -20 /private/tmp/omi-release.log
-
-# Watch live progress
-tail -f /private/tmp/omi-release.log
-
-# Check if release.sh is still running
-ps aux | grep 'release.sh' | grep -v grep
-
-# Check if release was published to GitHub
-gh release list --repo BasedHardware/omi --limit 3
-
-# Check if appcast is serving the new version
-curl -s https://desktop-backend-hhibjajaja-uc.a.run.app/appcast.xml | grep shortVersionString
+```
+git tag v$VERSION+$BUILD-macos   →   git push origin <tag>   →   Codemagic triggers
+                                                                  ↓
+                                build · sign · notarize · staple · DMG · Sparkle ZIP
+                                                                  ↓
+                                       gh release create  +  Firestore register
+                                                                  ↓
+                                              appcast.xml deploy  →  users update
 ```
 
-**If the Bash tool sends release.sh to background** (long-running command), do NOT re-run it. Instead:
-1. Check `/private/tmp/omi-release.log` to see progress
-2. Check `ps aux | grep release.sh` to confirm it's still running
-3. Wait for completion — the full pipeline takes ~10-15 minutes
+- **Codemagic project**: `fazm-desktop-release` (workflow defined in `codemagic.yaml`)
+- **App ID**: `69a8b2c779d9075efc609b8d`
+- **API token**: `$CODEMAGIC_API_TOKEN` (set in `~/.zshrc`)
+- **Triggering tag patterns**: `v*-macos` (production) and `v*-macos-staging` (pre-release)
+- **Final artifacts**: `Fazm.zip` (Sparkle auto-update), `Fazm.dmg` (manual install), arch-specific zips on GCS, stub installer DMG
 
-## Release Process
+The full pipeline (in order, defined in `codemagic.yaml`):
+1. Extract version + build number from tag
+2. Set up keychain + Developer ID
+3. Build acp-bridge (TypeScript → JS, runs `npm install` which triggers `patch-playwright-overlay.cjs` postinstall)
+4. Prepare universal ffmpeg / Node / cloudflared (arm64 + x86_64)
+5. Resolve SPM packages
+6. Build mcp-server-macos-use, whatsapp-mcp (both arm64 + x86_64)
+7. Clone Google Workspace MCP
+8. Build Swift app (universal binary)
+9. Create universal app bundle — **includes the overlay file copy AND the `_fazmOverlayScript` hard-check**
+10. Sign app (Developer ID, all native binaries in node_modules)
+11. Notarize, staple
+12. Create arch-specific zips for stub installer
+13. Upload dSYMs to Sentry
+14. Create + sign + notarize + staple DMG
+15. Create Sparkle ZIP + EdDSA sign
+16. Prepare changelog (consolidates `unreleased` → versioned, commits back to main)
+17. Create GitHub release (uploads `Fazm.zip` and `Fazm.dmg`)
+18. Register release in Firestore (channel = `staging` initially)
+19. Deploy appcast.xml
+20. Upload arch-specific zips to GCS
+21. Build + upload stub installer
 
-### Step 1: Get commits since last release
+## Pre-release checklist (run locally BEFORE pushing the tag)
 
 ```bash
-LAST_TAG=$(git tag -l 'v*' | sort -V | tail -1)
-echo "Last release: $LAST_TAG"
-git log ${LAST_TAG}..HEAD --oneline --no-merges
-```
+# 1) Verify settings search coverage
+xcrun swift scripts/check_settings_search.swift
 
-### Step 2: Analyze changes and create changelog
-
-Review the commits and create a concise changelog. Group changes by category:
-- **New Features**: New functionality added
-- **Improvements**: Enhancements to existing features
-- **Bug Fixes**: Issues that were resolved
-
-Keep it user-friendly - focus on what users will notice, not internal changes.
-
-### Step 3: Verify changelog entries
-
-Changelog entries are auto-accumulated by agents in the `unreleased` array of `CHANGELOG.json`. Before releasing, verify entries exist and add any missing ones:
-
-```bash
-# Check current unreleased entries
-python3 -c "import json; data=json.load(open('CHANGELOG.json')); print('\n'.join(data.get('unreleased', [])) or '(empty — add entries before releasing)')"
-```
-
-If `unreleased` is empty, review the commits from Step 1 and add entries:
-
-```python
+# 2) Verify changelog has unreleased entries
 python3 -c "
 import json
-with open('CHANGELOG.json', 'r') as f:
-    data = json.load(f)
-data.setdefault('unreleased', []).extend([
-    'Your changelog item 1',
-    'Your changelog item 2'
-])
-with open('CHANGELOG.json', 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
+data = json.load(open('CHANGELOG.json'))
+entries = data.get('unreleased', [])
+if not entries:
+    print('FATAL: unreleased is empty — add entries before tagging'); exit(1)
+print('\n'.join(entries))
 "
+
+# 3) Working tree must be clean and on main
+git status --porcelain   # must be empty
+git rev-parse --abbrev-ref HEAD   # must be 'main'
+
+# 4) Sanity-check the bridge builds locally (catches TS errors before CI)
+cd acp-bridge && PATH=/opt/homebrew/bin:$PATH npm install --no-audit --no-fund && npm run build && cd ..
+
+# 5) Verify the playwright overlay patch still applies cleanly
+grep -q "_fazmOverlayScript" acp-bridge/node_modules/playwright-core/lib/coreBundle.js \
+  || { echo "FATAL: overlay patch did not apply locally — Codemagic will fail too"; exit 1; }
 ```
 
-The GitHub Actions workflow (`desktop_auto_release.yml`) consolidates these into a versioned release entry when the tag is created. The release script reads `releases[0]` for both GitHub release notes and Sparkle appcast.
+If any check fails, **fix it on `main` first**. Tagging a broken commit wastes ~20 min of CI time.
 
-### Step 4: Pre-flight checks
+## Cutting the release
 
-Before running release.sh, verify prerequisites are ready:
+### Step 1: Compute next version
+
+Versions are `MAJOR.MINOR.PATCH+BUILD`. Build number is monotonically increasing; the convention has been `MMmmppp + 2000000` (e.g. v2.7.1 → build `2007001`).
 
 ```bash
-# Docker must be running (needed for Cloud Run backend deploy)
-if ! docker info &>/dev/null; then
-  open -a Docker
-  echo "Waiting for Docker to start..."
-  for i in {1..30}; do docker info &>/dev/null && break; sleep 2; done
-fi
+LAST_TAG=$(git tag -l 'v*-macos' | grep -v staging | sort -V | tail -1)
+echo "Last release tag: $LAST_TAG"
+# Auto patch bump: 2.7.1 → 2.7.2, 2007001 → 2007002 → tag v2.7.2+2007002-macos
+# For minor/major bumps, ask the user.
 ```
 
-### Step 5: Run the release
+### Step 2: Push the tag
 
 ```bash
-./release.sh [version]
+TAG="v${VERSION}+${BUILD}-macos"
+git tag "$TAG"
+git push origin "$TAG"
 ```
 
-If no version specified, it auto-increments the patch version.
+That single push triggers Codemagic. Do **not** push to `main` separately for the release; Codemagic itself commits the consolidated changelog back during the build.
 
-### Step 6: Verify the release
-
-**MANDATORY** — Run verification immediately after release completes:
+### Step 3: Monitor the build
 
 ```bash
-./verify-release.sh [version]
+TOKEN=$CODEMAGIC_API_TOKEN
+APP_ID=69a8b2c779d9075efc609b8d
+TAG="v${VERSION}+${BUILD}-macos"
+
+# Wait briefly for Codemagic to register the tag, then locate the build
+sleep 30
+BUILD_ID=$(curl -s -H "x-auth-token: $TOKEN" \
+  "https://api.codemagic.io/builds?appId=$APP_ID&limit=10" | \
+  python3 -c "
+import json, sys
+for b in json.load(sys.stdin).get('builds', []):
+    if b.get('tag') == '$TAG':
+        print(b['_id']); break
+")
+echo "Build: $BUILD_ID"
+
+# Poll status (build takes ~20-30 min)
+while true; do
+  STATUS=$(curl -s -H "x-auth-token: $TOKEN" \
+    "https://api.codemagic.io/builds/$BUILD_ID" | \
+    python3 -c "import json, sys; print(json.load(sys.stdin)['build']['status'])")
+  echo "$(date +%T) status=$STATUS"
+  case "$STATUS" in
+    finished) echo "✓ Build succeeded"; break ;;
+    failed|canceled) echo "✗ Build $STATUS — fetch logs via the codemagic skill"; break ;;
+  esac
+  sleep 30
+done
+```
+
+If a step fails, fetch the per-step log via the `codemagic` skill and root-cause it. **Do not retry the same tag**; bump to the next patch version after the fix lands.
+
+### Step 4: Verify the release
+
+```bash
+./verify-release.sh "$VERSION"
 ```
 
 This script automatically:
-1. Checks the appcast serves the correct version
-2. Downloads the Sparkle ZIP (what auto-update users get)
-3. Verifies Gatekeeper acceptance and code signature
-4. Checks entitlements don't require a provisioning profile
-5. Launches the app and confirms it starts
-6. Checks the DMG download endpoint
+- Checks the appcast serves the correct version
+- Downloads `Fazm.zip` (what auto-updaters get) and verifies signature, notarization, Gatekeeper acceptance
+- Launches the app and confirms it starts
+- Checks the DMG download endpoint
 
-If verification fails, **immediately roll back** using the rollback skill (`.claude/skills/rollback/SKILL.md`).
+If verification fails, **immediately roll back** with the `rollback` skill (`.claude/skills/rollback/SKILL.md`) — do **not** try to "fix the live release" by pushing another tag.
 
-### Step 7: Smoke test the staging release
+### Step 5: Smoke-test on staging
 
-After the build completes and is registered on **staging**, run `/test-release` on the **remote MacStadium machine only** (staging channel). See `.claude/skills/test-release/SKILL.md`.
+A fresh release lands on the `staging` channel. Run `/test-release` on the **remote MacStadium machine** (staging channel only). See `.claude/skills/test-release/SKILL.md`.
 
-**Do NOT promote to beta.** Report staging test results and wait for the user to say "promote to beta".
+Report results. **Wait for explicit user approval** before promoting.
 
-### Step 8: Promote and test beta (only when user says so)
+### Step 6: Promote (only when user explicitly says so)
 
-After the user explicitly approves, run `./scripts/promote_release.sh <tag>` to promote staging → beta. Then run `/test-release` on the **local machine** (beta channel).
+```bash
+./scripts/promote_release.sh "$TAG"           # staging → beta
+# After user approves again:
+./scripts/promote_release.sh "$TAG" --stable  # beta → stable
+```
 
-**Do NOT promote to stable.** Report beta test results and wait for the user to say "promote to stable".
+Each promotion is a separate user decision. Re-test on the appropriate machine after each.
 
-Each promotion (staging → beta → stable) is a separate decision that **requires explicit user approval**.
+## Failure handling
 
-## What release.sh Does (12 Steps)
-
-1. Deploy Rust backend to Cloud Run
-2. Build the Swift desktop app
-3. Sign with Developer ID (including ffmpeg)
-4. Notarize with Apple
-5. Staple notarization ticket
-6. Create DMG installer
-7. Sign DMG
-8. Notarize DMG
-9. Staple DMG
-10. Create Sparkle ZIP for auto-updates
-11. Publish to GitHub and register in Firestore
-12. Trigger installation test
-
-## Handling Failures
-
-### Stapling fails (CDN propagation delay)
-This is common - Apple's CDN can be slow. **DO NOT** manually retry staple.
-- Wait a few minutes
-- Re-run `./release.sh [same-version]` from the beginning
-- The rebuild is fast (cached), notarization may be quick too
+### Codemagic step fails
+1. Identify the failing step from the build log (use the `codemagic` skill)
+2. Land the fix on `main`
+3. Bump to the next patch version (do **not** re-push the same tag)
+4. Push the new tag
 
 ### Notarization fails (unsigned binary)
-- Check the notarization log for which binary is unsigned
-- **Propose** adding signing for that binary in release.sh
-- After user approves the change, re-run release.sh
+- Check the notarytool log for the unsigned path
+- Add a `codesign --force --options runtime --timestamp $CS_PAGESIZE --sign "$SIGN_IDENTITY" "$path"` line to the "Sign app" step in `codemagic.yaml`
+- Land it, bump version, retag
 
-### GitHub/GCloud auth expires
-- Run `gh auth login` or `gcloud auth login`
-- Re-run release.sh
+### Stapling fails (Apple CDN propagation)
+- Common transient. Bump to the next patch version and retry. The build is fast on cache hit; notarization is usually quick the second time.
 
-### Docker not running
-- release.sh step 1 deploys the Rust backend to Cloud Run via Docker
-- Start Docker Desktop: `open -a Docker`
-- Wait for it to be ready: `docker info`
-- Re-run release.sh
+### Hard-check fails (`overlay asset … missing` or `coreBundle.js NOT patched`)
+- The patch script `acp-bridge/scripts/patch-playwright-overlay.cjs` did not match the current Playwright MCP shape (see commit `4584c94f` for the most recent successful update)
+- Fix the OLD_BLOCK / NEW_BLOCK in the patch script to match the new shape
+- Land the fix, bump version, retag
+- Do **not** set `FAZM_ALLOW_MISSING_OVERLAY=1` in CI just to ship — that ships a broken indicator
 
-### Build fails
-- This is a project code issue, not release.sh
-- Fix the code, then re-run release.sh
+### "Improperly signed" reported by users after release
+- Means the same tag was built twice with different EdDSA signatures, or the Sparkle ZIP on GitHub does not match the signature in the appcast
+- **Do not retag.** Bump to the next patch version and push a fresh release. The new appcast entry will carry the new ZIP and matching signature.
 
-## Environment Requirements
+## After a release ships
 
-The release requires these in `.env`:
-- `NOTARIZE_PASSWORD` - Apple app-specific password
-- `SPARKLE_PRIVATE_KEY` - EdDSA key for signing updates
-- `RELEASE_SECRET` - Backend API secret
-- `APPLE_PRIVATE_KEY` - For Apple Sign-In config
-- Various Firebase/Google/Apple OAuth keys
+- Append a changelog entry to `unreleased` in `CHANGELOG.json` for any subsequent user-visible change. The next release rolls those into its versioned entry automatically.
+- Use `./scripts/sentry-release.sh` to monitor crash health on the new version (see the `sentry-release` skill).
 
-## Rollback
+## What was deleted and why
 
-If verification fails or a broken release is discovered post-release, use the **rollback skill** (`.claude/skills/rollback/SKILL.md`). The key steps are:
+- **`release.sh`** (root) — local build pipeline. Deleted 2026-05-02. It had no overlay-asset copy step and no hard check, so it shipped v2.7.0 and v2.7.1 missing `browser-overlay-init.js`, silently breaking the "Browser controlled by Fazm" indicator. Codemagic has full feature parity (and stricter checks). Local builds are forbidden for release artifacts; use `./run.sh` only for dev iteration on `Fazm Dev.app`.
+- **`Bash(./release.sh:*)`** in `.claude/settings.local.json` — removed at the same time so agents can't accidentally invoke a path that no longer exists.
 
-1. Set `is_live=False` in Firestore `desktop_releases` collection (stops appcast from serving broken version)
-2. Delete the GitHub release
-3. Delete the local git tag
-4. Fix the issue, then re-run `./release.sh [same-version]`
+## Key files
 
-**Why speed matters:** Users who auto-updated to a broken build are stuck — the app can't launch, so Sparkle can't check for fixes. They must manually re-download the DMG.
-
-## Key Files
-
-- **Release script**: `/Users/matthewdi/omi-desktop/release.sh`
-- **Verification script**: `/Users/matthewdi/omi-desktop/verify-release.sh` - Post-release download + launch test
-- **Rollback skill**: `/Users/matthewdi/omi-desktop/.claude/skills/rollback/SKILL.md`
-- **Changelog**: `/Users/matthewdi/omi-desktop/CHANGELOG.json` - Version history with all release notes
-- **Entitlements**: `/Users/matthewdi/omi-desktop/Desktop/Omi-Release.entitlements` - Must NOT have provisioning-profile-dependent keys
+- **CI workflow**: `codemagic.yaml`
+- **Verification**: `verify-release.sh`
+- **Promotion**: `scripts/promote_release.sh`
+- **Changelog**: `CHANGELOG.json`
+- **Overlay patch**: `acp-bridge/scripts/patch-playwright-overlay.cjs` (postinstall, must match current `@playwright/mcp` shape)
+- **Rollback skill**: `.claude/skills/rollback/SKILL.md`
+- **Codemagic skill**: `.claude/skills/codemagic/SKILL.md`
+- **Test skill**: `.claude/skills/test-release/SKILL.md`
