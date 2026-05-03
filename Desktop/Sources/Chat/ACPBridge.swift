@@ -979,6 +979,9 @@ actor ACPBridge {
             case .error(let message):
               log("ACPBridge: agent error (raw): \(message)")
               throw BridgeError.agentError(message)
+            case .builtinKeyInvalid(let message):
+              log("ACPBridge: builtin key invalid (drain): \(message)")
+              throw BridgeError.builtinKeyInvalid(message)
             default:
               continue
             }
@@ -998,6 +1001,9 @@ actor ACPBridge {
             case .error(let message):
               log("ACPBridge: agent error (raw): \(message)")
               throw BridgeError.agentError(message)
+            case .builtinKeyInvalid(let message):
+              log("ACPBridge: builtin key invalid: \(message)")
+              throw BridgeError.builtinKeyInvalid(message)
             default:
               continue
             }
@@ -1045,6 +1051,10 @@ actor ACPBridge {
       case .creditExhausted(let message):
         log("ACPBridge: credit exhausted: \(message)")
         throw BridgeError.creditExhausted(message)
+
+      case .builtinKeyInvalid(let message):
+        log("ACPBridge: builtin key invalid: \(message)")
+        throw BridgeError.builtinKeyInvalid(message)
 
       case .statusChange(let status):
         onStatusEvent(status == "compacting" ? .compacting(true) : .compacting(false))
@@ -1946,6 +1956,10 @@ enum BridgeError: LocalizedError {
   case stopped
   case creditExhausted(String)
   case agentError(String)
+  /// Built-in (bundled API key) mode failed authentication. ChatProvider catches
+  /// this specifically and refetches the key from the backend instead of pushing
+  /// the user into the personal-Claude OAuth flow.
+  case builtinKeyInvalid(String)
 
   /// True when this is a credit or temporary rate-limit exhaustion the user should see.
   var isCreditOrRateLimitError: Bool {
@@ -1985,6 +1999,11 @@ enum BridgeError: LocalizedError {
         return "You've hit Claude's usage limit (\(resets)). Upgrade to Claude Pro at claude.ai for higher limits."
       }
       return "Built-in credits are exhausted. Please switch to your personal Claude account in Settings."
+    case .builtinKeyInvalid:
+      // Fallback wording. ChatProvider intercepts this case before localizedDescription
+      // is shown — it tries to refetch the key and silently retry. The string here is
+      // only displayed if the refetch+retry path is bypassed for some reason.
+      return "We couldn't verify your account. Please try again in a few seconds."
     case .agentError(let msg):
       // Strip "Internal error: " prefix if present — ACP wraps the real message
       let cleaned = msg.hasPrefix("Internal error: ") ? String(msg.dropFirst("Internal error: ".count)) : msg
