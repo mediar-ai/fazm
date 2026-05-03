@@ -31,8 +31,10 @@ enum ChatMessageStore {
                     arguments: [context, message.id, sender, storedText, message.createdAt, now, sessionId]
                 )
             }
+            await AppDatabase.shared.reportQuerySuccess()
         } catch {
             logError("ChatMessageStore: Failed to save message", error: error)
+            await AppDatabase.shared.reportQueryError(error)
         }
     }
 
@@ -45,8 +47,10 @@ enum ChatMessageStore {
                     arguments: [text, Date(), id]
                 )
             }
+            await AppDatabase.shared.reportQuerySuccess()
         } catch {
             logError("ChatMessageStore: Failed to update message", error: error)
+            await AppDatabase.shared.reportQueryError(error)
         }
     }
 
@@ -65,7 +69,7 @@ enum ChatMessageStore {
     static func loadMessages(context: String, sessionIds: [String]?, limit: Int? = nil) async -> [ChatMessage] {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return [] }
         do {
-            return try await dbQueue.read { db in
+            let result: [ChatMessage] = try await dbQueue.read { db in
                 let sessionFilter: String
                 var args: [DatabaseValueConvertible?] = [context]
                 if let ids = sessionIds, !ids.isEmpty {
@@ -127,8 +131,11 @@ enum ChatMessageStore {
                     )
                 }
             }
+            await AppDatabase.shared.reportQuerySuccess()
+            return result
         } catch {
             logError("ChatMessageStore: Failed to load messages", error: error)
+            await AppDatabase.shared.reportQueryError(error)
             return []
         }
     }
@@ -137,7 +144,7 @@ enum ChatMessageStore {
     static func loadSessionId(context: String) async -> String? {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return nil }
         do {
-            return try await dbQueue.read { db in
+            let result: String? = try await dbQueue.read { db in
                 let row = try Row.fetchOne(db, sql: """
                     SELECT session_id FROM chat_messages
                     WHERE taskId = ? AND session_id IS NOT NULL AND session_id != ''
@@ -146,8 +153,11 @@ enum ChatMessageStore {
                 """, arguments: [context])
                 return row?["session_id"] as? String
             }
+            await AppDatabase.shared.reportQuerySuccess()
+            return result
         } catch {
             logError("ChatMessageStore: Failed to load session ID", error: error)
+            await AppDatabase.shared.reportQueryError(error)
             return nil
         }
     }
@@ -161,8 +171,10 @@ enum ChatMessageStore {
                     arguments: [context]
                 )
             }
+            await AppDatabase.shared.reportQuerySuccess()
         } catch {
             logError("ChatMessageStore: Failed to clear messages", error: error)
+            await AppDatabase.shared.reportQueryError(error)
         }
     }
 }
