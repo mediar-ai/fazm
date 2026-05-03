@@ -31,7 +31,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createServer as createNetServer, type Socket } from "net";
 import { tmpdir, homedir } from "os";
-import { unlinkSync, appendFileSync, existsSync, watch, mkdirSync, readFileSync, statSync } from "fs";
+import { unlinkSync, appendFileSync, existsSync, watch, mkdirSync, readFileSync, readdirSync, statSync } from "fs";
 import type {
   InboundMessage,
   OutboundMessage,
