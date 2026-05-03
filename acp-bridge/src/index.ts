@@ -1722,7 +1722,6 @@ function encodeCwdForClaudeProjects(cwd: string): string {
  */
 function findSessionJsonlPath(sessionId: string, cwd: string): string | null {
   if (!sessionId) return null;
-  const fs = require("fs");
   // 1) Claude SDK fast path
   const projectsRoot = join(homedir(), ".claude", "projects");
   if (cwd) {
@@ -1734,7 +1733,7 @@ function findSessionJsonlPath(sessionId: string, cwd: string): string | null {
   }
   // 2) Claude SDK fallback scan across sibling project dirs
   try {
-    for (const dir of fs.readdirSync(projectsRoot)) {
+    for (const dir of readdirSync(projectsRoot)) {
       const candidate = join(projectsRoot, dir, `${sessionId}.jsonl`);
       try {
         const st = statSync(candidate);
@@ -1747,17 +1746,17 @@ function findSessionJsonlPath(sessionId: string, cwd: string): string | null {
   // empty days to avoid scanning years of old data.
   const codexRoot = join(homedir(), ".codex", "sessions");
   try {
-    const years = fs.readdirSync(codexRoot).filter((y: string) => /^\d{4}$/.test(y)).sort().reverse();
+    const years = readdirSync(codexRoot).filter((y: string) => /^\d{4}$/.test(y)).sort().reverse();
     for (const year of years) {
       const yearDir = join(codexRoot, year);
-      const months = fs.readdirSync(yearDir).filter((m: string) => /^\d{2}$/.test(m)).sort().reverse();
+      const months = readdirSync(yearDir).filter((m: string) => /^\d{2}$/.test(m)).sort().reverse();
       for (const month of months) {
         const monthDir = join(yearDir, month);
-        const days = fs.readdirSync(monthDir).filter((d: string) => /^\d{2}$/.test(d)).sort().reverse();
+        const days = readdirSync(monthDir).filter((d: string) => /^\d{2}$/.test(d)).sort().reverse();
         for (const day of days) {
           const dayDir = join(monthDir, day);
           let entries: string[];
-          try { entries = fs.readdirSync(dayDir); } catch { continue; }
+          try { entries = readdirSync(dayDir); } catch { continue; }
           // Filename pattern: rollout-<isoTs>-<sessionId>.jsonl. Match on the suffix.
           const suffix = `${sessionId}.jsonl`;
           const hit = entries.find((e: string) => e.endsWith(suffix));
