@@ -241,6 +241,16 @@ export interface CreditExhaustedMessage {
   sessionId?: string;
 }
 
+/** Sent in built-in (bundled API key) mode when the key fails authentication.
+ *  Indicates the backend may have rotated or revoked the key. Swift should
+ *  refetch from /v1/keys, restart the bridge with the new key, and silently
+ *  retry the failed query — NOT push the user into the personal-OAuth flow. */
+export interface BuiltinKeyInvalidMessage {
+  type: "builtin_key_invalid";
+  message: string;
+  sessionId?: string;
+}
+
 /** Agent status changed (e.g. compacting context) */
 export interface StatusChangeMessage {
   type: "status_change";
@@ -433,6 +443,7 @@ export type OutboundMessage =
   | AuthTimeoutMessage
   | AuthFailedMessage
   | CreditExhaustedMessage
+  | BuiltinKeyInvalidMessage
   | StatusChangeMessage
   | CompactBoundaryMessage
   | TaskStartedMessage
