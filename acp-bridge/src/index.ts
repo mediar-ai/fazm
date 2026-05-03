@@ -2601,6 +2601,25 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       }
       // AUTH_REQUIRED: -32000 explicitly, or -32603 wrapping a 401
       if (isAcpAuthError(err)) {
+        // Built-in mode: bundled API key is invalid. Don't push the user into
+        // OAuth — they were never using a personal account. Signal Swift so it
+        // can refetch the key from /v1/keys, restart the bridge with the new
+        // key, and silently retry. Drop the session so the retry creates a
+        // fresh session/new with the new credentials.
+        if (isBuiltinKeyMode()) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logErr(`session/prompt auth error in builtin mode (key may be rotated/invalid): ${errMsg}`);
+          for (const name of pendingTools) {
+            sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
+          }
+          pendingTools.length = 0;
+          clearAllToolTimers();
+          sendWithSession(sessionId, { type: "builtin_key_invalid", message: errMsg });
+          unregisterSession(sessionKey);
+          imageTurnCounts.delete(sessionKey);
+          activeSessionId = "";
+          return;
+        }
         if (authRetryCount >= MAX_AUTH_RETRIES) {
           logErr(`session/prompt auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
           sendWithSession(sessionId, { type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
@@ -2778,6 +2797,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     }
     // AUTH_REQUIRED: -32000 explicitly, or -32603 wrapping a 401
     if (isAcpAuthError(err)) {
+      // Built-in mode: bundled API key is invalid. See the matching block in
+      // the session/prompt path above for rationale.
+      if (isBuiltinKeyMode()) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logErr(`Query auth error in builtin mode (key may be rotated/invalid): ${errMsg}`);
+        sendWithSession(sessionId, { type: "builtin_key_invalid", message: errMsg });
+        return;
+      }
       if (authRetryCount >= MAX_AUTH_RETRIES) {
         logErr(`Query auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
         sendWithSession(sessionId, { type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
