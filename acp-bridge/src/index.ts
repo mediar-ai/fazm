@@ -1271,6 +1271,15 @@ async function initializeAcp(): Promise<void> {
     isInitialized = true;
   } catch (err) {
     if (isAcpAuthError(err)) {
+      // Built-in mode: bundled API key is invalid. Don't trigger OAuth — emit
+      // a global signal so Swift can refetch the key. Throw so bridge.start()
+      // rejects and the next ensureBridgeStarted() picks up the new key.
+      if (isBuiltinKeyMode()) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logErr(`ACP init auth error in builtin mode (key may be rotated/invalid): ${errMsg}`);
+        send({ type: "builtin_key_invalid", message: errMsg });
+        throw err;
+      }
       // AUTH_REQUIRED (or 401 wrapped as -32603)
       const data = (err as AcpError).data as {
         authMethods?: Array<{
@@ -1859,6 +1868,16 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
           sendWithSession(sessionId, { type: "session_started", isResume: !!cfg.resume });
         } catch (err) {
           if (isAcpAuthError(err)) {
+            // Built-in mode: bundled API key is invalid. Don't trigger OAuth —
+            // emit a signal so Swift can refetch + restart. Pre-warm is best-
+            // effort, so just log and bail; the next user query will trigger
+            // the same path and Swift's retry logic will refetch the key.
+            if (isBuiltinKeyMode()) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              logErr(`Pre-warm auth error in builtin mode (key may be rotated/invalid) for ${cfg.key}: ${errMsg}`);
+              send({ type: "builtin_key_invalid", message: errMsg });
+              return;
+            }
             logErr(`Pre-warm failed with auth error (code=${(err as AcpError).code}), starting OAuth flow`);
             try {
               const creds = readStoredCredentials();
