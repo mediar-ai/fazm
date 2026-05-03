@@ -276,12 +276,33 @@ class APIClient {
     /// Uses the Firebase ID token from AuthService for authentication.
     func recordLlmUsage(inputTokens: Int = 0, outputTokens: Int = 0, cacheReadTokens: Int = 0, cacheWriteTokens: Int = 0, totalTokens: Int = 0, costUsd: Double = 0, account: String = "") async {
         log("APIClient: recordLlmUsage called (account=\(account), cost=$\(String(format: "%.4f", costUsd)), tokens=\(totalTokens))")
+
+        // Build a shared property bag so every skip/failure event is comparable.
+        // This is the only place that surfaces silently-dropped LLM usage; without it,
+        // fresh-install / pre-auth usage is invisible in PostHog and Firestore both.
+        let baseProps: [String: Any] = [
+            "account": account,
+            "cost_usd": costUsd,
+            "input_tokens": inputTokens,
+            "output_tokens": outputTokens,
+            "cache_read_tokens": cacheReadTokens,
+            "cache_write_tokens": cacheWriteTokens,
+            "total_tokens": totalTokens,
+        ]
+
         guard let uid = AuthService.shared.userId else {
             log("APIClient: recordLlmUsage skipped — not signed in")
+            var props = baseProps
+            props["reason"] = "no_user_id"
+            PostHogManager.shared.track("llm_usage_record_skipped", properties: props)
             return
         }
         guard let idToken = try? await AuthService.shared.getIdToken() else {
             log("APIClient: recordLlmUsage skipped — no ID token")
+            var props = baseProps
+            props["reason"] = "no_id_token"
+            props["user_id"] = uid
+            PostHogManager.shared.track("llm_usage_record_skipped", properties: props)
             return
         }
 
@@ -344,10 +365,21 @@ class APIClient {
                 } else {
                     let body = String(data: data, encoding: .utf8) ?? ""
                     log("APIClient: recordLlmUsage failed (status \(httpResponse.statusCode)): \(body.prefix(200))")
+                    var props = baseProps
+                    props["reason"] = "http_error"
+                    props["status_code"] = httpResponse.statusCode
+                    props["user_id"] = uid
+                    props["response_body_preview"] = String(body.prefix(200))
+                    PostHogManager.shared.track("llm_usage_record_skipped", properties: props)
                 }
             }
         } catch {
             log("APIClient: recordLlmUsage failed: \(error.localizedDescription)")
+            var props = baseProps
+            props["reason"] = "network_exception"
+            props["error"] = error.localizedDescription
+            props["user_id"] = uid
+            PostHogManager.shared.track("llm_usage_record_skipped", properties: props)
         }
     }
 
