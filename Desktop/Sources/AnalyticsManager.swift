@@ -956,11 +956,12 @@ class AnalyticsManager {
         PostHogManager.shared.track("floating_bar_ptt_started", properties: props)
     }
 
-    func floatingBarPTTEnded(mode: String, hadTranscript: Bool, transcriptLength: Int) {
+    func floatingBarPTTEnded(mode: String, hadTranscript: Bool, transcriptLength: Int, holdDurationMs: Int) {
         let props: [String: Any] = [
             "mode": mode,
             "had_transcript": hadTranscript,
-            "transcript_length": transcriptLength
+            "transcript_length": transcriptLength,
+            "hold_duration_ms": holdDurationMs
         ]
         PostHogManager.shared.track("floating_bar_ptt_ended", properties: props)
     }
