@@ -639,6 +639,15 @@ class ChatProvider: ObservableObject {
     /// Cumulative cost tracked locally (seeded from Firestore on startup)
     @AppStorage("builtinCumulativeCostUsd") var builtinCumulativeCostUsd: Double = 0.0
 
+    /// Last time the built-in API key was refetched after an auth failure.
+    /// Caps the silent refetch+retry to once per 30 seconds so a backend that
+    /// keeps returning a bad key (or a real account problem) cannot spin in an
+    /// infinite refetch loop. Reset implicitly on app restart.
+    private var lastBuiltinKeyRefetchAt: Date?
+    /// 30 seconds is enough for the backend's key cache to flip on rotation but
+    /// short enough that a transient blip doesn't lock the user out for long.
+    private let builtinKeyRefetchCooldown: TimeInterval = 30
+
     private let messagesPageSize = 50
     private let maxMessagesInMemory = 200
     private var playwrightExtensionObserver: AnyCancellable?
@@ -2961,6 +2970,11 @@ class ChatProvider: ObservableObject {
         var toolResults: [String: String] = [:]  // Track last result per tool for success/failure
         var activeBrowserToolCount = 0
         var retryAfterModelFallback = false
+        /// Set when the bridge emitted `builtin_key_invalid` and we successfully
+        /// refetched a new key from the backend. Triggers a silent re-send of the
+        /// user's pending message at the end of sendMessage. Mirror of
+        /// retryAfterModelFallback for the bundled-API-key rotation path.
+        var retryAfterBuiltinKeyRefetch = false
         var hadError = false
 
         do {
@@ -3713,6 +3727,53 @@ class ChatProvider: ObservableObject {
                 pendingRetryMessage = nil
                 log("ChatProvider: terms acceptance required in \(bridgeMode) mode: \(msg)")
                 errorMessage = bridgeError.errorDescription
+            } else if let bridgeError = error as? BridgeError,
+                      case .builtinKeyInvalid(let rawMessage) = bridgeError {
+                // Bundled built-in API key failed authentication. The backend
+                // most likely rotated or revoked the key. Refetch from /v1/keys,
+                // restart the bridge with the new key, and silently retry the
+                // user's message — DO NOT push them into the personal-Claude
+                // OAuth flow (they were never using a personal account).
+                log("ChatProvider: builtin key invalid: \(rawMessage)")
+                let now = Date()
+                let canRefetch: Bool = {
+                    guard let last = lastBuiltinKeyRefetchAt else { return true }
+                    return now.timeIntervalSince(last) >= builtinKeyRefetchCooldown
+                }()
+                if canRefetch {
+                    lastBuiltinKeyRefetchAt = now
+                    let oldKey = KeyService.shared.anthropicAPIKey ?? ""
+                    let changed = await KeyService.shared.refetchAnthropicKey()
+                    let newKey = KeyService.shared.anthropicAPIKey ?? ""
+                    if changed && !newKey.isEmpty {
+                        // Server rotated the key — restart the bridge so the new
+                        // ANTHROPIC_API_KEY env var lands in the subprocess, then
+                        // signal the end-of-sendMessage retry path to replay.
+                        log("ChatProvider: built-in key rotated (old ending=\(String(oldKey.suffix(8))), new ending=\(String(newKey.suffix(8)))), restarting bridge and retrying silently")
+                        await acpBridge.stop()
+                        acpBridgeStarted = false
+                        acpBridge = createBridge()
+                        setupBridgeAuthHandlers()
+                        // pendingRetryMessage was set at the start of sendMessage —
+                        // mirror retryAfterModelFallback to trigger the silent re-send.
+                        retryAfterBuiltinKeyRefetch = true
+                        errorMessage = nil
+                    } else {
+                        // Refetch returned the same key (server hasn't rotated)
+                        // or empty key (network/auth error against /v1/keys).
+                        // Surface a clearer message than the OAuth-flavored one
+                        // and DO NOT trigger Claude auth.
+                        log("ChatProvider: built-in key refetch returned \(newKey.isEmpty ? "no key" : "same key") — surfacing transient error")
+                        pendingRetryMessage = nil
+                        errorMessage = "We couldn't verify your account. Please try again in a few seconds."
+                    }
+                } else {
+                    // Already refetched within the cooldown window — give up for
+                    // this turn so we don't spin. The user can manually retry.
+                    log("ChatProvider: built-in key still invalid within cooldown window — surfacing transient error")
+                    pendingRetryMessage = nil
+                    errorMessage = "We couldn't verify your account. Please try again in a few seconds."
+                }
             } else if bridgeMode == "builtin",
                       let bridgeError = error as? BridgeError,
                       case .agentError(let msg) = bridgeError,
@@ -3819,6 +3880,18 @@ class ChatProvider: ObservableObject {
         if retryAfterModelFallback, let retryText = pendingRetryMessage {
             pendingRetryMessage = nil
             log("ChatProvider: auto-retrying query after model access fallback to builtin")
+            await sendMessage(retryText)
+            return
+        }
+
+        // Auto-retry silently after a bundled built-in API key was refetched
+        // following a `builtin_key_invalid` from the bridge. The cooldown in
+        // lastBuiltinKeyRefetchAt prevents an infinite refetch loop if the new
+        // key also fails — the second failure will fall through to the
+        // "transient error" branch and surface a user-visible message instead.
+        if retryAfterBuiltinKeyRefetch, let retryText = pendingRetryMessage {
+            pendingRetryMessage = nil
+            log("ChatProvider: auto-retrying query after built-in key refetch")
             await sendMessage(retryText)
             return
         }
