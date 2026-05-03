@@ -1020,6 +1020,16 @@ function isAcpAuthError(err: unknown): boolean {
   return false;
 }
 
+/** True when the bridge is running in built-in (bundled API key) mode.
+ *  In this mode, an auth failure means the bundled key is invalid (rotated,
+ *  revoked, or block-listed); it does NOT mean the user's personal Claude
+ *  account needs re-authentication. We signal Swift via `builtin_key_invalid`
+ *  so it can refetch the key from the backend and silently retry, instead of
+ *  pushing the user into an OAuth flow they were never using. */
+function isBuiltinKeyMode(): boolean {
+  return !!process.env.ANTHROPIC_API_KEY;
+}
+
 // --- Screenshot auto-resize ---
 // Playwright on Retina Macs produces screenshots >2000px which hit Claude's
 // multi-image dimension limit. Watch /tmp/playwright-mcp/ and resize in-place.
