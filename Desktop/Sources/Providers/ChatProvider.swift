@@ -2964,6 +2964,11 @@ class ChatProvider: ObservableObject {
 
         // Analytics: track timing and tool usage
         let queryStartTime = Date()
+        // Snapshot bridge readiness at query-start so the catch block can tell
+        // a warmup-race ("user hit send before bridge finished starting") apart
+        // from a mid-stream / steady-state error. Cold-start failures are the
+        // top suspect for fresh-install users showing 0 completed queries.
+        let bridgeWasStartedAtQueryStart = acpBridgeStarted
         var firstTokenTime: Date?
         var toolNames: [String] = []
         var toolStartTimes: [String: Date] = [:]
@@ -3685,12 +3690,51 @@ class ChatProvider: ObservableObject {
             // Critical for diagnosing 600s inactivity timeouts ("which tool hung?").
             let toolsRunning = Array(toolStartTimes.keys)
             logError("Failed to get AI response (after \(errorDurationMs)ms, hadTokens=\(hadTokens), mode=\(bridgeMode), toolsRunning=\(toolsRunning))", error: error)
+            // Classify the failure for the chat_agent_query_failed event so we
+            // can split silent failures by where in the lifecycle they died.
+            // The hypothesis we want to confirm: fresh-install users hit a
+            // "warmup race" where the bridge isn't started when the first
+            // query fires and the query errors before any tokens stream back.
+            let bridgeError = error as? BridgeError
+            let failureStage: String = {
+                if let be = bridgeError, case .stopped = be { return "user_quit" }
+                return hadTokens ? "mid_stream" : "pre_response"
+            }()
+            let errorType: String = {
+                guard let be = bridgeError else { return "unknown" }
+                switch be {
+                case .nodeNotFound: return "node_not_found"
+                case .bridgeScriptNotFound: return "bridge_script_not_found"
+                case .notRunning: return "not_running"
+                case .encodingError: return "encoding_error"
+                case .timeout: return "timeout"
+                case .processExited: return "process_exited"
+                case .outOfMemory: return "out_of_memory"
+                case .stopped: return "stopped"
+                case .creditExhausted: return "credit_exhausted"
+                case .agentError: return "agent_error"
+                case .builtinKeyInvalid: return "builtin_key_invalid"
+                }
+            }()
             AnalyticsManager.shared.chatAgentError(
                 error: error.localizedDescription,
                 durationMs: errorDurationMs,
                 hadTokens: hadTokens,
                 bridgeMode: bridgeMode,
                 model: ShortcutSettings.shared.selectedModel,
+                toolsRunning: toolsRunning,
+                toolsUsed: toolNames,
+                sessionKey: effectiveKey
+            )
+            AnalyticsManager.shared.chatAgentQueryFailed(
+                failureStage: failureStage,
+                errorType: errorType,
+                error: error.localizedDescription,
+                durationMs: errorDurationMs,
+                bridgeMode: bridgeMode,
+                model: ShortcutSettings.shared.selectedModel,
+                bridgeWasStartedAtQueryStart: bridgeWasStartedAtQueryStart,
+                hadPartialContent: hadPartialContent,
                 toolsRunning: toolsRunning,
                 toolsUsed: toolNames,
                 sessionKey: effectiveKey
