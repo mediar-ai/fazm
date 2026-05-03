@@ -248,15 +248,19 @@ class ChatToolExecutor {
         }
 
         do {
+            let result: String
             if isSelect {
-                return try await executeSelectQuery(trimmed, upper: upper, dbQueue: dbQueue)
+                result = try await executeSelectQuery(trimmed, upper: upper, dbQueue: dbQueue)
             } else if isInsert || isUpdate || isDelete {
-                return try await executeWriteQuery(trimmed, dbQueue: dbQueue)
+                result = try await executeWriteQuery(trimmed, dbQueue: dbQueue)
             } else {
                 return "Error: only SELECT, INSERT, UPDATE, DELETE statements are allowed"
             }
+            await AppDatabase.shared.reportQuerySuccess()
+            return result
         } catch {
             logError("Tool execute_sql failed", error: error)
+            await AppDatabase.shared.reportQueryError(error)
             return "SQL Error: \(error.localizedDescription)\nFailed query: \(trimmed)"
         }
     }
