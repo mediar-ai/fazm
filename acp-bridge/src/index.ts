@@ -1502,39 +1502,8 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
 }
 
 function buildMeta(systemPrompt?: string, sessionKey?: string): Record<string, unknown> {
-  const options: Record<string, unknown> = {};
-  if (sessionKey === "observer") {
-    // Read-only on the codebase and conversations. Writes are allowed only into
-    // ~/.claude/skills/ (skill creation) and the Fazm memory directory
-    // (MEMORY.md and topic files). All shell, web, and Task delegation denied
-    // so the observer can never touch project files or run arbitrary commands.
-    options.permissionMode = "default";
-    options.disallowedTools = [
-      "Bash",
-      "Task",
-      "WebFetch",
-      "WebSearch",
-      "NotebookEdit",
-      "Edit(/Users/matthewdi/fazm/**)",
-      "Write(/Users/matthewdi/fazm/**)",
-    ];
-    options.allowedTools = [
-      "Read",
-      "Grep",
-      "Glob",
-      "Write(/Users/matthewdi/.claude/skills/**)",
-      "Edit(/Users/matthewdi/.claude/skills/**)",
-      "Write(/Users/matthewdi/.claude/projects/-Users-matthewdi-fazm/memory/**)",
-      "Edit(/Users/matthewdi/.claude/projects/-Users-matthewdi-fazm/memory/**)",
-      "mcp__fazm_tools__save_observer_card",
-      "mcp__fazm_tools__execute_sql",
-      "mcp__fazm_tools__query_browser_profile",
-      "mcp__fazm_tools__edit_browser_profile",
-      "mcp__fazm_tools__capture_screenshot",
-    ];
-  }
   const meta: Record<string, unknown> = {
-    claudeCode: { options },
+    claudeCode: { options: {} },
   };
   if (systemPrompt) {
     meta.systemPrompt = systemPrompt;
