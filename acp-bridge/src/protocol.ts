@@ -428,6 +428,24 @@ export interface CodexLoginErrorMessage {
   error: string;
 }
 
+/**
+ * Emitted by the bridge once `preWarmSession` resolves (success or failure).
+ * Pairs with `bridge_warmup_started` (fired from Swift right before
+ * `ensureBridgeStarted`) so the client can compute the cold-start window:
+ * - `durationMs`: time from receiving the `warmup` message to `preWarmSession`
+ *   resolving (excludes Swift→bridge IPC; pair with Swift wall-clock for total).
+ * - `sessionKeys`: which session keys were targeted.
+ * - `ok`: false when the warmup threw — user is stuck without a usable agent
+ *   until the next retry.
+ */
+export interface WarmupCompleteMessage {
+  type: "warmup_complete";
+  durationMs: number;
+  sessionKeys: string[];
+  ok: boolean;
+  error?: string;
+}
+
 export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
@@ -461,4 +479,5 @@ export type OutboundMessage =
   | CodexProbeResultMessage
   | CodexLoginUrlMessage
   | CodexLoginCompleteMessage
-  | CodexLoginErrorMessage;
+  | CodexLoginErrorMessage
+  | WarmupCompleteMessage;
