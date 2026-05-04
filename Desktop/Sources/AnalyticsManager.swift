@@ -707,12 +707,24 @@ class AnalyticsManager {
     /// Fired when ACP bridge warmup finishes (success or failure).
     /// `success=false` means the bridge.start() / warmupSession() path threw —
     /// users are stuck without a working agent until the next retry.
-    /// Subtract this event's timestamp from `bridge_warmup_started` to get
-    /// the cold-start latency distribution; correlate failures here with
+    ///
+    /// Two duration values to disambiguate where time is being spent:
+    /// - `duration_ms` (Swift wall-clock from `bridge_warmup_started`): includes
+    ///   subprocess spawn + Swift→bridge IPC + actual `session/new` round-trips.
+    ///   This is the **user-relevant** number — exposure window during which a
+    ///   typed query would race the warmup and fail with `pre_response`.
+    /// - `bridge_duration_ms` (bridge internal): just the `preWarmSession` body
+    ///   on the Node side — useful to isolate whether slowdown is IPC, subprocess
+    ///   startup, or the upstream Anthropic API.
+    ///
+    /// Subtract this event's timestamp from `bridge_warmup_started` to get the
+    /// cold-start latency distribution; correlate failures here with
     /// `chat_agent_query_failed (failure_stage="pre_response")`.
     func bridgeWarmupReady(
         bridgeMode: String,
         durationMs: Int,
+        bridgeDurationMs: Int? = nil,
+        sessionKeys: [String]? = nil,
         success: Bool,
         error: String? = nil
     ) {
@@ -721,6 +733,13 @@ class AnalyticsManager {
             "duration_ms": durationMs,
             "success": success,
         ]
+        if let bridgeDurationMs = bridgeDurationMs {
+            props["bridge_duration_ms"] = bridgeDurationMs
+        }
+        if let sessionKeys = sessionKeys, !sessionKeys.isEmpty {
+            props["session_keys"] = sessionKeys.joined(separator: ",")
+            props["session_count"] = sessionKeys.count
+        }
         if let error = error { props["error"] = error }
         PostHogManager.shared.track("bridge_warmup_ready", properties: props)
     }
