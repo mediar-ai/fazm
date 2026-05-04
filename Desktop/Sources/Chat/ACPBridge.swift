@@ -258,6 +258,9 @@ actor ACPBridge {
   var onCodexLoginError: ((_ error: String) -> Void)?
   /// Global tool call handler for background sessions (chat observer) — processes tool_use even when no query is active
   var onBackgroundToolCall: ToolCallHandler?
+  /// Called when the bridge finishes pre-warming sessions (success or failure).
+  /// Set in ChatProvider.ensureBridgeStarted to fire `bridge_warmup_ready`.
+  var onWarmupComplete: ((_ durationMs: Double, _ sessionKeys: [String], _ ok: Bool, _ error: String?) -> Void)?
 
   func setChatObserverPollHandler(_ handler: @escaping @Sendable () -> Void) {
     self.onChatObserverPoll = handler
@@ -287,6 +290,10 @@ actor ACPBridge {
 
   func setBackgroundToolCallHandler(_ handler: @escaping ToolCallHandler) {
     self.onBackgroundToolCall = handler
+  }
+
+  func setWarmupCompleteHandler(_ handler: @escaping @Sendable (_ durationMs: Double, _ sessionKeys: [String], _ ok: Bool, _ error: String?) -> Void) {
+    self.onWarmupComplete = handler
   }
 
   func setGlobalAuthHandlers(
@@ -1122,6 +1129,10 @@ actor ACPBridge {
         // Handled immediately in deliverMessage(); should never reach here
         break
 
+      case .warmupComplete:
+        // Handled immediately in deliverMessage(); should never reach here
+        break
+
       case .codexLoginUrl, .codexLoginComplete, .codexLoginError:
         // Handled immediately in deliverMessage(); should never reach here
         break
@@ -1576,6 +1587,10 @@ actor ACPBridge {
     case .codexProbeResult(let ok, let agent, let authMethods, let currentModelId, let availableModels, let authMode, let error):
       log("ACPBridge: received codex_probe_result ok=\(ok) authMode=\(authMode) models=\(availableModels.count) error=\(error ?? "-")")
       onCodexProbeResult?(ok, agent, authMethods, currentModelId, availableModels, authMode, error)
+      return
+    case .warmupComplete(let durationMs, let sessionKeys, let ok, let error):
+      log("ACPBridge: received warmup_complete durationMs=\(Int(durationMs)) sessions=\(sessionKeys.joined(separator: ",")) ok=\(ok) error=\(error ?? "-")")
+      onWarmupComplete?(durationMs, sessionKeys, ok, error)
       return
     case .codexLoginUrl(let url):
       log("ACPBridge: received codex_login_url")
