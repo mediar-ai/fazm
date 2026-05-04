@@ -276,55 +276,16 @@ struct AIResponseView: View {
                 }
             }
 
-            if isLoading {
-                hangTask?.cancel()
-                hangTask = Task { [onStopAgent] in
-                    // If no streaming data arrives within 60s, the query is failing silently
-                    // (e.g. credit exhaustion, bridge crash, backend unreachable).
-                    // Stop the bridge so sendMessage() returns and error handling kicks in.
-                    // But don't trigger if tool calls are actively running — those can
-                    // legitimately take minutes (e.g. Terminal commands).
-                    try? await Task.sleep(for: .seconds(60))
-                    guard !Task.isCancelled else { return }
-                    let blocks = await MainActor.run { currentMessage?.contentBlocks ?? [] }
-                    let hasRunningTools = blocks.contains(where: {
-                        if case .toolCall(_, _, .running, _, _, _) = $0 { return true }
-                        return false
-                    })
-                    let hasAnyToolCalls = blocks.contains(where: {
-                        if case .toolCall = $0 { return true }
-                        return false
-                    })
-                    if hasRunningTools {
-                        // Tools are still running — don't flag as hanging.
-                        // Re-check every 30s in case tools finish but model stops responding.
-                        while !Task.isCancelled {
-                            try? await Task.sleep(for: .seconds(30))
-                            guard !Task.isCancelled else { return }
-                            let stillRunning = await MainActor.run {
-                                currentMessage?.contentBlocks.contains(where: {
-                                    if case .toolCall(_, _, .running, _, _, _) = $0 { return true }
-                                    return false
-                                }) ?? false
-                            }
-                            if !stillRunning { break }
-                        }
-                        // Tools finished — give the model 60s more to respond
-                        try? await Task.sleep(for: .seconds(60))
-                        guard !Task.isCancelled else { return }
-                    } else if hasAnyToolCalls {
-                        // Tools completed but none are currently running — the model is
-                        // processing tool results. This commonly happens when tools finish
-                        // right around the 60s mark. Give 60s grace for the model to respond.
-                        try? await Task.sleep(for: .seconds(60))
-                        guard !Task.isCancelled else { return }
-                    }
-                    isHanging = true
-                    await MainActor.run {
-                        onStopAgent?()
-                    }
-                }
-            } else {
+            if !isLoading {
+                // Cleanup on response completion. The 60s auto-cancel hang detector
+                // that used to live here was removed (May 3 2026): it was killing
+                // legitimate slow Opus thinking turns at exactly 60s, after which
+                // the bridge's priorContext-replay recovery would silently return
+                // an empty bubble (because the trailing assistant turn in the
+                // replayed transcript made the model think the work was done).
+                // Net result: paid for the call, got "Failed to get a response."
+                // The bridge already enforces real timeouts (tool watchdogs,
+                // 600s ACPBridge inactivity timeout); we don't need a second one.
                 hangTask?.cancel()
                 hangTask = nil
                 isStopping = false
