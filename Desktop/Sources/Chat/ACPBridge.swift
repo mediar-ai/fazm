@@ -2025,6 +2025,13 @@ enum BridgeError: LocalizedError {
         let resets = String(message[range])
         return "You've hit Claude's usage limit (\(resets)). Upgrade to Claude Pro at claude.ai for higher limits."
       }
+      // Mode-aware fallback: telling a personal-mode user to "switch to personal account"
+      // is nonsensical (they already are). Read bridgeMode directly from UserDefaults so
+      // BridgeError stays self-contained and doesn't need an extra parameter.
+      let mode = UserDefaults.standard.string(forKey: "bridgeMode") ?? "builtin"
+      if mode == "personal" {
+        return "Your Claude account hit its usage limit. Try again later, or upgrade your plan at claude.ai/settings/billing."
+      }
       return "Built-in credits are exhausted. Please switch to your personal Claude account in Settings."
     case .builtinKeyInvalid:
       // Fallback wording. ChatProvider intercepts this case before localizedDescription
