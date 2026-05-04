@@ -3504,8 +3504,15 @@ async function main(): Promise<void> {
 
       case "warmup": {
         const wm = msg as WarmupMessage;
+        // Emit warmup_complete with timing once preWarmSession resolves so the
+        // Swift client can fire `bridge_warmup_ready` and we can directly measure
+        // the cold-start window (paired with bridge_warmup_started in Swift).
+        const warmupStartMs = Date.now();
+        const sessionKeys: string[] = wm.sessions && wm.sessions.length > 0
+          ? wm.sessions.map((s) => s.key)
+          : (wm.models ?? (wm.model ? [wm.model] : []));
         if (wm.sessions && wm.sessions.length > 0) {
-          logErr(`Warmup requested (cwd=${wm.cwd || "default"}, sessions=${wm.sessions.map(s => s.key).join(", ")})`);
+          logErr(`Warmup requested (cwd=${wm.cwd || "default"}, sessions=${sessionKeys.join(", ")})`);
           preWarmPromise = preWarmSession(wm.cwd, wm.sessions);
         } else {
           // Backward compat: models array or single model
@@ -3513,6 +3520,32 @@ async function main(): Promise<void> {
           logErr(`Warmup requested (cwd=${wm.cwd || "default"}, models=${JSON.stringify(models) || "default"})`);
           preWarmPromise = preWarmSession(wm.cwd, undefined, models);
         }
+        // Fire-and-forget: do not await here; let the main message loop continue.
+        // The warmup_complete event reports total duration + outcome so Swift
+        // can compute warmup-race exposure without polling.
+        preWarmPromise
+          .then(() => {
+            const durationMs = Date.now() - warmupStartMs;
+            logErr(`Warmup complete in ${durationMs}ms (sessions=${sessionKeys.join(",")})`);
+            send({
+              type: "warmup_complete",
+              durationMs,
+              sessionKeys,
+              ok: true,
+            });
+          })
+          .catch((err) => {
+            const durationMs = Date.now() - warmupStartMs;
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logErr(`Warmup failed after ${durationMs}ms: ${errMsg}`);
+            send({
+              type: "warmup_complete",
+              durationMs,
+              sessionKeys,
+              ok: false,
+              error: errMsg,
+            });
+          });
         break;
       }
 
