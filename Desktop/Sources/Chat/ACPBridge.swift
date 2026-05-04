@@ -206,6 +206,11 @@ actor ACPBridge {
     case sessionExpired(oldSessionId: String, newSessionId: String, contextRestored: Bool, restoredMessageCount: Int, reason: String, sessionKey: String?)
     case toolHangCanceled(toolName: String, toolUseId: String, durationSeconds: Double, reason: String, sessionKey: String?)
     case sessionStarted(sessionId: String, sessionKey: String?, isResume: Bool)
+    /// Emitted by the bridge once `preWarmSession` resolves (success or failure).
+    /// Pairs with `bridge_warmup_started` (fired in Swift right before `ensureBridgeStarted()`)
+    /// so we can compute the cold-start window in PostHog and confirm/refute the
+    /// warmup-race hypothesis (user types before warmup is done → pre_response failure).
+    case warmupComplete(durationMs: Double, sessionKeys: [String], ok: Bool, error: String?)
     case codexProbeResult(ok: Bool, agent: String?, authMethods: [String], currentModelId: String?, availableModels: [[String: Any]], authMode: String, error: String?)
     case codexLoginUrl(url: String)
     case codexLoginComplete
@@ -1418,6 +1423,13 @@ actor ACPBridge {
       let sessionKey = dict["sessionKey"] as? String
       let isResume = dict["isResume"] as? Bool ?? false
       return .sessionStarted(sessionId: sessionId, sessionKey: sessionKey, isResume: isResume)
+
+    case "warmup_complete":
+      let durationMs = dict["durationMs"] as? Double ?? 0
+      let sessionKeys = dict["sessionKeys"] as? [String] ?? []
+      let ok = dict["ok"] as? Bool ?? false
+      let error = dict["error"] as? String
+      return .warmupComplete(durationMs: durationMs, sessionKeys: sessionKeys, ok: ok, error: error)
 
     case "codex_probe_result":
       let ok = dict["ok"] as? Bool ?? false
