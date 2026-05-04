@@ -2121,7 +2121,20 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // Cap replay to keep token cost bounded; most "what was I doing" recoveries
       // only need the last handful of turns. Trim from the END (most recent kept).
       const MAX_REPLAY = 20;
-      const replay = ctxEntries.slice(-MAX_REPLAY);
+      let replay = ctxEntries.slice(-MAX_REPLAY);
+      // Drop a trailing assistant turn whose text is empty/whitespace.  This is
+      // the cancelled-mid-action turn from the previous session: replaying it
+      // verbatim makes the model think "I already did the work" and reply with a
+      // no-op end_turn, which then surfaces as "Failed to get a response" in the
+      // UI (May 3 2026 incident: 60s hang detector cancelled a slow Opus think,
+      // recovery replayed an empty assistant bubble, model returned 5 tokens).
+      while (
+        replay.length > 0 &&
+        replay[replay.length - 1].role === "assistant" &&
+        !(replay[replay.length - 1].text ?? "").trim()
+      ) {
+        replay = replay.slice(0, -1);
+      }
       const restoredCount = replay.length;
 
       if (restoredCount > 0) {
@@ -2135,10 +2148,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           .join("\n\n");
         const preamble =
           `[SESSION RESTORED FROM LOCAL HISTORY]\n` +
-          `Your previous session (${resumeFailedFromId}) expired upstream and was replaced ` +
-          `with a fresh session. The transcript below is the recent conversation, replayed ` +
-          `from the user's local message store so you can continue the work in flight. ` +
-          `Treat it as authoritative context, not a new request.\n\n` +
+          `Your previous session (${resumeFailedFromId}) was interrupted before ` +
+          `it could finish. The transcript below is the recent conversation, ` +
+          `replayed from the user's local message store. The last assistant ` +
+          `response (if any) was cut off mid-action — DO NOT treat it as ` +
+          `complete. Continue the work in flight: read the user's most recent ` +
+          `message at the bottom and act on it now, calling tools and producing ` +
+          `output as needed. Do not just acknowledge or summarize what you ` +
+          `already wrote.\n\n` +
           `--- RECENT TRANSCRIPT (${restoredCount} message${restoredCount === 1 ? "" : "s"}, oldest first) ---\n` +
           transcript +
           `\n--- END TRANSCRIPT ---\n\n` +
@@ -2447,7 +2464,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
 
         // Detect empty-assistant-turn: session/prompt resolved with stopReason=end_turn
-        // but the agent never produced any text. Two flavors:
+        // but the agent never produced any text. Three flavors:
         //   (a) "Fast stuck": zero notifications, zero output tokens, returned in <2s.
         //       Classic poisoned-session pattern after a prior credit_exhausted left
         //       the ACP SDK in a drain state.
@@ -2455,16 +2472,27 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         //       agent ended without producing any text. From the user's POV the chat
         //       looks frozen. Most often also the result of a half-poisoned session
         //       carried over from a previous error (rate limit, network blip).
+        //   (c) "Replay-recovery empty" (May 3 2026): a fresh session was created
+        //       via priorContext replay (recoveryCause set), and the model still
+        //       returned end_turn with no text. Usually means the replay framing
+        //       made the model think the work was already done. The recovery path
+        //       below trims trailing-empty assistant turns and re-runs with the
+        //       stronger preamble; almost always succeeds on the second pass.
         //
-        // For BOTH flavors the recovery is the same: drop the dead session, force a
+        // For ALL flavors the recovery is the same: drop the dead session, force a
         // fresh session/new, replay priorContext as a preamble, and emit a
         // session_expired event so the UI renders a "I restarted this chat" notice.
         // We do NOT try to session/resume the same id again — if the SDK is poisoned,
         // re-resuming usually produces the same empty turn and we'd burn a retry.
+        //
+        // The `!isNewSession || recoveryCause` clause used to be `!isNewSession`,
+        // which silently skipped recovery on the replay path (where isNewSession is
+        // always true). That bug shipped empty results to the UI as "Failed to get
+        // a response" even though the user paid for the call. Fixed May 3 2026.
         const isEmptyAssistantTurn = (
           fullText.length === 0 &&
           promptResult.stopReason === "end_turn" &&
-          !isNewSession &&
+          (!isNewSession || recoveryCause !== null) &&
           _retryDepth < MAX_QUERY_RETRIES
         );
         if (isEmptyAssistantTurn) {
