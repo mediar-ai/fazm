@@ -951,10 +951,13 @@ actor ACPBridge {
     if let attachments = attachments, !attachments.isEmpty {
       queryDict["attachments"] = attachments
     }
-    // Only ship priorContext when we're actually attempting a resume — the bridge
-    // ignores it on the happy path, so sending it without `resume` would be wasted
-    // bytes (and risks token cost on edge paths).
-    if let priorContext = priorContext, !priorContext.isEmpty, resume != nil {
+    // Always ship priorContext when we have it. The bridge ignores it on the happy
+    // path and only consults it for recovery paths (session/resume failed, prior turn
+    // returned empty text, or session was unregistered by an interrupt). After an
+    // interrupt, `resume` is nil on the next prompt, so gating on `resume != nil`
+    // would drop priorContext exactly when it's needed (see ChatProvider comment
+    // around the priorContext computation).
+    if let priorContext = priorContext, !priorContext.isEmpty {
       queryDict["priorContext"] = priorContext.map { ["role": $0.role, "text": $0.text] }
     }
     let jsonData = try JSONSerialization.data(withJSONObject: queryDict)
