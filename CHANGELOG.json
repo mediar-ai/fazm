@@ -9,7 +9,8 @@
     "Stopped the AI from giving confusing Claude Code setup instructions (like editing config files or restarting Claude Code) when helping connect the browser extension",
     "Fixed push-to-talk transcription concatenating onto previously spoken text when a chat reply was already on screen, so each voice message starts fresh",
     "Clarified Custom API Endpoint setting requires an Anthropic-API-compatible endpoint",
-    "Fixed push-to-talk inserting repeated gibberish (e.g. '\u092d\u093e\u0908 \u092d\u093e\u0908 \u092d\u093e\u0908') when transcription hallucinated on silent audio"
+    "Fixed push-to-talk inserting repeated gibberish (e.g. '\u092d\u093e\u0908 \u092d\u093e\u0908 \u092d\u093e\u0908') when transcription hallucinated on silent audio",
+    "Built-in API key spend is now capped at $10 lifetime for every account including Pro; previously Pro was incorrectly exempt and a few users had burned $40-$70 of bundled compute on a $9.99/mo subscription"
   ],
   "releases": [
     {
