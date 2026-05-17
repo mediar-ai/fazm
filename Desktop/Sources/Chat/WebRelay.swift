@@ -23,6 +23,16 @@ final class WebRelay: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var isStarted = false
 
+    // Cloudflared restart governor: caps tight restart loops when the tunnel can't come up
+    // (e.g. APAC IPs blocked from trycloudflare, corporate proxy, no network). Without this,
+    // a doomed tunnel respawns every 3s forever, polluting the Sentry breadcrumb buffer.
+    private var cloudflaredRestartCount = 0
+    private var cloudflaredRestartWindowStart: Date?
+    private var cloudflaredGaveUp = false
+    private let maxCloudflaredRestartsInWindow = 5
+    private let cloudflaredRestartWindow: TimeInterval = 300
+    private let cloudflaredGiveUpCooldown: TimeInterval = 3600
+
     /// Dedup: last processed query text + timestamp to reject rapid duplicates
     private var lastQueryText: String?
     private var lastQueryTime: Date?
@@ -338,22 +348,67 @@ final class WebRelay: ObservableObject {
                 let url = String(output[range])
                 Task { @MainActor in
                     self?.tunnelUrl = url
+                    self?.cloudflaredRestartCount = 0
+                    self?.cloudflaredRestartWindowStart = nil
                     log("WebRelay: tunnel URL = \(url)")
                     await self?.registerTunnel(url: url)
                     self?.startHeartbeat()
                 }
+            } else {
+                // Capture non-URL stderr lines (errors, connection failures, region blocks)
+                // so we can diagnose why cloudflared keeps dying for APAC/corporate users.
+                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    log("WebRelay: cloudflared stderr: \(trimmed.prefix(500))")
+                }
             }
         }
 
-        // Auto-restart if cloudflared crashes or exits unexpectedly
+        // Auto-restart if cloudflared crashes or exits unexpectedly, with a capped
+        // 5-attempts-per-5min window and exponential backoff. Once the cap is hit we
+        // emit one Sentry breadcrumb and sleep for an hour before resetting, so we
+        // don't burn the breadcrumb buffer on doomed-tunnel networks.
         process.terminationHandler = { [weak self] proc in
             Task { @MainActor in
                 guard let self, self.cloudflaredProcess === proc else { return }
                 self.cloudflaredProcess = nil
                 self.tunnelUrl = nil
                 let code = proc.terminationStatus
-                log("WebRelay: cloudflared exited (status \(code)), restarting in 3s...")
-                try? await Task.sleep(for: .seconds(3))
+                guard self.wsServerProcess?.isRunning == true else {
+                    log("WebRelay: cloudflared exited (status \(code)), ws-server not running, skipping restart")
+                    return
+                }
+
+                let now = Date()
+                if let windowStart = self.cloudflaredRestartWindowStart,
+                   now.timeIntervalSince(windowStart) > self.cloudflaredRestartWindow {
+                    self.cloudflaredRestartCount = 0
+                    self.cloudflaredRestartWindowStart = nil
+                }
+                if self.cloudflaredRestartWindowStart == nil {
+                    self.cloudflaredRestartWindowStart = now
+                }
+                self.cloudflaredRestartCount += 1
+
+                if self.cloudflaredRestartCount > self.maxCloudflaredRestartsInWindow {
+                    if !self.cloudflaredGaveUp {
+                        self.cloudflaredGaveUp = true
+                        log("WebRelay: cloudflared failing to start (\(self.maxCloudflaredRestartsInWindow) attempts in \(Int(self.cloudflaredRestartWindow))s, last status \(code)), pausing for \(Int(self.cloudflaredGiveUpCooldown))s. Remote chat disabled until tunnel recovers.")
+                    }
+                    try? await Task.sleep(for: .seconds(self.cloudflaredGiveUpCooldown))
+                    guard self.wsServerProcess?.isRunning == true else { return }
+                    self.cloudflaredRestartCount = 0
+                    self.cloudflaredRestartWindowStart = nil
+                    self.cloudflaredGaveUp = false
+                    log("WebRelay: cloudflared cooldown elapsed, retrying")
+                    self.startCloudflared(port: self.localPort)
+                    return
+                }
+
+                // Exponential backoff: 3, 6, 12, 24, 48 (capped at 60s).
+                let backoff = min(60.0, 3.0 * pow(2.0, Double(self.cloudflaredRestartCount - 1)))
+                log("WebRelay: cloudflared exited (status \(code)), restart \(self.cloudflaredRestartCount)/\(self.maxCloudflaredRestartsInWindow) in \(Int(backoff))s")
+                try? await Task.sleep(for: .seconds(backoff))
                 guard self.wsServerProcess?.isRunning == true else { return }
                 self.startCloudflared(port: self.localPort)
             }
