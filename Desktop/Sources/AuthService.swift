@@ -162,6 +162,17 @@ class AuthService: NSObject {
                             logError("AuthService: Failed to get Firebase ID token", error: error)
                         }
                     }
+                    // Re-link PostHog identity on every auth state change. The initial
+                    // identify attempts at restoreAuthState() (too early, PostHog SDK not
+                    // initialized) and FazmApp.applicationDidFinishLaunching (might fire
+                    // before Firebase restores userId asynchronously) can both miss.
+                    // identifyAuthUser is idempotent for the same user (line 112 in
+                    // PostHogManager short-circuits to $set), so calling it again is safe
+                    // and ensures the device UUID gets linked to firebase_uid + email
+                    // exactly once the auth state is fully restored.
+                    if self.userId != nil {
+                        self.setPostHogUserContext()
+                    }
                 } else {
                     log("AuthService: Firebase auth state changed - no user")
                 }
@@ -833,6 +844,13 @@ class AuthService: NSObject {
 
         // Clear Sentry user context
         SentrySDK.setUser(nil)
+
+        // Reset PostHog identity so post-signOut anonymous activity does not
+        // get attributed to the user who just signed out. Without this, if
+        // another user signs in on the same device, the brief anonymous window
+        // between signOut and the next identify aliases to the previous user.
+        PostHogManager.shared.reset()
+        log("AuthService: PostHog identity reset on sign-out")
 
         // Update AuthState
         updateAuthState()
