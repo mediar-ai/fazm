@@ -780,18 +780,45 @@ class ChatProvider: ObservableObject {
     @Published var sessionTokensUsed: Int = 0
 
     // MARK: - Built-in API Key Usage Cap ($10)
+    //
+    // POLICY — DO NOT CHANGE WITHOUT EXPLICIT OWNER (matt) APPROVAL.
+    //
+    // Every user — free, trial, AND Pro — gets a single $10 LIFETIME allotment
+    // of the bundled Anthropic key. There are NO recurring credits, NO monthly
+    // reset, and NO subscription-based exemption. Once a user hits $10 cumulative
+    // built-in spend they MUST connect their own Claude account (personal OAuth)
+    // for further use; Pro entitles them to the desktop app and Stripe billing,
+    // not to unlimited bundled compute.
+    //
+    // Historical context (so future readers don't re-break this):
+    //   - 2026-03-08 b92b24c5: $10 lifetime cap added (correct).
+    //   - 2026-04-12 06b5f97c -> 77fbeb3d: briefly raised to $10,000, reverted.
+    //   - 2026-05-03 1ffbd31d/7787b892: Pro subscribers EXEMPTED from the cap
+    //     under the (incorrect) rationale that Pro is "unlimited built-in
+    //     usage". This caused Pro users to burn $40-$70+ of Anthropic credit
+    //     each on a $9.99/mo subscription before being noticed (amabdig: $41.20,
+    //     virajm9405: $66.47 by 2026-05-17).
+    //   - 2026-05-17: Pro exemption removed. Every user is capped at $10
+    //     lifetime, period.
+    //
+    // If somebody tells you "but the marketing says unlimited" — the marketing
+    // is wrong, fix the marketing, do NOT re-add a subscription bypass here.
 
-    /// Maximum spend allowed on the built-in API key before auto-switching to personal mode
+    /// Maximum LIFETIME spend allowed on the bundled built-in Anthropic key,
+    /// per user, across all subscription tiers. Hitting this auto-switches the
+    /// user to personal Claude OAuth (they bring their own key/account).
+    /// DO NOT raise this without owner approval.
     static let builtinCostCapUsd: Double = 10.0
 
     /// Cumulative cost tracked locally (seeded from Firestore on startup)
     @AppStorage("builtinCumulativeCostUsd") var builtinCumulativeCostUsd: Double = 0.0
 
-    /// Whether the user is over the built-in cost cap. Pro subscribers are
-    /// granted unlimited built-in usage, so the cap doesn't apply to them.
+    /// Whether the user is over the built-in cost cap. The cap applies to
+    /// EVERY user equally — free, trial, and Pro alike. Do NOT add a
+    /// `SubscriptionService.shared.isActive` check here; see the policy block
+    /// above this property for why.
     var isOverBuiltinCap: Bool {
-        guard builtinCumulativeCostUsd >= Self.builtinCostCapUsd else { return false }
-        return !SubscriptionService.shared.isActive
+        return builtinCumulativeCostUsd >= Self.builtinCostCapUsd
     }
 
     /// Last time the built-in API key was refetched after an auth failure.
@@ -2447,7 +2474,7 @@ class ChatProvider: ObservableObject {
                 log("ChatProvider: Seeded builtin cumulative cost from Firestore: $\(String(format: "%.4f", serverCost))")
 
                 // If already over cap and still in builtin mode, switch immediately.
-                // Pro subscribers get unlimited built-in usage, so the cap doesn't apply.
+                // $10 lifetime cap applies to every user including Pro.
                 if self.bridgeMode == "builtin" && self.isOverBuiltinCap {
                     log("ChatProvider: Builtin cost already at $\(String(format: "%.2f", serverCost)) on startup — switching to personal mode")
                     self.showCreditExhaustedAlert = true
@@ -3349,8 +3376,8 @@ class ChatProvider: ObservableObject {
             log("ChatProvider: Prepared \(priorContextForBridge?.count ?? 0) priorContext entries (\(resumeDesc))")
         }
 
-        // Pre-query guard: check if builtin cost cap is reached.
-        // Pro subscribers get unlimited built-in usage, so the cap is bypassed for them.
+        // Pre-query guard: every user (free, trial, Pro) is capped at $10
+        // lifetime on the bundled key. Over-cap = switch to personal Claude OAuth.
         if bridgeMode == "builtin" && isOverBuiltinCap {
             log("ChatProvider: Builtin cost cap reached ($\(String(format: "%.2f", builtinCumulativeCostUsd))/$\(String(format: "%.0f", Self.builtinCostCapUsd))) — switching to personal mode")
             showCreditExhaustedAlert = true
@@ -4296,7 +4323,7 @@ class ChatProvider: ObservableObject {
             sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
 
             // Post-query: accumulate cost and check cap (builtin mode only).
-            // Pro subscribers get unlimited built-in usage, so the cap doesn't fire.
+            // $10 lifetime cap applies to every user including Pro.
             if isBuiltinMode {
                 builtinCumulativeCostUsd += queryResult.costUsd
                 if isOverBuiltinCap {
