@@ -402,7 +402,13 @@ struct AIResponseView: View {
                         if case .toolCall(_, _, .running, _, _, _) = $0 { return true }
                         return false
                     }) ?? false
-                    Text(hasRunningTools ? "using tools" : "thinking")
+                    // A query queued behind first-launch warmup would otherwise
+                    // show a bare "thinking" spinner that looks stuck — name the
+                    // actual wait so the user knows it's cold-starting, not hung.
+                    let headerLabel = streaming.isBridgeWarmingUp
+                        ? "preparing assistant…"
+                        : (hasRunningTools ? "using tools" : "thinking")
+                    Text(headerLabel)
                         .scaledFont(size: 14)
                         .foregroundColor(.secondary)
                 }
