@@ -219,6 +219,10 @@ class AuthService: NSObject {
             URLQueryItem(name: "code_challenge", value: codeChallenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "access_type", value: "offline"),
+            // Force the Google account chooser. Without this, a browser signed
+            // into a single Google account auto-selects it, so a user who
+            // signed in with the wrong account can never switch.
+            URLQueryItem(name: "prompt", value: "select_account"),
         ]
 
         guard let authURL = urlComponents.url else {
