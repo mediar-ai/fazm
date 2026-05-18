@@ -12,7 +12,8 @@
     "Fixed push-to-talk inserting repeated gibberish (e.g. '\u092d\u093e\u0908 \u092d\u093e\u0908 \u092d\u093e\u0908') when transcription hallucinated on silent audio",
     "Built-in API key spend is now capped at $10 lifetime for every account including Pro; previously Pro was incorrectly exempt and a few users had burned $40-$70 of bundled compute on a $9.99/mo subscription",
     "Fixed AI losing chat context after an interrupted message (now correctly restores the last 20 turns of history)",
-    "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant\u2026' state and no longer hangs indefinitely if startup stalls"
+    "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant\u2026' state and no longer hangs indefinitely if startup stalls",
+    "Added a \"Sign in with a different account\" option to the paywall, so users who subscribed under a different account can switch instead of getting stuck"
   ],
   "releases": [
     {
