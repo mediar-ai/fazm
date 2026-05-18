@@ -365,18 +365,23 @@ fi
 # Provides direct CDP browser control via a managed Chrome at ~/.fazm/browser-harness/profile.
 # Deps come from browser-harness pyproject.toml plus `mcp` for the MCP wrapper.
 BH_REPO="$HOME/Developer/browser-harness"
+BH_GIT="git+https://github.com/browser-use/browser-harness.git"
 BH_MCP_SERVER="$ACP_BRIDGE_DIR/browser-harness-server.py"
 BH_BUNDLE="$APP_BUNDLE/Contents/Resources/browser-harness"
-if [ -d "$BH_REPO" ] && [ -f "$BH_MCP_SERVER" ]; then
+if [ -f "$BH_MCP_SERVER" ]; then
     substep "Bundling browser-harness MCP"
     mkdir -p "$BH_BUNDLE"
     # Copy MCP wrapper (server.py)
     cp -f "$BH_MCP_SERVER" "$BH_BUNDLE/server.py"
-    # Copy browser-harness package source (so we can pip install -e it into the venv)
-    rsync -a --exclude='.git' --exclude='__pycache__' --exclude='.venv' \
-        --exclude='*.pyc' --exclude='*.egg-info' --exclude='build' --exclude='dist' \
-        --exclude='tests' --exclude='docs' \
-        "$BH_REPO/" "$BH_BUNDLE/browser-harness-src/"
+    # Choose source for the browser-harness package: prefer local checkout (faster +
+    # works offline on dev machines), fall back to GitHub (works on Codemagic CI).
+    if [ -d "$BH_REPO" ]; then
+        BH_PKG_SOURCE="$BH_REPO"
+        substep "Using local browser-harness checkout: $BH_REPO"
+    else
+        BH_PKG_SOURCE="$BH_GIT"
+        substep "Using browser-harness from GitHub: $BH_GIT"
+    fi
     if command -v uv &>/dev/null; then
         substep "Creating browser-harness Python venv with uv"
         uv venv "$BH_BUNDLE/.venv" --python python3.12 --relocatable --quiet 2>&1 | tail -1 || true
@@ -384,7 +389,7 @@ if [ -d "$BH_REPO" ] && [ -f "$BH_MCP_SERVER" ]; then
         uv pip install --python "$BH_BUNDLE/.venv/bin/python3" --link-mode copy \
             "mcp>=1.0.0" \
             "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" \
-            "$BH_BUNDLE/browser-harness-src" \
+            "$BH_PKG_SOURCE" \
             --quiet 2>&1 | tail -3 || true
         # Replace symlinks with actual binary for portability
         BH_REAL_PYTHON=$(readlink -f "$BH_BUNDLE/.venv/bin/python" 2>/dev/null)
@@ -422,8 +427,21 @@ fi
 # Bundle ai-browser-profile (Python). Provides cookies + localStorage import from user's
 # real Chromium browsers (Chrome/Arc/Brave/Edge) into the managed browser-harness Chrome.
 ABP_REPO="$HOME/ai-browser-profile"
+ABP_GIT="https://github.com/m13v/ai-browser-profile.git"
 ABP_BUNDLE="$APP_BUNDLE/Contents/Resources/ai-browser-profile"
+ABP_PKG_DIR=""
 if [ -d "$ABP_REPO/ai_browser_profile" ]; then
+    ABP_PKG_DIR="$ABP_REPO/ai_browser_profile"
+    substep "Using local ai-browser-profile checkout"
+else
+    # CI fallback: shallow-clone into a tmpdir and bundle from there.
+    ABP_TMPDIR="$(mktemp -d -t fazm-abp-XXXXXX)"
+    if git clone --depth 1 "$ABP_GIT" "$ABP_TMPDIR/repo" 2>&1 | tail -2; then
+        ABP_PKG_DIR="$ABP_TMPDIR/repo/ai_browser_profile"
+        substep "Cloned ai-browser-profile from GitHub for bundling"
+    fi
+fi
+if [ -n "$ABP_PKG_DIR" ] && [ -d "$ABP_PKG_DIR" ]; then
     substep "Bundling ai-browser-profile"
     mkdir -p "$ABP_BUNDLE"
     # Copy only the Python package + bin entrypoints we need (skip memories.db, .venv, dev artifacts)
@@ -431,7 +449,7 @@ if [ -d "$ABP_REPO/ai_browser_profile" ]; then
         --exclude='*.pyc' --exclude='memories.db*' --exclude='*.bak*' \
         --exclude='node_modules' --exclude='.ruff_cache' \
         --exclude='*.png' --exclude='*.jpg' --exclude='*.gif' \
-        "$ABP_REPO/ai_browser_profile/" "$ABP_BUNDLE/ai_browser_profile/"
+        "$ABP_PKG_DIR/" "$ABP_BUNDLE/ai_browser_profile/"
     if command -v uv &>/dev/null; then
         substep "Creating ai-browser-profile Python venv with uv"
         uv venv "$ABP_BUNDLE/.venv" --python python3.12 --relocatable --quiet 2>&1 | tail -1 || true
@@ -467,8 +485,12 @@ WRAPPER
     else
         substep "Warning: uv not found — ai-browser-profile will not work without dependencies"
     fi
+    # Clean up temp clone if we used one
+    if [ -n "${ABP_TMPDIR:-}" ] && [ -d "$ABP_TMPDIR" ]; then
+        rm -rf "$ABP_TMPDIR"
+    fi
 else
-    echo "Warning: ai-browser-profile sources not found at $ABP_REPO — skipping"
+    echo "Warning: ai-browser-profile sources not found at $ABP_REPO or via git — skipping"
 fi
 
 
