@@ -1094,6 +1094,24 @@ async function handleCodexLogin(): Promise<void> {
 
 let acpProcess: ChildProcess | null = null;
 let acpStdinWriter: ((line: string) => void) | null = null;
+
+/**
+ * Ring buffer of recent claude-agent-acp subprocess stderr lines. Surfaced in
+ * `warmup_complete` when warmup fails so we can diagnose hung MCP spawns / auth
+ * stalls remotely instead of needing the user's local log file.
+ */
+const acpStderrRing: string[] = [];
+const ACP_STDERR_RING_MAX = 80;
+function recordAcpStderr(text: string): void {
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    acpStderrRing.push(line);
+    if (acpStderrRing.length > ACP_STDERR_RING_MAX) acpStderrRing.shift();
+  }
+}
+function getAcpStderrTail(maxLines = 40): string {
+  return acpStderrRing.slice(-maxLines).join("\n");
+}
 let acpResponseHandlers = new Map<
   number,
   { resolve: (result: unknown) => void; reject: (err: Error) => void }
@@ -1325,11 +1343,13 @@ function startAcpProcess(): void {
   acpProcess.stderr.on("data", (data: Buffer) => {
     const text = data.toString().trim();
     if (text) {
+      recordAcpStderr(text);
       logErr(`ACP stderr: ${text}`);
     }
   });
 
   acpProcess.on("exit", (code) => {
+    recordAcpStderr(`[acp-process-exit] code=${code}`);
     logErr(`ACP process exited with code ${code}`);
     acpProcess = null;
     acpStdinWriter = null;
@@ -1746,7 +1766,7 @@ let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 let authMethods: AuthMethod[] = [];
 let authResolve: (() => void) | null = null;
-let preWarmPromise: Promise<void> | null = null;
+let preWarmPromise: Promise<WarmupResult> | null = null;
 let authRetryCount = 0;
 const MAX_AUTH_RETRIES = 2;
 let activeAuthPromise: Promise<void> | null = null;
@@ -2388,6 +2408,47 @@ interface WarmupSessionConfig {
   resume?: string;  // if set, resume this session ID instead of creating a new one
 }
 
+/** Outcome of a `preWarmSession` call — which session keys warmed and which did not. */
+interface WarmupResult {
+  completedKeys: string[];
+  failedSessions: Array<{ key: string; error: string }>;
+}
+
+/**
+ * Hard ceiling on warmup. Without this, a hung `session/new` (e.g. an MCP server
+ * that never answers its handshake, or an Anthropic auth stall) leaves
+ * `preWarmSession` pending forever and `warmup_complete` never fires — the user
+ * sits on an empty window indefinitely. Generous on purpose: a healthy warmup is
+ * well under a minute, but slow networks have been observed in the 3-4 min range,
+ * so this only converts a true infinite hang into a reported failure.
+ */
+const WARMUP_TOTAL_TIMEOUT_MS = 240_000;
+
+/** Reject if `p` doesn't settle within `ms`. The underlying promise keeps running. */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/** Coarse bucket for a failed warmup, derived from the per-session error strings. */
+function classifyWarmupFailure(failed: Array<{ key: string; error: string }>): string {
+  const errs = failed.map((f) => f.error.toLowerCase()).join(" || ");
+  if (errs.includes("timed out") || errs.includes("timeout")) return "timeout";
+  if (errs.includes("credit") || errs.includes("401") || errs.includes("403") ||
+      errs.includes("unauthorized") || errs.includes("auth")) return "auth";
+  if (errs.includes("mcp") || errs.includes("spawn") || errs.includes("enoent")) return "mcp_spawn";
+  if (errs.includes("session/new") || errs.includes("session/resume")) return "session_new";
+  return "unknown";
+}
+
 // Stable default cwd for ACP sessions — ensures Claude Code's native memory system
 // (MEMORY.md, auto memory) persists across app launches at a consistent path under
 // ~/.claude/projects/. Using $HOME gives the broadest memory coverage — shared with
@@ -2526,7 +2587,7 @@ function migrateJsonlForCwdChange(sessionId: string, oldCwd: string, newCwd: str
   }
 }
 
-async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[], stagger?: boolean): Promise<void> {
+async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[], stagger?: boolean): Promise<WarmupResult> {
   const warmCwd = cwd || DEFAULT_CWD;
   try { mkdirSync(warmCwd, { recursive: true }); } catch {}
 
@@ -2554,8 +2615,13 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
 
   if (toWarm.length === 0) {
     logErr("All requested sessions already pre-warmed");
-    return;
+    return { completedKeys: [], failedSessions: [] };
   }
+
+  // Per-session warmup outcome — lets warmup_complete report exactly which
+  // session(s) hung or failed instead of an opaque all-or-nothing flag.
+  const completedKeys: string[] = [];
+  const failedSessions: Array<{ key: string; error: string }> = [];
 
   try {
     await initializeAcp();
@@ -2563,11 +2629,12 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
     if (stagger && toWarm.length > 1) {
       logErr(`Pre-warming ${toWarm.length} sessions with stagger (post-OAuth restart)...`);
     }
-    await Promise.all(
+    await withTimeout(Promise.all(
       toWarm.map(async (cfg, i) => {
         if (stagger && i > 0) {
           await new Promise((r) => setTimeout(r, i * 500));
         }
+        const sessionStartMs = Date.now();
         try {
           const sessionParams: Record<string, unknown> = {
             cwd: warmCwd,
@@ -2662,8 +2729,11 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
           // (which doesn't emit session_started), so Swift never banks the id.
           // Defense-in-depth on top of handleQuery's own session_started emission.
           sendWithSession(sessionId, { type: "session_started", isResume: !!cfg.resume });
+          completedKeys.push(cfg.key);
+          logErr(`Pre-warm session '${cfg.key}' ready in ${Date.now() - sessionStartMs}ms`);
         } catch (err) {
           if (isAcpAuthError(err)) {
+            failedSessions.push({ key: cfg.key, error: "auth_error" });
             // Built-in mode: bundled API key is invalid. Don't trigger OAuth —
             // emit a signal so Swift can refetch + restart. Pre-warm is best-
             // effort, so just log and bail; the next user query will trigger
@@ -2685,13 +2755,26 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
             await startAuthFlow();
             return;
           }
-          logErr(`Pre-warm failed for ${cfg.key}: ${err}`);
+          const errMsg = err instanceof Error ? err.message : String(err);
+          failedSessions.push({ key: cfg.key, error: errMsg });
+          logErr(`Pre-warm session '${cfg.key}' FAILED after ${Date.now() - sessionStartMs}ms: ${errMsg}`);
         }
       })
-    );
+    ), WARMUP_TOTAL_TIMEOUT_MS, "Warmup");
   } catch (err) {
-    logErr(`Pre-warm failed (will create on first query): ${err}`);
+    // A throw here is the timeout (or initializeAcp failing) — the per-session
+    // bodies above swallow their own errors, so this only fires for the hard
+    // ceiling. Sessions still absent from completedKeys are the ones that hung.
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logErr(`Pre-warm failed (will create on first query): ${errMsg}`);
+    for (const cfg of toWarm) {
+      if (!completedKeys.includes(cfg.key) && !failedSessions.some((f) => f.key === cfg.key)) {
+        failedSessions.push({ key: cfg.key, error: errMsg });
+      }
+    }
   }
+
+  return { completedKeys, failedSessions };
 }
 
 // --- Handle query from Swift ---
@@ -4764,14 +4847,34 @@ async function main(): Promise<void> {
         // The warmup_complete event reports total duration + outcome so Swift
         // can compute warmup-race exposure without polling.
         preWarmPromise
-          .then(() => {
+          .then((result) => {
             const durationMs = Date.now() - warmupStartMs;
-            logErr(`Warmup complete in ${durationMs}ms (sessions=${sessionKeys.join(",")})`);
+            const failed = result?.failedSessions ?? [];
+            if (failed.length === 0) {
+              logErr(`Warmup complete in ${durationMs}ms (sessions=${sessionKeys.join(",")})`);
+              send({
+                type: "warmup_complete",
+                durationMs,
+                sessionKeys,
+                ok: true,
+              });
+              return;
+            }
+            // Some (or all) sessions hung or threw — report which, the coarse
+            // stage, and the claude-agent-acp stderr tail so we can diagnose
+            // a stuck warmup remotely instead of needing the user's log file.
+            const failureStage = classifyWarmupFailure(failed);
+            const errMsg = failed.map((f) => `${f.key}: ${f.error}`).join("; ");
+            logErr(`Warmup PARTIAL/FAILED after ${durationMs}ms — stage=${failureStage}, failed=[${failed.map((f) => f.key).join(",")}]`);
             send({
               type: "warmup_complete",
               durationMs,
               sessionKeys,
-              ok: true,
+              ok: false,
+              error: errMsg,
+              failureStage,
+              failedSessions: failed.map((f) => f.key),
+              stderrTail: getAcpStderrTail(),
             });
           })
           .catch((err) => {
@@ -4784,6 +4887,8 @@ async function main(): Promise<void> {
               sessionKeys,
               ok: false,
               error: errMsg,
+              failureStage: classifyWarmupFailure([{ key: "warmup", error: errMsg }]),
+              stderrTail: getAcpStderrTail(),
             });
           });
         break;
