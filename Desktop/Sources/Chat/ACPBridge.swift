@@ -513,14 +513,22 @@ actor ACPBridge {
       env["FAZM_VOICE_RESPONSE"] = "true"
     }
 
-    // Playwright MCP extension mode
-    let useExtension =
-      defaults.object(forKey: "playwrightUseExtension") == nil
-      || defaults.bool(forKey: "playwrightUseExtension")
-    if useExtension {
-      env["PLAYWRIGHT_USE_EXTENSION"] = "true"
-      if let token = defaults.string(forKey: "playwrightExtensionToken"), !token.isEmpty {
-        env["PLAYWRIGHT_MCP_EXTENSION_TOKEN"] = token
+    // Browser automation mode: "extension" (Playwright + Chrome extension, default)
+    // or "managed" (Fazm-bundled browser-harness driving its own Chrome). The two
+    // are mutually exclusive in acp-bridge to avoid dual-Chrome state confusion.
+    let browserMode = defaults.string(forKey: "browserMode") ?? "extension"
+    env["FAZM_BROWSER_MODE"] = browserMode
+
+    // Playwright MCP extension mode — only meaningful when browserMode == "extension"
+    if browserMode != "managed" {
+      let useExtension =
+        defaults.object(forKey: "playwrightUseExtension") == nil
+        || defaults.bool(forKey: "playwrightUseExtension")
+      if useExtension {
+        env["PLAYWRIGHT_USE_EXTENSION"] = "true"
+        if let token = defaults.string(forKey: "playwrightExtensionToken"), !token.isEmpty {
+          env["PLAYWRIGHT_MCP_EXTENSION_TOKEN"] = token
+        }
       }
     }
 
