@@ -523,6 +523,12 @@ export interface WarmupCompleteMessage {
   sessionKeys: string[];
   ok: boolean;
   error?: string;
+  /** Coarse bucket for a failed warmup: timeout | auth | mcp_spawn | session_new | unknown. */
+  failureStage?: string;
+  /** Session keys that did not warm up (hung past the timeout or threw). */
+  failedSessions?: string[];
+  /** Tail of the claude-agent-acp subprocess stderr — diagnostic context for a failed warmup. */
+  stderrTail?: string;
 }
 
 /**
