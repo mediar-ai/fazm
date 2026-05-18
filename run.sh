@@ -361,6 +361,117 @@ else
 fi
 
 
+# Bundle browser-harness MCP (Python). Source: ~/Developer/browser-harness (package) + the MCP wrapper.
+# Provides direct CDP browser control via a managed Chrome at ~/.fazm/browser-harness/profile.
+# Deps come from browser-harness pyproject.toml plus `mcp` for the MCP wrapper.
+BH_REPO="$HOME/Developer/browser-harness"
+BH_MCP_SERVER="$ACP_BRIDGE_DIR/browser-harness-server.py"
+BH_BUNDLE="$APP_BUNDLE/Contents/Resources/browser-harness"
+if [ -d "$BH_REPO" ] && [ -f "$BH_MCP_SERVER" ]; then
+    substep "Bundling browser-harness MCP"
+    mkdir -p "$BH_BUNDLE"
+    # Copy MCP wrapper (server.py)
+    cp -f "$BH_MCP_SERVER" "$BH_BUNDLE/server.py"
+    # Copy browser-harness package source (so we can pip install -e it into the venv)
+    rsync -a --exclude='.git' --exclude='__pycache__' --exclude='.venv' \
+        --exclude='*.pyc' --exclude='*.egg-info' --exclude='build' --exclude='dist' \
+        --exclude='tests' --exclude='docs' \
+        "$BH_REPO/" "$BH_BUNDLE/browser-harness-src/"
+    if command -v uv &>/dev/null; then
+        substep "Creating browser-harness Python venv with uv"
+        uv venv "$BH_BUNDLE/.venv" --python python3.12 --relocatable --quiet 2>&1 | tail -1 || true
+        # Install browser-harness package deps + the package itself + mcp (for the wrapper)
+        uv pip install --python "$BH_BUNDLE/.venv/bin/python3" --link-mode copy \
+            "mcp>=1.0.0" \
+            "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" \
+            "$BH_BUNDLE/browser-harness-src" \
+            --quiet 2>&1 | tail -3 || true
+        # Replace symlinks with actual binary for portability
+        BH_REAL_PYTHON=$(readlink -f "$BH_BUNDLE/.venv/bin/python" 2>/dev/null)
+        if [ -n "$BH_REAL_PYTHON" ] && [ -f "$BH_REAL_PYTHON" ] && [ -L "$BH_BUNDLE/.venv/bin/python" ]; then
+            BH_MANAGED_DIR=$(dirname "$(dirname "$BH_REAL_PYTHON")")
+            rm -f "$BH_BUNDLE/.venv/bin/python"
+            cp "$BH_REAL_PYTHON" "$BH_BUNDLE/.venv/bin/python"
+            rm -f "$BH_BUNDLE/.venv/bin/python3" "$BH_BUNDLE/.venv/bin/python3.12"
+            for wrapper_name in python3 python3.12; do
+                cat > "$BH_BUNDLE/.venv/bin/$wrapper_name" << 'WRAPPER'
+#!/bin/sh
+VENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONHOME="$VENV_DIR"
+exec "$VENV_DIR/bin/python" "$@"
+WRAPPER
+                chmod +x "$BH_BUNDLE/.venv/bin/$wrapper_name"
+            done
+            if [ -f "$BH_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
+                cp "$BH_MANAGED_DIR/lib/libpython3.12.dylib" "$BH_BUNDLE/.venv/lib/libpython3.12.dylib"
+            fi
+            if [ -d "$BH_MANAGED_DIR/lib/python3.12" ]; then
+                rsync -a --ignore-existing "$BH_MANAGED_DIR/lib/python3.12/" "$BH_BUNDLE/.venv/lib/python3.12/"
+            fi
+            printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$BH_BUNDLE/.venv/pyvenv.cfg"
+        fi
+        substep "Bundled browser-harness MCP with venv"
+    else
+        substep "Warning: uv not found — browser-harness MCP will not work without dependencies"
+    fi
+else
+    echo "Warning: browser-harness sources not found ($BH_REPO or $BH_MCP_SERVER) — skipping"
+fi
+
+
+# Bundle ai-browser-profile (Python). Provides cookies + localStorage import from user's
+# real Chromium browsers (Chrome/Arc/Brave/Edge) into the managed browser-harness Chrome.
+ABP_REPO="$HOME/ai-browser-profile"
+ABP_BUNDLE="$APP_BUNDLE/Contents/Resources/ai-browser-profile"
+if [ -d "$ABP_REPO/ai_browser_profile" ]; then
+    substep "Bundling ai-browser-profile"
+    mkdir -p "$ABP_BUNDLE"
+    # Copy only the Python package + bin entrypoints we need (skip memories.db, .venv, dev artifacts)
+    rsync -a --exclude='.git' --exclude='__pycache__' --exclude='.venv' \
+        --exclude='*.pyc' --exclude='memories.db*' --exclude='*.bak*' \
+        --exclude='node_modules' --exclude='.ruff_cache' \
+        --exclude='*.png' --exclude='*.jpg' --exclude='*.gif' \
+        "$ABP_REPO/ai_browser_profile/" "$ABP_BUNDLE/ai_browser_profile/"
+    if command -v uv &>/dev/null; then
+        substep "Creating ai-browser-profile Python venv with uv"
+        uv venv "$ABP_BUNDLE/.venv" --python python3.12 --relocatable --quiet 2>&1 | tail -1 || true
+        # Tier-1 deps for cookies + localStorage import (skip optional embedding deps)
+        uv pip install --python "$ABP_BUNDLE/.venv/bin/python3" --link-mode copy \
+            "cryptography" "websocket-client" "numpy" \
+            "git+https://github.com/cclgroupltd/ccl_chromium_reader.git" \
+            --quiet 2>&1 | tail -3 || true
+        ABP_REAL_PYTHON=$(readlink -f "$ABP_BUNDLE/.venv/bin/python" 2>/dev/null)
+        if [ -n "$ABP_REAL_PYTHON" ] && [ -f "$ABP_REAL_PYTHON" ] && [ -L "$ABP_BUNDLE/.venv/bin/python" ]; then
+            ABP_MANAGED_DIR=$(dirname "$(dirname "$ABP_REAL_PYTHON")")
+            rm -f "$ABP_BUNDLE/.venv/bin/python"
+            cp "$ABP_REAL_PYTHON" "$ABP_BUNDLE/.venv/bin/python"
+            rm -f "$ABP_BUNDLE/.venv/bin/python3" "$ABP_BUNDLE/.venv/bin/python3.12"
+            for wrapper_name in python3 python3.12; do
+                cat > "$ABP_BUNDLE/.venv/bin/$wrapper_name" << 'WRAPPER'
+#!/bin/sh
+VENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONHOME="$VENV_DIR"
+exec "$VENV_DIR/bin/python" "$@"
+WRAPPER
+                chmod +x "$ABP_BUNDLE/.venv/bin/$wrapper_name"
+            done
+            if [ -f "$ABP_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
+                cp "$ABP_MANAGED_DIR/lib/libpython3.12.dylib" "$ABP_BUNDLE/.venv/lib/libpython3.12.dylib"
+            fi
+            if [ -d "$ABP_MANAGED_DIR/lib/python3.12" ]; then
+                rsync -a --ignore-existing "$ABP_MANAGED_DIR/lib/python3.12/" "$ABP_BUNDLE/.venv/lib/python3.12/"
+            fi
+            printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$ABP_BUNDLE/.venv/pyvenv.cfg"
+        fi
+        substep "Bundled ai-browser-profile with venv"
+    else
+        substep "Warning: uv not found — ai-browser-profile will not work without dependencies"
+    fi
+else
+    echo "Warning: ai-browser-profile sources not found at $ABP_REPO — skipping"
+fi
+
+
 substep "Copying .env.app"
 if [ -f ".env.app.dev" ]; then
     cp -f .env.app.dev "$APP_BUNDLE/Contents/Resources/.env"
