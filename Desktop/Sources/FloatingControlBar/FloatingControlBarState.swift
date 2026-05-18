@@ -54,6 +54,11 @@ final class StreamingResponseState: ObservableObject {
     @Published var showingAIResponse: Bool = false
     @Published var isAILoading: Bool = true
     @Published var isCompacting: Bool = false
+    /// True while the ACP bridge is cold-starting. Mirrored from
+    /// `ChatProvider.isBridgeWarmingUp` so the header can show "preparing
+    /// assistant…" instead of a bare "thinking" spinner when a query is queued
+    /// behind first-launch warmup.
+    @Published var isBridgeWarmingUp: Bool = false
     @Published var isChatObserverRunning: Bool = false
     @Published var currentAIMessage: ChatMessage? = nil
     @Published var displayedQuery: String = ""
