@@ -744,6 +744,50 @@ class AnalyticsManager {
         PostHogManager.shared.track("bridge_warmup_ready", properties: props)
     }
 
+    /// Fired when ACP bridge warmup finishes WITHOUT a usable agent — one or more
+    /// pre-warmed sessions hung past the 240s ceiling or threw. This is the event
+    /// to alert on: the user is stuck on an empty window with no AI response.
+    ///
+    /// - `failure_stage`: coarse bucket from the bridge — `timeout` | `auth` |
+    ///   `mcp_spawn` | `session_new` | `unknown`. Tells us *where* the cold start
+    ///   stalls without needing the user's local log file.
+    /// - `failed_sessions`: which session keys (main/floating/observer/spare) did
+    ///   not warm up.
+    /// - `stderr_tail`: last lines of the claude-agent-acp subprocess stderr,
+    ///   truncated — the single most useful diagnostic for a remote hang.
+    func bridgeWarmupFailed(
+        bridgeMode: String,
+        durationMs: Int,
+        bridgeDurationMs: Int? = nil,
+        failureStage: String?,
+        failedSessions: [String],
+        sessionKeys: [String]? = nil,
+        error: String?,
+        stderrTail: String?
+    ) {
+        var props: [String: Any] = [
+            "bridge_mode": bridgeMode,
+            "duration_ms": durationMs,
+            "failure_stage": failureStage ?? "unknown",
+        ]
+        if let bridgeDurationMs = bridgeDurationMs {
+            props["bridge_duration_ms"] = bridgeDurationMs
+        }
+        if !failedSessions.isEmpty {
+            props["failed_sessions"] = failedSessions.joined(separator: ",")
+            props["failed_session_count"] = failedSessions.count
+        }
+        if let sessionKeys = sessionKeys, !sessionKeys.isEmpty {
+            props["session_keys"] = sessionKeys.joined(separator: ",")
+        }
+        if let error = error { props["error"] = error }
+        if let stderrTail = stderrTail, !stderrTail.isEmpty {
+            // PostHog property values balloon fast — keep the tail bounded.
+            props["stderr_tail"] = String(stderrTail.suffix(4000))
+        }
+        PostHogManager.shared.track("bridge_warmup_failed", properties: props)
+    }
+
     // MARK: - Conversation Events (Additional)
 
     func conversationReprocessed(conversationId: String, appId: String) {
