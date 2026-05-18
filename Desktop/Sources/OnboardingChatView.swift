@@ -220,7 +220,7 @@ struct OnboardingChatView: View {
                         // small typing indicator once messages have appeared
                         if chatProvider.isSending {
                             if chatProvider.messages.isEmpty {
-                                OnboardingConnectingView()
+                                OnboardingConnectingView(isWarmingUp: chatProvider.isBridgeWarmingUp)
                                     .frame(maxWidth: .infinity)
                                     .id("connecting")
                             } else {
@@ -1704,6 +1704,10 @@ struct ExplorationProfileCard: View {
 /// Prominent loading view shown during onboarding when no messages are visible yet
 /// (e.g. waiting for OAuth, bridge restart, or first LLM response).
 struct OnboardingConnectingView: View {
+    /// True while the ACP bridge is still cold-starting. First-launch warmup can
+    /// take noticeably longer than a normal reply, so show a clearer message
+    /// instead of a bare "Connecting…" spinner that looks like a stuck window.
+    var isWarmingUp: Bool = false
     @State private var animating = false
 
     var body: some View {
@@ -1712,11 +1716,19 @@ struct OnboardingConnectingView: View {
                 .scaleEffect(1.2)
                 .tint(FazmColors.purplePrimary)
 
-            Text("Connecting…")
+            Text(isWarmingUp ? "Preparing your assistant…" : "Connecting…")
                 .scaledFont(size: 14, weight: .medium)
                 .foregroundColor(FazmColors.textSecondary)
                 .opacity(animating ? 1.0 : 0.5)
                 .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: animating)
+
+            if isWarmingUp {
+                Text("First launch takes a little longer while everything sets up.")
+                    .scaledFont(size: 12, weight: .regular)
+                    .foregroundColor(FazmColors.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 280)
+            }
         }
         .padding(.top, 60)
         .onAppear { animating = true }
