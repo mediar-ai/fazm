@@ -531,6 +531,13 @@ class ChatProvider: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var isLoading = false
     @Published var isSending = false
+
+    /// True while the ACP bridge is cold-starting (subprocess spawn + `session/new`
+    /// for every pre-warmed key). The first query is queued behind warmup, so a
+    /// user who types immediately after launch otherwise sees a blank window with
+    /// no feedback. UI observes this to show a "Preparing your assistant…" state.
+    @Published var isBridgeWarmingUp = false
+
     /// Slash-command list advertised by the agent via ACP
     /// `available_commands_update`. Drives the slash-command popover in the
     /// chat input fields. Empty until the first session sends an update —
@@ -755,6 +762,14 @@ class ChatProvider: ObservableObject {
         return createBridge()
     }()
     private var acpBridgeStarted = false
+
+    /// In-flight warmup task. `warmupBridge()` fires from three startup paths
+    /// (OnboardingView, OnboardingChatView, ViewModelContainer); without this,
+    /// each caller passes the `acpBridgeStarted` guard before the first finishes
+    /// `await acpBridge.start()`, spawning duplicate ACP subprocesses (orphaned
+    /// node processes) and double-firing `bridge_warmup_started`. Concurrent
+    /// callers now coalesce onto this single task.
+    private var bridgeStartInFlight: Task<Bool, Never>?
 
     /// Whether the paywall should be shown (blocks AI response until subscription)
     @Published var showPaywall = false
@@ -1330,8 +1345,32 @@ class ChatProvider: ObservableObject {
         return false
     }
 
-    /// Ensure the ACP bridge is started (restarts if the process died)
+    /// Ensure the ACP bridge is started (restarts if the process died).
+    ///
+    /// Coalesces concurrent callers onto one warmup. The synchronous span between
+    /// the `bridgeStartInFlight` nil-check and its assignment contains no `await`,
+    /// so `@MainActor` serialization guarantees a second caller always observes
+    /// the in-flight task rather than starting its own.
     private func ensureBridgeStarted() async -> Bool {
+        if let inFlight = bridgeStartInFlight {
+            return await inFlight.value
+        }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return false }
+            return await self.performEnsureBridgeStarted()
+        }
+        bridgeStartInFlight = task
+        let result = await task.value
+        bridgeStartInFlight = nil
+        // On a failed start no `warmup_complete` will arrive, so clear the
+        // warmup flag here. On success it stays set until the handler fires.
+        if !result { isBridgeWarmingUp = false }
+        return result
+    }
+
+    /// Actual bridge start/warmup body. Always invoked through `ensureBridgeStarted()`
+    /// so it never runs concurrently with itself.
+    private func performEnsureBridgeStarted() async -> Bool {
         if acpBridgeStarted {
             let alive = await acpBridge.isAlive
             if !alive {
@@ -1362,6 +1401,8 @@ class ChatProvider: ObservableObject {
         // a user types and hits send before warmup finishes.
         let warmupStartTime = Date()
         AnalyticsManager.shared.bridgeWarmupStarted(bridgeMode: bridgeMode)
+        // Drive the "Preparing your assistant…" UI; cleared in the warmup-complete handler.
+        isBridgeWarmingUp = true
 
         // Ensure API keys are fetched before checking availability
         await KeyService.shared.ensureKeys()
@@ -1553,8 +1594,10 @@ class ChatProvider: ObservableObject {
             // (subprocess spawn + `session/new` for every pre-warmed key).
             let capturedBridgeMode = bridgeMode
             let warmupStartTimeForHandler = warmupStartTime
-            await acpBridge.setWarmupCompleteHandler { durationMs, sessionKeys, ok, error in
+            await acpBridge.setWarmupCompleteHandler { [weak self] durationMs, sessionKeys, ok, error, failureStage, failedSessions, stderrTail in
                 Task { @MainActor in
+                    // Warmup settled (ready or failed) — drop the "Preparing…" UI.
+                    self?.isBridgeWarmingUp = false
                     // Prefer the bridge-measured duration (post-message-receive to
                     // post-prewarm-resolved). Fall back to wall-clock measurement
                     // from Swift if the bridge didn't supply it. The wall-clock
@@ -1571,6 +1614,33 @@ class ChatProvider: ObservableObject {
                         error: error
                     )
                     log("ChatProvider: bridge_warmup_ready swiftMs=\(swiftMeasuredMs) bridgeMs=\(bridgeMeasuredMs) ok=\(ok) sessions=\(sessionKeys.joined(separator: ","))")
+                    if !ok {
+                        // Warmup stranded the user on an empty window. Emit the
+                        // dedicated failure event (failure stage + which sessions
+                        // hung + ACP stderr tail) and mirror it to Sentry so a
+                        // remote hang is diagnosable without the user's log file.
+                        AnalyticsManager.shared.bridgeWarmupFailed(
+                            bridgeMode: capturedBridgeMode,
+                            durationMs: swiftMeasuredMs,
+                            bridgeDurationMs: bridgeMeasuredMs,
+                            failureStage: failureStage,
+                            failedSessions: failedSessions,
+                            sessionKeys: sessionKeys,
+                            error: error,
+                            stderrTail: stderrTail
+                        )
+                        log("ChatProvider: bridge_warmup_FAILED stage=\(failureStage ?? "-") failed=\(failedSessions.joined(separator: ",")) error=\(error ?? "-")")
+                        let breadcrumb = Breadcrumb(level: .error, category: "bridge")
+                        breadcrumb.message = "bridge_warmup_failed (stage=\(failureStage ?? "unknown"), failed=[\(failedSessions.joined(separator: ","))])"
+                        breadcrumb.data = [
+                            "failure_stage": failureStage ?? "unknown",
+                            "failed_sessions": failedSessions.joined(separator: ","),
+                            "duration_ms": swiftMeasuredMs,
+                            "stderr_tail": String((stderrTail ?? "").suffix(4000)),
+                        ]
+                        SentrySDK.addBreadcrumb(breadcrumb)
+                        SentrySDK.capture(message: "ACP bridge warmup failed (stage=\(failureStage ?? "unknown"))")
+                    }
                 }
             }
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
