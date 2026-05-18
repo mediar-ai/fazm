@@ -106,6 +106,26 @@ const googleWorkspaceMcpDir = join(resourcesDir, "google-workspace-mcp");
 const googleWorkspaceMcpPython = join(googleWorkspaceMcpDir, ".venv", "bin", "python3");
 const googleWorkspaceMcpMain = join(googleWorkspaceMcpDir, "main.py");
 
+// browser-harness MCP — Python server bundled under Contents/Resources/browser-harness/
+// Provides direct CDP browser control via a managed Chrome with a persistent
+// profile at ~/.fazm/browser-harness/profile. Mutually exclusive with the
+// playwright-extension flow: when FAZM_BROWSER_MODE=managed, playwright is
+// dropped from the MCP list and browser-harness takes its place.
+const browserHarnessMcpDir = join(resourcesDir, "browser-harness");
+const browserHarnessMcpPython = join(browserHarnessMcpDir, ".venv", "bin", "python3");
+const browserHarnessMcpServer = join(browserHarnessMcpDir, "server.py");
+
+// ai-browser-profile — Python lib for importing cookies/localStorage from
+// real Chromium browsers (Chrome/Arc/Brave/Edge) into the browser-harness Chrome.
+const aiBrowserProfileDir = join(resourcesDir, "ai-browser-profile");
+const aiBrowserProfilePython = join(aiBrowserProfileDir, ".venv", "bin", "python3");
+
+// Which browser automation flow is active. "extension" = the existing
+// Playwright + Chrome-extension flow (default). "managed" = browser-harness
+// driving its own Chrome instance, optionally seeded with cookies via
+// ai-browser-profile.
+const browserMode = (process.env.FAZM_BROWSER_MODE || "extension").toLowerCase();
+
 
 // --- Tool timeout watchdog ---
 // Tracks running tools and enforces per-tool wall-clock limits.
@@ -2033,6 +2053,32 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
     return servers;
   }
 
+  // --- Browser automation: extension flow (Playwright) vs managed flow (browser-harness) ---
+  // The two flows are mutually exclusive to avoid dual-Chrome state confusion.
+  // Default = "extension" (existing behavior). Override via FAZM_BROWSER_MODE=managed.
+  if (browserMode === "managed") {
+    if (existsSync(browserHarnessMcpPython) && existsSync(browserHarnessMcpServer)) {
+      const browserHarnessVenv = join(browserHarnessMcpDir, ".venv");
+      servers.push({
+        name: "browser-harness",
+        command: browserHarnessMcpPython,
+        args: [browserHarnessMcpServer],
+        env: [
+          { name: "PYTHONHOME", value: browserHarnessVenv },
+          { name: "PYTHONDONTWRITEBYTECODE", value: "1" },
+        ],
+      });
+      logErr(`Browser mode: managed (browser-harness MCP loaded)`);
+    } else {
+      logErr(
+        `[FAZM-BROWSER-MISSING] FAZM_BROWSER_MODE=managed but bundled browser-harness ` +
+          `not found at ${browserHarnessMcpPython} / ${browserHarnessMcpServer}. ` +
+          `Falling back to no browser server (agent will have no browser tools).`,
+      );
+    }
+    // Skip Playwright entirely when in managed mode.
+    // (continue below to macos-use, whatsapp, google-workspace, user servers)
+  } else {
   // Playwright MCP server
   const playwrightArgs = [playwrightCli];
   if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
@@ -2098,6 +2144,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
     args: playwrightArgs,
     env: playwrightEnv,
   });
+  } // end else (browserMode !== "managed")
 
   // mcp-server-macos-use (native macOS accessibility automation)
   if (existsSync(macosUseBinary)) {
@@ -2384,7 +2431,7 @@ function emitMcpServers(servers: McpServerConfig[]): void {
 }
 
 // Names of built-in MCP servers (hardcoded in buildMcpServers)
-const BUILTIN_MCP_NAMES = new Set(["fazm_tools", "playwright", "macos-use", "whatsapp", "google-workspace"]);
+const BUILTIN_MCP_NAMES = new Set(["fazm_tools", "playwright", "macos-use", "whatsapp", "google-workspace", "browser-harness"]);
 function isUserMcpServer(name: string): boolean {
   return !BUILTIN_MCP_NAMES.has(name);
 }
@@ -4726,7 +4773,7 @@ async function main(): Promise<void> {
   } catch { /* ignore */ }
 
   logErr(`Bridge main() starting (pid=${process.pid}, node=${process.version}, execPath=${process.execPath})`);
-  logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}`);
+  logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}, browser-harness=${existsSync(browserHarnessMcpPython) ? "bundled" : "missing"}, ai-browser-profile=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, browserMode=${browserMode}`);
   logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
 
   // Check Google Workspace MCP availability (venv bundled in app)
