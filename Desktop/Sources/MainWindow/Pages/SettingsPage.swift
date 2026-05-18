@@ -140,6 +140,18 @@ struct SettingsContentView: View {
     @State private var playwrightExtensionToken: String = ""
     @State private var showBrowserSetup = false
 
+    // Browser automation mode: "extension" (default; uses user's real Chrome via the
+    // Playwright Chrome extension) or "managed" (Fazm-managed Chrome driven by the
+    // bundled browser-harness MCP, optionally seeded via ai-browser-profile).
+    @AppStorage("browserMode") private var browserMode: String = "extension"
+
+    // Managed browser: import-sessions UI state
+    @State private var managedImportSource: String = "arc:Default"
+    @State private var managedImportDomains: String = "github.com,chatgpt.com,openai.com,linear.app,notion.so"
+    @State private var managedImportRunning: Bool = false
+    @State private var managedImportLastResult: String? = nil
+    @State private var managedImportLastError: String? = nil
+
     // Launch at login manager
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
     @State private var transcriptionAutoDetect: Bool = AssistantSettings.shared.transcriptionAutoDetect
@@ -1372,7 +1384,132 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Browser Extension card
+            // Browser Automation mode picker — chooses between extension flow and managed flow
+            settingsCard(settingId: "aichat.browserautomation") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "globe.badge.chevron.backward")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textTertiary)
+                        Text("Browser Automation")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Spacer()
+                    }
+
+                    Text("Choose how the AI controls a web browser. Both flows can be set up; only one is active at a time.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+
+                    Picker("Mode", selection: $browserMode) {
+                        Text("Use my Chrome (extension)").tag("extension")
+                        Text("Use Fazm's managed Chrome (beta)").tag("managed")
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    .onChange(of: browserMode) { _, newValue in
+                        AnalyticsManager.shared.settingToggled(setting: "browser_mode_\(newValue)", enabled: true)
+                    }
+                }
+            }
+
+            // Managed Browser card (visible when browserMode == "managed")
+            if browserMode == "managed" {
+                settingsCard(settingId: "aichat.managedbrowser") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "macwindow.on.rectangle")
+                                .scaledFont(size: 16)
+                                .foregroundColor(FazmColors.textTertiary)
+                            Text("Fazm Managed Browser")
+                                .scaledFont(size: 15, weight: .semibold)
+                                .foregroundColor(FazmColors.textPrimary)
+                            Spacer()
+                        }
+
+                        Text("Fazm runs its own Chrome window with a persistent profile. Import your real-browser sessions below so the AI is signed in to the sites you use. Requires Google Chrome installed.")
+                            .scaledFont(size: 12)
+                            .foregroundColor(FazmColors.textTertiary)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Source profile")
+                                .scaledFont(size: 12)
+                                .foregroundColor(FazmColors.textTertiary)
+                            Picker("Source", selection: $managedImportSource) {
+                                Text("Arc (Default)").tag("arc:Default")
+                                Text("Chrome (Default)").tag("chrome:Default")
+                                Text("Chrome (Profile 1)").tag("chrome:Profile 1")
+                                Text("Brave (Default)").tag("brave:Default")
+                                Text("Edge (Default)").tag("edge:Default")
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Domains to import (comma-separated)")
+                                .scaledFont(size: 12)
+                                .foregroundColor(FazmColors.textTertiary)
+                            TextField("github.com, chatgpt.com, linear.app", text: $managedImportDomains)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12))
+                        }
+
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                runManagedBrowserImport()
+                            }) {
+                                HStack(spacing: 6) {
+                                    if managedImportRunning {
+                                        ProgressView()
+                                            .scaleEffect(0.5)
+                                            .frame(width: 12, height: 12)
+                                    } else {
+                                        Image(systemName: "arrow.down.circle")
+                                            .scaledFont(size: 12)
+                                    }
+                                    Text(managedImportRunning ? "Importing…" : "Import sessions")
+                                        .scaledFont(size: 13, weight: .medium)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(managedImportRunning || managedImportDomains.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                            Spacer()
+                        }
+
+                        if let result = managedImportLastResult {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .scaledFont(size: 12)
+                                Text(result)
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(FazmColors.textSecondary)
+                            }
+                        }
+                        if let err = managedImportLastError {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                    .scaledFont(size: 12)
+                                Text(err)
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(FazmColors.textSecondary)
+                            }
+                        }
+
+                        Text("macOS will ask once to release your browser's keychain item. Click Always Allow.")
+                            .scaledFont(size: 11)
+                            .foregroundColor(FazmColors.textTertiary)
+                            .italic()
+                    }
+                }
+            }
+
+            // Browser Extension card (only relevant when extension mode is active)
+            if browserMode == "extension" {
             settingsCard(settingId: "aichat.browserextension") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -1469,6 +1606,7 @@ struct SettingsContentView: View {
                     }
                 }
             }
+            } // end if browserMode == "extension"
 
             // Dev Mode card
             settingsCard(settingId: "aichat.devmode") {
@@ -1621,6 +1759,178 @@ struct SettingsContentView: View {
         }
         .frame(width: 600, height: 500)
         .background(FazmColors.backgroundSecondary)
+    }
+
+    // MARK: - Managed browser session import
+    //
+    // Shells out to the bundled ai-browser-profile to:
+    //   1. Read cookies from the chosen source browser profile (macOS Keychain +
+    //      AES-CBC decrypt of Chromium's Cookies SQLite).
+    //   2. Read localStorage from the chosen source profile (Chromium LevelDB).
+    //   3. Inject both into the Fazm-managed Chrome (port 9555) via CDP.
+    //
+    // The managed Chrome is auto-launched by the browser-harness MCP server on
+    // first agent use; here we make sure it's running before injecting, then
+    // talk to its CDP endpoint directly via the ai-browser-profile CLI.
+    //
+    // macOS will show one Keychain "Always Allow" dialog the first time per
+    // source browser. No sudo / admin password required (the login keychain
+    // auto-unlocks at login by default).
+    private func runManagedBrowserImport() {
+        guard !managedImportRunning else { return }
+        let source = managedImportSource
+        let domains = managedImportDomains.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !domains.isEmpty else { return }
+
+        managedImportRunning = true
+        managedImportLastResult = nil
+        managedImportLastError = nil
+
+        let resourcePath = Bundle.main.resourcePath ?? ""
+        let abpDir = "\(resourcePath)/ai-browser-profile"
+        let abpPython = "\(abpDir)/.venv/bin/python3"
+        let bhDir = "\(resourcePath)/browser-harness"
+        let bhPython = "\(bhDir)/.venv/bin/python3"
+        let bhServer = "\(bhDir)/server.py"
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Ensure managed Chrome is running: invoke server.py's bh_start indirectly
+            // by running a tiny inline script in the bundled venv that imports
+            // server.ensure_chrome().
+            let chromeStarted = SettingsContentView.ensureManagedChrome(python: bhPython, serverPath: bhServer)
+            if let err = chromeStarted.error {
+                DispatchQueue.main.async {
+                    self.managedImportRunning = false
+                    self.managedImportLastError = "Couldn't start managed Chrome: \(err)"
+                }
+                return
+            }
+
+            // Now run cookies import
+            let cookieResult = SettingsContentView.runAbpModule(
+                python: abpPython,
+                cwd: abpDir,
+                module: "ai_browser_profile.cookies",
+                source: source,
+                filterFlag: "--domains",
+                filterValue: domains
+            )
+
+            // Then localStorage (origins == domains by convention)
+            let lsResult = SettingsContentView.runAbpModule(
+                python: abpPython,
+                cwd: abpDir,
+                module: "ai_browser_profile.localstorage",
+                source: source,
+                filterFlag: "--origins",
+                filterValue: domains
+            )
+
+            DispatchQueue.main.async {
+                self.managedImportRunning = false
+                if cookieResult.ok || lsResult.ok {
+                    let summary = "Imported from \(source). Cookies: \(cookieResult.summary). localStorage: \(lsResult.summary)."
+                    self.managedImportLastResult = summary
+                    if !cookieResult.ok || !lsResult.ok {
+                        self.managedImportLastError = [cookieResult.error, lsResult.error].compactMap { $0 }.joined(separator: " / ")
+                    }
+                } else {
+                    self.managedImportLastError = "Import failed. \(cookieResult.error ?? "") \(lsResult.error ?? "")"
+                }
+            }
+        }
+    }
+
+    // Run the managed Chrome ensure-running step via the bundled server.py.
+    // We import the module and call ensure_chrome() so the same lifecycle code
+    // path is used as when the MCP server is driven by the agent.
+    private static func ensureManagedChrome(python: String, serverPath: String) -> (error: String?, status: String?) {
+        guard FileManager.default.fileExists(atPath: python),
+              FileManager.default.fileExists(atPath: serverPath) else {
+            return ("browser-harness not bundled (missing python or server.py)", nil)
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: python)
+        proc.arguments = [
+            "-c",
+            """
+            import importlib.util, json, sys
+            spec = importlib.util.spec_from_file_location('bh_server', r'\(serverPath)')
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            print(json.dumps(mod.ensure_chrome()))
+            """,
+        ]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        proc.standardOutput = stdout
+        proc.standardError = stderr
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            return ("could not run server.py: \(error.localizedDescription)", nil)
+        }
+        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if proc.terminationStatus == 0 {
+            return (nil, out.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return ("exit \(proc.terminationStatus): \(err.trimmingCharacters(in: .whitespacesAndNewlines))", nil)
+    }
+
+    // Run an ai_browser_profile module CLI (cookies / localstorage) against the
+    // managed Chrome's CDP endpoint. Returns ok + a short summary string suitable
+    // for the Settings UI.
+    private static func runAbpModule(
+        python: String,
+        cwd: String,
+        module: String,
+        source: String,
+        filterFlag: String,
+        filterValue: String
+    ) -> (ok: Bool, summary: String, error: String?) {
+        guard FileManager.default.fileExists(atPath: python) else {
+            return (false, "skipped", "ai-browser-profile not bundled at \(python)")
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: python)
+        proc.arguments = [
+            "-m", module,
+            "copy",
+            "--from", source,
+            "--to", "http://127.0.0.1:9555",
+            filterFlag, filterValue,
+        ]
+        proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        let stdout = Pipe()
+        let stderr = Pipe()
+        proc.standardOutput = stdout
+        proc.standardError = stderr
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            return (false, "error", "could not run \(module): \(error.localizedDescription)")
+        }
+        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if proc.terminationStatus == 0 {
+            // Find a "Total: ..." line if the CLI produced one; otherwise show
+            // the last non-empty line.
+            let summary: String = {
+                let lines = out.split(whereSeparator: \.isNewline).map(String.init)
+                if let total = lines.last(where: { $0.lowercased().contains("total") }) {
+                    return total.trimmingCharacters(in: .whitespaces)
+                }
+                return lines.last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })?
+                    .trimmingCharacters(in: .whitespaces) ?? "done"
+            }()
+            return (true, summary, nil)
+        }
+        let combined = (err + "\n" + out).trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = combined.split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit \(proc.terminationStatus)"
+        return (false, "failed", String(firstLine.prefix(200)))
     }
 
     private func refreshAIChatConfig() {
