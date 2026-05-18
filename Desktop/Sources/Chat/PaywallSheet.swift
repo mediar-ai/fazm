@@ -5,6 +5,9 @@ import AppKit
 struct PaywallSheet: View {
     let onSubscribe: () -> Void
     let onDismiss: () -> Void
+    /// Signs the user out and returns them to the sign-in screen, so someone
+    /// who subscribed under a different account can re-authenticate.
+    let onSwitchAccount: () -> Void
 
     @State private var showReferral = false
     @State private var referralCode: String = ""
@@ -238,7 +241,32 @@ struct PaywallSheet: View {
                 featureRow("Screen context awareness")
             }
             .padding(.horizontal, 44)
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
+
+            // Wrong-account recovery. A user who already pays under a different
+            // account (e.g. a second Google account) would otherwise be stuck
+            // here with no way to reach the account that carries the subscription.
+            VStack(spacing: 3) {
+                if let email = AuthService.shared.userEmail, !email.isEmpty {
+                    Text("Signed in as \(email)")
+                        .scaledFont(size: 11)
+                        .foregroundColor(FazmColors.textQuaternary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Button(action: {
+                    PostHogManager.shared.track("paywall_switch_account_tapped", properties: ["source": "paywall"])
+                    onSwitchAccount()
+                }) {
+                    Text("Already subscribed? Sign in with a different account")
+                        .scaledFont(size: 12, weight: .medium)
+                        .foregroundColor(FazmColors.purplePrimary)
+                        .multilineTextAlignment(.center)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 10)
 
             // Dismiss
             Button(action: {
@@ -435,7 +463,19 @@ private struct PaywallWindowContent: View {
                     }
                 }
             },
-            onDismiss: onDismiss
+            onDismiss: onDismiss,
+            onSwitchAccount: {
+                log("PaywallSheet: switch-account tapped — signing out")
+                AuthService.shared.signOut()
+                // Signing out flips AuthState.isSignedIn, so DesktopHomeView
+                // swaps in SignInView. Bring that window forward since it may
+                // have been ordered out after the previous sign-in.
+                NSApp.activate(ignoringOtherApps: true)
+                for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                    window.makeKeyAndOrderFront(nil)
+                }
+                onDismiss()
+            }
         )
         .onReceive(chatProvider.$showPaywall.removeDuplicates().dropFirst()) { show in
             if !show {
