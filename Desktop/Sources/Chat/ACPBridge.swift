@@ -238,7 +238,7 @@ actor ACPBridge {
     /// Pairs with `bridge_warmup_started` (fired in Swift right before `ensureBridgeStarted()`)
     /// so we can compute the cold-start window in PostHog and confirm/refute the
     /// warmup-race hypothesis (user types before warmup is done → pre_response failure).
-    case warmupComplete(durationMs: Double, sessionKeys: [String], ok: Bool, error: String?)
+    case warmupComplete(durationMs: Double, sessionKeys: [String], ok: Bool, error: String?, failureStage: String?, failedSessions: [String], stderrTail: String?)
     case codexProbeResult(ok: Bool, agent: String?, authMethods: [String], currentModelId: String?, availableModels: [[String: Any]], authMode: String, error: String?)
     case codexLoginUrl(url: String)
     case codexLoginComplete
@@ -293,7 +293,7 @@ actor ACPBridge {
   var onBackgroundToolCall: ToolCallHandler?
   /// Called when the bridge finishes pre-warming sessions (success or failure).
   /// Set in ChatProvider.ensureBridgeStarted to fire `bridge_warmup_ready`.
-  var onWarmupComplete: ((_ durationMs: Double, _ sessionKeys: [String], _ ok: Bool, _ error: String?) -> Void)?
+  var onWarmupComplete: ((_ durationMs: Double, _ sessionKeys: [String], _ ok: Bool, _ error: String?, _ failureStage: String?, _ failedSessions: [String], _ stderrTail: String?) -> Void)?
   /// Called when the agent updates its slash-command list (via ACP
   /// `available_commands_update`). Drives the slash-command popover in the
   /// input fields. Scoped by sessionKey so each pop-out can render its own
@@ -344,7 +344,7 @@ actor ACPBridge {
     self.onBackgroundToolCall = handler
   }
 
-  func setWarmupCompleteHandler(_ handler: @escaping @Sendable (_ durationMs: Double, _ sessionKeys: [String], _ ok: Bool, _ error: String?) -> Void) {
+  func setWarmupCompleteHandler(_ handler: @escaping @Sendable (_ durationMs: Double, _ sessionKeys: [String], _ ok: Bool, _ error: String?, _ failureStage: String?, _ failedSessions: [String], _ stderrTail: String?) -> Void) {
     self.onWarmupComplete = handler
   }
 
@@ -1564,7 +1564,10 @@ actor ACPBridge {
       let sessionKeys = dict["sessionKeys"] as? [String] ?? []
       let ok = dict["ok"] as? Bool ?? false
       let error = dict["error"] as? String
-      return .warmupComplete(durationMs: durationMs, sessionKeys: sessionKeys, ok: ok, error: error)
+      let failureStage = dict["failureStage"] as? String
+      let failedSessions = dict["failedSessions"] as? [String] ?? []
+      let stderrTail = dict["stderrTail"] as? String
+      return .warmupComplete(durationMs: durationMs, sessionKeys: sessionKeys, ok: ok, error: error, failureStage: failureStage, failedSessions: failedSessions, stderrTail: stderrTail)
 
     case "codex_probe_result":
       let ok = dict["ok"] as? Bool ?? false
@@ -1729,9 +1732,9 @@ actor ACPBridge {
       log("ACPBridge: received codex_probe_result ok=\(ok) authMode=\(authMode) models=\(availableModels.count) error=\(error ?? "-")")
       onCodexProbeResult?(ok, agent, authMethods, currentModelId, availableModels, authMode, error)
       return
-    case .warmupComplete(let durationMs, let sessionKeys, let ok, let error):
-      log("ACPBridge: received warmup_complete durationMs=\(Int(durationMs)) sessions=\(sessionKeys.joined(separator: ",")) ok=\(ok) error=\(error ?? "-")")
-      onWarmupComplete?(durationMs, sessionKeys, ok, error)
+    case .warmupComplete(let durationMs, let sessionKeys, let ok, let error, let failureStage, let failedSessions, let stderrTail):
+      log("ACPBridge: received warmup_complete durationMs=\(Int(durationMs)) sessions=\(sessionKeys.joined(separator: ",")) ok=\(ok) error=\(error ?? "-") stage=\(failureStage ?? "-") failed=\(failedSessions.joined(separator: ","))")
+      onWarmupComplete?(durationMs, sessionKeys, ok, error, failureStage, failedSessions, stderrTail)
       return
     case .codexLoginUrl(let url):
       log("ACPBridge: received codex_login_url")
