@@ -266,6 +266,16 @@ enum ChatQueryLifecycle {
                 }
         )
 
+        // Sync the bridge cold-start indicator. Not session-scoped — warmup is a
+        // global, one-time-per-launch event shared by every session.
+        cancellables.append(
+            provider.$isBridgeWarmingUp
+                .receive(on: DispatchQueue.main)
+                .sink { [weak state] isWarmingUp in
+                    state?.streaming.isBridgeWarmingUp = isWarmingUp
+                }
+        )
+
         return cancellables
     }
 
