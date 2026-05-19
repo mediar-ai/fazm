@@ -117,6 +117,10 @@ struct AIResponseView: View {
     /// Workspace selection callback. Pass `nil` to open the directory picker
     /// (NSOpenPanel). Pass a path to switch directly to that workspace.
     var onChangeWorkspace: ((String?) -> Void)?
+    /// Edit a previous user message and resubmit. Truncates the conversation
+    /// at the edited message and restarts with the new text. nil = no edit
+    /// affordance shown on past bubbles.
+    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -801,7 +805,11 @@ struct AIResponseView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Question bubble (hidden for observer-only entries with no user question)
             if !exchange.question.isEmpty {
-                ExpandableQuestionBubble(question: exchange.question)
+                ExpandableQuestionBubble(
+                    question: exchange.question,
+                    userMessageId: exchange.userMessageId,
+                    onEdit: onEditMessage
+                )
                     .opacity(stackedBubbleIDs.contains(exchange.id) ? 0 : 1)
                     .background(
                         GeometryReader { geo in
@@ -1162,9 +1170,21 @@ struct AIResponseView: View {
 // MARK: - Expandable Question Bubble (chat history)
 
 /// Question bubble in chat history that truncates to 2 lines with an expand chevron.
+/// When `userMessageId` is non-nil and `onEdit` is provided, a pencil button
+/// (revealed on hover) lets the user edit the message and resubmit, which
+/// truncates the conversation at this point and restarts with the new text.
 private struct ExpandableQuestionBubble: View {
     let question: String
+    var userMessageId: String?
+    var onEdit: ((_ messageId: String, _ newText: String) -> Void)?
+
     @State private var isExpanded = false
+    @State private var isEditing = false
+    @State private var editText: String = ""
+
+    private var canEdit: Bool {
+        userMessageId != nil && onEdit != nil
+    }
 
     private var needsExpansion: Bool {
         let font = NSFont.systemFont(ofSize: 13)
@@ -1176,6 +1196,20 @@ private struct ExpandableQuestionBubble: View {
     }
 
     var body: some View {
+        Group {
+            if isEditing {
+                editingView
+            } else {
+                displayView
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(FazmColors.overlayForeground.opacity(0.1))
+        .cornerRadius(8)
+    }
+
+    private var displayView: some View {
         HStack(alignment: .top, spacing: 4) {
             SelectableText(
                 text: question,
@@ -1189,26 +1223,176 @@ private struct ExpandableQuestionBubble: View {
             QuestionBarButtons(
                 needsExpansion: needsExpansion,
                 isExpanded: $isExpanded,
-                userInput: question
+                userInput: question,
+                canEdit: canEdit,
+                onEditTap: {
+                    editText = question
+                    isEditing = true
+                }
             )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(FazmColors.overlayForeground.opacity(0.1))
-        .cornerRadius(8)
+    }
+
+    private var editingView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EditMessageInfoBanner()
+
+            EditableTextArea(text: $editText, onSubmit: commitEdit)
+                .frame(minHeight: 60, maxHeight: 200)
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") {
+                    isEditing = false
+                    editText = ""
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .scaledFont(size: 12)
+
+                Button(action: commitEdit) {
+                    Text("Save & resubmit")
+                        .scaledFont(size: 12)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(FazmColors.overlayForeground.opacity(0.15))
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .disabled(trimmedEditText.isEmpty || trimmedEditText == question)
+            }
+        }
+    }
+
+    private var trimmedEditText: String {
+        editText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func commitEdit() {
+        let trimmed = trimmedEditText
+        guard !trimmed.isEmpty, trimmed != question else { return }
+        guard let id = userMessageId, let edit = onEdit else { return }
+        isEditing = false
+        editText = ""
+        edit(id, trimmed)
+    }
+}
+
+/// Multi-line text area for editing a past message in-place. Uses NSTextView
+/// (via NSViewRepresentable) so Cmd+Return submits and the field auto-focuses.
+private struct EditableTextArea: NSViewRepresentable {
+    @Binding var text: String
+    let onSubmit: () -> Void
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        if let tv = scroll.documentView as? NSTextView {
+            tv.delegate = context.coordinator
+            tv.font = NSFont.systemFont(ofSize: 13)
+            tv.isRichText = false
+            tv.allowsUndo = true
+            tv.textContainerInset = NSSize(width: 4, height: 6)
+            tv.backgroundColor = NSColor.clear
+            tv.drawsBackground = false
+            tv.textColor = NSColor(FazmColors.overlayForeground)
+            tv.string = text
+            DispatchQueue.main.async {
+                tv.window?.makeFirstResponder(tv)
+                tv.setSelectedRange(NSRange(location: tv.string.count, length: 0))
+            }
+        }
+        scroll.borderType = .lineBorder
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        return scroll
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let tv = nsView.documentView as? NSTextView else { return }
+        if tv.string != text {
+            tv.string = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let parent: EditableTextArea
+        init(_ parent: EditableTextArea) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            parent.text = tv.string
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            // Cmd+Return submits. Plain Return inserts a newline (default).
+            if selector == #selector(NSResponder.insertNewline(_:)) {
+                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                if modifiers.contains(.command) {
+                    parent.onSubmit()
+                    return true
+                }
+            }
+            return false
+        }
+    }
+}
+
+/// Info banner shown above the edit field explaining the fidelity caveat.
+private struct EditMessageInfoBanner: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "info.circle")
+                .scaledFont(size: 11)
+                .foregroundColor(.secondary)
+            Text("Resubmitting truncates the conversation here and replays a text-only summary of earlier turns (no tool calls or thinking blocks, up to ~20 turns). The new response may diverge from the original thread.")
+                .scaledFont(size: 11)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Hover popover content for the small info "?" icon on the question bubble.
+/// Visually distinct from `EditMessageInfoBanner` (which is shown while editing).
+private struct EditMessageHoverHint: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Edit and resubmit")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundColor(.primary)
+            Text("Click the pencil to rewrite this message. The conversation will rewind to this point and the agent will continue from your edited text.")
+                .scaledFont(size: 11)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Caveat: history is replayed as a text-only summary of the last ~20 turns, with no tool calls or thinking. The new response may differ from one that ran normally.")
+                .scaledFont(size: 11)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: 280)
     }
 }
 
 // MARK: - Question Bar Buttons (copy + expand, inline)
 
-/// Inline buttons for the question bar — copy and expand sit side by side to avoid overlap.
+/// Inline buttons for the question bar — copy, edit, info, and expand sit
+/// side by side to avoid overlap.
 private struct QuestionBarButtons: View {
     let needsExpansion: Bool
     @Binding var isExpanded: Bool
     let userInput: String
+    /// When true, render the pencil (edit) and info (?) buttons on hover.
+    var canEdit: Bool = false
+    var onEditTap: (() -> Void)? = nil
 
     @State private var isHovered = false
     @State private var showCopied = false
+    @State private var showEditHint = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -1228,6 +1412,37 @@ private struct QuestionBarButtons: View {
             }
             .buttonStyle(.plain)
             .opacity(isHovered || showCopied ? 1 : 0)
+
+            if canEdit, let onEditTap = onEditTap {
+                Button(action: onEditTap) {
+                    Image(systemName: "pencil")
+                        .scaledFont(size: 10)
+                        .foregroundColor(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovered ? 1 : 0)
+                .help("Edit and resubmit — rewinds the conversation here")
+
+                Button(action: { showEditHint.toggle() }) {
+                    Image(systemName: "questionmark.circle")
+                        .scaledFont(size: 10)
+                        .foregroundColor(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovered ? 1 : 0)
+                .onHover { hovering in
+                    if hovering { showEditHint = true }
+                    // Don't auto-dismiss on hover-out: the popover itself can
+                    // intercept the cursor when the user moves to read it.
+                }
+                .popover(isPresented: $showEditHint, arrowEdge: .top) {
+                    EditMessageHoverHint()
+                }
+            }
 
             if needsExpansion {
                 Button(action: { isExpanded.toggle() }) {
