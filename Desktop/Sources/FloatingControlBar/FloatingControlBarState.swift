@@ -7,19 +7,27 @@ struct FloatingChatExchange: Identifiable, Equatable {
     let question: String
     var aiMessage: ChatMessage
     /// The id of the user-side ChatMessage that produced `question`. Set when
-    /// the exchange is reconstructed from `ChatProvider.messages` (via
-    /// `loadHistory`) so the edit-and-resubmit affordance can find the source
-    /// message in the provider's messages array. nil for placeholder /
-    /// observer-only exchanges and for live appends that don't have a message
-    /// id available at construction time — those exchanges just don't surface
-    /// the edit affordance.
+    /// the exchange is reconstructed from a message list (via `loadHistory`)
+    /// or a live archive so the edit-and-resubmit affordance can identify the
+    /// source message. nil for placeholder / observer-only exchanges — those
+    /// don't surface the edit affordance.
     var userMessageId: String?
+    /// Creation timestamp of the user-side message. Used by edit-and-resubmit
+    /// to truncate the persisted store (the message `id` mutates after backend
+    /// sync, but `createdAt` is immutable, so it's the reliable cut point).
+    var userMessageCreatedAt: Date?
 
-    init(question: String, aiMessage: ChatMessage, userMessageId: String? = nil) {
+    init(
+        question: String,
+        aiMessage: ChatMessage,
+        userMessageId: String? = nil,
+        userMessageCreatedAt: Date? = nil
+    ) {
         self.id = UUID()
         self.question = question
         self.aiMessage = aiMessage
         self.userMessageId = userMessageId
+        self.userMessageCreatedAt = userMessageCreatedAt
     }
 
     static func == (lhs: FloatingChatExchange, rhs: FloatingChatExchange) -> Bool {
@@ -27,6 +35,7 @@ struct FloatingChatExchange: Identifiable, Equatable {
             && lhs.question == rhs.question
             && lhs.aiMessage == rhs.aiMessage
             && lhs.userMessageId == rhs.userMessageId
+            && lhs.userMessageCreatedAt == rhs.userMessageCreatedAt
     }
 }
 
@@ -107,7 +116,8 @@ final class StreamingResponseState: ObservableObject {
                 exchanges.append(FloatingChatExchange(
                     question: msg.text,
                     aiMessage: messages[i + 1],
-                    userMessageId: msg.id
+                    userMessageId: msg.id,
+                    userMessageCreatedAt: msg.createdAt
                 ))
                 i += 2
             } else {
