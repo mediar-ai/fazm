@@ -1742,6 +1742,91 @@ class ChatProvider: ObservableObject {
         await acpBridge.forkSession(fromKey: fromKey, toKey: toKey)
     }
 
+    /// Look up the most recent user message in `messages` matching `text` and
+    /// the given session-key scope. Used by the live chatHistory.append sites
+    /// to stamp `FloatingChatExchange.userMessageId` so the edit-and-resubmit
+    /// affordance works on messages typed in the current session (not just
+    /// ones reconstructed via `loadHistory`).
+    @MainActor
+    func mostRecentUserMessageId(text: String, scope: String?) -> String? {
+        let target = scope ?? "floating"
+        return messages.reversed().first(where: {
+            $0.sender == .user
+                && $0.text == text
+                && ($0.sessionKey ?? "floating") == target
+        })?.id
+    }
+
+    /// Edit a previous user message and resubmit. Truncates conversation
+    /// history at `messageId` (drops that message and everything after), tears
+    /// down the upstream ACP session for `sessionKey`, then sends `newText` as
+    /// a fresh query. `sendMessage` rebuilds `priorContext` from the truncated
+    /// history, so the model continues from right before the edited message.
+    ///
+    /// Fidelity caveat: priorContext replay sends text-only summaries (no tool
+    /// calls or thinking blocks, capped to ~20 turns), so the resumed
+    /// conversation can diverge from one that ran normally — especially on
+    /// tool-heavy turns.
+    @MainActor
+    func editAndResubmit(messageId: String, newText: String, sessionKey: String?) async {
+        let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        guard let idx = messages.firstIndex(where: { $0.id == messageId && $0.sender == .user }) else {
+            log("editAndResubmit: message \(messageId) not found in self.messages")
+            return
+        }
+        let cutoffDate = messages[idx].createdAt
+        log("editAndResubmit: truncating from index \(idx) (sessionKey=\(sessionKey ?? "nil"), createdAt=\(cutoffDate))")
+
+        // 1. Truncate in-memory messages from the edited one onward.
+        messages.removeSubrange(idx...)
+
+        // 2. Truncate persisted messages for floating / detached contexts.
+        let storeContext: String? = {
+            if sessionKey == "floating" { return "__floating__" }
+            if let key = sessionKey, key.hasPrefix("detached-") { return "__\(key)__" }
+            return nil
+        }()
+        if let ctx = storeContext {
+            await ChatMessageStore.deleteMessagesFromTimestamp(context: ctx, cutoff: cutoffDate)
+        }
+
+        // 3. Rebuild visible chatHistory in the floating bar / detached popout
+        //    so the UI matches the truncated state.
+        let scopeKey = sessionKey ?? "floating"
+        let visibleMessages = messages.filter { ($0.sessionKey ?? "floating") == scopeKey }
+        if sessionKey == "floating", let barState = FloatingControlBarManager.shared.barState {
+            barState.streaming.loadHistory(from: visibleMessages)
+        } else if let key = sessionKey, key.hasPrefix("detached-") {
+            for entry in DetachedChatWindowController.shared.entriesSnapshot() where entry.sessionKey == key {
+                entry.window.state.streaming.loadHistory(from: visibleMessages)
+            }
+        }
+
+        // 4. Close upstream ACP session so the next prompt creates a fresh one.
+        //    Do NOT rotate floatingChatSessionId — we want priorContext to still
+        //    pick up the truncated history that's saved under it.
+        if let key = sessionKey {
+            await acpBridge.closeSession(sessionKey: key)
+        }
+
+        // 5. Clear saved upstream session ID so sendMessage doesn't try to resume.
+        if sessionKey == "floating" {
+            Self.clearSessionId(storageKey: floatingSessionIdKey)
+            pendingFloatingResume = nil
+        } else if sessionKey == nil || sessionKey == "main" {
+            Self.clearSessionId(storageKey: mainSessionIdKey)
+        } else if let key = sessionKey, key.hasPrefix("detached-") {
+            Self.clearSessionId(storageKey: "acpSessionId_\(key)_\(bridgeMode)")
+        }
+
+        // 6. Send the edited message as a fresh query. priorContext (last 20
+        //    turns from the truncated messages / store) is auto-built inside
+        //    sendMessage.
+        await sendMessage(trimmed, sessionKey: sessionKey)
+    }
+
     /// Transfer the ACP session from one key to another without resetting it.
     /// Used when popping out the floating bar conversation to a detached window —
     /// the detached window continues the same ACP session under a new key,
