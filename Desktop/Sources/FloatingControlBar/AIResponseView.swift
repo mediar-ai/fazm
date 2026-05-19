@@ -31,6 +31,7 @@ struct AIResponseView: View {
     @EnvironmentObject var tutorial: TutorialState
     @ObservedObject private var shortcutSettings = ShortcutSettings.shared
     @Environment(\.fazmWindowIsVisible) private var windowIsVisible
+    @Environment(\.fontScale) private var fontScale
     @Binding var isLoading: Bool
     let currentMessage: ChatMessage?
     @State private var isQuestionExpanded = false
@@ -60,7 +61,8 @@ struct AIResponseView: View {
     /// Named coordinate space for the chat content; user-bubble frames are reported here.
     static let chatScrollSpace = "fazmChatScrollContent"
     /// Visible height of one peeked bubble in the sticky stack at the top.
-    private let bubblePeekHeight: CGFloat = 22
+    /// Scales with the font setting so larger fonts don't clip inside the peek.
+    private var bubblePeekHeight: CGFloat { round(22 * fontScale) }
 
     /// Bubbles whose top has scrolled above the current viewport, sorted oldest→newest.
     /// Capped to fit within 20% of viewport height; overflow drops the oldest (FIFO).
@@ -1884,7 +1886,7 @@ struct StackedBubblePeek: View {
 
     var body: some View {
         Text(question)
-            .font(.system(size: 13))
+            .scaledFont(size: 13)
             .foregroundColor(FazmColors.overlayForeground)
             .lineLimit(1)
             .truncationMode(.tail)
