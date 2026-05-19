@@ -147,7 +147,7 @@ struct SettingsContentView: View {
 
     // Managed browser: import-sessions UI state
     @State private var managedImportSource: String = "arc:Default"
-    @State private var managedImportDomains: String = "github.com,chatgpt.com,openai.com,linear.app,notion.so"
+    @State private var managedImportDomains: String = "chatgpt.com,claude.ai,github.com,notion.so,linear.app,vercel.com,mail.google.com,drive.google.com,docs.google.com,calendly.com,figma.com,canva.com,dashboard.stripe.com,app.mercury.com,slack.com,discord.com,reddit.com,twitter.com,x.com,linkedin.com,openai.com,web.whatsapp.com,web.telegram.org,otter.ai,web.descript.com,trello.com,upwork.com,fiverr.com,coinbase.com"
     @State private var managedImportRunning: Bool = false
     @State private var managedImportLastResult: String? = nil
     @State private var managedImportLastError: String? = nil
@@ -1450,7 +1450,7 @@ struct SettingsContentView: View {
                             Text("Domains to import (comma-separated)")
                                 .scaledFont(size: 12)
                                 .foregroundColor(FazmColors.textTertiary)
-                            TextField("github.com, chatgpt.com, linear.app", text: $managedImportDomains)
+                            TextField("chatgpt.com, claude.ai, github.com, notion.so, linear.app, ...", text: $managedImportDomains)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12))
                         }
