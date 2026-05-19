@@ -840,9 +840,21 @@ class DetachedChatWindowController {
                 )
 
                 win.makeKeyAndOrderFront(nil)
+
+                // Re-assert workspace after the hosting view exists and provider
+                // subscriptions are wired. Defends against a SwiftUI observation
+                // race (assignment lands before NSHostingView subscribes) AND any
+                // async resetter that might clobber per-window workspace later.
+                DispatchQueue.main.async {
+                    if detachedState.workspace.workspaceDirectory != restoredWorkspace {
+                        log("DetachedChatWindowController: workspace drifted after setupViews — re-asserting \(restoredWorkspace) for \(sessionKey) (was '\(detachedState.workspace.workspaceDirectory)')")
+                        detachedState.workspace.workspaceDirectory = restoredWorkspace
+                    }
+                }
+
                 self.notifyWindowsChanged()
                 restoredCount += 1
-                log("DetachedChatWindowController: Restored window for \(sessionKey) with \(savedMessages.count) messages")
+                log("DetachedChatWindowController: Restored window for \(sessionKey) workspace=\(restoredWorkspace) with \(savedMessages.count) messages")
             }
         }
 
