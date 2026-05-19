@@ -2395,12 +2395,19 @@ class FloatingControlBarManager {
             && !provider.floatingChatWasCleared {
             let restored = provider.messages.filter { ($0.sessionKey ?? "floating") == "floating" }
             if !restored.isEmpty {
-                // Pair up user/AI messages into exchanges for the history UI
+                // Pair up user/AI messages into exchanges for the history UI.
+                // Stamp the user-message id so the edit-and-resubmit affordance
+                // shows on restored bubbles (matches what `loadHistory(from:)`
+                // does on the other restore paths).
                 var i = 0
                 while i < restored.count - 1 {
                     if restored[i].sender == .user, restored[i + 1].sender == .ai {
                         barWindow.state.streaming.chatHistory.append(
-                            FloatingChatExchange(question: restored[i].text, aiMessage: restored[i + 1])
+                            FloatingChatExchange(
+                                question: restored[i].text,
+                                aiMessage: restored[i + 1],
+                                userMessageId: restored[i].id
+                            )
                         )
                         i += 2
                     } else {
