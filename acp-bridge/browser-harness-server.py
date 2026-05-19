@@ -118,10 +118,51 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _running_chrome_is_headless() -> bool:
+    """Best-effort check: does the running Chrome on PORT have --headless?
+
+    We look at the PID's command line via /proc-style ps. If we can't tell
+    we return False (= mode mismatch detection conservative; will not force
+    a relaunch on uncertainty).
+    """
+    pid = _read_pid()
+    if not pid or not _pid_alive(pid):
+        return False
+    try:
+        import subprocess as _sp
+        out = _sp.run(["ps", "-p", str(pid), "-o", "args="],
+                      capture_output=True, text=True, timeout=2)
+        return "--headless" in (out.stdout or "")
+    except Exception:
+        return False
+
+
 def ensure_chrome() -> dict:
-    """Make sure our managed Chrome is running on PORT. Idempotent."""
+    """Make sure our managed Chrome is running on PORT. Idempotent.
+
+    If Chrome is already running but in a different mode (headed vs headless)
+    than the current env config requests, we kill it and relaunch in the
+    requested mode so the user's "I want this hidden" preference takes effect.
+    """
+    headed_desired = os.environ.get("FAZM_BH_HEADED", "").strip() not in ("", "0", "false", "no")
     if _cdp_alive():
-        return {"status": "already_running", "pid": _read_pid(), "cdp": CDP_URL}
+        currently_headless = _running_chrome_is_headless()
+        # Mode matches? Done.
+        if (not headed_desired) == currently_headless:
+            return {"status": "already_running", "pid": _read_pid(), "cdp": CDP_URL}
+        # Mode mismatch — kill and relaunch below.
+        pid = _read_pid()
+        if pid:
+            _log(f"mode mismatch (headed_desired={headed_desired} currently_headless={currently_headless}); killing pid {pid}")
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+            # Wait for port to free.
+            for _ in range(20):
+                if not _port_open(PORT):
+                    break
+                time.sleep(0.1)
 
     if not Path(CHROME_BIN).exists():
         return {
@@ -152,8 +193,19 @@ def ensure_chrome() -> dict:
             pass
         time.sleep(0.5)
 
-    cmd = [
-        CHROME_BIN,
+    # Run Chrome in modern headless mode by default. `--headless=new` (Chrome
+    # 109+) is the full-featured headless that supports cookies, localStorage,
+    # IndexedDB, extensions, and persistent profiles — same behavior as headed
+    # Chrome, but no dock icon and no visible windows. The bundled Chrome is
+    # only used by Fazm internally for browser automation; the user never
+    # interacts with its windows directly, so headless removes UI noise.
+    # Override with FAZM_BH_HEADED=1 if you want to actually watch what the
+    # AI is doing in this Chrome.
+    headed = os.environ.get("FAZM_BH_HEADED", "").strip() not in ("", "0", "false", "no")
+    cmd = [CHROME_BIN]
+    if not headed:
+        cmd.append("--headless=new")
+    cmd += [
         f"--remote-debugging-port={PORT}",
         f"--user-data-dir={PROFILE_DIR}",
         "--no-first-run",
@@ -162,10 +214,10 @@ def ensure_chrome() -> dict:
         # Open a real tab so CDP has something to attach to immediately.
         "about:blank",
     ]
-    # Optional window placement overrides
-    if "FAZM_BH_WINDOW_POS" in os.environ:
+    # Optional window placement overrides (only meaningful in headed mode)
+    if headed and "FAZM_BH_WINDOW_POS" in os.environ:
         cmd.insert(-1, f"--window-position={os.environ['FAZM_BH_WINDOW_POS']}")
-    if "FAZM_BH_WINDOW_SIZE" in os.environ:
+    if headed and "FAZM_BH_WINDOW_SIZE" in os.environ:
         cmd.insert(-1, f"--window-size={os.environ['FAZM_BH_WINDOW_SIZE']}")
 
     log_fh = LOG_FILE.open("ab")
