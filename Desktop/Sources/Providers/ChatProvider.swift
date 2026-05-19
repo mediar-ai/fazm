@@ -1753,36 +1753,19 @@ class ChatProvider: ObservableObject {
         await acpBridge.forkSession(fromKey: fromKey, toKey: toKey)
     }
 
-    /// Look up the most recent user message in `messages` matching `text` and
-    /// the given session-key scope. Used by the live chatHistory.append sites
-    /// to stamp `FloatingChatExchange.userMessageId` so the edit-and-resubmit
-    /// affordance works on messages typed in the current session (not just
-    /// ones reconstructed via `loadHistory`).
+    /// Creation timestamp of the most recent user message in `messages`
+    /// matching `text` and the given session-key scope. Used by the live
+    /// chatHistory archive sites to stamp `FloatingChatExchange`'s
+    /// `userMessageCreatedAt` so edit-and-resubmit knows the exact store
+    /// truncation point for messages typed in the current session.
     @MainActor
-    func mostRecentUserMessageId(text: String, scope: String?) -> String? {
-        return mostRecentUserMessage(text: text, scope: scope)?.id
-    }
-
-    /// Variant of `mostRecentUserMessageId` that returns the full ChatMessage
-    /// reference so callers can also capture the immutable `createdAt` (the
-    /// `id` may mutate after backend sync, but createdAt is stable and is the
-    /// reliable cut point for store truncation during edit-and-resubmit).
-    @MainActor
-    func mostRecentUserMessage(text: String, scope: String?) -> ChatMessage? {
+    func mostRecentUserMessageCreatedAt(text: String, scope: String?) -> Date? {
         let target = scope ?? "floating"
         return messages.reversed().first(where: {
             $0.sender == .user
                 && $0.text == text
                 && ($0.sessionKey ?? "floating") == target
-        })
-    }
-
-    /// Convenience pair returning `(id, createdAt)` so chat-history archive
-    /// sites can stamp both fields on `FloatingChatExchange` in one lookup.
-    @MainActor
-    func mostRecentUserMessageRef(text: String, scope: String?) -> (id: String, createdAt: Date)? {
-        guard let m = mostRecentUserMessage(text: text, scope: scope) else { return nil }
-        return (id: m.id, createdAt: m.createdAt)
+        })?.createdAt
     }
 
     /// Truncate the conversation at a previous user message so it can be edited
@@ -1802,7 +1785,7 @@ class ChatProvider: ObservableObject {
     /// from one that ran normally, especially on tool-heavy turns.
     @MainActor
     @discardableResult
-    func truncateForEdit(messageId: String, sessionKey: String?) async -> Bool {
+    func truncateForEdit(exchangeId: String, sessionKey: String?) async -> Bool {
         // 1. Find the target streaming state and the exchange to cut at.
         let streamingState: StreamingResponseState? = {
             if sessionKey == "floating" { return FloatingControlBarManager.shared.barState?.streaming }
@@ -1817,8 +1800,8 @@ class ChatProvider: ObservableObject {
             log("truncateForEdit: no streaming state for sessionKey=\(sessionKey ?? "nil")")
             return false
         }
-        guard let exIdx = streaming.chatHistory.firstIndex(where: { $0.userMessageId == messageId }) else {
-            log("truncateForEdit: exchange for messageId=\(messageId) not in chatHistory (sessionKey=\(sessionKey ?? "nil"))")
+        guard let exIdx = streaming.chatHistory.firstIndex(where: { $0.id.uuidString == exchangeId }) else {
+            log("truncateForEdit: exchange \(exchangeId) not in chatHistory (sessionKey=\(sessionKey ?? "nil"))")
             return false
         }
         let exchange = streaming.chatHistory[exIdx]
