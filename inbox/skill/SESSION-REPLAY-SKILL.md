@@ -110,6 +110,7 @@ If a similar email was already sent in the last 7 days, do NOT send another one.
 - Sign as "matt"
 - Do NOT send if user email is unknown or "unknown"
 - Do NOT send if all analyses were NO_ISSUES (nothing useful to tell them)
+- **NEVER offer billing remedies.** Do not offer to reset the $10 built-in cap, top up credits, bypass the paywall, refund, comp a month, extend a trial, or any similar action. These are owner-only and require Matt's sign-off — they are NOT something the agent can promise. See the "HARD RULES — billing remedies" block in AGENT-VOICE.md. If the session shows a cost/credit-related issue, mention only the product fix angle (e.g. "we're working on a mid-query cost guard"), not compensation. Flag the situation to Matt in the report email instead.
 
 **Example good email:**
 ```
