@@ -6,17 +6,27 @@ struct FloatingChatExchange: Identifiable, Equatable {
     let id: UUID
     let question: String
     var aiMessage: ChatMessage
+    /// The id of the user-side ChatMessage that produced `question`. Set when
+    /// the exchange is reconstructed from `ChatProvider.messages` (via
+    /// `loadHistory`) so the edit-and-resubmit affordance can find the source
+    /// message in the provider's messages array. nil for placeholder /
+    /// observer-only exchanges and for live appends that don't have a message
+    /// id available at construction time — those exchanges just don't surface
+    /// the edit affordance.
+    var userMessageId: String?
 
-    init(question: String, aiMessage: ChatMessage) {
+    init(question: String, aiMessage: ChatMessage, userMessageId: String? = nil) {
         self.id = UUID()
         self.question = question
         self.aiMessage = aiMessage
+        self.userMessageId = userMessageId
     }
 
     static func == (lhs: FloatingChatExchange, rhs: FloatingChatExchange) -> Bool {
         lhs.id == rhs.id
             && lhs.question == rhs.question
             && lhs.aiMessage == rhs.aiMessage
+            && lhs.userMessageId == rhs.userMessageId
     }
 }
 
@@ -94,7 +104,11 @@ final class StreamingResponseState: ObservableObject {
         while i < messages.count {
             let msg = messages[i]
             if msg.sender == .user, i + 1 < messages.count, messages[i + 1].sender == .ai {
-                exchanges.append(FloatingChatExchange(question: msg.text, aiMessage: messages[i + 1]))
+                exchanges.append(FloatingChatExchange(
+                    question: msg.text,
+                    aiMessage: messages[i + 1],
+                    userMessageId: msg.id
+                ))
                 i += 2
             } else {
                 i += 1
