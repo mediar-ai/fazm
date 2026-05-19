@@ -120,7 +120,7 @@ struct AIResponseView: View {
     /// Edit a previous user message and resubmit. Truncates the conversation
     /// at the edited message and restarts with the new text. nil = no edit
     /// affordance shown on past bubbles.
-    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
+    var onEditMessage: ((_ exchangeId: String, _ newText: String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -807,7 +807,7 @@ struct AIResponseView: View {
             if !exchange.question.isEmpty {
                 ExpandableQuestionBubble(
                     question: exchange.question,
-                    userMessageId: exchange.userMessageId,
+                    exchangeId: exchange.id,
                     onEdit: onEditMessage
                 )
                     .opacity(stackedBubbleIDs.contains(exchange.id) ? 0 : 1)
@@ -1170,20 +1170,22 @@ struct AIResponseView: View {
 // MARK: - Expandable Question Bubble (chat history)
 
 /// Question bubble in chat history that truncates to 2 lines with an expand chevron.
-/// When `userMessageId` is non-nil and `onEdit` is provided, a pencil button
-/// (revealed on hover) lets the user edit the message and resubmit, which
-/// truncates the conversation at this point and restarts with the new text.
+/// When `onEdit` is provided, a pencil button (revealed on hover) lets the user
+/// edit the message and resubmit, which truncates the conversation at this
+/// exchange and restarts with the new text. The exchange is identified by its
+/// stable `exchangeId`, so the affordance shows on every real question bubble.
 private struct ExpandableQuestionBubble: View {
     let question: String
-    var userMessageId: String?
-    var onEdit: ((_ messageId: String, _ newText: String) -> Void)?
+    var exchangeId: UUID
+    var onEdit: ((_ exchangeId: String, _ newText: String) -> Void)?
 
     @State private var isExpanded = false
     @State private var isEditing = false
     @State private var editText: String = ""
+    @State private var isBubbleHovered = false
 
     private var canEdit: Bool {
-        userMessageId != nil && onEdit != nil
+        onEdit != nil
     }
 
     private var needsExpansion: Bool {
@@ -1225,12 +1227,17 @@ private struct ExpandableQuestionBubble: View {
                 isExpanded: $isExpanded,
                 userInput: question,
                 canEdit: canEdit,
+                isBubbleHovered: isBubbleHovered,
                 onEditTap: {
                     editText = question
                     isEditing = true
                 }
             )
         }
+        // Detect hover over the whole bubble row (not just the button strip)
+        // so the copy / edit / info icons reveal wherever the cursor is.
+        .contentShape(Rectangle())
+        .onHover { isBubbleHovered = $0 }
     }
 
     private var editingView: some View {
@@ -1271,10 +1278,10 @@ private struct ExpandableQuestionBubble: View {
     private func commitEdit() {
         let trimmed = trimmedEditText
         guard !trimmed.isEmpty, trimmed != question else { return }
-        guard let id = userMessageId, let edit = onEdit else { return }
+        guard let edit = onEdit else { return }
         isEditing = false
         editText = ""
-        edit(id, trimmed)
+        edit(exchangeId.uuidString, trimmed)
     }
 }
 
@@ -1388,11 +1395,16 @@ private struct QuestionBarButtons: View {
     let userInput: String
     /// When true, render the pencil (edit) and info (?) buttons on hover.
     var canEdit: Bool = false
+    /// Hover state of the whole bubble row (lifted up so hovering anywhere on
+    /// the bubble — not just this narrow button strip — reveals the icons).
+    var isBubbleHovered: Bool = false
     var onEditTap: (() -> Void)? = nil
 
-    @State private var isHovered = false
     @State private var showCopied = false
     @State private var showEditHint = false
+
+    /// Icons are visible when the cursor is anywhere over the bubble.
+    private var isHovered: Bool { isBubbleHovered }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -1455,7 +1467,6 @@ private struct QuestionBarButtons: View {
                 .buttonStyle(.plain)
             }
         }
-        .onHover { isHovered = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovered)
     }
 }
