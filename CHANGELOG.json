@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-outs all collapsing to the same workspace after app restart; each pop-out window now correctly restores to its original project directory"
+  ],
   "releases": [
     {
       "version": "2.9.25",
