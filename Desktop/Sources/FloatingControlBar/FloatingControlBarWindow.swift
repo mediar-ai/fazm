@@ -1507,9 +1507,13 @@ class FloatingControlBarManager {
                 // Capture screenshot before showing the bar
                 self.captureScreenshotEarly()
 
-                // Show the bar and set up the UI as if the user typed the query
+                // Show the bar. Do NOT pre-set displayedQuery — sendAIQuery
+                // archives the previous turn by reading displayedQuery first,
+                // then assigns it to the new text. Pre-setting it here
+                // overwrites the previous query before archive, breaking the
+                // user-message lookup that stamps `userMessageId` for the
+                // edit-and-resubmit affordance.
                 if !window.isVisible { self.show() }
-                window.state.streaming.displayedQuery = text
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     window.state.streaming.showingAIResponse = true
                 }
@@ -2367,7 +2371,6 @@ class FloatingControlBarManager {
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
             let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
-            log("[FloatingBar] archiving exchange q='\(currentQuery.prefix(30))' userMessageId=\(userRef?.id ?? "nil") createdAt=\(userRef?.createdAt.description ?? "nil")")
             streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
