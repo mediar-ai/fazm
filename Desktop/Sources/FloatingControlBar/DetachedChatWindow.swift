@@ -35,7 +35,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     /// (NSOpenPanel). Pass a path to switch directly to that workspace.
     var onChangeWorkspace: ((String?) -> Void)?
     /// Edit a previous user message and resubmit (truncates conversation here).
-    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
+    var onEditMessage: ((_ exchangeId: String, _ newText: String) -> Void)?
     var onWindowClose: (() -> Void)?
 
     init(state: FloatingControlBarState, sessionKey: String, savedFrame: NSRect? = nil) {
@@ -210,7 +210,7 @@ struct DetachedChatView: View {
     var onChatObserverCardAction: (Int64, String) -> Void
     var onChangeWorkspace: ((String?) -> Void)?
     /// Edit a previous user message and resubmit (truncates conversation here).
-    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
+    var onEditMessage: ((_ exchangeId: String, _ newText: String) -> Void)?
 
     var body: some View {
         AIResponseView(
@@ -1034,11 +1034,11 @@ class DetachedChatWindowController {
             chatProvider?.handleChatObserverCardAction(activityId: activityId, action: action)
         }
 
-        win.onEditMessage = { [weak self, weak win, weak chatProvider] messageId, newText in
+        win.onEditMessage = { [weak self, weak win, weak chatProvider] exchangeId, newText in
             guard let self, let win, let provider = chatProvider else { return }
             let key = self.entries[ObjectIdentifier(win)]?.sessionKey ?? win.sessionKey
             Task { @MainActor in
-                let ok = await provider.truncateForEdit(messageId: messageId, sessionKey: key)
+                let ok = await provider.truncateForEdit(exchangeId: exchangeId, sessionKey: key)
                 guard ok else { return }
                 self.sendQuery(newText, for: win)
             }
