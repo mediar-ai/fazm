@@ -1375,10 +1375,12 @@ class FloatingControlBarManager {
                         }
                         return block
                     }
+                    let userRef = chatProvider?.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
                     state.streaming.chatHistory.append(FloatingChatExchange(
                         question: currentQuery,
                         aiMessage: resolved,
-                        userMessageId: chatProvider?.mostRecentUserMessageId(text: currentQuery, scope: "floating")
+                        userMessageId: userRef?.id,
+                        userMessageCreatedAt: userRef?.createdAt
                     ))
                 }
                 state.flushPendingChatObserverExchanges()
@@ -2303,10 +2305,12 @@ class FloatingControlBarManager {
                 id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
+            let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
             window.state.streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
-                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: "floating")
+                userMessageId: userRef?.id,
+                userMessageCreatedAt: userRef?.createdAt
             ))
         }
         window.state.flushPendingChatObserverExchanges()
@@ -2362,10 +2366,12 @@ class FloatingControlBarManager {
                 id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
+            let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
             streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
-                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: "floating")
+                userMessageId: userRef?.id,
+                userMessageCreatedAt: userRef?.createdAt
             ))
         }
         barWindow.state.flushPendingChatObserverExchanges()
@@ -2406,7 +2412,8 @@ class FloatingControlBarManager {
                             FloatingChatExchange(
                                 question: restored[i].text,
                                 aiMessage: restored[i + 1],
-                                userMessageId: restored[i].id
+                                userMessageId: restored[i].id,
+                                userMessageCreatedAt: restored[i].createdAt
                             )
                         )
                         i += 2
