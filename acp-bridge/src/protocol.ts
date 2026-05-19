@@ -393,6 +393,19 @@ export interface ModelsAvailableMessage {
   models: Array<{ modelId: string; name: string; description?: string }>;
 }
 
+/**
+ * Bridge auto-fell-back off a model variant the user's Claude account lacks the
+ * entitlement for (e.g. `[1m]` 1M-context requires the paid usage add-on at
+ * claude.ai/settings/usage). Swift uses this to sticky-hide those variants from
+ * the model picker so the user can't pick a 1M model again.
+ */
+export interface ModelEntitlementMissingMessage {
+  type: "model_entitlement_missing";
+  model: string;
+  downgradedTo: string;
+  reason: "1m_context";
+}
+
 /** Active MCP servers reported after session creation/resume */
 export interface McpServersAvailableMessage {
   type: "mcp_servers_available";
@@ -595,6 +608,7 @@ export type OutboundMessage =
   | ApiRetryMessage
   | ChatObserverPollMessage
   | ModelsAvailableMessage
+  | ModelEntitlementMissingMessage
   | McpServersAvailableMessage
   | SessionExpiredMessage
   | ToolHangCanceledMessage
