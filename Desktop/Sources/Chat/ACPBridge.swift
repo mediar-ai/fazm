@@ -2199,7 +2199,7 @@ enum BridgeError: LocalizedError {
       if mode == "personal" {
         return "Your Claude account hit its usage limit. Try again later, or upgrade your plan at claude.ai/settings/billing."
       }
-      return "Built-in credits are exhausted. Please switch to your personal Claude account in Settings."
+      return "You've used all your built-in Claude usage. Open Settings to connect your own Claude account and keep chatting."
     case .upstreamOverloaded:
       return "Claude's servers are overloaded. This is an Anthropic-side outage — your account is fine. Try again in a few minutes, or check status.claude.com."
     case .builtinKeyInvalid:
