@@ -1472,6 +1472,17 @@ class ChatProvider: ObservableObject {
                     ShortcutSettings.shared.updateModels(models)
                 }
             }
+            // Sticky-hide 1M-context variants after the bridge proves the account
+            // lacks the entitlement. ShortcutSettings reads `userLacks1mEntitlement`
+            // from UserDefaults at filter time and the refresh call re-runs the filter,
+            // which also drops selectedModel back to the standard variant.
+            await acpBridge.setModelEntitlementMissingHandler { model, downgradedTo, reason in
+                Task { @MainActor in
+                    guard reason == "1m_context" else { return }
+                    UserDefaults.standard.set(true, forKey: "userLacks1mEntitlement")
+                    ShortcutSettings.shared.refreshContextVariantFilter()
+                }
+            }
             // Slash-command list — agent advertises this via ACP
             // `available_commands_update`. Drives the input-field popover.
             // sessionKey is currently ignored (the command set is effectively
@@ -1757,27 +1768,27 @@ class ChatProvider: ObservableObject {
         })?.id
     }
 
-    /// Edit a previous user message and resubmit. Truncates conversation
-    /// history at `messageId` (drops that message and everything after), tears
-    /// down the upstream ACP session for `sessionKey`, then sends `newText` as
-    /// a fresh query. `sendMessage` rebuilds `priorContext` from the truncated
-    /// history, so the model continues from right before the edited message.
+    /// Truncate the conversation at a previous user message so it can be edited
+    /// and resubmitted. Drops `messageId` and every later message from the
+    /// in-memory list, the persisted store, and the visible chatHistory, tears
+    /// down the upstream ACP session for `sessionKey`, and clears the streaming
+    /// state for that surface. Returns true when the truncation succeeded — the
+    /// caller then sends the edited text through its normal send path (so the
+    /// streaming response subscription is wired up correctly).
     ///
-    /// Fidelity caveat: priorContext replay sends text-only summaries (no tool
-    /// calls or thinking blocks, capped to ~20 turns), so the resumed
-    /// conversation can diverge from one that ran normally — especially on
-    /// tool-heavy turns.
+    /// Fidelity caveat: after this, the next query rebuilds context via
+    /// `priorContext` replay — text-only summaries (no tool calls or thinking
+    /// blocks, capped to ~20 turns) — so the resumed conversation can diverge
+    /// from one that ran normally, especially on tool-heavy turns.
     @MainActor
-    func editAndResubmit(messageId: String, newText: String, sessionKey: String?) async {
-        let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
+    @discardableResult
+    func truncateForEdit(messageId: String, sessionKey: String?) async -> Bool {
         guard let idx = messages.firstIndex(where: { $0.id == messageId && $0.sender == .user }) else {
-            log("editAndResubmit: message \(messageId) not found in self.messages")
-            return
+            log("truncateForEdit: message \(messageId) not found in self.messages")
+            return false
         }
         let cutoffDate = messages[idx].createdAt
-        log("editAndResubmit: truncating from index \(idx) (sessionKey=\(sessionKey ?? "nil"), createdAt=\(cutoffDate))")
+        log("truncateForEdit: truncating from index \(idx) (sessionKey=\(sessionKey ?? "nil"), createdAt=\(cutoffDate))")
 
         // 1. Truncate in-memory messages from the edited one onward.
         messages.removeSubrange(idx...)
@@ -1793,25 +1804,39 @@ class ChatProvider: ObservableObject {
         }
 
         // 3. Rebuild visible chatHistory in the floating bar / detached popout
-        //    so the UI matches the truncated state.
+        //    so the UI matches the truncated state, and clear the streaming
+        //    state so the caller's send path starts a clean exchange (it
+        //    archives `displayedQuery` if non-empty — we don't want a stale
+        //    archive of the now-deleted in-flight turn).
         let scopeKey = sessionKey ?? "floating"
         let visibleMessages = messages.filter { ($0.sessionKey ?? "floating") == scopeKey }
+        func resetStreaming(_ streaming: StreamingResponseState) {
+            streaming.loadHistory(from: visibleMessages)
+            streaming.displayedQuery = ""
+            streaming.currentAIMessage = nil
+            streaming.isAILoading = false
+            streaming.pendingChatObserverExchanges.removeAll()
+        }
         if sessionKey == "floating", let barState = FloatingControlBarManager.shared.barState {
-            barState.streaming.loadHistory(from: visibleMessages)
+            resetStreaming(barState.streaming)
         } else if let key = sessionKey, key.hasPrefix("detached-") {
             for entry in DetachedChatWindowController.shared.entriesSnapshot() where entry.sessionKey == key {
-                entry.window.state.streaming.loadHistory(from: visibleMessages)
+                resetStreaming(entry.window.state.streaming)
             }
         }
 
         // 4. Close upstream ACP session so the next prompt creates a fresh one.
         //    Do NOT rotate floatingChatSessionId — we want priorContext to still
-        //    pick up the truncated history that's saved under it.
+        //    pick up the truncated history that's saved under it. Also drop the
+        //    session from `sendingSessionKeys` so a query that was in flight on
+        //    the edited turn doesn't make the resubmit enqueue behind itself.
         if let key = sessionKey {
             await acpBridge.closeSession(sessionKey: key)
+            sendingSessionKeys.remove(key)
+            isSending = !sendingSessionKeys.isEmpty
         }
 
-        // 5. Clear saved upstream session ID so sendMessage doesn't try to resume.
+        // 5. Clear saved upstream session ID so the next send doesn't resume.
         if sessionKey == "floating" {
             Self.clearSessionId(storageKey: floatingSessionIdKey)
             pendingFloatingResume = nil
@@ -1821,10 +1846,7 @@ class ChatProvider: ObservableObject {
             Self.clearSessionId(storageKey: "acpSessionId_\(key)_\(bridgeMode)")
         }
 
-        // 6. Send the edited message as a fresh query. priorContext (last 20
-        //    turns from the truncated messages / store) is auto-built inside
-        //    sendMessage.
-        await sendMessage(trimmed, sessionKey: sessionKey)
+        return true
     }
 
     /// Transfer the ACP session from one key to another without resetting it.
