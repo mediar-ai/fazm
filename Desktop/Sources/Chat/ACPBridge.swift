@@ -1257,7 +1257,7 @@ actor ACPBridge {
         log("ACPBridge: session_started \(isResume ? "(resumed)" : "(new)") sessionId=\(sid) key=\(evtKey ?? "nil")")
         onStatusEvent(.sessionStarted(sessionId: sid, sessionKey: evtKey, isResume: isResume))
 
-      case .availableCommandsUpdate, .sessionForked:
+      case .availableCommandsUpdate, .sessionForked, .modelEntitlementMissing:
         // Handled by global callbacks in `deliverMessage`; these messages
         // never reach the per-session continuation loop. Listed explicitly
         // to keep the switch exhaustive.
