@@ -1767,7 +1767,7 @@ struct SettingsContentView: View {
     //   1. Read cookies from the chosen source browser profile (macOS Keychain +
     //      AES-CBC decrypt of Chromium's Cookies SQLite).
     //   2. Read localStorage from the chosen source profile (Chromium LevelDB).
-    //   3. Inject both into the Fazm-managed Chrome (port 9555) via CDP.
+    //   3. Inject both into the Fazm-managed Chrome (port 9655) via CDP.
     //
     // The managed Chrome is auto-launched by the browser-harness MCP server on
     // first agent use; here we make sure it's running before injecting, then
@@ -1793,20 +1793,27 @@ struct SettingsContentView: View {
         let bhPython = "\(bhDir)/.venv/bin/python3"
         let bhServer = "\(bhDir)/server.py"
 
+        NSLog("[ManagedImport] start source=\(source) domains=\(domains)")
+        NSLog("[ManagedImport] abpPython=\(abpPython) bhPython=\(bhPython)")
+
         DispatchQueue.global(qos: .userInitiated).async {
             // Ensure managed Chrome is running: invoke server.py's bh_start indirectly
             // by running a tiny inline script in the bundled venv that imports
             // server.ensure_chrome().
+            NSLog("[ManagedImport] step 1/3: ensure_chrome via server.py")
             let chromeStarted = SettingsContentView.ensureManagedChrome(python: bhPython, serverPath: bhServer)
             if let err = chromeStarted.error {
+                NSLog("[ManagedImport] ensure_chrome FAILED: \(err)")
                 DispatchQueue.main.async {
                     self.managedImportRunning = false
                     self.managedImportLastError = "Couldn't start managed Chrome: \(err)"
                 }
                 return
             }
+            NSLog("[ManagedImport] ensure_chrome OK: \(chromeStarted.status ?? "")")
 
             // Now run cookies import
+            NSLog("[ManagedImport] step 2/3: cookies copy --from \(source)")
             let cookieResult = SettingsContentView.runAbpModule(
                 python: abpPython,
                 cwd: abpDir,
@@ -1815,8 +1822,10 @@ struct SettingsContentView: View {
                 filterFlag: "--domains",
                 filterValue: domains
             )
+            NSLog("[ManagedImport] cookies result ok=\(cookieResult.ok) summary=\(cookieResult.summary) error=\(cookieResult.error ?? "<none>")")
 
             // Then localStorage (origins == domains by convention)
+            NSLog("[ManagedImport] step 3/3: localstorage copy --from \(source)")
             let lsResult = SettingsContentView.runAbpModule(
                 python: abpPython,
                 cwd: abpDir,
@@ -1825,6 +1834,7 @@ struct SettingsContentView: View {
                 filterFlag: "--origins",
                 filterValue: domains
             )
+            NSLog("[ManagedImport] localstorage result ok=\(lsResult.ok) summary=\(lsResult.summary) error=\(lsResult.error ?? "<none>")")
 
             DispatchQueue.main.async {
                 self.managedImportRunning = false
@@ -1834,8 +1844,10 @@ struct SettingsContentView: View {
                     if !cookieResult.ok || !lsResult.ok {
                         self.managedImportLastError = [cookieResult.error, lsResult.error].compactMap { $0 }.joined(separator: " / ")
                     }
+                    NSLog("[ManagedImport] DONE \(summary)")
                 } else {
                     self.managedImportLastError = "Import failed. \(cookieResult.error ?? "") \(lsResult.error ?? "")"
+                    NSLog("[ManagedImport] FAILED both cookies+ls errored")
                 }
             }
         }
@@ -1899,7 +1911,7 @@ struct SettingsContentView: View {
             "-m", module,
             "copy",
             "--from", source,
-            "--to", "http://127.0.0.1:9555",
+            "--to", "http://127.0.0.1:9655",
             filterFlag, filterValue,
         ]
         proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
