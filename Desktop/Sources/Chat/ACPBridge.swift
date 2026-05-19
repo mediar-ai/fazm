@@ -248,6 +248,10 @@ actor ACPBridge {
     case availableCommandsUpdate(commands: [AvailableCommand])
     /// Confirmation that `session/fork` succeeded upstream.
     case sessionForked(fromSessionId: String, toSessionId: String, fromSessionKey: String, toSessionKey: String)
+    /// Bridge auto-fell-back off a model variant the user's account lacks the
+    /// entitlement for (e.g. `[1m]` 1M-context requires the paid Claude add-on).
+    /// Triggers a sticky-hide of those variants in `ShortcutSettings`.
+    case modelEntitlementMissing(model: String, downgradedTo: String, reason: String)
   }
 
   // MARK: - Configuration
@@ -281,6 +285,9 @@ actor ACPBridge {
   var onChatObserverStatusChange: ((_ running: Bool) -> Void)?
   /// Called when the ACP SDK reports available models (after session/new)
   var onModelsAvailable: ((_ models: [(modelId: String, name: String, description: String?)]) -> Void)?
+  /// Called when the bridge auto-falls back off a model variant the account lacks
+  /// the entitlement for (e.g. `[1m]`). Drives `ShortcutSettings`'s sticky-hide flag.
+  var onModelEntitlementMissing: ((_ model: String, _ downgradedTo: String, _ reason: String) -> Void)?
   /// Called when the bridge reports codex_probe_result (Codex backend reachability + auth state)
   var onCodexProbeResult: ((_ ok: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ authMode: String, _ error: String?) -> Void)?
   /// Called when the bridge starts the Codex OAuth flow and needs the browser opened
@@ -324,6 +331,10 @@ actor ACPBridge {
 
   func setModelsAvailableHandler(_ handler: @escaping @Sendable (_ models: [(modelId: String, name: String, description: String?)]) -> Void) {
     self.onModelsAvailable = handler
+  }
+
+  func setModelEntitlementMissingHandler(_ handler: @escaping @Sendable (_ model: String, _ downgradedTo: String, _ reason: String) -> Void) {
+    self.onModelEntitlementMissing = handler
   }
 
   func setCodexProbeResultHandler(_ handler: @escaping @Sendable (_ ok: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ authMode: String, _ error: String?) -> Void) {
@@ -1532,6 +1543,12 @@ actor ACPBridge {
       let models = dict["models"] as? [[String: Any]] ?? []
       return .modelsAvailable(models: models)
 
+    case "model_entitlement_missing":
+      let model = dict["model"] as? String ?? ""
+      let downgradedTo = dict["downgradedTo"] as? String ?? ""
+      let reason = dict["reason"] as? String ?? "unknown"
+      return .modelEntitlementMissing(model: model, downgradedTo: downgradedTo, reason: reason)
+
     case "mcp_servers_available":
       let servers = dict["servers"] as? [[String: Any]] ?? []
       return .mcpServersAvailable(servers: servers)
@@ -1725,6 +1742,10 @@ actor ACPBridge {
       if !parsed.isEmpty {
         onModelsAvailable?(parsed)
       }
+      return
+    case .modelEntitlementMissing(let model, let downgradedTo, let reason):
+      log("ACPBridge: received model_entitlement_missing model=\(model) downgradedTo=\(downgradedTo) reason=\(reason)")
+      onModelEntitlementMissing?(model, downgradedTo, reason)
       return
     case .mcpServersAvailable(let servers):
       log("ACPBridge: received mcp_servers_available with \(servers.count) servers")
