@@ -1194,10 +1194,12 @@ class FloatingControlBarManager {
             }
         }
 
-        barWindow.onEditMessage = { [weak chatProvider] messageId, newText in
-            guard let provider = chatProvider else { return }
+        barWindow.onEditMessage = { [weak self, weak barWindow, weak chatProvider] messageId, newText in
+            guard let self, let barWindow, let provider = chatProvider else { return }
             Task { @MainActor in
-                await provider.editAndResubmit(messageId: messageId, newText: newText, sessionKey: "floating")
+                let ok = await provider.truncateForEdit(messageId: messageId, sessionKey: "floating")
+                guard ok else { return }
+                await self.sendAIQuery(newText, barWindow: barWindow, provider: provider)
             }
         }
 
