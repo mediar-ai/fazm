@@ -1801,69 +1801,32 @@ struct SettingsContentView: View {
         NSLog("[ManagedImport] abpPython=\(abpPython) bhPython=\(bhPython)")
 
         DispatchQueue.global(qos: .userInitiated).async {
-            // Ensure managed Chrome is running: invoke server.py's bh_start indirectly
-            // by running a tiny inline script in the bundled venv that imports
-            // server.ensure_chrome().
-            NSLog("[ManagedImport] step 1/3: ensure_chrome via server.py")
-            let chromeStarted = SettingsContentView.ensureManagedChrome(python: bhPython, serverPath: bhServer)
-            if let err = chromeStarted.error {
-                NSLog("[ManagedImport] ensure_chrome FAILED: \(err)")
-                DispatchQueue.main.async {
-                    self.managedImportRunning = false
-                    self.managedImportLastError = "Couldn't start managed Chrome: \(err)"
-                }
-                return
-            }
-            NSLog("[ManagedImport] ensure_chrome OK: \(chromeStarted.status ?? "")")
-
-            // Now run cookies import
-            NSLog("[ManagedImport] step 2/3: cookies copy --from \(source)")
-            let cookieResult = SettingsContentView.runAbpModule(
+            // Single zero-tab orchestrator: cookies via CDP (browser-session, no
+            // page context), then stop Chrome, file-copy LocalStorage + IndexedDB
+            // LevelDB directories from the source profile, restart Chrome. No
+            // tabs ever open in the bundled Chrome, and the full operation runs
+            // in seconds even when importing hundreds of origins. `domains` is
+            // currently ignored — bulk_import always imports everything (minus
+            // safety skips: chrome-extension://, localhost, partitioned ^,
+            // dirs > 200 MB).
+            NSLog("[ManagedImport] running bulk_import (zero-tab file-copy) source=\(source)")
+            let result = SettingsContentView.runBulkImport(
                 python: abpPython,
                 cwd: abpDir,
-                module: "ai_browser_profile.cookies",
                 source: source,
-                filterFlag: "--domains",
-                filterValue: domains
+                bhPython: bhPython,
+                bhServer: bhServer
             )
-            NSLog("[ManagedImport] cookies result ok=\(cookieResult.ok) summary=\(cookieResult.summary) error=\(cookieResult.error ?? "<none>")")
-
-            // Then localStorage (origins == domains by convention)
-            NSLog("[ManagedImport] step 3/4: localstorage copy --from \(source)")
-            let lsResult = SettingsContentView.runAbpModule(
-                python: abpPython,
-                cwd: abpDir,
-                module: "ai_browser_profile.localstorage",
-                source: source,
-                filterFlag: "--origins",
-                filterValue: domains
-            )
-            NSLog("[ManagedImport] localstorage result ok=\(lsResult.ok) summary=\(lsResult.summary) error=\(lsResult.error ?? "<none>")")
-
-            // Then IndexedDB — needed for SPA-auth sites like Linear, Figma, Slack web
-            NSLog("[ManagedImport] step 4/4: indexeddb copy --from \(source)")
-            let idbResult = SettingsContentView.runAbpModule(
-                python: abpPython,
-                cwd: abpDir,
-                module: "ai_browser_profile.indexeddb",
-                source: source,
-                filterFlag: "--origins",
-                filterValue: domains
-            )
-            NSLog("[ManagedImport] indexeddb result ok=\(idbResult.ok) summary=\(idbResult.summary) error=\(idbResult.error ?? "<none>")")
+            NSLog("[ManagedImport] bulk_import ok=\(result.ok) summary=\(result.summary) error=\(result.error ?? "<none>")")
 
             DispatchQueue.main.async {
                 self.managedImportRunning = false
-                if cookieResult.ok || lsResult.ok || idbResult.ok {
-                    let summary = "Imported from \(source). Cookies: \(cookieResult.summary). localStorage: \(lsResult.summary). IndexedDB: \(idbResult.summary)."
-                    self.managedImportLastResult = summary
-                    if !cookieResult.ok || !lsResult.ok || !idbResult.ok {
-                        self.managedImportLastError = [cookieResult.error, lsResult.error, idbResult.error].compactMap { $0 }.joined(separator: " / ")
-                    }
-                    NSLog("[ManagedImport] DONE \(summary)")
+                if result.ok {
+                    self.managedImportLastResult = "Imported from \(source). \(result.summary)"
+                    NSLog("[ManagedImport] DONE \(result.summary)")
                 } else {
-                    self.managedImportLastError = "Import failed. \(cookieResult.error ?? "") \(lsResult.error ?? "") \(idbResult.error ?? "")"
-                    NSLog("[ManagedImport] FAILED cookies+ls+idb all errored")
+                    self.managedImportLastError = result.error ?? "Import failed."
+                    NSLog("[ManagedImport] FAILED \(result.error ?? "")")
                 }
             }
         }
@@ -1905,6 +1868,54 @@ struct SettingsContentView: View {
             return (nil, out.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return ("exit \(proc.terminationStatus): \(err.trimmingCharacters(in: .whitespacesAndNewlines))", nil)
+    }
+
+    // Single-call zero-tab orchestrator. Invokes ai_browser_profile.bulk_import
+    // which does: cookies via CDP -> stop Chrome -> file-copy LS+IDB -> restart
+    // Chrome. Reads structured JSON summary from stdout, returns short human
+    // string for the UI.
+    private static func runBulkImport(
+        python: String,
+        cwd: String,
+        source: String,
+        bhPython: String,
+        bhServer: String
+    ) -> (ok: Bool, summary: String, error: String?) {
+        guard FileManager.default.fileExists(atPath: python) else {
+            return (false, "skipped", "ai-browser-profile not bundled at \(python)")
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: python)
+        proc.arguments = [
+            "-m", "ai_browser_profile.bulk_import",
+            "--from", source,
+            "--bh-python", bhPython,
+            "--bh-server", bhServer,
+        ]
+        proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        let stdout = Pipe()
+        let stderr = Pipe()
+        proc.standardOutput = stdout
+        proc.standardError = stderr
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            return (false, "error", "could not run bulk_import: \(error.localizedDescription)")
+        }
+        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        // The CLI prints a final one-line human summary after the JSON block.
+        let lines = out.split(whereSeparator: \.isNewline).map(String.init)
+        let summary = lines.last(where: { $0.lowercased().contains("cookies:") && $0.lowercased().contains("indexeddb:") })
+            ?? lines.last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+            ?? "done"
+        if proc.terminationStatus == 0 {
+            return (true, summary.trimmingCharacters(in: .whitespaces), nil)
+        }
+        let combined = (err + "\n" + out).trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstLine = combined.split(whereSeparator: \.isNewline).first.map(String.init) ?? "exit \(proc.terminationStatus)"
+        return (false, "failed", String(firstLine.prefix(300)))
     }
 
     // Run an ai_browser_profile module CLI (cookies / localstorage) against the
