@@ -1,23 +1,28 @@
 {
-  "unreleased": [
-    "Fixed the 'Open in Browser' button on the Remote Control settings page not responding to clicks",
-    "Fixed a stale 'not responding' warning showing on a healthy query after the app recovered from an unclean shutdown",
-    "Fixed AI losing context after browser extension install when chatting in main chat or a pop-out \u2014 the resume message now routes back to your active chat instead of the floating bar",
-    "Floating bar close is now instant (removed the staged fade and shrink that briefly showed an empty translucent window before collapsing to the pill)",
-    "Fixed floating bar going silent when a pop-out chat was busy: messages now dispatch immediately instead of queueing behind the unrelated pop-out",
-    "Added per-shortcut on/off toggles in Settings \u2192 Shortcuts so you can disable Ask Fazm, New Pop-Out Chat, Push to Talk, or \u2318\\ when they conflict with other apps",
-    "Stopped the AI from giving confusing Claude Code setup instructions (like editing config files or restarting Claude Code) when helping connect the browser extension",
-    "Fixed push-to-talk transcription concatenating onto previously spoken text when a chat reply was already on screen, so each voice message starts fresh",
-    "Clarified Custom API Endpoint setting requires an Anthropic-API-compatible endpoint",
-    "Fixed push-to-talk inserting repeated gibberish (e.g. '\u092d\u093e\u0908 \u092d\u093e\u0908 \u092d\u093e\u0908') when transcription hallucinated on silent audio",
-    "Built-in API key spend is now capped at $10 lifetime for every account including Pro; previously Pro was incorrectly exempt and a few users had burned $40-$70 of bundled compute on a $9.99/mo subscription",
-    "Fixed AI losing chat context after an interrupted message (now correctly restores the last 20 turns of history)",
-    "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant\u2026' state and no longer hangs indefinitely if startup stalls",
-    "Added a \"Sign in with a different account\" option to the paywall, so users who subscribed under a different account can switch instead of getting stuck",
-    "Clearer message when built-in Claude usage runs out, with a direct path to connect your own Claude account",
-    "Hide 1M-context model variants in the picker after a failed query, so personal-mode users without the paid Claude usage add-on do not pick them again"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.25",
+      "date": "2026-05-19",
+      "changes": [
+        "Fixed the 'Open in Browser' button on the Remote Control settings page not responding to clicks",
+        "Fixed a stale 'not responding' warning showing on a healthy query after the app recovered from an unclean shutdown",
+        "Fixed AI losing context after browser extension install when chatting in main chat or a pop-out \u2014 the resume message now routes back to your active chat instead of the floating bar",
+        "Floating bar close is now instant (removed the staged fade and shrink that briefly showed an empty translucent window before collapsing to the pill)",
+        "Fixed floating bar going silent when a pop-out chat was busy: messages now dispatch immediately instead of queueing behind the unrelated pop-out",
+        "Added per-shortcut on/off toggles in Settings \u2192 Shortcuts so you can disable Ask Fazm, New Pop-Out Chat, Push to Talk, or \u2318\\ when they conflict with other apps",
+        "Stopped the AI from giving confusing Claude Code setup instructions (like editing config files or restarting Claude Code) when helping connect the browser extension",
+        "Fixed push-to-talk transcription concatenating onto previously spoken text when a chat reply was already on screen, so each voice message starts fresh",
+        "Clarified Custom API Endpoint setting requires an Anthropic-API-compatible endpoint",
+        "Fixed push-to-talk inserting repeated gibberish (e.g. '\u092d\u093e\u0908 \u092d\u093e\u0908 \u092d\u093e\u0908') when transcription hallucinated on silent audio",
+        "Built-in API key spend is now capped at $10 lifetime for every account including Pro; previously Pro was incorrectly exempt and a few users had burned $40-$70 of bundled compute on a $9.99/mo subscription",
+        "Fixed AI losing chat context after an interrupted message (now correctly restores the last 20 turns of history)",
+        "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant\u2026' state and no longer hangs indefinitely if startup stalls",
+        "Added a \"Sign in with a different account\" option to the paywall, so users who subscribed under a different account can switch instead of getting stuck",
+        "Clearer message when built-in Claude usage runs out, with a direct path to connect your own Claude account",
+        "Hide 1M-context model variants in the picker after a failed query, so personal-mode users without the paid Claude usage add-on do not pick them again"
+      ]
+    },
     {
       "version": "2.9.22",
       "date": "2026-05-16",
