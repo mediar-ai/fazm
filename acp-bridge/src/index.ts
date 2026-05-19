@@ -3927,6 +3927,15 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       if (is1mContextError && has1mSuffix && _retryDepth < MAX_QUERY_RETRIES) {
         const downgraded = requestedModel.replace(/\s*\[1m\]/gi, "");
         logErr(`1M context not available, retrying with downgraded model: ${requestedModel} -> ${downgraded}`);
+        // Tell Swift to sticky-hide [1m] variants from the picker. Swift persists a
+        // UserDefaults flag and refilters ShortcutSettings.availableModels so the user
+        // can't pick a 1M model again from this account.
+        sendWithSession(sessionId, {
+          type: "model_entitlement_missing",
+          model: requestedModel,
+          downgradedTo: downgraded,
+          reason: "1m_context",
+        });
         for (const name of pendingTools) {
           sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
         }
