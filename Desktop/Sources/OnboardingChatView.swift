@@ -1830,7 +1830,7 @@ private struct OnboardingErrorBanner: View {
     private var errorMessage: String {
         switch error {
         case .creditExhausted:
-            return "Your free built-in credits have run out. Connect your Claude account to continue setup."
+            return "You've used all your built-in Claude usage. Connect your Claude account to continue setup."
         case .claudeAuthRequired:
             return "Please connect your Claude account to continue setup."
         case .general(let text):
