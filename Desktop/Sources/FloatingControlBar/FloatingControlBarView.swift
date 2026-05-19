@@ -29,7 +29,7 @@ struct FloatingControlBarView: View {
     var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: ((String?) -> Void)?
     /// Edit a previous user message and resubmit (truncates conversation here).
-    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
+    var onEditMessage: ((_ exchangeId: String, _ newText: String) -> Void)?
 
     @State private var isHovering = false
     @State private var updatePulse = false
