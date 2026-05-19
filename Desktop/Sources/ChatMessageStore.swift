@@ -185,4 +185,23 @@ enum ChatMessageStore {
             await AppDatabase.shared.reportQueryError(error)
         }
     }
+
+    /// Delete all messages in `context` whose createdAt is greater than or equal
+    /// to `cutoff`. Used by the edit-and-resubmit flow to truncate persisted
+    /// history at the chosen message before sending the edited prompt.
+    static func deleteMessagesFromTimestamp(context: String, cutoff: Date) async {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
+        do {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: "DELETE FROM chat_messages WHERE taskId = ? AND createdAt >= ?",
+                    arguments: [context, cutoff]
+                )
+            }
+            await AppDatabase.shared.reportQuerySuccess()
+        } catch {
+            logError("ChatMessageStore: Failed to delete messages from timestamp", error: error)
+            await AppDatabase.shared.reportQueryError(error)
+        }
+    }
 }
