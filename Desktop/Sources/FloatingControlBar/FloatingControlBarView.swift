@@ -28,6 +28,8 @@ struct FloatingControlBarView: View {
     var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: ((Int64, String) -> Void)?
     var onChangeWorkspace: ((String?) -> Void)?
+    /// Edit a previous user message and resubmit (truncates conversation here).
+    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
 
     @State private var isHovering = false
     @State private var updatePulse = false
@@ -520,7 +522,8 @@ struct FloatingControlBarView: View {
             onConnectClaude: onConnectClaude,
             onCodexLogin: onCodexLogin,
             onChatObserverCardAction: onChatObserverCardAction,
-            onChangeWorkspace: onChangeWorkspace
+            onChangeWorkspace: onChangeWorkspace,
+            onEditMessage: onEditMessage
         )
         .transition(
             .asymmetric(
