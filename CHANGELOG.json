@@ -14,7 +14,8 @@
     "Fixed AI losing chat context after an interrupted message (now correctly restores the last 20 turns of history)",
     "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant\u2026' state and no longer hangs indefinitely if startup stalls",
     "Added a \"Sign in with a different account\" option to the paywall, so users who subscribed under a different account can switch instead of getting stuck",
-    "Clearer message when built-in Claude usage runs out, with a direct path to connect your own Claude account"
+    "Clearer message when built-in Claude usage runs out, with a direct path to connect your own Claude account",
+    "Hide 1M-context model variants in the picker after a failed query, so personal-mode users without the paid Claude usage add-on do not pick them again"
   ],
   "releases": [
     {
