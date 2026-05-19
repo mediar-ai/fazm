@@ -1760,21 +1760,41 @@ class ChatProvider: ObservableObject {
     /// ones reconstructed via `loadHistory`).
     @MainActor
     func mostRecentUserMessageId(text: String, scope: String?) -> String? {
+        return mostRecentUserMessage(text: text, scope: scope)?.id
+    }
+
+    /// Variant of `mostRecentUserMessageId` that returns the full ChatMessage
+    /// reference so callers can also capture the immutable `createdAt` (the
+    /// `id` may mutate after backend sync, but createdAt is stable and is the
+    /// reliable cut point for store truncation during edit-and-resubmit).
+    @MainActor
+    func mostRecentUserMessage(text: String, scope: String?) -> ChatMessage? {
         let target = scope ?? "floating"
         return messages.reversed().first(where: {
             $0.sender == .user
                 && $0.text == text
                 && ($0.sessionKey ?? "floating") == target
-        })?.id
+        })
+    }
+
+    /// Convenience pair returning `(id, createdAt)` so chat-history archive
+    /// sites can stamp both fields on `FloatingChatExchange` in one lookup.
+    @MainActor
+    func mostRecentUserMessageRef(text: String, scope: String?) -> (id: String, createdAt: Date)? {
+        guard let m = mostRecentUserMessage(text: text, scope: scope) else { return nil }
+        return (id: m.id, createdAt: m.createdAt)
     }
 
     /// Truncate the conversation at a previous user message so it can be edited
-    /// and resubmitted. Drops `messageId` and every later message from the
-    /// in-memory list, the persisted store, and the visible chatHistory, tears
-    /// down the upstream ACP session for `sessionKey`, and clears the streaming
-    /// state for that surface. Returns true when the truncation succeeded — the
-    /// caller then sends the edited text through its normal send path (so the
-    /// streaming response subscription is wired up correctly).
+    /// and resubmitted. Locates the source exchange in the surface's visible
+    /// `chatHistory` (the source of truth — restored detached popouts hold
+    /// messages only in their `chatHistory` and the store, not in
+    /// `provider.messages`), drops it and every later exchange, truncates the
+    /// persisted store at the exchange's user-message timestamp, scrubs any
+    /// matching entries from `provider.messages`, tears down the upstream ACP
+    /// session, and clears streaming state for that surface. Returns true on
+    /// success — the caller then sends the edited text through its normal send
+    /// path (so the streaming response subscription wires up correctly).
     ///
     /// Fidelity caveat: after this, the next query rebuilds context via
     /// `priorContext` replay — text-only summaries (no tool calls or thinking
@@ -1783,17 +1803,49 @@ class ChatProvider: ObservableObject {
     @MainActor
     @discardableResult
     func truncateForEdit(messageId: String, sessionKey: String?) async -> Bool {
-        guard let idx = messages.firstIndex(where: { $0.id == messageId && $0.sender == .user }) else {
-            log("truncateForEdit: message \(messageId) not found in self.messages")
+        // 1. Find the target streaming state and the exchange to cut at.
+        let streamingState: StreamingResponseState? = {
+            if sessionKey == "floating" { return FloatingControlBarManager.shared.barState?.streaming }
+            if let key = sessionKey, key.hasPrefix("detached-") {
+                return DetachedChatWindowController.shared.entriesSnapshot()
+                    .first(where: { $0.sessionKey == key })?.window.state.streaming
+            }
+            return nil
+        }()
+
+        guard let streaming = streamingState else {
+            log("truncateForEdit: no streaming state for sessionKey=\(sessionKey ?? "nil")")
             return false
         }
-        let cutoffDate = messages[idx].createdAt
-        log("truncateForEdit: truncating from index \(idx) (sessionKey=\(sessionKey ?? "nil"), createdAt=\(cutoffDate))")
+        guard let exIdx = streaming.chatHistory.firstIndex(where: { $0.userMessageId == messageId }) else {
+            log("truncateForEdit: exchange for messageId=\(messageId) not in chatHistory (sessionKey=\(sessionKey ?? "nil"))")
+            return false
+        }
+        let exchange = streaming.chatHistory[exIdx]
+        // Cutoff timestamp: prefer the captured user-message createdAt (stable);
+        // fall back to the AI message's createdAt (slightly later, but still a
+        // safe upper bound — store deletion uses >=, so we'd keep the user msg
+        // but the bridge's priorContext only loads turns whose role/text are
+        // present, and our resubmit's user message is appended fresh anyway).
+        let cutoffDate = exchange.userMessageCreatedAt ?? exchange.aiMessage.createdAt
+        log("truncateForEdit: truncating chatHistory from index \(exIdx) (sessionKey=\(sessionKey ?? "nil"), cutoff=\(cutoffDate))")
 
-        // 1. Truncate in-memory messages from the edited one onward.
-        messages.removeSubrange(idx...)
+        // 2. Truncate the visible chatHistory directly + clear streaming state.
+        streaming.chatHistory.removeSubrange(exIdx...)
+        streaming.displayedQuery = ""
+        streaming.currentAIMessage = nil
+        streaming.isAILoading = false
+        streaming.pendingChatObserverExchanges.removeAll()
 
-        // 2. Truncate persisted messages for floating / detached contexts.
+        // 3. Scrub matching entries from `provider.messages` (best effort —
+        //    floating bar messages live here, restored detached popouts often
+        //    don't until the user sends in that pop-out).
+        let scopeKey = sessionKey ?? "floating"
+        messages.removeAll { msg in
+            (msg.sessionKey ?? "floating") == scopeKey && msg.createdAt >= cutoffDate
+        }
+
+        // 4. Truncate persisted messages by timestamp.
         let storeContext: String? = {
             if sessionKey == "floating" { return "__floating__" }
             if let key = sessionKey, key.hasPrefix("detached-") { return "__\(key)__" }
@@ -1803,40 +1855,17 @@ class ChatProvider: ObservableObject {
             await ChatMessageStore.deleteMessagesFromTimestamp(context: ctx, cutoff: cutoffDate)
         }
 
-        // 3. Rebuild visible chatHistory in the floating bar / detached popout
-        //    so the UI matches the truncated state, and clear the streaming
-        //    state so the caller's send path starts a clean exchange (it
-        //    archives `displayedQuery` if non-empty — we don't want a stale
-        //    archive of the now-deleted in-flight turn).
-        let scopeKey = sessionKey ?? "floating"
-        let visibleMessages = messages.filter { ($0.sessionKey ?? "floating") == scopeKey }
-        func resetStreaming(_ streaming: StreamingResponseState) {
-            streaming.loadHistory(from: visibleMessages)
-            streaming.displayedQuery = ""
-            streaming.currentAIMessage = nil
-            streaming.isAILoading = false
-            streaming.pendingChatObserverExchanges.removeAll()
-        }
-        if sessionKey == "floating", let barState = FloatingControlBarManager.shared.barState {
-            resetStreaming(barState.streaming)
-        } else if let key = sessionKey, key.hasPrefix("detached-") {
-            for entry in DetachedChatWindowController.shared.entriesSnapshot() where entry.sessionKey == key {
-                resetStreaming(entry.window.state.streaming)
-            }
-        }
-
-        // 4. Close upstream ACP session so the next prompt creates a fresh one.
-        //    Do NOT rotate floatingChatSessionId — we want priorContext to still
-        //    pick up the truncated history that's saved under it. Also drop the
-        //    session from `sendingSessionKeys` so a query that was in flight on
-        //    the edited turn doesn't make the resubmit enqueue behind itself.
+        // 5. Close upstream ACP session so the next prompt creates a fresh one.
+        //    Also drop the session from `sendingSessionKeys` so a query that
+        //    was in flight on the edited turn doesn't make the resubmit
+        //    enqueue behind itself.
         if let key = sessionKey {
             await acpBridge.closeSession(sessionKey: key)
             sendingSessionKeys.remove(key)
             isSending = !sendingSessionKeys.isEmpty
         }
 
-        // 5. Clear saved upstream session ID so the next send doesn't resume.
+        // 6. Clear saved upstream session ID so the next send doesn't resume.
         if sessionKey == "floating" {
             Self.clearSessionId(storageKey: floatingSessionIdKey)
             pendingFloatingResume = nil
