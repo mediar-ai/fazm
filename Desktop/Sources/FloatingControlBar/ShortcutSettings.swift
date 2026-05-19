@@ -267,9 +267,13 @@ class ShortcutSettings: ObservableObject {
 
     /// True when the user's current bridge mode is unlikely to have 1M-context entitlement.
     /// Builtin (pooled) credits don't include 1M-context; only show those variants in personal mode
-    /// where the user's own Claude account may have the entitlement.
+    /// where the user's own Claude account may have the entitlement. Also sticky-hide if the
+    /// bridge has previously seen "extra usage required for 1M context" from this account
+    /// (set by ChatProvider's model_entitlement_missing handler after a failed query).
     private static func shouldHide1mVariants() -> Bool {
-        UserDefaults.standard.string(forKey: "bridgeMode") == "builtin"
+        if UserDefaults.standard.string(forKey: "bridgeMode") == "builtin" { return true }
+        if UserDefaults.standard.bool(forKey: "userLacks1mEntitlement") { return true }
+        return false
     }
 
     /// Drop [1m] variants from the merged list when the user can't use them.
