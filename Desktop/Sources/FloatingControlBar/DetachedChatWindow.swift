@@ -1203,7 +1203,11 @@ class DetachedChatWindowController {
                             }
                             return block
                         }
-                        state.streaming.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: resolved))
+                        state.streaming.chatHistory.append(FloatingChatExchange(
+                            question: currentQuery,
+                            aiMessage: resolved,
+                            userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: sessionKey)
+                        ))
                     }
                     state.flushPendingChatObserverExchanges()
                     if let text = dequeuedText {
@@ -1232,7 +1236,11 @@ class DetachedChatWindowController {
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
             log("[DetachedChat] sendQuery: archiving exchange question='\(currentQuery.prefix(40))' aiMessage.id=\(aiMessage.id) historyCount=\(state.streaming.chatHistory.count)")
-            state.streaming.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: aiMessage))
+            state.streaming.chatHistory.append(FloatingChatExchange(
+                question: currentQuery,
+                aiMessage: aiMessage,
+                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: sessionKey)
+            ))
         }
         state.flushPendingChatObserverExchanges()
         state.streaming.displayedQuery = message
@@ -1477,7 +1485,11 @@ class DetachedChatWindowController {
                 }
                 return block
             }
-            state.streaming.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: resolved))
+            state.streaming.chatHistory.append(FloatingChatExchange(
+                question: currentQuery,
+                aiMessage: resolved,
+                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: dequeuedSessionKey)
+            ))
         }
         state.flushPendingChatObserverExchanges()
         state.streaming.displayedQuery = dequeuedText
