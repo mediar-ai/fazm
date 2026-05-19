@@ -396,6 +396,68 @@ def bh_seed_cookies(source: str = "chrome:Default", domains: str | None = None) 
 
 
 @mcp.tool()
+def bh_seed_indexeddb(source: str = "chrome:Default", origins: str | None = None) -> str:
+    """Import IndexedDB databases from a local browser profile into the managed Chrome.
+
+    Sister to bh_seed_cookies and bh_seed_localstorage. For each origin: opens
+    a new tab to that origin, lets the page bootstrap its own IDB schema, then
+    replays records via CDP Runtime.evaluate. Use for sites that store
+    auth/session/sync state in IndexedDB (Linear, Figma, Slack web,
+    Excalidraw, Notion offline mode).
+
+    Args:
+        source: 'browser:profile' spec, e.g. 'arc:Default'.
+        origins: comma-separated host substrings (e.g. 'linear.app,figma.com').
+                 None = ALL origins with IDB data. Highly recommended to filter.
+
+    Returns JSON with ok, returncode, stdout (counts only), stderr.
+    """
+    if not ABP_PYTHON.exists():
+        return json.dumps(
+            {"ok": False, "error": f"ai-browser-profile not bundled at {ABP_PYTHON}"},
+            indent=2,
+        )
+
+    chrome_result = ensure_chrome()
+    if chrome_result.get("status") == "chrome_missing":
+        return json.dumps({"ok": False, "error": chrome_result.get("error")}, indent=2)
+
+    cmd = [
+        str(ABP_PYTHON),
+        "-m",
+        "ai_browser_profile.indexeddb",
+        "copy",
+        "--from",
+        source,
+        "--to",
+        CDP_URL,
+    ]
+    if origins:
+        cmd += ["--origins", origins]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # IDB has more data than cookies/localstorage
+            cwd=str(ABP_DIR),
+        )
+    except subprocess.TimeoutExpired:
+        return json.dumps({"ok": False, "error": "seed timed out after 300s"}, indent=2)
+
+    return json.dumps(
+        {
+            "ok": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        },
+        indent=2,
+    )
+
+
+@mcp.tool()
 def bh_seed_localstorage(source: str = "chrome:Default", origins: str | None = None) -> str:
     """Import localStorage from a local browser profile into the managed Chrome.
 
