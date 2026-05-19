@@ -34,6 +34,8 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     /// Workspace selection callback. Pass `nil` to open the directory picker
     /// (NSOpenPanel). Pass a path to switch directly to that workspace.
     var onChangeWorkspace: ((String?) -> Void)?
+    /// Edit a previous user message and resubmit (truncates conversation here).
+    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
     var onWindowClose: (() -> Void)?
 
     init(state: FloatingControlBarState, sessionKey: String, savedFrame: NSRect? = nil) {
@@ -95,7 +97,8 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
             onCodexLogin: { [weak self] in self?.onCodexLogin?() },
             onChatObserverCardAction: { [weak self] id, action in self?.onChatObserverCardAction?(id, action) },
-            onChangeWorkspace: onChangeWorkspace != nil ? { [weak self] path in self?.onChangeWorkspace?(path) } : nil
+            onChangeWorkspace: onChangeWorkspace != nil ? { [weak self] path in self?.onChangeWorkspace?(path) } : nil,
+            onEditMessage: { [weak self] messageId, newText in self?.onEditMessage?(messageId, newText) }
         )
         .environmentObject(state)
         .environmentObject(state.streaming)
@@ -206,6 +209,8 @@ struct DetachedChatView: View {
     var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: (Int64, String) -> Void
     var onChangeWorkspace: ((String?) -> Void)?
+    /// Edit a previous user message and resubmit (truncates conversation here).
+    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
 
     var body: some View {
         AIResponseView(
@@ -293,7 +298,8 @@ struct DetachedChatView: View {
             onConnectClaude: onConnectClaude,
             onCodexLogin: onCodexLogin,
             onChatObserverCardAction: onChatObserverCardAction,
-            onChangeWorkspace: onChangeWorkspace
+            onChangeWorkspace: onChangeWorkspace,
+            onEditMessage: onEditMessage
         )
         .overlay {
             if input.isDragOverChat {
@@ -1026,6 +1032,16 @@ class DetachedChatWindowController {
 
         win.onChatObserverCardAction = { [weak chatProvider] activityId, action in
             chatProvider?.handleChatObserverCardAction(activityId: activityId, action: action)
+        }
+
+        win.onEditMessage = { [weak self, weak win, weak chatProvider] messageId, newText in
+            guard let self, let win, let provider = chatProvider else { return }
+            let key = self.entries[ObjectIdentifier(win)]?.sessionKey ?? win.sessionKey
+            Task { @MainActor in
+                let ok = await provider.truncateForEdit(messageId: messageId, sessionKey: key)
+                guard ok else { return }
+                self.sendQuery(newText, for: win)
+            }
         }
 
         win.onChangeWorkspace = { [weak self, weak win, weak detachedState, weak chatProvider] requestedPath in
