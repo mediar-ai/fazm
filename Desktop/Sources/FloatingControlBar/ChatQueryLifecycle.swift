@@ -62,7 +62,7 @@ enum ChatQueryLifecycle {
                 state.streaming.currentAIMessage = ChatMessage(text: "Switched to your Claude account. You can keep chatting.", sender: .ai)
             } else {
                 state.showConnectClaudeButton = true
-                state.streaming.currentAIMessage = ChatMessage(text: "Your free built-in credits have run out. Connect your Claude account to continue.", sender: .ai)
+                state.streaming.currentAIMessage = ChatMessage(text: "You've used all your built-in Claude usage. Connect your Claude account to keep chatting.", sender: .ai)
             }
         } else if let errorText = provider.errorMessage {
             let isRateLimit = errorText.contains("usage limit") || errorText.contains("rate limit")
