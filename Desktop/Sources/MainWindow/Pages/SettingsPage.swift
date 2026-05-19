@@ -147,7 +147,9 @@ struct SettingsContentView: View {
 
     // Managed browser: import-sessions UI state
     @State private var managedImportSource: String = "arc:Default"
-    @State private var managedImportDomains: String = "chatgpt.com,claude.ai,github.com,notion.so,linear.app,vercel.com,mail.google.com,drive.google.com,docs.google.com,calendly.com,figma.com,canva.com,dashboard.stripe.com,app.mercury.com,slack.com,discord.com,reddit.com,twitter.com,x.com,linkedin.com,openai.com,web.whatsapp.com,web.telegram.org,otter.ai,web.descript.com,trello.com,upwork.com,fiverr.com,coinbase.com"
+    // Empty by default = import every origin the source browser has data for.
+    // Power users can narrow the set via the field in Settings.
+    @State private var managedImportDomains: String = ""
     @State private var managedImportRunning: Bool = false
     @State private var managedImportLastResult: String? = nil
     @State private var managedImportLastError: String? = nil
@@ -1447,10 +1449,10 @@ struct SettingsContentView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Domains to import (comma-separated)")
+                            Text("Domains (optional — leave empty to import everything)")
                                 .scaledFont(size: 12)
                                 .foregroundColor(FazmColors.textTertiary)
-                            TextField("chatgpt.com, claude.ai, github.com, notion.so, linear.app, ...", text: $managedImportDomains)
+                            TextField("Leave empty for all domains, or narrow with: chatgpt.com, linear.app, ...", text: $managedImportDomains)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(size: 12))
                         }
@@ -1474,7 +1476,7 @@ struct SettingsContentView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
-                            .disabled(managedImportRunning || managedImportDomains.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(managedImportRunning)
 
                             Spacer()
                         }
@@ -1779,8 +1781,10 @@ struct SettingsContentView: View {
     private func runManagedBrowserImport() {
         guard !managedImportRunning else { return }
         let source = managedImportSource
+        // Empty = import every origin the source browser has. Power users can
+        // type a comma-separated host list to narrow scope. We pass the raw
+        // string to runAbpModule which omits the filter flag when it's empty.
         let domains = managedImportDomains.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !domains.isEmpty else { return }
 
         managedImportRunning = true
         managedImportLastResult = nil
@@ -1919,13 +1923,20 @@ struct SettingsContentView: View {
         }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: python)
-        proc.arguments = [
+        var args: [String] = [
             "-m", module,
             "copy",
             "--from", source,
             "--to", "http://127.0.0.1:9655",
-            filterFlag, filterValue,
         ]
+        // Only pass the filter flag if the user specified one. Empty value =
+        // import every origin (each module's default when the flag is absent).
+        let trimmedFilter = filterValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedFilter.isEmpty {
+            args.append(filterFlag)
+            args.append(trimmedFilter)
+        }
+        proc.arguments = args
         proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
         let stdout = Pipe()
         let stderr = Pipe()
