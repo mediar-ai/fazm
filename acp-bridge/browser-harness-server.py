@@ -47,9 +47,10 @@ PID_FILE = FAZM_DATA / "chrome.pid"
 LOG_FILE = FAZM_DATA / "chrome.log"
 MCP_LOG_FILE = FAZM_DATA / "mcp.log"
 
-# Port for our managed Chrome's remote debugging endpoint. 9555 to avoid
-# collision with playwright-extension (9222) and the user's own Chrome.
-PORT = int(os.environ.get("FAZM_BH_PORT", "9555"))
+# Port for our managed Chrome's remote debugging endpoint. 9655 to avoid
+# collision with playwright-extension (9222), the user's own Chrome, and the
+# Claude-Code-side browser-harness MCP which also defaults to 9555.
+PORT = int(os.environ.get("FAZM_BH_PORT", "9655"))
 CDP_URL = f"http://127.0.0.1:{PORT}"
 
 CHROME_BIN = os.environ.get(
@@ -456,13 +457,17 @@ def bh_seed_localstorage(source: str = "chrome:Default", origins: str | None = N
 
 
 @mcp.tool()
-def bh_screenshot(quality: int = 50) -> str:
-    """Capture a screenshot of the current tab and write it to a temp file."""
+def bh_screenshot(max_dim: int | None = None) -> str:
+    """Capture a screenshot of the current tab and write it to a temp file.
+
+    max_dim (optional): downscale longest edge to this many pixels (saves tokens).
+    """
+    md_arg = "None" if max_dim is None else str(int(max_dim))
     script = (
         "import json, time, os\n"
         "ensure_real_tab()\n"
         "info = page_info()\n"
-        f"path = capture_screenshot(quality={int(quality)})\n"
+        f"path = capture_screenshot(max_dim={md_arg})\n"
         "print(json.dumps({\"screenshot\": str(path), \"page\": info}))\n"
     )
     result = _run_harness(script)
