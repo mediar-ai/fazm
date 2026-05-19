@@ -929,7 +929,7 @@ struct SettingsContentView: View {
                     }
 
                     Text(chatProvider?.showCreditExhaustedAlert == true
-                         ? "Built-in credits have been used up. Connect your Claude account to continue."
+                         ? "You've used all your built-in Claude usage. Connect your Claude account to keep chatting."
                          : bridgeMode == "builtin"
                          ? "Using Fazm's built-in Claude account. No sign-in required."
                          : chatProvider?.isClaudeConnected == true
@@ -1825,7 +1825,7 @@ struct SettingsContentView: View {
             NSLog("[ManagedImport] cookies result ok=\(cookieResult.ok) summary=\(cookieResult.summary) error=\(cookieResult.error ?? "<none>")")
 
             // Then localStorage (origins == domains by convention)
-            NSLog("[ManagedImport] step 3/3: localstorage copy --from \(source)")
+            NSLog("[ManagedImport] step 3/4: localstorage copy --from \(source)")
             let lsResult = SettingsContentView.runAbpModule(
                 python: abpPython,
                 cwd: abpDir,
@@ -1836,18 +1836,30 @@ struct SettingsContentView: View {
             )
             NSLog("[ManagedImport] localstorage result ok=\(lsResult.ok) summary=\(lsResult.summary) error=\(lsResult.error ?? "<none>")")
 
+            // Then IndexedDB — needed for SPA-auth sites like Linear, Figma, Slack web
+            NSLog("[ManagedImport] step 4/4: indexeddb copy --from \(source)")
+            let idbResult = SettingsContentView.runAbpModule(
+                python: abpPython,
+                cwd: abpDir,
+                module: "ai_browser_profile.indexeddb",
+                source: source,
+                filterFlag: "--origins",
+                filterValue: domains
+            )
+            NSLog("[ManagedImport] indexeddb result ok=\(idbResult.ok) summary=\(idbResult.summary) error=\(idbResult.error ?? "<none>")")
+
             DispatchQueue.main.async {
                 self.managedImportRunning = false
-                if cookieResult.ok || lsResult.ok {
-                    let summary = "Imported from \(source). Cookies: \(cookieResult.summary). localStorage: \(lsResult.summary)."
+                if cookieResult.ok || lsResult.ok || idbResult.ok {
+                    let summary = "Imported from \(source). Cookies: \(cookieResult.summary). localStorage: \(lsResult.summary). IndexedDB: \(idbResult.summary)."
                     self.managedImportLastResult = summary
-                    if !cookieResult.ok || !lsResult.ok {
-                        self.managedImportLastError = [cookieResult.error, lsResult.error].compactMap { $0 }.joined(separator: " / ")
+                    if !cookieResult.ok || !lsResult.ok || !idbResult.ok {
+                        self.managedImportLastError = [cookieResult.error, lsResult.error, idbResult.error].compactMap { $0 }.joined(separator: " / ")
                     }
                     NSLog("[ManagedImport] DONE \(summary)")
                 } else {
-                    self.managedImportLastError = "Import failed. \(cookieResult.error ?? "") \(lsResult.error ?? "")"
-                    NSLog("[ManagedImport] FAILED both cookies+ls errored")
+                    self.managedImportLastError = "Import failed. \(cookieResult.error ?? "") \(lsResult.error ?? "") \(idbResult.error ?? "")"
+                    NSLog("[ManagedImport] FAILED cookies+ls+idb all errored")
                 }
             }
         }
