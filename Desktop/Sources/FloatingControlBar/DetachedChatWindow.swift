@@ -1219,10 +1219,12 @@ class DetachedChatWindowController {
                             }
                             return block
                         }
+                        let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: sessionKey)
                         state.streaming.chatHistory.append(FloatingChatExchange(
                             question: currentQuery,
                             aiMessage: resolved,
-                            userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: sessionKey)
+                            userMessageId: userRef?.id,
+                            userMessageCreatedAt: userRef?.createdAt
                         ))
                     }
                     state.flushPendingChatObserverExchanges()
@@ -1252,10 +1254,12 @@ class DetachedChatWindowController {
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
             log("[DetachedChat] sendQuery: archiving exchange question='\(currentQuery.prefix(40))' aiMessage.id=\(aiMessage.id) historyCount=\(state.streaming.chatHistory.count)")
+            let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: sessionKey)
             state.streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
-                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: sessionKey)
+                userMessageId: userRef?.id,
+                userMessageCreatedAt: userRef?.createdAt
             ))
         }
         state.flushPendingChatObserverExchanges()
@@ -1501,10 +1505,12 @@ class DetachedChatWindowController {
                 }
                 return block
             }
+            let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: dequeuedSessionKey)
             state.streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: resolved,
-                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: dequeuedSessionKey)
+                userMessageId: userRef?.id,
+                userMessageCreatedAt: userRef?.createdAt
             ))
         }
         state.flushPendingChatObserverExchanges()
