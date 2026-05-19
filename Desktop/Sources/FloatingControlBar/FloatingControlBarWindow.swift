@@ -87,6 +87,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// Workspace selection callback. Pass `nil` to open the directory picker
     /// (NSOpenPanel). Pass a path to switch directly to that workspace.
     var onChangeWorkspace: ((String?) -> Void)?
+    /// Edit a previous user message in chat history and resubmit (truncates here).
+    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
 
     override init(
         contentRect: NSRect, styleMask style: NSWindow.StyleMask,
@@ -250,7 +252,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
             onCodexLogin: { [weak self] in self?.onCodexLogin?() },
             onChatObserverCardAction: { [weak self] activityId, action in self?.onChatObserverCardAction?(activityId, action) },
-            onChangeWorkspace: { [weak self] path in self?.onChangeWorkspace?(path) }
+            onChangeWorkspace: { [weak self] path in self?.onChangeWorkspace?(path) },
+            onEditMessage: { [weak self] messageId, newText in self?.onEditMessage?(messageId, newText) }
         )
         .environmentObject(state)
         .environmentObject(state.streaming)
@@ -1191,6 +1194,13 @@ class FloatingControlBarManager {
             }
         }
 
+        barWindow.onEditMessage = { [weak chatProvider] messageId, newText in
+            guard let provider = chatProvider else { return }
+            Task { @MainActor in
+                await provider.editAndResubmit(messageId: messageId, newText: newText, sessionKey: "floating")
+            }
+        }
+
         barWindow.onEnqueueMessage = { [weak chatProvider] message in
             chatProvider?.enqueueMessage(message, sessionKey: "floating")
         }
@@ -1363,7 +1373,11 @@ class FloatingControlBarManager {
                         }
                         return block
                     }
-                    state.streaming.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: resolved))
+                    state.streaming.chatHistory.append(FloatingChatExchange(
+                        question: currentQuery,
+                        aiMessage: resolved,
+                        userMessageId: chatProvider?.mostRecentUserMessageId(text: currentQuery, scope: "floating")
+                    ))
                 }
                 state.flushPendingChatObserverExchanges()
                 state.streaming.displayedQuery = text
@@ -2287,7 +2301,11 @@ class FloatingControlBarManager {
                 id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
-            window.state.streaming.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: aiMessage))
+            window.state.streaming.chatHistory.append(FloatingChatExchange(
+                question: currentQuery,
+                aiMessage: aiMessage,
+                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: "floating")
+            ))
         }
         window.state.flushPendingChatObserverExchanges()
 
@@ -2342,7 +2360,11 @@ class FloatingControlBarManager {
                 id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
-            streaming.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: aiMessage))
+            streaming.chatHistory.append(FloatingChatExchange(
+                question: currentQuery,
+                aiMessage: aiMessage,
+                userMessageId: provider.mostRecentUserMessageId(text: currentQuery, scope: "floating")
+            ))
         }
         barWindow.state.flushPendingChatObserverExchanges()
         streaming.displayedQuery = message
