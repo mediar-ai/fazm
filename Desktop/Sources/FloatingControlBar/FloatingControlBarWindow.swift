@@ -2367,6 +2367,7 @@ class FloatingControlBarManager {
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
             let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
+            log("[FloatingBar] archiving exchange q='\(currentQuery.prefix(30))' userMessageId=\(userRef?.id ?? "nil") createdAt=\(userRef?.createdAt.description ?? "nil")")
             streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
