@@ -88,7 +88,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// (NSOpenPanel). Pass a path to switch directly to that workspace.
     var onChangeWorkspace: ((String?) -> Void)?
     /// Edit a previous user message in chat history and resubmit (truncates here).
-    var onEditMessage: ((_ messageId: String, _ newText: String) -> Void)?
+    var onEditMessage: ((_ exchangeId: String, _ newText: String) -> Void)?
 
     override init(
         contentRect: NSRect, styleMask style: NSWindow.StyleMask,
@@ -1194,10 +1194,10 @@ class FloatingControlBarManager {
             }
         }
 
-        barWindow.onEditMessage = { [weak self, weak barWindow, weak chatProvider] messageId, newText in
+        barWindow.onEditMessage = { [weak self, weak barWindow, weak chatProvider] exchangeId, newText in
             guard let self, let barWindow, let provider = chatProvider else { return }
             Task { @MainActor in
-                let ok = await provider.truncateForEdit(messageId: messageId, sessionKey: "floating")
+                let ok = await provider.truncateForEdit(exchangeId: exchangeId, sessionKey: "floating")
                 guard ok else { return }
                 await self.sendAIQuery(newText, barWindow: barWindow, provider: provider)
             }
@@ -1375,12 +1375,10 @@ class FloatingControlBarManager {
                         }
                         return block
                     }
-                    let userRef = chatProvider?.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
                     state.streaming.chatHistory.append(FloatingChatExchange(
                         question: currentQuery,
                         aiMessage: resolved,
-                        userMessageId: userRef?.id,
-                        userMessageCreatedAt: userRef?.createdAt
+                        userMessageCreatedAt: chatProvider?.mostRecentUserMessageCreatedAt(text: currentQuery, scope: "floating")
                     ))
                 }
                 state.flushPendingChatObserverExchanges()
@@ -1510,9 +1508,8 @@ class FloatingControlBarManager {
                 // Show the bar. Do NOT pre-set displayedQuery — sendAIQuery
                 // archives the previous turn by reading displayedQuery first,
                 // then assigns it to the new text. Pre-setting it here
-                // overwrites the previous query before archive, breaking the
-                // user-message lookup that stamps `userMessageId` for the
-                // edit-and-resubmit affordance.
+                // overwrites the previous query before archive, so the
+                // archived exchange would carry the wrong question text.
                 if !window.isVisible { self.show() }
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     window.state.streaming.showingAIResponse = true
@@ -2309,12 +2306,10 @@ class FloatingControlBarManager {
                 id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
-            let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
             window.state.streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
-                userMessageId: userRef?.id,
-                userMessageCreatedAt: userRef?.createdAt
+                userMessageCreatedAt: provider.mostRecentUserMessageCreatedAt(text: currentQuery, scope: "floating")
             ))
         }
         window.state.flushPendingChatObserverExchanges()
@@ -2370,12 +2365,10 @@ class FloatingControlBarManager {
                 id: UUID().uuidString, text: "", createdAt: Date(), sender: .ai,
                 isStreaming: false, rating: nil, isSynced: false, citations: [], contentBlocks: [], sessionKey: nil
             )
-            let userRef = provider.mostRecentUserMessageRef(text: currentQuery, scope: "floating")
             streaming.chatHistory.append(FloatingChatExchange(
                 question: currentQuery,
                 aiMessage: aiMessage,
-                userMessageId: userRef?.id,
-                userMessageCreatedAt: userRef?.createdAt
+                userMessageCreatedAt: provider.mostRecentUserMessageCreatedAt(text: currentQuery, scope: "floating")
             ))
         }
         barWindow.state.flushPendingChatObserverExchanges()
@@ -2406,9 +2399,8 @@ class FloatingControlBarManager {
             let restored = provider.messages.filter { ($0.sessionKey ?? "floating") == "floating" }
             if !restored.isEmpty {
                 // Pair up user/AI messages into exchanges for the history UI.
-                // Stamp the user-message id so the edit-and-resubmit affordance
-                // shows on restored bubbles (matches what `loadHistory(from:)`
-                // does on the other restore paths).
+                // Stamp the user-message timestamp so edit-and-resubmit can
+                // truncate the store precisely (matches `loadHistory(from:)`).
                 var i = 0
                 while i < restored.count - 1 {
                     if restored[i].sender == .user, restored[i + 1].sender == .ai {
@@ -2416,7 +2408,6 @@ class FloatingControlBarManager {
                             FloatingChatExchange(
                                 question: restored[i].text,
                                 aiMessage: restored[i + 1],
-                                userMessageId: restored[i].id,
                                 userMessageCreatedAt: restored[i].createdAt
                             )
                         )
