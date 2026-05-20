@@ -5,6 +5,24 @@ import { type ChatMessage, type Suggestions } from "@/lib/useDesktopRelay";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { MarkdownMessage, CopyButton } from "./MarkdownMessage";
 
+/* ------------------------------------------------------------------ */
+/*  Waveform bars — animated FFT levels while recording                */
+/* ------------------------------------------------------------------ */
+
+function WaveformBars({ levels }: { levels: number[] }) {
+  return (
+    <span className="inline-flex items-end gap-[3px] h-5" aria-hidden>
+      {levels.map((level, i) => (
+        <span
+          key={i}
+          className="w-[3px] rounded-full bg-current transition-[height] duration-75"
+          style={{ height: `${Math.max(4, level * 20)}px`, opacity: 0.85 }}
+        />
+      ))}
+    </span>
+  );
+}
+
 interface ChatProps {
   messages: ChatMessage[];
   onSend: (text: string) => void;
@@ -224,8 +242,14 @@ export default function Chat({
     },
     []
   );
-  const { recording, transcribing, startRecording, stopRecording } =
-    useVoiceInput(handleVoiceTranscript);
+  const {
+    recording,
+    transcribing,
+    audioLevels,
+    statusMessage,
+    startRecording,
+    stopRecording,
+  } = useVoiceInput(handleVoiceTranscript);
 
   // Auto-scroll — respects manual scroll-up
   useEffect(() => {
@@ -435,6 +459,21 @@ export default function Chat({
         </div>
       )}
 
+      {/* Voice status toast — polite ARIA live region; auto-dismisses in 3s */}
+      <div
+        aria-live="polite"
+        role="status"
+        className={`px-4 transition-opacity duration-200 ${
+          statusMessage ? "opacity-100 pt-2" : "opacity-0 h-0"
+        }`}
+      >
+        {statusMessage && (
+          <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-center">
+            {statusMessage}
+          </div>
+        )}
+      </div>
+
       {/* Input area */}
       <div className="safe-pb px-4 py-3 border-t border-neutral-800">
         {!isDesktopOnline ? (
@@ -577,16 +616,17 @@ export default function Chat({
                   </svg>
                   Transcribing...
                 </>
+              ) : recording ? (
+                <>
+                  <WaveformBars levels={audioLevels} />
+                  Release to stop
+                </>
               ) : (
                 <>
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    {recording ? (
-                      <rect x="6" y="6" width="12" height="12" rx="2" />
-                    ) : (
-                      <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm-1 18.93A7.01 7.01 0 0 1 5 13h2a5 5 0 0 0 10 0h2a7.01 7.01 0 0 1-6 6.93V22h3v2H8v-2h3v-2.07z" />
-                    )}
+                    <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4zm-1 18.93A7.01 7.01 0 0 1 5 13h2a5 5 0 0 0 10 0h2a7.01 7.01 0 0 1-6 6.93V22h3v2H8v-2h3v-2.07z" />
                   </svg>
-                  {recording ? "Release to stop" : "Hold to talk"}
+                  Hold to talk
                 </>
               )}
             </button>
