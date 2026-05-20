@@ -4,14 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   type AvailableModel,
   type DesktopState,
-  type PopOut,
 } from "@/lib/useDesktopRelay";
 
 interface Props {
   desktopState: DesktopState | null;
-  popouts: PopOut[];
-  targetSessionKey: string;
-  onTargetChange: (key: string) => void;
   onSetModel: (id: string) => void;
   onSetWorkspace: (path: string) => void;
 }
@@ -126,9 +122,6 @@ function Dropdown({
 
 export default function ChatControls({
   desktopState,
-  popouts,
-  targetSessionKey,
-  onTargetChange,
   onSetModel,
   onSetWorkspace,
 }: Props) {
@@ -153,15 +146,6 @@ export default function ChatControls({
     }
   };
 
-  const targetItems = [
-    { id: "main", primary: "Floating bar", secondary: "Default session" },
-    ...popouts.map((p) => ({
-      id: p.sessionKey,
-      primary: p.title || "Pop-out",
-      secondary: p.isAILoading ? "Streaming..." : (p.selectedModel || ""),
-    })),
-  ];
-
   const modelItems: { id: string; primary: string; secondary?: string }[] =
     (desktopState?.availableModels || []).map((m: AvailableModel) => ({
       id: m.id,
@@ -171,21 +155,6 @@ export default function ChatControls({
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 overflow-x-auto hide-scrollbar">
-      {/* Stream target — only show selector if there are pop-outs */}
-      {popouts.length > 0 && (
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[10px] uppercase tracking-wide text-neutral-500 hidden sm:inline">
-            Stream to
-          </span>
-          <Dropdown
-            label="Target"
-            items={targetItems}
-            selectedId={targetSessionKey}
-            onSelect={onTargetChange}
-          />
-        </div>
-      )}
-
       {/* Model picker */}
       {desktopState && (
         <Dropdown
