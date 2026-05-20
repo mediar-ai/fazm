@@ -130,7 +130,7 @@ struct ConnectPersonalAccountSheet: View {
                 Image(systemName: "sparkles")
                     .scaledFont(size: 16)
                     .foregroundColor(Color(red: 0.063, green: 0.639, blue: 0.498))
-                Text("ChatGPT / OpenAI")
+                Text("ChatGPT (Codex)")
                     .scaledFont(size: 15, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
                 Spacer()
