@@ -8,6 +8,12 @@
   --accent: #3b82f6;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -19,6 +25,15 @@ html, body {
   height: 100dvh;
   width: 100%;
   touch-action: pan-x pan-y;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Disable iOS callout / text-selection on UI chrome (buttons opt out individually). */
+button, [role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Hide scrollbar but allow scrolling */
@@ -28,4 +43,12 @@ html, body {
 }
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Safe-area helpers */
+.safe-pt {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-pb {
+  padding-bottom: env(safe-area-inset-bottom);
 }
