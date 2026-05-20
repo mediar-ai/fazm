@@ -1832,9 +1832,9 @@ private struct OnboardingErrorBanner: View {
     private var errorMessage: String {
         switch error {
         case .creditExhausted:
-            return "You've used all your built-in Claude usage. Connect your Claude account to continue setup."
+            return "You've used all your built-in AI credits. Connect your Claude Code or ChatGPT account to continue setup."
         case .claudeAuthRequired:
-            return "Please connect your Claude account to continue setup."
+            return "Please connect your Claude Code or ChatGPT account to continue setup."
         case .general(let text):
             return text
         }
