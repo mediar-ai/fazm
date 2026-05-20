@@ -523,10 +523,23 @@ export default function Chat({
               </button>
             )}
 
+            {/* First-time hint: tooltip above mic button. Dismisses on first press. */}
+            {showHoldHint && !recording && !transcribing && (
+              <div className="relative flex justify-center pointer-events-none">
+                <div className="absolute -top-2 -translate-y-full flex flex-col items-center">
+                  <div className="bg-white text-black text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+                    Hold to talk
+                  </div>
+                  <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white" />
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               onPointerDown={(e) => {
                 e.preventDefault();
+                if (showHoldHint) dismissHoldHint();
                 if (!transcribing) {
                   // Haptic on supported devices (Android Chrome). iOS silently no-ops.
                   if (typeof navigator !== "undefined" && "vibrate" in navigator) {
