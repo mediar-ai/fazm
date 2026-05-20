@@ -311,6 +311,15 @@ actor ACPBridge {
   /// session resumable.
   var onSessionForked: ((_ fromSessionId: String, _ toSessionId: String, _ fromSessionKey: String, _ toSessionKey: String) -> Void)?
 
+  /// Safety-net: called when a `.result` arrives for a sessionKey that has no
+  /// active continuation AND no live-transfer alias pointing to it. This is
+  /// the "popOut mid-turn + interrupt orphaned the stream" failure mode —
+  /// without this hook a streaming AI bubble in a popout window would spin
+  /// forever because the in-flight `submitQuery` task that would normally
+  /// finalize it is keyed under a stale, untouched name. The handler walks
+  /// popouts that match `sessionKey` and force-clears their streaming flags.
+  var onOrphanedResult: ((_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool) -> Void)?
+
   /// A slash command advertised by the agent. Mirrors ACP's `AvailableCommand`
   /// schema. Rendered in the input-field popover when the user types `/`.
   struct AvailableCommand: Equatable, Sendable, Identifiable {
@@ -365,6 +374,10 @@ actor ACPBridge {
 
   func setSessionForkedHandler(_ handler: @escaping @Sendable (_ fromSessionId: String, _ toSessionId: String, _ fromSessionKey: String, _ toSessionKey: String) -> Void) {
     self.onSessionForked = handler
+  }
+
+  func setOrphanedResultHandler(_ handler: @escaping @Sendable (_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool) -> Void) {
+    self.onOrphanedResult = handler
   }
 
   func setGlobalAuthHandlers(
@@ -1059,13 +1072,24 @@ actor ACPBridge {
 
     // Clean up per-session state when this query returns (success or error).
     // Use a local closure so it also runs if this Task is cancelled.
+    //
+    // If a live-transfer alias is set for this key (popOut mid-flight), we
+    // installed all the per-session state under the NEW key. Clean THAT up
+    // and clear the alias so the freshly re-warmed old-key session starts
+    // with no stale state.
     defer {
       if let sk = sessionKey {
-        sessionContinuations.removeValue(forKey: sk)
-        sessionPendingMessages.removeValue(forKey: sk)
-        sessionMessageGenerations.removeValue(forKey: sk)
-        sessionInterrupted.removeValue(forKey: sk)
-        sessionAcpToolsRunning.removeValue(forKey: sk)
+        let aliasedKey = sessionKeyAliases[sk]
+        let cleanupKey = aliasedKey ?? sk
+        sessionContinuations.removeValue(forKey: cleanupKey)
+        sessionPendingMessages.removeValue(forKey: cleanupKey)
+        sessionMessageGenerations.removeValue(forKey: cleanupKey)
+        sessionInterrupted.removeValue(forKey: cleanupKey)
+        sessionAcpToolsRunning.removeValue(forKey: cleanupKey)
+        if aliasedKey != nil {
+          sessionKeyAliases.removeValue(forKey: sk)
+          log("ACPBridge: query defer cleared alias '\(sk)' -> '\(cleanupKey)' (popOut live-transfer ended)")
+        }
       }
     }
 
@@ -1880,6 +1904,22 @@ actor ACPBridge {
     // If a sessionKey is present but no box exists yet, queue per-session so the
     // waiter picks it up when it registers.
     if let key = sessionKey {
+      // Safety net for popOut-mid-turn orphans: a `.result` arriving for a
+      // session that has NO active continuation, NO alias pointing TO it from
+      // some other key, AND no waiter coming (no entry in sessionMessageGenerations)
+      // is almost certainly orphaned — the in-flight submitQuery loop that was
+      // supposed to finalize it has either ended or is keyed under a stale name.
+      // Without this notification, the popout's streaming bubble would spin
+      // forever. Fire the orphan handler so ChatProvider can clear UI state.
+      if case .result(_, let sid, _, _, _, _, _, let interrupted) = message {
+        let hasIncomingAlias = sessionKeyAliases.values.contains(key)
+        let hasGen = sessionMessageGenerations[key] != nil
+        if !hasIncomingAlias && !hasGen {
+          log("ACPBridge: ORPHANED result sessionKey=\(key) sessionId=\(sid) interrupted=\(interrupted) — no continuation, no incoming alias, no waiter generation. Firing onOrphanedResult safety net.")
+          onOrphanedResult?(key, sid, interrupted)
+          // Still queue it in case a late waiter shows up, but don't block on it.
+        }
+      }
       var queue = sessionPendingMessages[key] ?? []
       queue.append(message)
       sessionPendingMessages[key] = queue
@@ -1940,15 +1980,15 @@ actor ACPBridge {
             var deferrals = 0
             let maxDeferrals = 6
             while box.isPending(generation: gen), deferrals < maxDeferrals {
-              let toolsRunning = await self?.getSessionAcpToolsRunning(sessionKey) ?? 0
+              let toolsRunning = await self?.getSessionAcpToolsRunning(effectiveKey) ?? 0
               let recentActivity = await self?.hasRecentToolActivity() ?? false
               guard toolsRunning > 0 || recentActivity else { break }
               deferrals += 1
-              log("ACPBridge: waitForMessage[\(sessionKey)] timeout deferred (\(deferrals)/\(maxDeferrals)) running=\(toolsRunning) recentActivity=\(recentActivity)")
+              log("ACPBridge: waitForMessage[\(effectiveKey)] timeout deferred (\(deferrals)/\(maxDeferrals)) running=\(toolsRunning) recentActivity=\(recentActivity)")
               try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             }
             if box.resume(throwing: BridgeError.timeout, ifGeneration: gen) {
-              log("ACPBridge: waitForMessage[\(sessionKey)] timeout fired after \(timeout)s")
+              log("ACPBridge: waitForMessage[\(effectiveKey)] timeout fired after \(timeout)s")
             }
           }
         }
