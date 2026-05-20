@@ -2,10 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/useAuth";
 import { useDesktopRelay } from "@/lib/useDesktopRelay";
 import Chat from "@/components/Chat";
 import ChatControls from "@/components/ChatControls";
+import SessionSidebar from "@/components/SessionSidebar";
 
 export default function Home() {
   const { user, loading, token, signIn, signOut } = useAuth();
@@ -21,11 +23,14 @@ export default function Home() {
     desktopState,
     popouts,
     targetSessionKey,
-    setTargetSessionKey,
+    selectSession,
     startNewChat,
+    startNewPopOutChat,
     setModel,
     setWorkspace,
   } = useDesktopRelay(token);
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (loading) {
     return (
@@ -60,11 +65,36 @@ export default function Home() {
     );
   }
 
+  // Label shown next to the Fazm wordmark so users know which session they're chatting with
+  const activeLabel =
+    targetSessionKey === "main"
+      ? "Floating bar"
+      : popouts.find((p) => p.sessionKey === targetSessionKey)?.title || "Pop-out";
+
   return (
     <div className="h-dvh flex flex-col">
-      {/* Header: Fazm + online dot | New chat | Sign out */}
-      <header className="safe-pt flex items-center justify-between gap-2 px-4 py-3 border-b border-neutral-800">
+      {/* Header: hamburger | Fazm + dot | model + workspace chips | New chat + Sign out
+          Everything lives on a single row per user spec; the middle cluster scrolls
+          horizontally on narrow screens so it never bumps the right-side controls. */}
+      <header className="safe-pt flex items-center gap-2 px-4 py-3 border-b border-neutral-800">
+        {/* Left cluster: hamburger + wordmark + online dot */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="text-neutral-300 hover:text-white transition-colors p-1 -ml-1 relative"
+            aria-label="Open chats"
+            title={isDesktopOnline ? activeLabel : "Open chats"}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            {popouts.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-white/90 text-black text-[9px] font-bold leading-[14px] text-center">
+                {popouts.length + 1}
+              </span>
+            )}
+          </button>
           <h1 className="text-base font-semibold text-white">Fazm</h1>
           <span
             className={`w-2 h-2 rounded-full transition-colors ${
@@ -72,18 +102,33 @@ export default function Home() {
             }`}
           />
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* Middle cluster: compact model + workspace dropdowns. Scrolls horizontally
+            if the screen is narrow so we never push the right cluster off-screen. */}
+        <div className="flex-1 min-w-0 flex items-center">
+          {isDesktopOnline && (
+            <ChatControls
+              desktopState={desktopState}
+              onSetModel={setModel}
+              onSetWorkspace={setWorkspace}
+            />
+          )}
+        </div>
+
+        {/* Right cluster: new chat + sign out */}
+        <div className="flex items-center gap-2 shrink-0">
           {isDesktopOnline && (
             <button
               type="button"
               onClick={startNewChat}
               className="flex items-center gap-1.5 text-xs text-neutral-200 bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] rounded-full px-3 py-1.5 transition-colors"
               title="Start a new chat on the floating bar"
+              aria-label="New chat"
             >
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
               </svg>
-              New chat
+              <span className="hidden sm:inline">New chat</span>
             </button>
           )}
           <button
@@ -95,18 +140,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Secondary controls — model / workspace / target (only when needed) */}
-      {isDesktopOnline && (
-        <ChatControls
-          desktopState={desktopState}
-          popouts={popouts}
-          targetSessionKey={targetSessionKey}
-          onTargetChange={setTargetSessionKey}
-          onSetModel={setModel}
-          onSetWorkspace={setWorkspace}
-        />
-      )}
-
       {/* Chat */}
       <Chat
         messages={messages}
@@ -117,6 +150,18 @@ export default function Home() {
         isConnected={isConnected}
         suggestions={suggestions}
         onClearSuggestions={clearSuggestions}
+      />
+
+      {/* Slide-out sidebar with all sessions */}
+      <SessionSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        desktopState={desktopState}
+        popouts={popouts}
+        targetSessionKey={targetSessionKey}
+        onSelect={selectSession}
+        onNewChat={startNewChat}
+        onNewPopOut={startNewPopOutChat}
       />
     </div>
   );
