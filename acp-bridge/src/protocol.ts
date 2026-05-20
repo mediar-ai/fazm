@@ -106,6 +106,12 @@ export interface TransferSessionMessage {
   type: "transferSession";
   fromKey: string;
   toKey: string;
+  /// True when Swift detected an in-flight query on `fromKey` at transfer
+  /// time (popOut mid-turn). Lets the bridge log when the caller declared
+  /// hadInFlight but the activeQueries map doesn't agree — usually means
+  /// the in-flight query ended in the ~ms gap between Swift's check and
+  /// this message arriving.
+  hadInFlight?: boolean;
 }
 
 /** Diagnostic probe — initialize the codex-acp adapter and report agent + auth state. */
