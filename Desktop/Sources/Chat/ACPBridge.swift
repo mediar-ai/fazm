@@ -420,6 +420,14 @@ actor ACPBridge {
   /// the full inactivity timeout (currently 600s, up to 6× deferred while tools run).
   private var sessionIdToKey: [String: String] = [:]
 
+  /// Aliases that redirect lookups on an OLD session key to a NEW one. Set by
+  /// `transferSession(hadInFlight: true)` so the in-flight `query()` loop —
+  /// whose local `sessionKey` was captured by value at function entry —
+  /// keeps consuming messages under the new key after the user pops out.
+  /// Cleared in `query()`'s defer block, so a follow-up query on the OLD key
+  /// (e.g. the freshly re-warmed "floating" after popOut) starts fresh.
+  private var sessionKeyAliases: [String: String] = [:]
+
   /// Set when stderr indicates OOM so handleTermination can throw the right error
   private var lastExitWasOOM = false
   /// Set when interrupt() is called so query() can skip remaining tool calls (legacy, for non-session queries)
@@ -827,9 +835,54 @@ actor ACPBridge {
 
   /// Re-key a session in the bridge's in-memory map so the next query under
   /// the new key finds it immediately (no resume round-trip needed).
-  func transferSession(fromKey: String, toKey: String) {
+  ///
+  /// When `hadInFlight` is true, an active query is mid-flight on `fromKey`.
+  /// In that case we do a "live transfer":
+  ///   • Per-session continuation state (`sessionContinuations`, `sessionPendingMessages`,
+  ///     `sessionMessageGenerations`, `sessionInterrupted`, `sessionAcpToolsRunning`)
+  ///     is atomically re-keyed `fromKey -> toKey`. The in-flight `query()` loop
+  ///     captured its sessionKey by value, so we ALSO install an alias in
+  ///     `sessionKeyAliases[fromKey] = toKey` and have `waitForMessage` follow
+  ///     aliases. Subsequent message deliveries (which now route to `toKey` via
+  ///     the routing fallback) land in the same continuation the in-flight loop
+  ///     is awaiting under `fromKey`.
+  ///   • The Node bridge also re-keys its `activeQueries` map so interrupt /
+  ///     close_session calls aimed at the OLD key (e.g. closeAIConversation's
+  ///     cancelChat) cannot find the in-flight query and accidentally kill it.
+  func transferSession(fromKey: String, toKey: String, hadInFlight: Bool = false) {
     guard isRunning else { return }
-    let msg: [String: Any] = ["type": "transferSession", "fromKey": fromKey, "toKey": toKey]
+
+    if hadInFlight {
+      // Live transfer: move per-session continuation state in lock-step with the
+      // session re-key so the in-flight query loop continues to receive messages
+      // under the new key. The in-flight loop polls waitForMessage(sessionKey: fromKey);
+      // the alias makes that lookup resolve to toKey's queue/continuation.
+      var moved: [String] = []
+      if let box = sessionContinuations.removeValue(forKey: fromKey) {
+        sessionContinuations[toKey] = box
+        moved.append("continuation")
+      }
+      if let queue = sessionPendingMessages.removeValue(forKey: fromKey) {
+        sessionPendingMessages[toKey] = queue
+        moved.append("pending=\(queue.count)")
+      }
+      if let gen = sessionMessageGenerations.removeValue(forKey: fromKey) {
+        sessionMessageGenerations[toKey] = gen
+        moved.append("gen")
+      }
+      if let it = sessionInterrupted.removeValue(forKey: fromKey) {
+        sessionInterrupted[toKey] = it
+        moved.append("interrupted")
+      }
+      if let tr = sessionAcpToolsRunning.removeValue(forKey: fromKey) {
+        sessionAcpToolsRunning[toKey] = tr
+        moved.append("toolsRunning=\(tr)")
+      }
+      sessionKeyAliases[fromKey] = toKey
+      log("ACPBridge: live-transferred in-flight session state '\(fromKey)' -> '\(toKey)' (\(moved.joined(separator: ",")))")
+    }
+
+    let msg: [String: Any] = ["type": "transferSession", "fromKey": fromKey, "toKey": toKey, "hadInFlight": hadInFlight]
     if let data = try? JSONSerialization.data(withJSONObject: msg),
       let str = String(data: data, encoding: .utf8)
     {
@@ -1839,24 +1892,33 @@ actor ACPBridge {
   }
 
   /// Wait for a message on a specific session's queue. Concurrent-safe.
+  ///
+  /// Follows `sessionKeyAliases` so an in-flight query whose loop was started
+  /// before a `transferSession(hadInFlight: true)` keeps consuming messages
+  /// that now route to the new key. Without this, a popOut mid-turn would
+  /// orphan the in-flight loop on the old (no longer routed) queue.
   private func waitForMessage(sessionKey: String, timeout: TimeInterval? = nil) async throws -> InboundMessage {
+    let effectiveKey = sessionKeyAliases[sessionKey] ?? sessionKey
+    if effectiveKey != sessionKey {
+      log("ACPBridge: waitForMessage alias '\(sessionKey)' -> '\(effectiveKey)'")
+    }
     // Drain any queued pending messages first
-    if var queue = sessionPendingMessages[sessionKey], !queue.isEmpty {
+    if var queue = sessionPendingMessages[effectiveKey], !queue.isEmpty {
       let msg = queue.removeFirst()
-      sessionPendingMessages[sessionKey] = queue.isEmpty ? nil : queue
+      sessionPendingMessages[effectiveKey] = queue.isEmpty ? nil : queue
       return msg
     }
     guard isRunning else {
       throw BridgeError.stopped
     }
 
-    let box = sessionContinuations[sessionKey] ?? {
+    let box = sessionContinuations[effectiveKey] ?? {
       let b = ContinuationBox<InboundMessage, Error>()
-      sessionContinuations[sessionKey] = b
+      sessionContinuations[effectiveKey] = b
       return b
     }()
-    let gen = (sessionMessageGenerations[sessionKey] ?? 0) &+ 1
-    sessionMessageGenerations[sessionKey] = gen
+    let gen = (sessionMessageGenerations[effectiveKey] ?? 0) &+ 1
+    sessionMessageGenerations[effectiveKey] = gen
 
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
