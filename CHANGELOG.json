@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Phone web chat (chat.fazm.ai) now has new chat, pop-out, model picker, workspace selector, and a stream-target switcher so you can route your phone message into the floating bar or any open pop-out window",
-    "Fixed pop-out conversation history not loading on chat.fazm.ai when switching to a detached pop-out from the sidebar"
+    "Fixed pop-out conversation history not loading on chat.fazm.ai when switching to a detached pop-out from the sidebar",
+    "Added programmatic browser-mode toggle: setBrowserMode:extension|managed control command + Settings picker now auto-restarts the ACP bridge so FAZM_BROWSER_MODE takes effect immediately"
   ],
   "releases": [
     {
