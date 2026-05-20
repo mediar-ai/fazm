@@ -188,6 +188,14 @@ class ResourceMonitor {
         // Thread count is already in snapshot
         components["threadCount"] = snapshot.threadCount
 
+        // Per-subsystem counters published via ResourceCounters.shared.
+        // Each subsystem owns its own keys (e.g. sessionRecording_active,
+        // geminiAnalysis_bufferedChunks). Merging here means new counters
+        // show up in the log line automatically as subsystems are wired.
+        for (key, value) in ResourceCounters.shared.snapshot() {
+            components[key] = value
+        }
+
         let componentSummary = components.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
         log("ResourceMonitor: COMPONENTS: \(componentSummary)")
 
