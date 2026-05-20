@@ -263,6 +263,9 @@ export function useDesktopRelay(token: string | null): RelayHook {
       // Ask for history of whichever session the user last had selected (defaults
       // to "main" on a fresh load).
       ws.send(JSON.stringify({ type: "request_history", sessionKey: "main" }));
+      // Ask for current desktop state (model list, voice setting, workspace, etc.)
+      // so the UI can populate the model dropdown immediately on connect.
+      ws.send(JSON.stringify({ type: "request_state" }));
     };
 
     ws.onmessage = (event) => {
