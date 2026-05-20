@@ -479,20 +479,41 @@ workflows:
             esac
 
             # Resolve the uv-managed Python install dir for this arch.
-            # Use `uv python find` (resolves the unversioned spec to the actual install path)
-            # instead of parsing `uv python list --only-installed`, whose first column always
-            # includes the patch version (`cpython-3.12.9-...`) and so never matches the
-            # unversioned spec we pass to `uv python install`. That mismatch silently broke
-            # all three Python MCPs in v2.9.27 — shipping an app with no Python venvs at all.
-            local py_bin py_managed_dir
-            py_bin=$(uv python find "$py_dist" 2>/dev/null)
-            if [ -z "$py_bin" ] || [ ! -f "$py_bin" ]; then
-              echo "ERROR: 'uv python find $py_dist' failed; cannot build $venv"
-              echo "  Installed Pythons:"
-              uv python list --only-installed 2>&1 | sed 's/^/    /'
-              return 1
+            #
+            # `uv python find` and `uv python list --only-installed` BOTH filter by the
+            # host platform, so on an arm64 builder they cannot locate the x86_64 Python
+            # we installed for cross-arch wheel resolution, even though uv successfully
+            # downloaded and unpacked it. That mismatch broke all three Python MCPs in
+            # v2.9.27 (no venvs shipped) and again in v2.9.28 (build correctly failed
+            # the strict-validation check below).
+            #
+            # uv maintains an unversioned symlink in its install root pointing at the
+            # actual patch-version install dir, e.g.
+            #   $UV_PY_DIR/cpython-3.12-macos-x86_64-none -> cpython-3.12.9-macos-x86_64-none
+            # so we look it up directly on the filesystem. Matches uv's own resolution
+            # order: UV_PYTHON_INSTALL_DIR > XDG_DATA_HOME > $HOME/.local/share.
+            local py_bin py_managed_dir uv_py_root
+            uv_py_root="${UV_PYTHON_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/python}"
+            py_managed_dir="$uv_py_root/$py_dist"
+            py_bin="$py_managed_dir/bin/python3.12"
+            if [ ! -x "$py_bin" ]; then
+              # Fallback: try `uv python find` (works for host arch when symlink missing)
+              local found
+              found=$(uv python find "$py_dist" 2>/dev/null)
+              if [ -n "$found" ] && [ -x "$found" ]; then
+                py_bin="$found"
+                py_managed_dir=$(dirname "$(dirname "$py_bin")")
+              else
+                echo "ERROR: cannot locate uv-managed Python for $py_dist"
+                echo "  Looked for: $py_managed_dir/bin/python3.12"
+                echo "  uv python install dir: $uv_py_root"
+                echo "  Directory contents:"
+                ls -la "$uv_py_root" 2>&1 | sed 's/^/    /'
+                echo "  Installed Pythons (host-platform only):"
+                uv python list --only-installed 2>&1 | sed 's/^/    /'
+                return 1
+              fi
             fi
-            py_managed_dir=$(dirname "$(dirname "$py_bin")")  # …/bin/python3.12 → …
 
             # Create venv pointed at this arch's Python. uv doesn't need to *run* the
             # target interpreter for venv creation, so this works on arm64 host even
