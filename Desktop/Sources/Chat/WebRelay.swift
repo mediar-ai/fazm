@@ -287,13 +287,78 @@ final class WebRelay: ObservableObject {
             // Notify the phone that query started
             sendToPhone(["type": "query_started"])
 
-            // Process through ChatProvider
-            await onQuery?(text, sessionKey)
+            // If the web client picked a specific pop-out as its target, route the
+            // message through DetachedChatWindowController so the pop-out's own
+            // streaming UI lights up. Falls back to the main floating-bar flow when
+            // the pop-out has gone away.
+            if sessionKey.hasPrefix("detached-") {
+                let sent = DetachedChatWindowController.shared.sendQuery(toSessionKey: sessionKey, message: text)
+                log("WebRelay: routed send_message to popout sessionKey=\(sessionKey) sent=\(sent)")
+                if !sent {
+                    // Pop-out gone (closed in another tab, etc). Fall back to floating bar.
+                    await onQuery?(text, "main")
+                }
+            } else {
+                await onQuery?(text, sessionKey)
+            }
 
         case "request_history":
             if let history = await onHistoryRequest?() {
                 sendToPhone(["type": "chat_history", "messages": history])
             }
+
+        case "request_state":
+            if let state = await onStateRequest?() {
+                var payload: [String: Any] = ["type": "desktop_state"]
+                for (k, v) in state { payload[k] = v }
+                sendToPhone(payload)
+            }
+
+        case "request_popouts":
+            if let popouts = await onPopOutsRequest?() {
+                sendToPhone(["type": "popouts_list", "popouts": popouts])
+            }
+
+        case "control":
+            // Bridge web -> existing distributed-notification control API. This lets
+            // every command supported by the floating bar (newChat, newPopOutChat,
+            // setModel, setWorkspace, stopAgent, popOut, ...) work from the web with
+            // zero duplication of the dispatch logic on the desktop side.
+            let command = json["command"] as? String ?? ""
+            guard !command.isEmpty else { return }
+            log("WebRelay: control command from web: \(command)")
+            DistributedNotificationCenter.default().postNotificationName(
+                NSNotification.Name("com.fazm.control"),
+                object: nil,
+                userInfo: ["command": command],
+                deliverImmediately: true
+            )
+            // Push fresh state back so the web UI reflects whatever the command
+            // changed (model, workspace, popout list, etc). 200ms gives the desktop
+            // side time to apply the change before we read it back.
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(200))
+                if let state = await self?.onStateRequest?() {
+                    var payload: [String: Any] = ["type": "desktop_state"]
+                    for (k, v) in state { payload[k] = v }
+                    self?.sendToPhone(payload)
+                }
+                if let popouts = await self?.onPopOutsRequest?() {
+                    self?.sendToPhone(["type": "popouts_list", "popouts": popouts])
+                }
+            }
+
+        case "stop":
+            // Web client interrupted streaming. Re-use the existing stopAgent path
+            // by posting the control notification, so behaviour matches the floating
+            // bar's "Stop" button exactly (clears in-flight query, releases the bridge).
+            log("WebRelay: stop from web")
+            DistributedNotificationCenter.default().postNotificationName(
+                NSNotification.Name("com.fazm.control"),
+                object: nil,
+                userInfo: ["command": "stopAgent"],
+                deliverImmediately: true
+            )
 
         default:
             log("WebRelay: unknown message type: \(type)")
