@@ -101,9 +101,24 @@ const contentsDir = join(resourcesDir, "..");
 const macosUseBinary = join(contentsDir, "MacOS", "mcp-server-macos-use");
 const whatsappMcpBinary = join(contentsDir, "MacOS", "whatsapp-mcp");
 
+// Per-arch venv resolution. Codemagic thins per-arch ZIPs (Sparkle delivery)
+// so they end up with a single `.venv/` dir, but the universal .dmg ships
+// `.venv-arm64/` and `.venv-x86_64/` side by side without renaming. The
+// runtime must handle both: prefer the thinned `.venv/`, fall back to the
+// host-arch `.venv-$ARCH/` directory.
+const hostArchVenvSuffix = process.arch === "arm64" ? "arm64" : "x86_64";
+function resolveMcpVenvDir(mcpDir: string): string {
+  const thinned = join(mcpDir, ".venv");
+  if (existsSync(join(thinned, "bin", "python3"))) return thinned;
+  const archSpecific = join(mcpDir, `.venv-${hostArchVenvSuffix}`);
+  if (existsSync(join(archSpecific, "bin", "python3"))) return archSpecific;
+  return thinned; // return canonical path even if missing; callers check existsSync
+}
+
 // Google Workspace MCP — Python server bundled under Contents/Resources/google-workspace-mcp/
 const googleWorkspaceMcpDir = join(resourcesDir, "google-workspace-mcp");
-const googleWorkspaceMcpPython = join(googleWorkspaceMcpDir, ".venv", "bin", "python3");
+const googleWorkspaceMcpVenvDir = resolveMcpVenvDir(googleWorkspaceMcpDir);
+const googleWorkspaceMcpPython = join(googleWorkspaceMcpVenvDir, "bin", "python3");
 const googleWorkspaceMcpMain = join(googleWorkspaceMcpDir, "main.py");
 
 // browser-harness MCP — Python server bundled under Contents/Resources/browser-harness/
@@ -112,13 +127,15 @@ const googleWorkspaceMcpMain = join(googleWorkspaceMcpDir, "main.py");
 // playwright-extension flow: when FAZM_BROWSER_MODE=managed, playwright is
 // dropped from the MCP list and browser-harness takes its place.
 const browserHarnessMcpDir = join(resourcesDir, "browser-harness");
-const browserHarnessMcpPython = join(browserHarnessMcpDir, ".venv", "bin", "python3");
+const browserHarnessMcpVenvDir = resolveMcpVenvDir(browserHarnessMcpDir);
+const browserHarnessMcpPython = join(browserHarnessMcpVenvDir, "bin", "python3");
 const browserHarnessMcpServer = join(browserHarnessMcpDir, "server.py");
 
 // ai-browser-profile — Python lib for importing cookies/localStorage from
 // real Chromium browsers (Chrome/Arc/Brave/Edge) into the browser-harness Chrome.
 const aiBrowserProfileDir = join(resourcesDir, "ai-browser-profile");
-const aiBrowserProfilePython = join(aiBrowserProfileDir, ".venv", "bin", "python3");
+const aiBrowserProfileVenvDir = resolveMcpVenvDir(aiBrowserProfileDir);
+const aiBrowserProfilePython = join(aiBrowserProfileVenvDir, "bin", "python3");
 
 // Which browser automation flow is active. "extension" = the existing
 // Playwright + Chrome-extension flow (default). "managed" = browser-harness
@@ -2058,13 +2075,12 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   // Default = "extension" (existing behavior). Override via FAZM_BROWSER_MODE=managed.
   if (browserMode === "managed") {
     if (existsSync(browserHarnessMcpPython) && existsSync(browserHarnessMcpServer)) {
-      const browserHarnessVenv = join(browserHarnessMcpDir, ".venv");
       servers.push({
         name: "browser-harness",
         command: browserHarnessMcpPython,
         args: [browserHarnessMcpServer],
         env: [
-          { name: "PYTHONHOME", value: browserHarnessVenv },
+          { name: "PYTHONHOME", value: browserHarnessMcpVenvDir },
           { name: "PYTHONDONTWRITEBYTECODE", value: "1" },
         ],
       });
@@ -2168,7 +2184,6 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
 
   // Google Workspace MCP (Python, stdio transport)
   if (existsSync(googleWorkspaceMcpPython) && existsSync(googleWorkspaceMcpMain)) {
-    const googleWorkspaceMcpVenv = join(googleWorkspaceMcpDir, ".venv");
     const homeDir = process.env.HOME || "~";
     const gwsCredsDir = join(homeDir, "google_workspace_mcp");
     servers.push({
@@ -2179,7 +2194,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
         // The bundled Python (from UV) has /install as its prefix. PYTHONHOME
         // redirects stdlib resolution to the bundled .venv which contains the
         // actual lib/python3.12 directory and site-packages.
-        { name: "PYTHONHOME", value: googleWorkspaceMcpVenv },
+        { name: "PYTHONHOME", value: googleWorkspaceMcpVenvDir },
         // Prevent Python from writing .pyc files into the app bundle, which
         // invalidates the code signature and breaks Sparkle auto-updates.
         { name: "PYTHONDONTWRITEBYTECODE", value: "1" },
