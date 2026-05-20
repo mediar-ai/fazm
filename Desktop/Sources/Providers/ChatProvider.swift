@@ -1315,18 +1315,75 @@ class ChatProvider: ObservableObject {
 
         webRelay.onHistoryRequest = { [weak self] requestedSessionKey in
             guard let self else { return [] }
-            // Filter rules:
-            //  - nil / "main" / "floating" → messages whose sessionKey is nil or "floating"
-            //    (matches the desktop's floating-bar filter pattern used elsewhere)
-            //  - "detached-..." → messages tagged with that exact sessionKey
+            // Source-of-truth differs between the two flavours of session:
+            //  - Floating bar (nil / "main" / "floating"): provider.messages is
+            //    populated live AND restored from ChatMessageStore on launch via
+            //    restoreFloatingChatIfNeeded(), so the in-memory array is reliable.
+            //  - Detached pop-outs ("detached-<uuid>"): on app restart, pop-out
+            //    messages are loaded directly into the per-window streaming state
+            //    (state.streaming.chatHistory) and the persisted store, but NOT
+            //    back-populated into provider.messages. Filtering provider.messages
+            //    by that key therefore returns 0 rows for any restored pop-out the
+            //    user hasn't sent into during the current app run. Pull from the
+            //    in-memory chatHistory (preferred, mirrors what the pop-out window
+            //    itself shows) and fall back to ChatMessageStore when the window
+            //    isn't currently open or its history hasn't hydrated yet.
+            if let key = requestedSessionKey, key.hasPrefix("detached-") {
+                if let entry = DetachedChatWindowController.shared
+                    .entriesSnapshot()
+                    .first(where: { $0.sessionKey == key }) {
+                    let streaming = entry.window.state.streaming
+                    var out: [[String: Any]] = []
+                    for ex in streaming.chatHistory {
+                        out.append([
+                            "id": "u-\(ex.id.uuidString)",
+                            "text": ex.question,
+                            "sender": "user",
+                        ])
+                        out.append([
+                            "id": ex.aiMessage.id,
+                            "text": ex.aiMessage.text,
+                            "sender": "ai",
+                        ])
+                    }
+                    // Include the in-flight exchange (displayedQuery + currentAIMessage)
+                    // so the web client sees the live response without waiting for the
+                    // next archive cycle.
+                    if !streaming.displayedQuery.isEmpty {
+                        out.append([
+                            "id": "u-live-\(streaming.displayedQuery.hashValue)",
+                            "text": streaming.displayedQuery,
+                            "sender": "user",
+                        ])
+                        if let live = streaming.currentAIMessage, !live.text.isEmpty {
+                            out.append([
+                                "id": live.id,
+                                "text": live.text,
+                                "sender": "ai",
+                            ])
+                        }
+                    }
+                    if !out.isEmpty { return out }
+                }
+                // Fall back to the persisted store. Pop-out messages get written
+                // under context "__detached-<uuid>__"; load up to a reasonable cap
+                // so the web client renders the full thread.
+                let saved = await ChatMessageStore.loadMessages(
+                    context: "__\(key)__",
+                    limit: 200
+                )
+                return saved.map { msg in
+                    [
+                        "id": msg.id,
+                        "text": msg.text,
+                        "sender": msg.sender == .user ? "user" : "ai",
+                    ] as [String: Any]
+                }
+            }
+            // Floating bar / main: in-memory filter is correct.
             let filtered = self.messages.filter { msg in
                 let key = msg.sessionKey ?? "floating"
-                switch requestedSessionKey {
-                case nil, "main", "floating":
-                    return key == "floating" || key == "main"
-                case let target?:
-                    return key == target
-                }
+                return key == "floating" || key == "main"
             }
             return filtered.map { msg in
                 [
