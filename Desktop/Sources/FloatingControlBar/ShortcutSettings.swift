@@ -465,7 +465,8 @@ class ShortcutSettings: ObservableObject {
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
         self.pttSoundsEnabled = UserDefaults.standard.object(forKey: "shortcut_pttSoundsEnabled") as? Bool ?? true
-        // Migrate saved model IDs: old full IDs -> short aliases; "opus" -> "default" (ACP SDK v0.29+).
+        // Migrate saved model IDs: legacy "default" alias and prior Opus pins -> canonical "claude-opus-4-7";
+        // haiku/sonnet stay as short aliases.
         let savedModel = UserDefaults.standard.string(forKey: "shortcut_selectedModel")
         if let saved = savedModel {
             // Normalize legacy full IDs to short aliases
