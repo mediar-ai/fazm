@@ -479,10 +479,17 @@ workflows:
             esac
 
             # Resolve the uv-managed Python install dir for this arch.
+            # Use `uv python find` (resolves the unversioned spec to the actual install path)
+            # instead of parsing `uv python list --only-installed`, whose first column always
+            # includes the patch version (`cpython-3.12.9-...`) and so never matches the
+            # unversioned spec we pass to `uv python install`. That mismatch silently broke
+            # all three Python MCPs in v2.9.27 — shipping an app with no Python venvs at all.
             local py_bin py_managed_dir
-            py_bin=$(uv python list --only-installed 2>&1 | awk -v d="$py_dist" '$1 == d { print $2; exit }')
+            py_bin=$(uv python find "$py_dist" 2>/dev/null)
             if [ -z "$py_bin" ] || [ ! -f "$py_bin" ]; then
-              echo "ERROR: $py_dist not installed; skipping $venv"
+              echo "ERROR: 'uv python find $py_dist' failed; cannot build $venv"
+              echo "  Installed Pythons:"
+              uv python list --only-installed 2>&1 | sed 's/^/    /'
               return 1
             fi
             py_managed_dir=$(dirname "$(dirname "$py_bin")")  # …/bin/python3.12 → …
