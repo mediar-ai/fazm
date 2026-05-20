@@ -32,6 +32,12 @@ pub struct Config {
     // Stripe
     pub stripe_secret_key: String,
     pub stripe_price_id: String,
+    // Treatment arm price ID for pricing A/B test ($19.99/mo). When empty,
+    // every user falls through to the control price regardless of variant.
+    pub stripe_price_id_treatment: String,
+    // Kill switch for the pricing A/B test. When false, every user gets
+    // control. Mirrors PRICING_AB_ENABLED on the website.
+    pub pricing_ab_enabled: bool,
     pub stripe_intro_coupon_id: String,
     pub stripe_webhook_secret: String,
     pub stripe_trial_days: u32,
@@ -99,6 +105,11 @@ impl Config {
             release_secret: std::env::var("RELEASE_SECRET").unwrap_or_default(),
             stripe_secret_key: std::env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
             stripe_price_id: std::env::var("STRIPE_PRICE_ID").unwrap_or_default(),
+            stripe_price_id_treatment: std::env::var("STRIPE_PRICE_ID_TREATMENT")
+                .unwrap_or_default(),
+            pricing_ab_enabled: std::env::var("PRICING_AB_ENABLED")
+                .map(|v| v.trim().to_lowercase() != "false")
+                .unwrap_or(true),
             stripe_intro_coupon_id: std::env::var("STRIPE_INTRO_COUPON_ID").unwrap_or_default(),
             stripe_webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
             stripe_trial_days: std::env::var("STRIPE_TRIAL_DAYS")
