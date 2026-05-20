@@ -1425,6 +1425,17 @@ struct SettingsContentView: View {
                     .labelsHidden()
                     .onChange(of: browserMode) { _, newValue in
                         AnalyticsManager.shared.settingToggled(setting: "browser_mode_\(newValue)", enabled: true)
+                        // FAZM_BROWSER_MODE is read at ACP bridge spawn time, so flipping
+                        // this picker has no effect until the bridge restarts. @AppStorage
+                        // already wrote the new value to UserDefaults; just fire restartBridge
+                        // so ChatProvider relaunches the bridge subprocess on the next query
+                        // and picks up the new FAZM_BROWSER_MODE env var.
+                        DistributedNotificationCenter.default().postNotificationName(
+                            NSNotification.Name("com.fazm.control"),
+                            object: nil,
+                            userInfo: ["command": "restartBridge"],
+                            deliverImmediately: true
+                        )
                     }
                 }
             }
