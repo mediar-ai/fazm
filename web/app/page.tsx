@@ -8,8 +8,16 @@ import Chat from "@/components/Chat";
 
 export default function Home() {
   const { user, loading, token, signIn, signOut } = useAuth();
-  const { isConnected, isDesktopOnline, messages, sendMessage, stopGeneration, isSending } =
-    useDesktopRelay(token);
+  const {
+    isConnected,
+    isDesktopOnline,
+    messages,
+    sendMessage,
+    stopGeneration,
+    isSending,
+    suggestions,
+    clearSuggestions,
+  } = useDesktopRelay(token);
 
   if (loading) {
     return (
@@ -72,6 +80,8 @@ export default function Home() {
         isSending={isSending}
         isDesktopOnline={isDesktopOnline}
         isConnected={isConnected}
+        suggestions={suggestions}
+        onClearSuggestions={clearSuggestions}
       />
     </div>
   );
