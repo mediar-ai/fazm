@@ -1,6 +1,13 @@
 import SwiftUI
 import AppKit
 
+private struct ClaudeAuthSheetHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 380
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// Sheet shown when ACP bridge (Mode B) requires the user to authenticate
 /// with their Claude account via OAuth.
 struct ClaudeAuthSheet: View {
@@ -211,6 +218,7 @@ struct ClaudeAuthSheet: View {
         }
         .frame(width: 400, height: sheetHeight)
         .background(FazmColors.backgroundPrimary)
+        .preference(key: ClaudeAuthSheetHeightKey.self, value: sheetHeight)
         .onChange(of: hasTimedOut) {
             if hasTimedOut {
                 isConnecting = false
@@ -232,7 +240,7 @@ struct ClaudeAuthSheet: View {
 
     private var sheetHeight: CGFloat {
         if hasFailed { return 400 }
-        if isConnecting && showRetryOption && !hasTimedOut { return 430 }
+        if isConnecting && showRetryOption && !hasTimedOut { return 490 }
         return 380
     }
 
@@ -279,6 +287,7 @@ struct ClaudeAuthSheet: View {
 private struct ClaudeAuthWindowContent: View {
     @ObservedObject var chatProvider: ChatProvider
     let onDismiss: () -> Void
+    let onSheetHeightChange: (CGFloat) -> Void
 
     var body: some View {
         ClaudeAuthSheet(
@@ -297,6 +306,9 @@ private struct ClaudeAuthWindowContent: View {
                 onDismiss()
             }
         )
+        .onPreferenceChange(ClaudeAuthSheetHeightKey.self) { height in
+            onSheetHeightChange(height)
+        }
         .onReceive(chatProvider.$isClaudeAuthRequired.dropFirst()) { required in
             if !required {
                 onDismiss()
