@@ -1910,7 +1910,10 @@ class FloatingControlBarManager {
         messageObserver?.cancel()
         messageObserver = nil
         if let provider = chatProvider, provider.isSending(sessionKey: "floating") {
+            log("FloatingControlBarManager: cancelChat sending interrupt for in-flight 'floating' query")
             provider.stopAgent(sessionKey: "floating")
+        } else {
+            log("FloatingControlBarManager: cancelChat skipping interrupt — no in-flight 'floating' query (e.g. popOut already moved the lock to a detached key)")
         }
     }
 
@@ -2186,7 +2189,10 @@ class FloatingControlBarManager {
         guard let window = window, let provider = chatProvider else { return }
         let state = window.state
 
-        log("FloatingControlBarManager: Popping out conversation to detached window")
+        let inFlight = provider.isSending(sessionKey: "floating")
+        let aiLoading = state.streaming.isAILoading
+        let streamingMsg = state.streaming.currentAIMessage?.isStreaming ?? false
+        log("FloatingControlBarManager: Popping out conversation to detached window (inFlight=\(inFlight), isAILoading=\(aiLoading), streamingMsg=\(streamingMsg), historyCount=\(state.streaming.chatHistory.count))")
         AnalyticsManager.shared.floatingBarChatPoppedOut(
             historyCount: state.streaming.chatHistory.count
         )
