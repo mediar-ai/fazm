@@ -17,6 +17,29 @@ export interface Suggestions {
   options: string[];
 }
 
+export interface AvailableModel {
+  id: string;
+  label: string;
+  shortLabel: string;
+}
+
+export interface DesktopState {
+  model: string;
+  modelLabel: string;
+  workspace: string;
+  voiceEnabled: boolean;
+  availableModels: AvailableModel[];
+}
+
+export interface PopOut {
+  sessionKey: string;
+  title: string;
+  workspace: string;
+  selectedModel: string;
+  isAILoading: boolean;
+  chatHistoryCount: number;
+}
+
 interface RelayHook {
   isConnected: boolean;
   isDesktopOnline: boolean;
@@ -26,6 +49,17 @@ interface RelayHook {
   isSending: boolean;
   suggestions: Suggestions | null;
   clearSuggestions: () => void;
+  // New session/target controls
+  desktopState: DesktopState | null;
+  popouts: PopOut[];
+  targetSessionKey: string;          // "main" | "detached-<uuid>"
+  setTargetSessionKey: (key: string) => void;
+  startNewChat: () => void;          // resets the floating bar's main chat
+  startNewPopOutChat: () => void;    // opens a brand-new detached pop-out
+  setModel: (id: string) => void;
+  setWorkspace: (path: string) => void;
+  refreshState: () => void;
+  refreshPopouts: () => void;
 }
 
 const BACKOFF_INITIAL_MS = 3000;
@@ -37,6 +71,9 @@ export function useDesktopRelay(token: string | null): RelayHook {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
+  const [desktopState, setDesktopState] = useState<DesktopState | null>(null);
+  const [popouts, setPopouts] = useState<PopOut[]>([]);
+  const [targetSessionKey, setTargetSessionKey] = useState<string>("main");
   const wsRef = useRef<WebSocket | null>(null);
   const currentAiMessageId = useRef<string | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -148,6 +185,30 @@ export function useDesktopRelay(token: string | null): RelayHook {
         trackEvent("web_message_error", { error: msg.error || "unknown" });
         setIsSending(false);
         currentAiMessageId.current = null;
+        break;
+      }
+
+      case "desktop_state": {
+        const next: DesktopState = {
+          model: (msg.model as string) || "",
+          modelLabel: (msg.modelLabel as string) || "",
+          workspace: (msg.workspace as string) || "",
+          voiceEnabled: Boolean(msg.voiceEnabled),
+          availableModels: (msg.availableModels as AvailableModel[]) || [],
+        };
+        setDesktopState(next);
+        break;
+      }
+
+      case "popouts_list": {
+        const list = (msg.popouts as PopOut[]) || [];
+        setPopouts(list);
+        // If the user's currently-targeted pop-out closed on the desktop, fall
+        // back to the floating bar so we never send into a dead session.
+        setTargetSessionKey((curr) => {
+          if (curr === "main") return curr;
+          return list.some((p) => p.sessionKey === curr) ? curr : "main";
+        });
         break;
       }
     }
@@ -308,13 +369,20 @@ export function useDesktopRelay(token: string | null): RelayHook {
       setMessages((prev) => [...prev, userMsg]);
       // User sent a reply — suggestion pills are now stale.
       setSuggestions(null);
-      trackEvent("web_message_sent", { text_length: text.length });
+      trackEvent("web_message_sent", {
+        text_length: text.length,
+        target: targetSessionKey,
+      });
 
       wsRef.current.send(
-        JSON.stringify({ type: "send_message", text, sessionKey: "main" })
+        JSON.stringify({
+          type: "send_message",
+          text,
+          sessionKey: targetSessionKey,
+        })
       );
     },
-    []
+    [targetSessionKey]
   );
 
   const clearSuggestions = useCallback(() => {
@@ -339,6 +407,88 @@ export function useDesktopRelay(token: string | null): RelayHook {
     setIsSending(false);
   }, []);
 
+  // Convenience: fire a control command through the existing distributed-
+  // notification dispatch on the desktop. Anything that works from the floating
+  // bar (newChat, newPopOutChat, setModel:..., setWorkspace:..., ...) works here.
+  const sendControl = useCallback((command: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: "control", command }));
+  }, []);
+
+  const startNewChat = useCallback(() => {
+    trackEvent("web_new_chat");
+    // Clear the local message list immediately so the UI feels snappy; the
+    // desktop will reset its own history on the next request_history.
+    setMessages([]);
+    setSuggestions(null);
+    sendControl("newChat");
+    // If user was targeting a pop-out, drop back to the floating bar — newChat
+    // only resets the main session.
+    setTargetSessionKey("main");
+  }, [sendControl]);
+
+  const startNewPopOutChat = useCallback(() => {
+    trackEvent("web_new_popout_chat");
+    sendControl("newPopOutChat");
+    // The popouts_list push will arrive shortly; auto-pick the newest one as
+    // the target so the user's next message goes into the fresh pop-out.
+    // Done in the handler below by diffing the list.
+  }, [sendControl]);
+
+  const setModel = useCallback(
+    (id: string) => {
+      trackEvent("web_set_model", { model: id });
+      sendControl(`setModel:${id}`);
+    },
+    [sendControl]
+  );
+
+  const setWorkspace = useCallback(
+    (path: string) => {
+      trackEvent("web_set_workspace");
+      sendControl(`setWorkspace:${path}`);
+    },
+    [sendControl]
+  );
+
+  const refreshState = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: "request_state" }));
+  }, []);
+
+  const refreshPopouts = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: "request_popouts" }));
+  }, []);
+
+  // Track previous popout list so we can auto-target a newly opened pop-out
+  // after the user clicks "New pop-out".
+  const prevPopoutKeys = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currKeys = new Set(popouts.map((p) => p.sessionKey));
+    // Find any keys present now but not before — those are new pop-outs.
+    const newKeys = [...currKeys].filter((k) => !prevPopoutKeys.current.has(k));
+    if (newKeys.length > 0) {
+      // Always target the most recently added one.
+      setTargetSessionKey(newKeys[newKeys.length - 1]);
+    }
+    prevPopoutKeys.current = currKeys;
+  }, [popouts]);
+
+  // After we successfully connect, immediately ask for state + pop-outs so the
+  // header populates without the user having to click anything.
+  useEffect(() => {
+    if (!isConnected) return;
+    refreshState();
+    refreshPopouts();
+    // Light polling for pop-outs (every 10s) so closes/opens triggered from the
+    // desktop show up without a manual refresh.
+    const id = setInterval(() => {
+      refreshPopouts();
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [isConnected, refreshState, refreshPopouts]);
+
   return {
     isConnected,
     isDesktopOnline,
@@ -348,5 +498,15 @@ export function useDesktopRelay(token: string | null): RelayHook {
     isSending,
     suggestions,
     clearSuggestions,
+    desktopState,
+    popouts,
+    targetSessionKey,
+    setTargetSessionKey,
+    startNewChat,
+    startNewPopOutChat,
+    setModel,
+    setWorkspace,
+    refreshState,
+    refreshPopouts,
   };
 }
