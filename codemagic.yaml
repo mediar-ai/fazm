@@ -934,6 +934,25 @@ workflows:
               fi
             fi
 
+            # Sign browser-harness + ai-browser-profile MCP venvs
+            for VENV_BUNDLE in \
+              "$A/Contents/Resources/browser-harness" \
+              "$A/Contents/Resources/ai-browser-profile"; do
+              if [ -d "$VENV_BUNDLE/.venv" ]; then
+                find "$VENV_BUNDLE/.venv" -type f \
+                  \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
+                  file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
+                    codesign --force --options runtime --timestamp $CS_PAGESIZE \
+                      --sign "$SIGN_IDENTITY" "$native_bin"
+                done
+                if [ -f "$VENV_BUNDLE/.venv/bin/python" ]; then
+                  file "$VENV_BUNDLE/.venv/bin/python" 2>/dev/null | grep -q "Mach-O" && \
+                    codesign --force --options runtime --timestamp $CS_PAGESIZE \
+                      --sign "$SIGN_IDENTITY" "$VENV_BUNDLE/.venv/bin/python"
+                fi
+              fi
+            done
+
             # Sign Sparkle components (innermost first)
             SPARKLE_FW="$A/Contents/Frameworks/Sparkle.framework"
             if [ -d "$SPARKLE_FW" ]; then
