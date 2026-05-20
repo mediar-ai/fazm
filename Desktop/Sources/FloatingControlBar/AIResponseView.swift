@@ -1242,13 +1242,14 @@ private struct ExpandableQuestionBubble: View {
 
     private var editingView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            EditMessageInfoBanner()
-
             EditableTextArea(text: $editText, onSubmit: commitEdit)
                 .frame(minHeight: 60, maxHeight: 200)
 
             HStack(spacing: 8) {
+                EditMessageInfoButton()
+
                 Spacer()
+
                 Button("Cancel") {
                     isEditing = false
                     editText = ""
@@ -1348,40 +1349,29 @@ private struct EditableTextArea: NSViewRepresentable {
     }
 }
 
-/// Info banner shown above the edit field explaining the fidelity caveat.
-private struct EditMessageInfoBanner: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "info.circle")
-                .scaledFont(size: 11)
-                .foregroundColor(.secondary)
-            Text("Resubmitting truncates the conversation here and replays a text-only summary of earlier turns (no tool calls or thinking blocks, up to ~20 turns). The new response may diverge from the original thread.")
-                .scaledFont(size: 11)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
+/// Small info icon shown inline with the Cancel / Save & resubmit buttons.
+/// Hovering reveals the disclaimer about replay fidelity in a popover, so the
+/// caveat doesn't take up vertical space in the edit area.
+private struct EditMessageInfoButton: View {
+    @State private var showHint = false
 
-/// Hover popover content for the small info "?" icon on the question bubble.
-/// Visually distinct from `EditMessageInfoBanner` (which is shown while editing).
-private struct EditMessageHoverHint: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Edit and resubmit")
-                .scaledFont(size: 12, weight: .semibold)
-                .foregroundColor(.primary)
-            Text("Click the pencil to rewrite this message. The conversation will rewind to this point and the agent will continue from your edited text.")
-                .scaledFont(size: 11)
-                .foregroundColor(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Caveat: history is replayed as a text-only summary of the last ~20 turns, with no tool calls or thinking. The new response may differ from one that ran normally.")
-                .scaledFont(size: 11)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(10)
-        .frame(maxWidth: 280)
+        Image(systemName: "info.circle")
+            .scaledFont(size: 12)
+            .foregroundColor(.secondary)
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                showHint = hovering
+            }
+            .popover(isPresented: $showHint, arrowEdge: .top) {
+                Text("Resubmitting truncates the conversation here and replays a text-only summary of earlier turns (no tool calls or thinking blocks, up to ~20 turns). The new response may diverge from the original thread.")
+                    .scaledFont(size: 11)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(10)
+                    .frame(maxWidth: 280)
+            }
     }
 }
 
@@ -1401,13 +1391,12 @@ private struct QuestionBarButtons: View {
     var onEditTap: (() -> Void)? = nil
 
     @State private var showCopied = false
-    @State private var showEditHint = false
 
     /// Icons are visible when the cursor is anywhere over the bubble.
     private var isHovered: Bool { isBubbleHovered }
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             Button(action: {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(userInput, forType: .string)
@@ -1417,9 +1406,9 @@ private struct QuestionBarButtons: View {
                 }
             }) {
                 Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                    .scaledFont(size: 10)
+                    .scaledFont(size: 11)
                     .foregroundColor(showCopied ? .green : .secondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 22, height: 32)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1427,33 +1416,15 @@ private struct QuestionBarButtons: View {
 
             if canEdit, let onEditTap = onEditTap {
                 Button(action: onEditTap) {
-                    Image(systemName: "pencil")
-                        .scaledFont(size: 10)
+                    Image(systemName: "square.and.pencil")
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundColor(.secondary)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 24, height: 32)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .opacity(isHovered ? 1 : 0)
                 .help("Edit and resubmit — rewinds the conversation here")
-
-                Button(action: { showEditHint.toggle() }) {
-                    Image(systemName: "questionmark.circle")
-                        .scaledFont(size: 10)
-                        .foregroundColor(.secondary)
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .opacity(isHovered ? 1 : 0)
-                .onHover { hovering in
-                    if hovering { showEditHint = true }
-                    // Don't auto-dismiss on hover-out: the popover itself can
-                    // intercept the cursor when the user moves to read it.
-                }
-                .popover(isPresented: $showEditHint, arrowEdge: .top) {
-                    EditMessageHoverHint()
-                }
             }
 
             if needsExpansion {
