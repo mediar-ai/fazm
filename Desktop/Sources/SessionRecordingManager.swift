@@ -188,6 +188,7 @@ class SessionRecordingManager {
             let recorder = SessionRecorder(configuration: config)
             self.screenObserverRecorder = recorder
             self.isScreenObserverStarted = true
+            ResourceCounters.shared.set("sessionRecording_observerActive", true)
 
             // Wire up Gemini analysis
             await recorder.setOnChunkReady { info in
@@ -213,6 +214,7 @@ class SessionRecordingManager {
             } catch {
                 logError("Screen observer: failed to start", error: error)
                 self.isScreenObserverStarted = false
+                ResourceCounters.shared.set("sessionRecording_observerActive", false)
                 self.screenObserverRecorder = nil
             }
         }
@@ -222,6 +224,7 @@ class SessionRecordingManager {
     func stopScreenObserver() {
         guard isScreenObserverStarted, let recorder = screenObserverRecorder else { return }
         isScreenObserverStarted = false
+        ResourceCounters.shared.set("sessionRecording_observerActive", false)
         Task {
             await recorder.stop()
             log("Screen observer: stopped")
@@ -346,6 +349,7 @@ class SessionRecordingManager {
             let recorder = SessionRecorder(configuration: config)
             self.recorder = recorder
             self.isStarted = true
+            ResourceCounters.shared.set("sessionRecording_active", true)
 
             do {
                 try await recorder.start()
@@ -356,6 +360,7 @@ class SessionRecordingManager {
             } catch {
                 logError("SessionRecording: failed to start", error: error)
                 self.isStarted = false
+                ResourceCounters.shared.set("sessionRecording_active", false)
                 self.recorder = nil
             }
         }
@@ -502,6 +507,7 @@ class SessionRecordingManager {
     func stop() {
         guard isStarted, let recorder = recorder else { return }
         isStarted = false
+        ResourceCounters.shared.set("sessionRecording_active", false)
         Task {
             await recorder.stop()
             log("SessionRecording: stopped")
