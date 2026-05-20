@@ -1714,11 +1714,12 @@ class FloatingControlBarManager {
                     self.chatProvider?.showCreditExhaustedAlert = false
                     log("FloatingControlBarManager: clearCreditExhausted set showCreditExhaustedAlert=false")
                 } else if command == "openConnectPersonalSheet" {
-                    // Test hook: open the dual-option "Connect Personal Account"
-                    // sheet directly so we can verify Claude/Codex detection
-                    // badges and button layout without going through onboarding.
+                    // Test hook: open the unified "Connect Personal Account"
+                    // sheet (ClaudeAuthSheet) directly so we can verify
+                    // Claude/Codex detection badges + button layout without
+                    // going through onboarding.
                     if let cp = self.chatProvider {
-                        ConnectPersonalAccountWindowController.shared.show(chatProvider: cp)
+                        ClaudeAuthWindowController.shared.show(chatProvider: cp)
                     }
                     log("FloatingControlBarManager: openConnectPersonalSheet invoked")
                 } else if command.hasPrefix("testBrowserSetupRetry:") {
