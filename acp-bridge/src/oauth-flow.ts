@@ -26,7 +26,7 @@ const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
 const SUCCESS_URL = "https://console.anthropic.com/oauth/code/success?app=claude-code";
-const SCOPES = "user:inference";
+const SCOPES = "user:inference user:profile user:file_upload user:mcp_servers user:sessions:claude_code";
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
 const TOKEN_EXPIRY_SECONDS = 31536000; // 1 year
 
