@@ -5,6 +5,16 @@ import PostHogInit from "@/components/PostHogInit";
 export const metadata: Metadata = {
   title: "Fazm",
   description: "Your desktop AI, from your phone",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "Fazm",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
