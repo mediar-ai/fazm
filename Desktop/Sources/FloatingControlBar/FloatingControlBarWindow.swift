@@ -1605,6 +1605,7 @@ class FloatingControlBarManager {
         //   setModel:<id>                       — sets AI model (e.g. "setModel:claude-sonnet-4-6")
         //   toggleVoice                         — toggles voice response (TTS) on/off
         //   setVoice:on|off                     — explicitly sets voice response
+        //   setBrowserMode:extension|managed    — sets browser automation mode (auto-restarts the ACP bridge so FAZM_BROWSER_MODE takes effect)
         //   show                                — shows the floating bar
         //   hide                                — hides the floating bar
         //   toggle                              — toggles floating bar visibility
@@ -1659,6 +1660,23 @@ class FloatingControlBarManager {
                     ChatToolExecutor.stopTTSPlayback()
                     log("FloatingControlBarManager: Voice set to off")
                     self.writeControlState()
+                } else if command.hasPrefix("setBrowserMode:") {
+                    let mode = String(command.dropFirst("setBrowserMode:".count))
+                    if mode == "extension" || mode == "managed" {
+                        let previous = UserDefaults.standard.string(forKey: "browserMode") ?? "extension"
+                        UserDefaults.standard.set(mode, forKey: "browserMode")
+                        log("FloatingControlBarManager: browserMode set to \(mode) (was \(previous))")
+                        AnalyticsManager.shared.settingToggled(setting: "browser_mode_\(mode)", enabled: true)
+                        // FAZM_BROWSER_MODE is read at bridge spawn time, so we must
+                        // restart the ACP bridge subprocess for the new mode to take effect.
+                        // ChatProvider/ACPBridge relaunches automatically on next query.
+                        if previous != mode {
+                            self.restartBridgeSubprocess()
+                        }
+                        self.writeControlState()
+                    } else {
+                        log("FloatingControlBarManager: setBrowserMode invalid value: '\(mode)' (expected 'extension' or 'managed')")
+                    }
                 } else if command == "stopAgent" {
                     self.chatProvider?.stopAgent()
                     log("FloatingControlBarManager: stopAgent invoked via control")
@@ -1758,12 +1776,14 @@ class FloatingControlBarManager {
         let state = window?.state
         let voiceEnabled = UserDefaults.standard.bool(forKey: "voiceResponseEnabled")
         let workspace = UserDefaults.standard.string(forKey: "aiChatWorkingDirectory") ?? ""
+        let browserMode = UserDefaults.standard.string(forKey: "browserMode") ?? "extension"
 
         var dict: [String: Any] = [
             "model": ShortcutSettings.shared.selectedModel,
             "modelLabel": ShortcutSettings.shared.selectedModelShortLabel,
             "voiceEnabled": voiceEnabled,
             "workspace": workspace,
+            "browserMode": browserMode,
             "isVisible": window?.isVisible ?? false,
             "showingAIConversation": state?.streaming.showingAIConversation ?? false,
             "showingAIResponse": state?.streaming.showingAIResponse ?? false,
