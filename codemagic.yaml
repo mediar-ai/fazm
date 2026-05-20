@@ -274,6 +274,24 @@ workflows:
             echo "PATH=$HOME/.local/bin:$PATH" >> $CM_ENV
           fi
 
+      - name: Clone browser-harness + ai-browser-profile MCPs
+        script: |
+          # browser-harness: managed CDP browser control (alternative to playwright-extension flow).
+          # The MCP wrapper (browser-harness-server.py) lives in this repo under acp-bridge/.
+          git clone --depth 1 https://github.com/browser-use/browser-harness.git /tmp/browser-harness
+          echo "Cloned browser-harness"
+          # ai-browser-profile: imports cookies + localStorage from user's real Chromium browsers
+          # into the managed browser-harness Chrome.
+          git clone --depth 1 https://github.com/m13v/ai-browser-profile.git /tmp/ai-browser-profile
+          echo "Cloned ai-browser-profile"
+          # uv is installed by the Google Workspace step above; this is just a safety net
+          # in case step ordering ever changes.
+          if ! command -v uv &>/dev/null; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            export PATH="$HOME/.local/bin:$PATH"
+            echo "PATH=$HOME/.local/bin:$PATH" >> $CM_ENV
+          fi
+
       - name: Build Swift app (arm64 + x86_64)
         script: |
           mkdir -p "$BUILD_DIR"
@@ -485,6 +503,88 @@ workflows:
           fi
 
 
+          # Bundle browser-harness MCP (Python). Mirrors run.sh logic.
+          # The MCP wrapper (server.py) is checked into this repo under acp-bridge/.
+          BH_BUNDLE="$APP_BUNDLE/Contents/Resources/browser-harness"
+          BH_MCP_SERVER="acp-bridge/browser-harness-server.py"
+          if [ -f "$BH_MCP_SERVER" ] && [ -d "/tmp/browser-harness" ]; then
+            mkdir -p "$BH_BUNDLE"
+            cp -f "$BH_MCP_SERVER" "$BH_BUNDLE/server.py"
+            echo "Creating browser-harness venv in app bundle..."
+            uv python install 3.12 2>&1 | tail -1 || true
+            uv venv "$BH_BUNDLE/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1
+            uv pip install --python "$BH_BUNDLE/.venv/bin/python3" --link-mode copy \
+              "mcp>=1.0.0" \
+              "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" \
+              "/tmp/browser-harness" \
+              --quiet 2>&1 | tail -3 || true
+            find "$BH_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            BH_REAL_PYTHON=$(readlink -f "$BH_BUNDLE/.venv/bin/python" 2>/dev/null)
+            BH_MANAGED_DIR=$(dirname "$(dirname "$BH_REAL_PYTHON")")
+            if [ -n "$BH_REAL_PYTHON" ] && [ -f "$BH_REAL_PYTHON" ]; then
+              rm -f "$BH_BUNDLE/.venv/bin/python"
+              cp "$BH_REAL_PYTHON" "$BH_BUNDLE/.venv/bin/python"
+              rm -f "$BH_BUNDLE/.venv/bin/python3" "$BH_BUNDLE/.venv/bin/python3.12"
+              for wrapper_name in python3 python3.12; do
+                printf '#!/bin/sh\nVENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"\nexport PYTHONHOME="$VENV_DIR"\nexec "$VENV_DIR/bin/python" "$@"\n' > "$BH_BUNDLE/.venv/bin/$wrapper_name"
+                chmod +x "$BH_BUNDLE/.venv/bin/$wrapper_name"
+              done
+              if [ -f "$BH_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
+                cp "$BH_MANAGED_DIR/lib/libpython3.12.dylib" "$BH_BUNDLE/.venv/lib/libpython3.12.dylib"
+              fi
+              if [ -d "$BH_MANAGED_DIR/lib/python3.12" ]; then
+                rsync -a --ignore-existing --exclude='__pycache__' "$BH_MANAGED_DIR/lib/python3.12/" "$BH_BUNDLE/.venv/lib/python3.12/"
+              fi
+              find "$BH_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$BH_BUNDLE/.venv/pyvenv.cfg"
+            fi
+            echo "browser-harness venv created in app bundle"
+          else
+            echo "WARNING: browser-harness sources missing — skipping (server=$BH_MCP_SERVER, repo=/tmp/browser-harness)"
+          fi
+
+
+          # Bundle ai-browser-profile (Python). Tier-1 deps only — skip optional embedding deps.
+          ABP_BUNDLE="$APP_BUNDLE/Contents/Resources/ai-browser-profile"
+          if [ -d "/tmp/ai-browser-profile/ai_browser_profile" ]; then
+            mkdir -p "$ABP_BUNDLE"
+            rsync -a --exclude='.git' --exclude='__pycache__' --exclude='.venv' \
+              --exclude='*.pyc' --exclude='memories.db*' --exclude='*.bak*' \
+              --exclude='node_modules' --exclude='.ruff_cache' \
+              --exclude='*.png' --exclude='*.jpg' --exclude='*.gif' \
+              /tmp/ai-browser-profile/ai_browser_profile/ "$ABP_BUNDLE/ai_browser_profile/"
+            echo "Creating ai-browser-profile venv in app bundle..."
+            uv venv "$ABP_BUNDLE/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1
+            uv pip install --python "$ABP_BUNDLE/.venv/bin/python3" --link-mode copy \
+              "cryptography" "websocket-client" "numpy" \
+              "git+https://github.com/cclgroupltd/ccl_chromium_reader.git" \
+              --quiet 2>&1 | tail -3 || true
+            find "$ABP_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            ABP_REAL_PYTHON=$(readlink -f "$ABP_BUNDLE/.venv/bin/python" 2>/dev/null)
+            ABP_MANAGED_DIR=$(dirname "$(dirname "$ABP_REAL_PYTHON")")
+            if [ -n "$ABP_REAL_PYTHON" ] && [ -f "$ABP_REAL_PYTHON" ]; then
+              rm -f "$ABP_BUNDLE/.venv/bin/python"
+              cp "$ABP_REAL_PYTHON" "$ABP_BUNDLE/.venv/bin/python"
+              rm -f "$ABP_BUNDLE/.venv/bin/python3" "$ABP_BUNDLE/.venv/bin/python3.12"
+              for wrapper_name in python3 python3.12; do
+                printf '#!/bin/sh\nVENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"\nexport PYTHONHOME="$VENV_DIR"\nexec "$VENV_DIR/bin/python" "$@"\n' > "$ABP_BUNDLE/.venv/bin/$wrapper_name"
+                chmod +x "$ABP_BUNDLE/.venv/bin/$wrapper_name"
+              done
+              if [ -f "$ABP_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
+                cp "$ABP_MANAGED_DIR/lib/libpython3.12.dylib" "$ABP_BUNDLE/.venv/lib/libpython3.12.dylib"
+              fi
+              if [ -d "$ABP_MANAGED_DIR/lib/python3.12" ]; then
+                rsync -a --ignore-existing --exclude='__pycache__' "$ABP_MANAGED_DIR/lib/python3.12/" "$ABP_BUNDLE/.venv/lib/python3.12/"
+              fi
+              find "$ABP_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$ABP_BUNDLE/.venv/pyvenv.cfg"
+            fi
+            echo "ai-browser-profile venv created in app bundle"
+          else
+            echo "WARNING: ai-browser-profile sources missing — skipping (/tmp/ai-browser-profile)"
+          fi
+
+
           # Update Info.plist metadata
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable   $BINARY_NAME"  "$APP_BUNDLE/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier   $BUNDLE_ID"    "$APP_BUNDLE/Contents/Info.plist"
@@ -608,6 +708,26 @@ workflows:
               fi
             fi
           fi
+
+          # Sign browser-harness + ai-browser-profile MCP venvs (same pattern as Google Workspace)
+          for VENV_BUNDLE in \
+            "$APP_BUNDLE/Contents/Resources/browser-harness" \
+            "$APP_BUNDLE/Contents/Resources/ai-browser-profile"; do
+            if [ -d "$VENV_BUNDLE/.venv" ]; then
+              find "$VENV_BUNDLE/.venv" -type f \
+                \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
+                file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
+                  codesign --force --options runtime --timestamp $CS_PAGESIZE \
+                    --sign "$SIGN_IDENTITY" "$native_bin"
+              done
+              if [ -f "$VENV_BUNDLE/.venv/bin/python" ]; then
+                if file "$VENV_BUNDLE/.venv/bin/python" 2>/dev/null | grep -q "Mach-O"; then
+                  codesign --force --options runtime --timestamp $CS_PAGESIZE \
+                    --sign "$SIGN_IDENTITY" "$VENV_BUNDLE/.venv/bin/python"
+                fi
+              fi
+            fi
+          done
 
 
           # Sign Sparkle components — innermost first
