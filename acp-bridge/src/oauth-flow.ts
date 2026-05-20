@@ -373,8 +373,15 @@ function storeCredentials(tokens: OAuthResult, logErr: (msg: string) => void): v
   }
 }
 
-/** Read stored OAuth credentials from macOS Keychain (for diagnostics). Returns null if not found. */
-export function readStoredCredentials(): { storedAt?: string; expiresAt?: string | null; scopes?: string[] } | null {
+/** Read stored OAuth credentials from macOS Keychain (for diagnostics). Returns null if not found.
+ *
+ * Returns BOTH the raw blob fields the bridge cares about (storedAt, expiresAt, scopes) AND
+ * a derived `accessTokenPrefix` (first 12 chars of accessToken, safe to log) so AUTH-DIAG
+ * entries can identify which account's token was loaded into keychain at the moment of an
+ * auth failure. The first 12 chars are deterministic per token and let us correlate bridge
+ * logs against rotator logs without leaking the full bearer.
+ */
+export function readStoredCredentials(): { storedAt?: string; expiresAt?: string | number | null; scopes?: string[]; accessTokenPrefix?: string; expiresAtMs?: number | null } | null {
   try {
     const username = process.env.USER || userInfo().username;
     const json = execSync(
@@ -382,7 +389,24 @@ export function readStoredCredentials(): { storedAt?: string; expiresAt?: string
       { stdio: ["pipe", "pipe", "pipe"] }
     ).toString().trim();
     const data = JSON.parse(json);
-    return data?.claudeAiOauth ?? null;
+    const oauth = data?.claudeAiOauth ?? null;
+    if (!oauth) return null;
+    // Add diagnostic fields without mutating original keys.
+    const accessToken: string | undefined = oauth.accessToken;
+    const accessTokenPrefix = typeof accessToken === "string" && accessToken.length >= 12
+      ? accessToken.slice(0, 12)
+      : undefined;
+    // Normalize expiresAt to ms-epoch for easy "ms until expiry" math.
+    // Claude CLI stores expiresAt as ISO string after OAuth, then rotator's
+    // refresh code rewrites it as ms-epoch number. Handle both.
+    let expiresAtMs: number | null = null;
+    if (typeof oauth.expiresAt === "number") {
+      expiresAtMs = oauth.expiresAt;
+    } else if (typeof oauth.expiresAt === "string") {
+      const parsed = Date.parse(oauth.expiresAt);
+      if (!Number.isNaN(parsed)) expiresAtMs = parsed;
+    }
+    return { ...oauth, accessTokenPrefix, expiresAtMs };
   } catch {
     return null;
   }
