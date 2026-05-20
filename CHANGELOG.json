@@ -1,5 +1,9 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Personal account chooser now lets you use an existing logged-in Claude or ChatGPT session instead of being forced through a fresh login flow",
+    "Picking ChatGPT in the account chooser switches the active model across the floating bar and every pop-out window, and clears the credit-exhausted alert so you can keep chatting",
+    "Fixed Python-based MCPs (Google Workspace, browser-harness, ai-browser-profile) failing to load on universal-DMG installs; the runtime now resolves both thinned .venv/ and per-arch .venv-arm64 / .venv-x86_64 directories"
+  ],
   "releases": [
     {
       "version": "2.9.30",
