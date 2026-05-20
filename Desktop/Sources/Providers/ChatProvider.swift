@@ -1324,6 +1324,30 @@ class ChatProvider: ObservableObject {
             }
         }
 
+        // Push current desktop state on demand. Web client uses this to drive its
+        // header (model picker, workspace input, voice toggle) and to know which
+        // models are available without hardcoding the list.
+        webRelay.onStateRequest = {
+            let workspace = UserDefaults.standard.string(forKey: "aiChatWorkingDirectory") ?? ""
+            let voiceEnabled = UserDefaults.standard.bool(forKey: "voiceResponseEnabled")
+            let availableModels = ShortcutSettings.shared.availableModels.map { m in
+                ["id": m.id, "label": m.label, "shortLabel": m.shortLabel] as [String: Any]
+            }
+            return [
+                "model": ShortcutSettings.shared.selectedModel,
+                "modelLabel": ShortcutSettings.shared.selectedModelShortLabel,
+                "workspace": workspace,
+                "voiceEnabled": voiceEnabled,
+                "availableModels": availableModels,
+            ] as [String: Any]
+        }
+
+        // Enumerate open pop-outs so the web client can list them in its "Stream to"
+        // selector. Reuses the same summary used by the listPopOuts control command.
+        webRelay.onPopOutsRequest = {
+            return DetachedChatWindowController.shared.popOutsSummary().map { $0.asDictionary }
+        }
+
         // Start web relay — findNode() calls NodeBinaryHelper which does blocking I/O,
         // but that's moved off the main thread inside WebRelay.start() (FAZM-9W fix).
         Task { @MainActor in
