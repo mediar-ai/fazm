@@ -332,16 +332,20 @@ final class ClaudeAuthWindowController {
         }
 
         let controller = self
+        let initialHeight: CGFloat = 380
         let content = ClaudeAuthWindowContent(
             chatProvider: chatProvider,
-            onDismiss: { controller.close() }
+            onDismiss: { controller.close() },
+            onSheetHeightChange: { [weak self] height in
+                self?.resize(toContentHeight: height)
+            }
         )
 
         let hostingView = NSHostingView(rootView: AnyView(content))
-        hostingView.setFrameSize(NSSize(width: 400, height: 430))
+        hostingView.setFrameSize(NSSize(width: 400, height: initialHeight))
 
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 400, height: 430)),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 400, height: initialHeight)),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -364,8 +368,8 @@ final class ClaudeAuthWindowController {
         if let screen = mouseScreen {
             let sf = screen.visibleFrame
             let x = sf.origin.x + (sf.width - 400) / 2
-            let y = sf.origin.y + (sf.height - 430) / 2
-            window.setFrame(NSRect(x: x, y: y, width: 400, height: 430), display: true)
+            let y = sf.origin.y + (sf.height - initialHeight) / 2
+            window.setFrame(NSRect(x: x, y: y, width: 400, height: initialHeight), display: true)
         } else {
             window.center()
         }
@@ -374,6 +378,17 @@ final class ClaudeAuthWindowController {
 
         self.window = window
         self.hostingView = hostingView
+    }
+
+    private func resize(toContentHeight height: CGFloat) {
+        guard let window = window, abs(window.frame.size.height - height) > 0.5 else { return }
+        var frame = window.frame
+        let delta = height - frame.size.height
+        frame.size.height = height
+        // Keep the top edge of the window in place so content doesn't appear to jump down.
+        frame.origin.y -= delta
+        window.setFrame(frame, display: true, animate: true)
+        hostingView?.setFrameSize(NSSize(width: 400, height: height))
     }
 
     func close() {
