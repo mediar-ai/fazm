@@ -578,36 +578,38 @@ class ResourceMonitor {
 
             // `heap <pid>` walks every allocation in the heap and groups by
             // class+size. Can pause the target 1-5s on a 1GB heap. Output is
-            // 1-10MB of text. We redirect stdout to a file ourselves since
-            // runShellCommand buffers in memory.
+            // 1-10MB of text. We redirect stdout straight to a file rather
+            // than buffering in memory.
             let heapStart = Date()
+            guard FileManager.default.createFile(atPath: heapPath, contents: nil),
+                  let outHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: heapPath)) else {
+                log("ResourceMonitor: heap FAILED: could not open output file \(heapPath)")
+                return
+            }
+            defer { try? outHandle.close() }
+
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/heap")
             proc.arguments = [String(pid)]
-            if let outHandle = FileManager.default.createFile(atPath: heapPath, contents: nil)
-                ? try? FileHandle(forWritingTo: URL(fileURLWithPath: heapPath))
-                : nil {
-                proc.standardOutput = outHandle
-                proc.standardError = FileHandle.nullDevice
-                do {
-                    try proc.run()
-                    let deadline = Date().addingTimeInterval(60.0)
-                    while proc.isRunning && Date() < deadline {
-                        Thread.sleep(forTimeInterval: 0.05)
-                    }
-                    if proc.isRunning {
-                        proc.terminate()
-                        log("ResourceMonitor: heap capture timed out after 60s, terminated")
-                    }
-                    try? outHandle.close()
-                    log("ResourceMonitor: heap wrote \(heapPath) (\(String(format: "%.1f", Date().timeIntervalSince(heapStart)))s)")
-                } catch {
-                    try? outHandle.close()
-                    log("ResourceMonitor: heap FAILED: \(error)")
-                }
-            } else {
-                log("ResourceMonitor: heap FAILED: could not open output file \(heapPath)")
+            proc.standardOutput = outHandle
+            proc.standardError = FileHandle.nullDevice
+
+            do {
+                try proc.run()
+            } catch {
+                log("ResourceMonitor: heap FAILED to launch: \(error)")
+                return
             }
+
+            let deadline = Date().addingTimeInterval(60.0)
+            while proc.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if proc.isRunning {
+                proc.terminate()
+                log("ResourceMonitor: heap capture timed out after 60s, terminated")
+            }
+            log("ResourceMonitor: heap wrote \(heapPath) (\(String(format: "%.1f", Date().timeIntervalSince(heapStart)))s)")
         }
     }
 
