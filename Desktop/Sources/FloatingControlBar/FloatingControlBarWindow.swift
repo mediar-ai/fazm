@@ -1287,7 +1287,7 @@ class FloatingControlBarManager {
 
         barWindow.onConnectClaude = { [weak chatProvider] in
             guard let provider = chatProvider else { return }
-            ClaudeAuthWindowController.shared.show(chatProvider: provider)
+            PersonalAccountChooserWindowController.shared.show(chatProvider: provider)
         }
 
         barWindow.onCodexLogin = { [weak chatProvider] in
@@ -1732,12 +1732,11 @@ class FloatingControlBarManager {
                     self.chatProvider?.showCreditExhaustedAlert = false
                     log("FloatingControlBarManager: clearCreditExhausted set showCreditExhaustedAlert=false")
                 } else if command == "openConnectPersonalSheet" {
-                    // Test hook: open the unified "Connect Personal Account"
-                    // sheet (ClaudeAuthSheet) directly so we can verify
-                    // Claude/Codex detection badges + button layout without
-                    // going through onboarding.
+                    // Test hook: open the thin chooser sheet directly so we
+                    // can verify Claude/Codex detection badges + routing
+                    // without going through onboarding or hitting the cap.
                     if let cp = self.chatProvider {
-                        ClaudeAuthWindowController.shared.show(chatProvider: cp)
+                        PersonalAccountChooserWindowController.shared.show(chatProvider: cp)
                     }
                     log("FloatingControlBarManager: openConnectPersonalSheet invoked")
                 } else if command.hasPrefix("testBrowserSetupRetry:") {
