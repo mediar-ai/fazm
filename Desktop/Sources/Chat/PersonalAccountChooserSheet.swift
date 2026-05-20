@@ -9,8 +9,8 @@ import AppKit
 struct PersonalAccountChooserSheet: View {
     let isClaudeConnected: Bool       // green badge when Claude Code CLI creds detected
     let codexAuthMode: String         // "chatgpt" | "api_key" | "none"
-    let onPickClaude: () -> Void      // dismiss + open ClaudeAuthWindowController
-    let onPickCodex: () -> Void       // dismiss + chatProvider.startCodexLogin()
+    let onPickClaude: () -> Void      // dispatches to OAuth or direct-use depending on detection
+    let onPickCodex: () -> Void       // dispatches to OAuth or direct-use depending on detection
     let onCancel: () -> Void
 
     var body: some View {
