@@ -214,6 +214,7 @@ actor GeminiAnalysisService {
         let totalMinutes = Int(totalDuration / 60)
         let targetMinutes = Int(targetDurationSeconds / 60)
         log("GeminiAnalysis: buffered chunk \(info.chunkIndex) (\(chunkBuffer.count) chunks, \(totalMinutes)/\(targetMinutes) min)")
+        publishResourceCounters()
 
         // Trigger analysis when total buffered duration reaches the target (with cooldown after failures)
         if totalDuration >= targetDurationSeconds && !isAnalyzing {
@@ -285,6 +286,7 @@ actor GeminiAnalysisService {
             // Success — remove only the chunks we analyzed (new ones may have arrived during analysis)
             let analyzedURLs = Set(chunks.map { $0.localURL })
             chunkBuffer.removeAll { analyzedURLs.contains($0.localURL) }
+            publishResourceCounters()
             persistBufferIndex()
             cleanupChunkFiles(chunks: chunks)
             log("GeminiAnalysis: cleared \(analyzedCount) chunks after successful analysis, \(chunkBuffer.count) new chunks kept")
@@ -304,6 +306,14 @@ actor GeminiAnalysisService {
         chunkBuffer.reduce(0) { $0 + $1.endTimestamp.timeIntervalSince($1.startTimestamp) }
     }
 
+    /// Push current buffer state into ResourceCounters so it shows up in
+    /// ResourceMonitor's COMPONENTS line on every diagnostic tick.
+    private func publishResourceCounters() {
+        ResourceCounters.shared.set("geminiAnalysis_bufferedChunks", chunkBuffer.count)
+        ResourceCounters.shared.set("geminiAnalysis_bufferedDurationSec", Int(bufferedDuration))
+        ResourceCounters.shared.set("geminiAnalysis_isAnalyzing", isAnalyzing)
+    }
+
     // MARK: - Persistence
 
     private func persistBufferIndex() {
@@ -320,7 +330,11 @@ actor GeminiAnalysisService {
     @discardableResult
     private func runAnalysis(chunks: [ChunkEntry]) async -> AnalysisResult? {
         isAnalyzing = true
-        defer { isAnalyzing = false }
+        publishResourceCounters()
+        defer {
+            isAnalyzing = false
+            publishResourceCounters()
+        }
 
         guard let apiKey = await resolveAPIKey() else {
             log("GeminiAnalysis: no Gemini API key available")
