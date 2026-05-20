@@ -348,7 +348,21 @@ mcp = FastMCP(
         "switch_tab, http_get, cdp, etc.). "
         "Workflow: capture_screenshot -> click_at_xy(x,y) -> re-screenshot. "
         "Use bh_seed_cookies / bh_seed_localstorage to import sessions from "
-        "the user's real Chrome/Arc/Brave/Edge profiles."
+        "the user's real Chrome/Arc/Brave/Edge profiles.\n\n"
+        "MODE SELECTION (headed vs headless):\n"
+        "- Default is HEADED (visible Chrome window) so the user can watch what "
+        "you're doing. Keep it headed for anything interactive, exploratory, or "
+        "where the user might want to take over (form fills, logins, navigation, "
+        "anything that touches their accounts).\n"
+        "- Call bh_set_mode('headless') BEFORE starting work when the task is "
+        "clearly background and the user does NOT need to watch: bulk scraping "
+        "across many pages, batch cookie/localstorage imports, repeated polling, "
+        "screenshot diffing across N URLs, or any long-running automation where "
+        "a visible window would just be UI noise. Switch back to "
+        "bh_set_mode('headed') afterward if more interactive work follows.\n"
+        "- Cookies and login state persist across mode switches (profile is on "
+        "disk). In-memory tab state does not — Chrome restarts cold on mode "
+        "change, so re-navigate to your working URL after switching."
     ),
 )
 
