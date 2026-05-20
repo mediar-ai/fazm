@@ -180,10 +180,12 @@ class ShortcutSettings: ObservableObject {
     }
 
     /// Default models used as fallback until ACP reports the dynamic list.
+    /// The Smart entry uses the canonical Opus id (not the legacy "default" alias)
+    /// so set_model receives an unambiguous model that matches what the bridge advertises.
     static let defaultModels: [ModelOption] = [
         ModelOption(id: "haiku", label: "Scary (Haiku, latest)", shortLabel: "Scary"),
         ModelOption(id: "sonnet", label: "Fast (Sonnet, latest)", shortLabel: "Fast"),
-        ModelOption(id: "default", label: "Smart (Opus, latest)", shortLabel: "Smart"),
+        ModelOption(id: "claude-opus-4-7", label: "Smart (Opus, latest)", shortLabel: "Smart"),
     ]
 
     /// Mapping from model family substring to user-friendly labels and ordering.
@@ -192,7 +194,6 @@ class ShortcutSettings: ObservableObject {
         ("haiku", "Scary", "Haiku", 0),
         ("sonnet", "Fast", "Sonnet", 1),
         ("opus", "Smart", "Opus", 2),
-        ("default", "Smart", "Opus", 2),
     ]
 
     /// Available models for Ask Fazm. Updated dynamically from ACP SDK; falls back to defaults.
@@ -208,17 +209,23 @@ class ShortcutSettings: ObservableObject {
     /// CodexBackendManager probe succeeds.
     private var lastCodexModels: [ModelOption] = []
 
-    /// Normalize a model ID: maps legacy full IDs to short aliases that the ACP SDK expects.
+    /// Normalize a model ID so the bridge receives an unambiguous canonical id.
+    /// Haiku/Sonnet stay as short aliases (the SDK's substring resolver handles those
+    /// fine); Smart resolves to the canonical Opus 4.7 id because the legacy "default"
+    /// alias is no longer in the bridge's advertised model list and gets silently
+    /// resolved to whatever the SDK considers a fallback — not necessarily Opus.
     static func normalizeModelId(_ modelId: String) -> String {
         // Preserve bracket annotations like "[1m]" so context variants (e.g. sonnet[1m])
         // don't get collapsed into the plain alias.
         let bracketSuffix = modelId.range(of: #"\[[^\]]+\]"#, options: .regularExpression)
             .map { String(modelId[$0]) } ?? ""
-        // Map legacy full IDs to short aliases
         if modelId.contains("haiku") { return "haiku" + bracketSuffix }
         if modelId.contains("sonnet") { return "sonnet" + bracketSuffix }
-        // ACP SDK v0.29+ uses "default" for Opus 4.7; migrate stored "opus" to match.
-        if modelId.contains("opus") { return "default" + bracketSuffix }
+        // Smart picker — canonical Opus 4.7. Migrates the legacy "default" alias and
+        // prior-pinned Opus versions (e.g. claude-opus-4-5) to the current canonical id.
+        if modelId.contains("opus") || modelId.contains("default") {
+            return "claude-opus-4-7" + bracketSuffix
+        }
         return modelId
     }
 
