@@ -579,6 +579,64 @@ workflows:
           fi
 
 
+          # ────────────────────────────────────────────────────────────────────
+          # HARD CHECK: every Python MCP bundle MUST contain BOTH `.venv-arm64`
+          # and `.venv-x86_64` with a working python and the mcp package. If
+          # any of them is missing, the per-arch thinning step downstream
+          # silently drops the (non-existent) wrong-arch venv and ships an app
+          # where browser-harness / ai-browser-profile / google-workspace fail
+          # to spawn at runtime (regression from v2.9.27).
+          # Refusing to ship is much better than another silent regression.
+          # ────────────────────────────────────────────────────────────────────
+          echo
+          echo "=== Verifying Python MCP venvs ==="
+          MCP_VENV_FAIL=0
+          for MCP_VENV_BUNDLE in \
+            "$APP_BUNDLE/Contents/Resources/google-workspace-mcp" \
+            "$APP_BUNDLE/Contents/Resources/browser-harness" \
+            "$APP_BUNDLE/Contents/Resources/ai-browser-profile"; do
+            MCP_VENV_NAME=$(basename "$MCP_VENV_BUNDLE")
+            for ARCH_CHECK in arm64 x86_64; do
+              VENV_CHECK="$MCP_VENV_BUNDLE/.venv-$ARCH_CHECK"
+              if [ ! -x "$VENV_CHECK/bin/python" ]; then
+                echo "  FAIL: $MCP_VENV_NAME/.venv-$ARCH_CHECK missing or no python binary"
+                MCP_VENV_FAIL=1
+                continue
+              fi
+              # Spot-check that the mcp package (or core dep) is actually installed.
+              # Use a per-MCP probe package since deps differ.
+              case "$MCP_VENV_NAME" in
+                browser-harness)
+                  PROBE_PKG="mcp" ;;
+                ai-browser-profile)
+                  PROBE_PKG="cryptography" ;;
+                google-workspace-mcp)
+                  PROBE_PKG="fastmcp" ;;
+                *)
+                  PROBE_PKG="" ;;
+              esac
+              if [ -n "$PROBE_PKG" ]; then
+                if ! find "$VENV_CHECK/lib" -maxdepth 4 -type d \
+                     \( -iname "${PROBE_PKG}" -o -iname "${PROBE_PKG}-*.dist-info" \) \
+                     2>/dev/null | grep -q .; then
+                  echo "  FAIL: $MCP_VENV_NAME/.venv-$ARCH_CHECK has no '$PROBE_PKG' package"
+                  MCP_VENV_FAIL=1
+                  continue
+                fi
+              fi
+              VENV_SIZE=$(du -sh "$VENV_CHECK" 2>/dev/null | awk '{print $1}')
+              echo "  OK:   $MCP_VENV_NAME/.venv-$ARCH_CHECK ($VENV_SIZE)"
+            done
+          done
+          if [ "$MCP_VENV_FAIL" = "1" ]; then
+            echo "FATAL: one or more Python MCP venvs are missing or broken — refusing to ship."
+            echo "       This caused the v2.9.27 regression (no working Python MCPs)."
+            exit 1
+          fi
+          echo "All Python MCP venvs verified."
+          echo
+
+
           # Update Info.plist metadata
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable   $BINARY_NAME"  "$APP_BUNDLE/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier   $BUNDLE_ID"    "$APP_BUNDLE/Contents/Info.plist"
@@ -827,7 +885,16 @@ workflows:
                 mv "$MCP_RES/.venv-$ARCH" "$MCP_RES/.venv"
                 echo "  $mcp: renamed .venv-$ARCH -> .venv (dropped .venv-$OTHER_ARCH)"
               else
-                echo "  WARNING: $mcp has no .venv-$ARCH"
+                # The earlier "Verifying Python MCP venvs" step should have caught this,
+                # but belt-and-suspenders: never ship a per-arch ZIP that has the MCP
+                # source but no Python interpreter to actually run it.
+                echo "FATAL: $mcp has no .venv-$ARCH in the universal bundle — refusing to thin."
+                exit 1
+              fi
+              # Post-rename verification: the runtime expects $MCP_RES/.venv/bin/python
+              if [ ! -x "$MCP_RES/.venv/bin/python" ]; then
+                echo "FATAL: $mcp/.venv/bin/python missing or non-executable after thinning."
+                exit 1
               fi
             done
 
