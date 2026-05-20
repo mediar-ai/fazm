@@ -2480,7 +2480,7 @@ struct SettingsContentView: View {
                         .scaledFont(size: 16)
                         .foregroundColor(FazmColors.textTertiary)
 
-                    Text("ChatGPT Account")
+                    Text("ChatGPT Account (Codex)")
                         .scaledFont(size: 15, weight: .semibold)
                         .foregroundColor(FazmColors.textPrimary)
 
