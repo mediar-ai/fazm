@@ -11,6 +11,9 @@ enum ContentBlockGroup: Identifiable, Equatable {
     case discoveryCard(id: String, title: String, summary: String, fullText: String)
     case observerCard(id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String? = nil)
     case systemEvent(id: String, event: SystemEvent)
+    case browserActivity(id: String, toolUseId: String?, toolName: String,
+                         action: String, mode: String?, url: String?,
+                         status: ToolCallStatus)
 
 /// Equatable wrapper for tool call data in a group.
 struct ToolCallGroupItem: Equatable, Identifiable {
@@ -30,6 +33,7 @@ struct ToolCallGroupItem: Equatable, Identifiable {
         case .discoveryCard(let id, _, _, _): return id
         case .observerCard(let id, _, _, _, _, _): return id
         case .systemEvent(let id, _): return id
+        case .browserActivity(let id, _, _, _, _, _, _): return id
         }
     }
 
@@ -109,6 +113,14 @@ struct ToolCallGroupItem: Equatable, Identifiable {
                 flushText()
                 flushToolCalls()
                 result.append(.systemEvent(id: id, event: event))
+
+            case .browserActivity(let id, let toolUseId, let toolName, let action, let mode, let url, let status):
+                flushText()
+                flushToolCalls()
+                result.append(.browserActivity(
+                    id: id, toolUseId: toolUseId, toolName: toolName,
+                    action: action, mode: mode, url: url, status: status
+                ))
             }
         }
 
@@ -772,5 +784,105 @@ extension Theme {
         .link {
             ForegroundColor(.white.opacity(0.9))
         }
+    }
+}
+
+// MARK: - Browser Activity Card
+//
+// Replaces the generic tool-call chip for browser-harness (`bh_*`) tools. Shows
+// mode (headed/headless), the current action, and the URL when known, so the
+// user can see at a glance whether the AI is driving a visible browser they
+// could take over, or running silent automation in the background.
+
+struct BrowserActivityCard: View {
+    let toolName: String
+    let action: String
+    let mode: String?            // "headed" | "headless" | nil (unknown)
+    let url: String?
+    let status: ToolCallStatus
+
+    private var isHeadless: Bool { mode?.lowercased() == "headless" }
+
+    private var modeBadge: (label: String, color: Color, icon: String) {
+        if isHeadless {
+            return ("headless", Color.orange, "eye.slash.fill")
+        }
+        return ("visible", Color.green, "eye.fill")
+    }
+
+    private var hostFromUrl: String? {
+        guard let url, let parsed = URL(string: url) else { return nil }
+        return parsed.host
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "globe")
+                    .scaledFont(size: 13, weight: .medium)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Browser")
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundColor(.primary)
+
+                    HStack(spacing: 3) {
+                        Image(systemName: modeBadge.icon)
+                            .scaledFont(size: 9)
+                        Text(modeBadge.label)
+                            .scaledFont(size: 10, weight: .medium)
+                    }
+                    .foregroundColor(modeBadge.color)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(
+                        Capsule().fill(modeBadge.color.opacity(0.12))
+                    )
+
+                    Spacer(minLength: 4)
+
+                    if status == .running {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .scaledFont(size: 11)
+                            .foregroundColor(.green)
+                    }
+                }
+
+                Text(action)
+                    .scaledFont(size: 12)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let host = hostFromUrl {
+                    HStack(spacing: 3) {
+                        Image(systemName: "link")
+                            .scaledFont(size: 9)
+                        Text(host)
+                            .scaledFont(size: 10)
+                    }
+                    .foregroundColor(.secondary.opacity(0.8))
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.secondary.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.14), lineWidth: 0.5)
+        )
     }
 }
