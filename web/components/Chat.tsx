@@ -248,6 +248,13 @@ export default function Chat({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  // Detect touch-only devices once (no `(hover: hover)` = phone/tablet).
+  // On these we want Enter to insert a newline; the dedicated Send button submits.
+  const isTouchOnlyRef = useRef(false);
+  useEffect(() => {
+    isTouchOnlyRef.current = window.matchMedia("(hover: none)").matches;
+  }, []);
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = input.trim();
@@ -260,10 +267,24 @@ export default function Chat({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // On touch devices the keyboard has no Shift, so we let Enter insert a
+    // newline and rely on the Send button. On desktop, Enter sends.
+    if (e.key === "Enter" && !e.shiftKey && !isTouchOnlyRef.current) {
       e.preventDefault();
       handleSubmit();
     }
+  };
+
+  const QUICK_PROMPTS = [
+    "what did i work on yesterday",
+    "summarize my unread emails",
+    "what's on my calendar today",
+    "draft a quick status update",
+  ];
+  const sendQuickPrompt = (prompt: string) => {
+    if (!isDesktopOnline) return;
+    onSend(prompt);
+    setUserScrolled(false);
   };
 
   // Empty + disconnected: center the status in the screen
@@ -290,15 +311,30 @@ export default function Chat({
     : "Message...";
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full min-h-0">
       {/* Messages */}
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto hide-scrollbar px-4 py-4 space-y-3"
+        style={{ overscrollBehavior: "contain" }}
       >
         {messages.length === 0 && isDesktopOnline && (
-          <div className="text-center text-neutral-500 mt-20 text-sm">
-            Send a message to your desktop AI
+          <div className="flex flex-col items-center mt-20 px-2 gap-4">
+            <div className="text-center text-neutral-500 text-sm">
+              Send a message to your desktop AI
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 max-w-md">
+              {QUICK_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => sendQuickPrompt(prompt)}
+                  className="text-xs text-neutral-300 bg-neutral-800/70 hover:bg-neutral-700 active:bg-neutral-600 border border-white/[0.06] rounded-full px-3 py-1.5 transition-colors"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -341,7 +377,7 @@ export default function Chat({
       )}
 
       {/* Input area */}
-      <div className="px-4 py-3 border-t border-neutral-800">
+      <div className="safe-pb px-4 py-3 border-t border-neutral-800">
         {!isDesktopOnline ? (
           <div className="flex items-center justify-center gap-2 bg-neutral-900 rounded-2xl px-4 py-3 border border-neutral-700">
             <div
@@ -371,8 +407,10 @@ export default function Chat({
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder}
-                className="flex-1 bg-neutral-900 text-white rounded-2xl px-4 py-[10px] text-sm resize-none leading-5 outline-none border border-neutral-700 focus:border-neutral-600 placeholder:text-neutral-500 hide-scrollbar"
+                className="flex-1 bg-neutral-900 text-white rounded-2xl px-4 py-[10px] resize-none leading-5 outline-none border border-neutral-700 focus:border-neutral-600 placeholder:text-neutral-500 hide-scrollbar"
                 style={{
+                  // 16px to prevent iOS Safari auto-zoom on focus.
+                  fontSize: "16px",
                   height: "40px",
                   maxHeight: "calc(8 * 1.25rem + 1.25rem)",
                   overflow: "hidden",
@@ -431,12 +469,19 @@ export default function Chat({
               type="button"
               onPointerDown={(e) => {
                 e.preventDefault();
-                if (!transcribing) startRecording();
+                if (!transcribing) {
+                  // Haptic on supported devices (Android Chrome). iOS silently no-ops.
+                  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+                    navigator.vibrate?.(15);
+                  }
+                  startRecording();
+                }
               }}
               onPointerUp={() => stopRecording()}
               onPointerLeave={() => stopRecording()}
               onContextMenu={(e) => e.preventDefault()}
               disabled={transcribing}
+              style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
               className={`w-full flex items-center justify-center gap-3 h-12 rounded-2xl transition-colors text-sm font-medium select-none touch-none ${
                 recording
                   ? "bg-red-500 text-white animate-pulse"
