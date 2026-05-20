@@ -12,8 +12,6 @@ interface Props {
   popouts: PopOut[];
   targetSessionKey: string;
   onTargetChange: (key: string) => void;
-  onNewChat: () => void;
-  onNewPopOut: () => void;
   onSetModel: (id: string) => void;
   onSetWorkspace: (path: string) => void;
 }
@@ -21,18 +19,6 @@ interface Props {
 /* ------------------------------------------------------------------ */
 /*  Tiny inline icons                                                 */
 /* ------------------------------------------------------------------ */
-
-const PlusIcon = () => (
-  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
-  </svg>
-);
-
-const PopOutIcon = () => (
-  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14 3h7v7m0-7l-9 9M5 5h6V3H3v18h18v-8h-2v6H5V5z" />
-  </svg>
-);
 
 const ChevronIcon = ({ open }: { open: boolean }) => (
   <svg
@@ -143,8 +129,6 @@ export default function ChatControls({
   popouts,
   targetSessionKey,
   onTargetChange,
-  onNewChat,
-  onNewPopOut,
   onSetModel,
   onSetWorkspace,
 }: Props) {
@@ -187,31 +171,6 @@ export default function ChatControls({
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 overflow-x-auto hide-scrollbar">
-      {/* New chat */}
-      <button
-        type="button"
-        onClick={onNewChat}
-        className="flex items-center gap-1.5 text-xs text-neutral-200 bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] rounded-full px-3 py-1.5 transition-colors shrink-0"
-        title="Start a new chat on the floating bar"
-      >
-        <PlusIcon />
-        New chat
-      </button>
-
-      {/* New pop-out */}
-      <button
-        type="button"
-        onClick={onNewPopOut}
-        className="flex items-center gap-1.5 text-xs text-neutral-300 bg-neutral-800/70 hover:bg-neutral-700 border border-white/[0.06] rounded-full px-3 py-1.5 transition-colors shrink-0"
-        title="Open a new chat in a detached pop-out window"
-      >
-        <PopOutIcon />
-        Pop-out
-      </button>
-
-      {/* Spacer */}
-      <div className="flex-1 min-w-[8px]" />
-
       {/* Stream target — only show selector if there are pop-outs */}
       {popouts.length > 0 && (
         <div className="flex items-center gap-1 shrink-0">
