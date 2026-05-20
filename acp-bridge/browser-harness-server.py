@@ -137,6 +137,26 @@ def _running_chrome_is_headless() -> bool:
         return False
 
 
+def _desired_headed_mode() -> bool:
+    """Resolve the desired headed/headless mode for the managed Chrome.
+
+    Default is HEADED so the user can see what Fazm is doing in the browser.
+    Two env-var knobs:
+      - FAZM_BH_HEADLESS=1 → force headless (opt-in).
+      - FAZM_BH_HEADED=0   → force headless (backward-compat with old name).
+      - FAZM_BH_HEADED=1   → explicit headed (same as default).
+    If FAZM_BH_HEADLESS is set to a truthy value it wins.
+    """
+    headless_optin = os.environ.get("FAZM_BH_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
+    if headless_optin:
+        return False
+    raw = os.environ.get("FAZM_BH_HEADED", "").strip().lower()
+    if raw in ("0", "false", "no", "off"):
+        return False
+    # Empty or anything else (including unset) → headed.
+    return True
+
+
 def ensure_chrome() -> dict:
     """Make sure our managed Chrome is running on PORT. Idempotent.
 
@@ -144,7 +164,7 @@ def ensure_chrome() -> dict:
     than the current env config requests, we kill it and relaunch in the
     requested mode so the user's "I want this hidden" preference takes effect.
     """
-    headed_desired = os.environ.get("FAZM_BH_HEADED", "").strip() not in ("", "0", "false", "no")
+    headed_desired = _desired_headed_mode()
     if _cdp_alive():
         currently_headless = _running_chrome_is_headless()
         # Mode matches? Done.
@@ -193,15 +213,14 @@ def ensure_chrome() -> dict:
             pass
         time.sleep(0.5)
 
-    # Run Chrome in modern headless mode by default. `--headless=new` (Chrome
-    # 109+) is the full-featured headless that supports cookies, localStorage,
-    # IndexedDB, extensions, and persistent profiles — same behavior as headed
-    # Chrome, but no dock icon and no visible windows. The bundled Chrome is
-    # only used by Fazm internally for browser automation; the user never
-    # interacts with its windows directly, so headless removes UI noise.
-    # Override with FAZM_BH_HEADED=1 if you want to actually watch what the
-    # AI is doing in this Chrome.
-    headed = os.environ.get("FAZM_BH_HEADED", "").strip() not in ("", "0", "false", "no")
+    # Default = HEADED so the user can see what the AI is doing in the
+    # managed Chrome. Opt into headless with FAZM_BH_HEADLESS=1 (preferred)
+    # or the legacy FAZM_BH_HEADED=0 knob. `--headless=new` (Chrome 109+) is
+    # the full-featured headless that supports cookies, localStorage,
+    # IndexedDB, extensions, and persistent profiles — same behavior as
+    # headed Chrome, but no dock icon and no visible windows. Useful for
+    # background imports or batch scraping; otherwise stay headed.
+    headed = _desired_headed_mode()
     cmd = [CHROME_BIN]
     if not headed:
         cmd.append("--headless=new")
@@ -383,6 +402,41 @@ def bh_start() -> str:
 def bh_stop() -> str:
     """Kill the managed Chrome instance. Cookies/profile data persist on disk."""
     return json.dumps(stop_chrome(), indent=2)
+
+
+@mcp.tool()
+def bh_set_mode(mode: str) -> str:
+    """Switch the managed Chrome between headed and headless. Restarts Chrome.
+
+    Args:
+        mode: "headed" (visible window, default) or "headless" (no UI).
+
+    Default for the managed Chrome is headed so the user can watch what's
+    happening. Switch to headless for background imports or batch scraping
+    where UI noise hurts more than helps. The profile (cookies, localStorage,
+    IndexedDB) persists across the relaunch.
+    """
+    norm = (mode or "").strip().lower()
+    if norm not in ("headed", "headless"):
+        return json.dumps({
+            "status": "error",
+            "error": f"mode must be 'headed' or 'headless', got {mode!r}",
+        }, indent=2)
+    # Set the env knobs for THIS server process so future ensure_chrome() calls
+    # honor the choice. Note: this only affects the current MCP server process;
+    # if the server is restarted the value falls back to env-at-launch (or the
+    # headed default).
+    if norm == "headless":
+        os.environ["FAZM_BH_HEADLESS"] = "1"
+        os.environ.pop("FAZM_BH_HEADED", None)
+    else:
+        os.environ.pop("FAZM_BH_HEADLESS", None)
+        os.environ["FAZM_BH_HEADED"] = "1"
+    # Force a relaunch by triggering ensure_chrome (it detects the mode
+    # mismatch and kills + restarts the running Chrome).
+    result = ensure_chrome()
+    result["requested_mode"] = norm
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
