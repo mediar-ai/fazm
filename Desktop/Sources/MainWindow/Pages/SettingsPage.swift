@@ -931,7 +931,7 @@ struct SettingsContentView: View {
                     }
 
                     Text(chatProvider?.showCreditExhaustedAlert == true
-                         ? "You've used all your built-in Claude usage. Connect your Claude account to keep chatting."
+                         ? "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting."
                          : bridgeMode == "builtin"
                          ? "Using Fazm's built-in Claude account. No sign-in required."
                          : chatProvider?.isClaudeConnected == true
@@ -939,6 +939,20 @@ struct SettingsContentView: View {
                             : "Using your personal Claude account via OAuth. Sign in to connect.")
                         .scaledFont(size: 12)
                         .foregroundColor(FazmColors.textTertiary)
+
+                    // Surface that we already see Claude Code CLI credentials in the
+                    // keychain — mirrors how Codex auto-detects ~/.codex/auth.json.
+                    if bridgeMode == "builtin" && chatProvider?.isClaudeConnected == true {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .scaledFont(size: 11)
+                                .foregroundColor(.green)
+                            Text("Detected Claude Code CLI credentials — switch to \"Your Claude Account\" to use them")
+                                .scaledFont(size: 11)
+                                .foregroundColor(.green)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
 
                     if bridgeMode == "personal" && chatProvider?.isClaudeConnected == true {
                         Divider()
@@ -2466,14 +2480,14 @@ struct SettingsContentView: View {
                         .scaledFont(size: 16)
                         .foregroundColor(FazmColors.textTertiary)
 
-                    Text("Codex Backend (experimental)")
+                    Text("ChatGPT Account")
                         .scaledFont(size: 15, weight: .semibold)
                         .foregroundColor(FazmColors.textPrimary)
 
                     Spacer()
                 }
 
-                Text("Route GPT-5 family models through OpenAI's Codex CLI using your ChatGPT subscription. Text-only for now; tools and MCP support coming.")
+                Text("Use your ChatGPT subscription via OpenAI's Codex backend. GPT-5 family models, text-first (tools and MCP support coming).")
                     .scaledFont(size: 12)
                     .foregroundColor(FazmColors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
