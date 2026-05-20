@@ -697,6 +697,12 @@ struct AIResponseView: View {
                 case .systemEvent(_, let event):
                     SystemEventCardView(event: event)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                case .browserActivity(_, _, let toolName, let action, let mode, let url, let status):
+                    BrowserActivityCard(
+                        toolName: toolName, action: action, mode: mode,
+                        url: url, status: status
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
