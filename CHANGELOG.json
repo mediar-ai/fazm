@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Phone web chat (chat.fazm.ai) now has new chat, pop-out, model picker, workspace selector, and a stream-target switcher so you can route your phone message into the floating bar or any open pop-out window"
+    "Phone web chat (chat.fazm.ai) now has new chat, pop-out, model picker, workspace selector, and a stream-target switcher so you can route your phone message into the floating bar or any open pop-out window",
+    "Fixed pop-out conversation history not loading on chat.fazm.ai when switching to a detached pop-out from the sidebar"
   ],
   "releases": [
     {
