@@ -1313,9 +1313,22 @@ class ChatProvider: ObservableObject {
             await self.sendMessage(text, sessionKey: sessionKey)
         }
 
-        webRelay.onHistoryRequest = { [weak self] in
+        webRelay.onHistoryRequest = { [weak self] requestedSessionKey in
             guard let self else { return [] }
-            return self.messages.map { msg in
+            // Filter rules:
+            //  - nil / "main" / "floating" → messages whose sessionKey is nil or "floating"
+            //    (matches the desktop's floating-bar filter pattern used elsewhere)
+            //  - "detached-..." → messages tagged with that exact sessionKey
+            let filtered = self.messages.filter { msg in
+                let key = msg.sessionKey ?? "floating"
+                switch requestedSessionKey {
+                case nil, "main", "floating":
+                    return key == "floating" || key == "main"
+                case let target?:
+                    return key == target
+                }
+            }
+            return filtered.map { msg in
                 [
                     "id": msg.id,
                     "text": msg.text,
