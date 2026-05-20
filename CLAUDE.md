@@ -125,12 +125,14 @@ cat /tmp/fazm-control-state.json
 | `setModel:<id>` | Sets AI model (e.g. `setModel:claude-sonnet-4-6` or `setModel:claude-opus-4-6`) |
 | `toggleVoice` | Toggles voice response (TTS) on/off |
 | `setVoice:on` / `setVoice:off` | Explicitly sets voice response |
+| `setBrowserMode:extension` / `setBrowserMode:managed` | Sets browser automation mode (`extension` = user's real Chrome via Playwright extension; `managed` = Fazm's bundled browser-harness driving its own Chrome). Auto-restarts the ACP bridge so `FAZM_BROWSER_MODE` takes effect on the next query. |
 | `show` / `hide` / `toggle` | Controls floating bar visibility |
 | `openInput` | Opens the AI input field |
 | `sendFollowUp:<text>` | Sends a follow-up message in active conversation |
 | `setWorkspace:<path>` | Sets the working directory |
+| `restartBridge` | Terminates the running ACP bridge subprocess; ChatProvider relaunches it on the next query. Use when you've changed an env var (e.g. `FAZM_BROWSER_MODE`) and need the bridge to pick it up. |
 
-State JSON includes: `model`, `modelLabel`, `voiceEnabled`, `workspace`, `isVisible`, `showingAIConversation`, `showingAIResponse`, `isAILoading`, `isVoiceListening`, `chatHistoryCount`, `displayedQuery`, `queueCount`, `isTutorialActive`, `availableModels`, and optionally `currentMessagePreview`/`isStreaming`.
+State JSON includes: `model`, `modelLabel`, `voiceEnabled`, `browserMode`, `workspace`, `isVisible`, `showingAIConversation`, `showingAIResponse`, `isAILoading`, `isVoiceListening`, `chatHistoryCount`, `displayedQuery`, `queueCount`, `isTutorialActive`, `availableModels`, and optionally `currentMessagePreview`/`isStreaming`.
 
 ### SQLite Database & Active User
 Prod and dev now write to **separate** parent directories so neither build's data-migration logic can ever touch the other's user dirs:
