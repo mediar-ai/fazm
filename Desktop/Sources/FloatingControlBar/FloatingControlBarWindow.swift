@@ -1704,6 +1704,23 @@ class FloatingControlBarManager {
                     self.dumpBridgeState()
                 } else if command == "restartBridge" {
                     self.restartBridgeSubprocess()
+                } else if command == "simulateCreditExhausted" {
+                    // Test hook: flip the same flag the cap-hit path sets so the
+                    // onboarding banner + Settings copy go into "out of credits"
+                    // state without the user actually spending $10.
+                    self.chatProvider?.showCreditExhaustedAlert = true
+                    log("FloatingControlBarManager: simulateCreditExhausted set showCreditExhaustedAlert=true")
+                } else if command == "clearCreditExhausted" {
+                    self.chatProvider?.showCreditExhaustedAlert = false
+                    log("FloatingControlBarManager: clearCreditExhausted set showCreditExhaustedAlert=false")
+                } else if command == "openConnectPersonalSheet" {
+                    // Test hook: open the dual-option "Connect Personal Account"
+                    // sheet directly so we can verify Claude/Codex detection
+                    // badges and button layout without going through onboarding.
+                    if let cp = self.chatProvider {
+                        ConnectPersonalAccountWindowController.shared.show(chatProvider: cp)
+                    }
+                    log("FloatingControlBarManager: openConnectPersonalSheet invoked")
                 } else if command.hasPrefix("testBrowserSetupRetry:") {
                     // Test hook for `ChatProvider.retryAfterBrowserSetup()` dispatch.
                     // Format: testBrowserSetupRetry:<sessionKey>:<onboarding>:<text>
