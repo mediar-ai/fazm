@@ -1512,6 +1512,43 @@ class ChatProvider: ObservableObject {
                     SlashCommandRegistry.shared.commands = commands
                 }
             }
+            // Safety net: bridge will fire this when a `.result` (including
+            // interrupted=true) lands for a sessionKey that has no waiting
+            // continuation. Happens when popOut races with an in-flight turn:
+            // the in-flight submitQuery loop ends keyed under a stale name,
+            // the result routes to the detached key via sessionIdToKey, and
+            // nobody is left to flip the streaming bubble to !isStreaming.
+            // Walk popouts that match the orphaned sessionKey and clear them.
+            await acpBridge.setOrphanedResultHandler { [weak self] sessionKey, sessionId, interrupted in
+                Task { @MainActor in
+                    guard let self = self, let key = sessionKey else { return }
+                    log("ChatProvider: onOrphanedResult sessionKey=\(key) sessionId=\(sessionId) interrupted=\(interrupted) — clearing popout streaming state")
+                    var cleared = 0
+                    // Flip every streaming AI message belonging to this session off.
+                    for i in self.messages.indices where self.messages[i].sessionKey == key && self.messages[i].isStreaming {
+                        self.messages[i].isStreaming = false
+                        cleared += 1
+                    }
+                    // Pop-outs hold their own currentAIMessage reference; clear it directly.
+                    for entry in DetachedChatWindowController.shared.entriesSnapshot()
+                        where entry.sessionKey == key {
+                        let popoutState = entry.window.state
+                        if popoutState.streaming.currentAIMessage?.isStreaming == true {
+                            popoutState.streaming.currentAIMessage?.isStreaming = false
+                            cleared += 1
+                        }
+                        popoutState.streaming.isAILoading = false
+                    }
+                    // sendingSessionKeys may still hold this key (stale lock from the
+                    // orphan); release it so the popout can accept the next query.
+                    if self.sendingSessionKeys.contains(key) {
+                        self.sendingSessionKeys.remove(key)
+                        self.isSending = !self.sendingSessionKeys.isEmpty
+                        log("ChatProvider: released stale sending lock for orphaned session \(key)")
+                    }
+                    log("ChatProvider: onOrphanedResult cleared \(cleared) streaming flags for sessionKey=\(key)")
+                }
+            }
             // Phase 3.2 — codex backend probe result handler. Updates the
             // CodexBackendManager singleton; the SettingsPage subsection and
             // model picker observe it.
