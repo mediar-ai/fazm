@@ -2164,6 +2164,38 @@ class ChatProvider: ObservableObject {
         return id
     }
 
+    /// Switch the active model across all three holders (global default,
+    /// floating bar, every detached pop-out) and clear the credit-exhausted
+    /// alert if the user has moved off the built-in Claude path onto a GPT
+    /// (Codex) model. Mirrors the post-OAuth promotion logic in
+    /// `setCodexProbeResultHandler` so flows that already have auth (e.g. the
+    /// "Use ChatGPT" path in `PersonalAccountChooserSheet`) can switch without
+    /// running OAuth again.
+    func selectModel(_ modelId: String) {
+        ShortcutSettings.shared.selectedModel = modelId
+        FloatingControlBarManager.shared.barState?.workspace.selectedModel = modelId
+        DetachedChatWindowController.shared.applyModelToAllWindows(modelId)
+        if Self.isCodexModelId(modelId) {
+            // GPT models route through Codex, not the built-in Claude key,
+            // so the cap doesn't apply — let the user keep chatting.
+            showCreditExhaustedAlert = false
+        }
+        log("ChatProvider: selectModel \(modelId) (isCodex=\(Self.isCodexModelId(modelId)))")
+    }
+
+    /// True if the model id routes through the Codex backend (gpt-*, codex-*,
+    /// o[0-9]-*). Mirrors the bridge's `isCodexModel` regex.
+    private static func isCodexModelId(_ modelId: String) -> Bool {
+        let lower = modelId.lowercased()
+        if lower.hasPrefix("gpt-") || lower.hasPrefix("codex-") { return true }
+        if lower.count >= 2,
+           lower.hasPrefix("o"),
+           lower[lower.index(after: lower.startIndex)].isNumber {
+            return true
+        }
+        return false
+    }
+
     /// Phase 3.2 — kick a `codex_init_probe` through the bridge. Updates
     /// `CodexBackendManager.shared.lastProbe` when the result arrives.
     func probeCodexBackend() {
