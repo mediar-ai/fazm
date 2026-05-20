@@ -5083,7 +5083,7 @@ async function main(): Promise<void> {
       }
 
       case "transferSession": {
-        const { fromKey, toKey } = msg as import("./protocol.js").TransferSessionMessage;
+        const { fromKey, toKey, hadInFlight } = msg as import("./protocol.js").TransferSessionMessage;
         if (fromKey && toKey && sessions.has(fromKey)) {
           const entry = sessions.get(fromKey)!;
           unregisterSession(fromKey);
@@ -5100,7 +5100,28 @@ async function main(): Promise<void> {
             imageTurnCounts.delete(fromKey);
             imageTurnCounts.set(toKey, imgCount);
           }
-          logErr(`Session transferred: ${fromKey} -> ${toKey} (sessionId=${entry.sessionId})`);
+          // Live transfer: if an in-flight query is mid-flight on fromKey
+          // (popOut during a streaming response), re-key its activeQueries
+          // entry so any subsequent interrupt / close_session aimed at the
+          // OLD key (e.g. cancelChat running after popOutToWindow) no longer
+          // finds it and accidentally kills the query we want to continue
+          // in the popped-out window. Without this re-key the bridge sees
+          // `Interrupt requested for session key=floating` AFTER transfer,
+          // aborts the in-flight prompt, and the popout's streaming bubble
+          // never resolves (checkmark on the tool, spinner forever).
+          const inFlight = activeQueries.get(fromKey);
+          if (inFlight) {
+            activeQueries.delete(fromKey);
+            inFlight.sessionKey = toKey;
+            activeQueries.set(toKey, inFlight);
+            logErr(`Session transfer: re-keyed in-flight activeQuery '${fromKey}' -> '${toKey}' (sessionId=${inFlight.sessionId.slice(0, 8)}, declaredByCaller=${!!hadInFlight})`);
+          } else if (hadInFlight) {
+            // Caller said there was an in-flight query but the bridge map
+            // doesn't agree. Worth a log line: usually means the query
+            // ended in the ~ms window between Swift's check and this message.
+            logErr(`Session transfer: caller declared hadInFlight=true for '${fromKey}' but no activeQuery found (race — query may have just ended)`);
+          }
+          logErr(`Session transferred: ${fromKey} -> ${toKey} (sessionId=${entry.sessionId}${inFlight ? ", live-rekeyed activeQuery" : ""})`);
         } else {
           logErr(`Session transfer skipped: ${fromKey} not found`);
         }
