@@ -1329,33 +1329,50 @@ class ChatProvider: ObservableObject {
             //    itself shows) and fall back to ChatMessageStore when the window
             //    isn't currently open or its history hasn't hydrated yet.
             if let key = requestedSessionKey, key.hasPrefix("detached-") {
+                // The persisted store is the authoritative source for pop-out
+                // history. `state.streaming.chatHistory` is derived via
+                // `loadHistory(from:)` which pair-walks user→ai messages and
+                // silently drops any orphan that doesn't have a partner (e.g.
+                // a system card between two user messages, or an ai-only row).
+                // Reading from the DB avoids that lossy reshape and matches
+                // exactly what the pop-out window itself was hydrated from.
+                let saved = await ChatMessageStore.loadMessages(
+                    context: "__\(key)__",
+                    limit: 200
+                )
+                var out: [[String: Any]] = saved.map { msg in
+                    [
+                        "id": msg.id,
+                        "text": msg.text,
+                        "sender": msg.sender == .user ? "user" : "ai",
+                    ] as [String: Any]
+                }
+                // If the pop-out is currently mid-stream, the partial AI
+                // response isn't in the DB yet (only persisted on completion).
+                // Append the live state so the web client sees the streaming
+                // text without waiting for the response to finish.
                 if let entry = DetachedChatWindowController.shared
                     .entriesSnapshot()
                     .first(where: { $0.sessionKey == key }) {
                     let streaming = entry.window.state.streaming
-                    var out: [[String: Any]] = []
-                    for ex in streaming.chatHistory {
-                        out.append([
-                            "id": "u-\(ex.id.uuidString)",
-                            "text": ex.question,
-                            "sender": "user",
-                        ])
-                        out.append([
-                            "id": ex.aiMessage.id,
-                            "text": ex.aiMessage.text,
-                            "sender": "ai",
-                        ])
+                    let dq = streaming.displayedQuery
+                    if !dq.isEmpty {
+                        let lastUserText = out
+                            .last(where: { ($0["sender"] as? String) == "user" })?["text"] as? String
+                        if lastUserText != dq {
+                            out.append([
+                                "id": "u-live-\(dq.hashValue)",
+                                "text": dq,
+                                "sender": "user",
+                            ])
+                        }
                     }
-                    // Include the in-flight exchange (displayedQuery + currentAIMessage)
-                    // so the web client sees the live response without waiting for the
-                    // next archive cycle.
-                    if !streaming.displayedQuery.isEmpty {
-                        out.append([
-                            "id": "u-live-\(streaming.displayedQuery.hashValue)",
-                            "text": streaming.displayedQuery,
-                            "sender": "user",
-                        ])
-                        if let live = streaming.currentAIMessage, !live.text.isEmpty {
+                    if let live = streaming.currentAIMessage, !live.text.isEmpty {
+                        // Skip if the AI message id is already in `out` (i.e.
+                        // it was persisted while we were reading). Identity is
+                        // the safest comparison; falls back to text otherwise.
+                        let alreadyHave = out.contains { ($0["id"] as? String) == live.id }
+                        if !alreadyHave {
                             out.append([
                                 "id": live.id,
                                 "text": live.text,
@@ -1363,22 +1380,8 @@ class ChatProvider: ObservableObject {
                             ])
                         }
                     }
-                    if !out.isEmpty { return out }
                 }
-                // Fall back to the persisted store. Pop-out messages get written
-                // under context "__detached-<uuid>__"; load up to a reasonable cap
-                // so the web client renders the full thread.
-                let saved = await ChatMessageStore.loadMessages(
-                    context: "__\(key)__",
-                    limit: 200
-                )
-                return saved.map { msg in
-                    [
-                        "id": msg.id,
-                        "text": msg.text,
-                        "sender": msg.sender == .user ? "user" : "ai",
-                    ] as [String: Any]
-                }
+                return out
             }
             // Floating bar / main: in-memory filter is correct.
             let filtered = self.messages.filter { msg in
