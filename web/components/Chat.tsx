@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { type ChatMessage } from "@/lib/useDesktopRelay";
+import { type ChatMessage, type Suggestions } from "@/lib/useDesktopRelay";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { MarkdownMessage, CopyButton } from "./MarkdownMessage";
 
@@ -12,6 +12,8 @@ interface ChatProps {
   isSending: boolean;
   isDesktopOnline: boolean;
   isConnected: boolean;
+  suggestions?: Suggestions | null;
+  onClearSuggestions?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -170,13 +172,47 @@ export default function Chat({
   isSending,
   isDesktopOnline,
   isConnected,
+  suggestions,
+  onClearSuggestions,
 }: ChatProps) {
   const [input, setInput] = useState("");
   const [showTextInput, setShowTextInput] = useState(false);
   const [userScrolled, setUserScrolled] = useState(false);
+  const [showHoldHint, setShowHoldHint] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Restore text/voice mode preference across sessions. Power users who type
+  // shouldn't have to flip to text mode every visit.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("fazm.showTextInput");
+      if (saved === "1") setShowTextInput(true);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("fazm.showTextInput", showTextInput ? "1" : "0");
+    } catch {}
+  }, [showTextInput]);
+
+  // First-time hold-to-talk hint. Show once when the user lands in voice mode
+  // with no messages yet, then never again.
+  useEffect(() => {
+    try {
+      const seen = localStorage.getItem("fazm.holdHintSeen") === "1";
+      if (!seen && !showTextInput && isDesktopOnline) {
+        setShowHoldHint(true);
+      }
+    } catch {}
+  }, [showTextInput, isDesktopOnline]);
+  const dismissHoldHint = useCallback(() => {
+    setShowHoldHint(false);
+    try {
+      localStorage.setItem("fazm.holdHintSeen", "1");
+    } catch {}
+  }, []);
 
   // Voice input — press-and-hold to talk, show transcript in text field
   const handleVoiceTranscript = useCallback(
