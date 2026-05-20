@@ -35,6 +35,7 @@ struct AIResponseView: View {
     @Binding var isLoading: Bool
     let currentMessage: ChatMessage?
     @State private var isQuestionExpanded = false
+    @State private var isQuestionBarHovered = false
     @State private var followUpText: String = ""
     @State private var preVoiceFollowUpText: String = ""
     @State private var followUpTextHeight: CGFloat = 34
@@ -881,13 +882,16 @@ struct AIResponseView: View {
             QuestionBarButtons(
                 needsExpansion: needsExpansion,
                 isExpanded: $isQuestionExpanded,
-                userInput: userInput
+                userInput: userInput,
+                isBubbleHovered: isQuestionBarHovered
             )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(FazmColors.overlayForeground.opacity(0.1))
         .cornerRadius(8)
+        .contentShape(Rectangle())
+        .onHover { isQuestionBarHovered = $0 }
     }
 
     /// Whether the user input text needs an expand button — cached to avoid
