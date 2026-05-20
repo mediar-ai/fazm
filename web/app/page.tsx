@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useAuth } from "@/lib/useAuth";
 import { useDesktopRelay } from "@/lib/useDesktopRelay";
 import Chat from "@/components/Chat";
+import ChatControls from "@/components/ChatControls";
 
 export default function Home() {
   const { user, loading, token, signIn, signOut } = useAuth();
@@ -17,6 +18,14 @@ export default function Home() {
     isSending,
     suggestions,
     clearSuggestions,
+    desktopState,
+    popouts,
+    targetSessionKey,
+    setTargetSessionKey,
+    startNewChat,
+    startNewPopOutChat,
+    setModel,
+    setWorkspace,
   } = useDesktopRelay(token);
 
   if (loading) {
@@ -71,6 +80,20 @@ export default function Home() {
           Sign out
         </button>
       </header>
+
+      {/* Controls — new chat / pop-out / model / workspace / target */}
+      {isDesktopOnline && (
+        <ChatControls
+          desktopState={desktopState}
+          popouts={popouts}
+          targetSessionKey={targetSessionKey}
+          onTargetChange={setTargetSessionKey}
+          onNewChat={startNewChat}
+          onNewPopOut={startNewPopOutChat}
+          onSetModel={setModel}
+          onSetWorkspace={setWorkspace}
+        />
+      )}
 
       {/* Chat */}
       <Chat
