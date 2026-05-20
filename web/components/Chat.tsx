@@ -315,15 +315,52 @@ export default function Chat({
     isTouchOnlyRef.current = window.matchMedia("(hover: none)").matches;
   }, []);
 
+  // Message queue: if the user sends while the desktop is still streaming,
+  // we hold the new message locally instead of dropping it. When isSending
+  // flips back to false we flush the first queued message.
+  const [queue, setQueue] = useState<string[]>([]);
+  const wasSendingRef = useRef(false);
+  useEffect(() => {
+    if (wasSendingRef.current && !isSending && queue.length > 0) {
+      const [next, ...rest] = queue;
+      setQueue(rest);
+      onSend(next);
+      setUserScrolled(false);
+    }
+    wasSendingRef.current = isSending;
+  }, [isSending, queue, onSend]);
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || !isDesktopOnline) return;
+    if (isSending) {
+      // Desktop is busy — queue locally instead of dropping the message.
+      setQueue((q) => [...q, trimmed]);
+      setInput("");
+      return;
+    }
     onSend(trimmed);
     setInput("");
     // Do NOT reset showTextInput — keep the text input visible after sending
     // so the user can type a follow-up without switching back to voice mode.
     setUserScrolled(false); // resume auto-scroll on new send
+  };
+
+  const removeFromQueue = (index: number) => {
+    setQueue((q) => q.filter((_, i) => i !== index));
+  };
+
+  const sendNowFromQueue = (index: number) => {
+    if (!isDesktopOnline) return;
+    const text = queue[index];
+    if (!text) return;
+    // Interrupt the in-flight response, then send this queued message
+    // immediately. Subsequent queued items will flush when isSending flips.
+    setQueue((q) => q.filter((_, i) => i !== index));
+    onStop?.();
+    onSend(text);
+    setUserScrolled(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -367,7 +404,9 @@ export default function Chat({
 
   const isStreaming = messages.some((m) => m.isStreaming);
   const placeholder = isSending
-    ? "Ask follow up... (queued)"
+    ? queue.length > 0
+      ? `Will queue (${queue.length} waiting)...`
+      : "Queue a follow-up..."
     : "Message...";
 
   const handleSuggestionTap = (option: string) => {
@@ -379,9 +418,14 @@ export default function Chat({
 
   return (
     <div className="relative flex flex-col h-full min-h-0 select-none">
-      {/* Messages */}
+      {/* Messages — role="log" gives screen readers polite live announcements
+          for new messages without re-reading the entire history. */}
       <div
         ref={scrollContainerRef}
+        role="log"
+        aria-live="polite"
+        aria-label="Chat with desktop"
+        aria-relevant="additions text"
         className="flex-1 overflow-y-auto hide-scrollbar px-4 py-4 space-y-3"
         style={{ overscrollBehavior: "contain" }}
       >
@@ -440,6 +484,52 @@ export default function Chat({
             </svg>
             New messages
           </button>
+        </div>
+      )}
+
+      {/* Queued messages — shown while desktop is busy. Each can be sent now
+          (interrupts in-flight response) or removed before its turn. */}
+      {queue.length > 0 && (
+        <div className="px-4 pt-2 pb-1 space-y-1.5">
+          {queue.map((text, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 bg-neutral-900 border border-white/[0.06] rounded-xl pl-3 pr-1 py-1.5"
+            >
+              <svg
+                className="w-3.5 h-3.5 text-neutral-500 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+              </svg>
+              <span className="flex-1 text-xs text-neutral-300 truncate" title={text}>
+                {text}
+              </span>
+              <button
+                type="button"
+                onClick={() => sendNowFromQueue(i)}
+                className="text-[10px] uppercase tracking-wide text-amber-300 hover:text-amber-200 px-2 py-1 rounded-md hover:bg-amber-500/10 transition-colors"
+                title="Stop current response and send this now"
+              >
+                Send now
+              </button>
+              <button
+                type="button"
+                onClick={() => removeFromQueue(i)}
+                className="text-neutral-500 hover:text-neutral-300 p-1.5 rounded-md hover:bg-white/[0.04] transition-colors"
+                aria-label="Remove from queue"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
