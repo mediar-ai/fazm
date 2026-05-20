@@ -1292,6 +1292,24 @@ class ChatProvider: ObservableObject {
     private func setupWebRelay() {
         webRelay.onQuery = { [weak self] text, sessionKey in
             guard let self else { return }
+
+            // Wire ask_followup suggestions through to the phone for this session key.
+            // ChatToolExecutor.executeAskFollowup looks up quickReplyCallbacks[sessionKey]
+            // when the model invokes ask_followup; we hand it a closure that pushes the
+            // question + option pills over the WebSocket to the phone.
+            ChatToolExecutor.registerCallbacks(
+                sessionKey: sessionKey,
+                onQuickReply: { [weak self] question, options in
+                    Task { @MainActor [weak self] in
+                        self?.webRelay.sendToPhone([
+                            "type": "suggestions",
+                            "question": question,
+                            "options": options,
+                        ])
+                    }
+                }
+            )
+
             await self.sendMessage(text, sessionKey: sessionKey)
         }
 
