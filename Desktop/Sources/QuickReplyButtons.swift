@@ -29,6 +29,8 @@ struct QuickReplyButtonsView: View {
                         Text(option)
                             .scaledFont(size: 13, weight: .medium)
                             .foregroundColor(highlighted ? .white : FazmColors.purplePrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background(
@@ -44,6 +46,7 @@ struct QuickReplyButtonsView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(isDisabled)
+                    .help(option)
                 }
             }
         }
@@ -92,7 +95,9 @@ struct WrappingHStack: Layout {
         var currentRowWidth: CGFloat = 0
 
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let natural = subview.sizeThatFits(.unspecified)
+            let cappedWidth = min(natural.width, maxWidth)
+            let size = CGSize(width: cappedWidth, height: natural.height)
             let widthWithSpacing = currentRowWidth > 0 ? size.width + spacing : size.width
 
             if currentRowWidth + widthWithSpacing > maxWidth && !rows[rows.count - 1].isEmpty {
