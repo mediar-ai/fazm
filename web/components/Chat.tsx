@@ -346,8 +346,15 @@ export default function Chat({
     ? "Ask follow up... (queued)"
     : "Message...";
 
+  const handleSuggestionTap = (option: string) => {
+    if (!isDesktopOnline) return;
+    onSend(option);
+    onClearSuggestions?.();
+    setUserScrolled(false);
+  };
+
   return (
-    <div className="relative flex flex-col h-full min-h-0">
+    <div className="relative flex flex-col h-full min-h-0 select-none">
       {/* Messages */}
       <div
         ref={scrollContainerRef}
@@ -412,6 +419,22 @@ export default function Chat({
         </div>
       )}
 
+      {/* Suggestion pills — surfaced when desktop's ask_followup fires */}
+      {suggestions && suggestions.options.length > 0 && !isSending && (
+        <div className="px-4 pt-2 pb-1 flex gap-2 overflow-x-auto hide-scrollbar">
+          {suggestions.options.map((option, i) => (
+            <button
+              key={`${option}-${i}`}
+              type="button"
+              onClick={() => handleSuggestionTap(option)}
+              className="shrink-0 text-xs text-white bg-neutral-800/80 hover:bg-neutral-700 active:bg-neutral-600 border border-white/[0.08] rounded-full px-3 py-1.5 backdrop-blur-sm transition-colors whitespace-nowrap"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input area */}
       <div className="safe-pb px-4 py-3 border-t border-neutral-800">
         {!isDesktopOnline ? (
@@ -451,7 +474,6 @@ export default function Chat({
                   maxHeight: "calc(8 * 1.25rem + 1.25rem)",
                   overflow: "hidden",
                 }}
-                autoFocus
               />
               {/* Stop / Send button */}
               {isSending ? (
