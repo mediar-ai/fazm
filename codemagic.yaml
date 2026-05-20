@@ -446,8 +446,8 @@ workflows:
           # ────────────────────────────────────────────────────────────────────
           # Python MCP venv bundling (Google Workspace, browser-harness, ai-browser-profile)
           #
-          # We ship the universal app with TWO venvs per MCP — `.venv-arm64` and
-          # `.venv-x86_64` — using uv's `--python-platform` to install wheels for
+          # We ship the universal app with TWO venvs per MCP (`.venv-arm64` and
+          # `.venv-x86_64`) using uv's `--python-platform` to install wheels for
           # each target on a single arm64 CI runner (no Rosetta needed). The
           # per-arch ZIP step (further down) drops the wrong-arch venv and
           # renames the surviving one to plain `.venv`, which is what the
@@ -535,7 +535,7 @@ workflows:
             build_venv_for_arch "$WORKSPACE_MCP_BUNDLE" arm64  -r "$WORKSPACE_MCP_BUNDLE/requirements.txt"
             build_venv_for_arch "$WORKSPACE_MCP_BUNDLE" x86_64 -r "$WORKSPACE_MCP_BUNDLE/requirements.txt"
           else
-            echo "WARNING: Google Workspace MCP not cloned — skipping"
+            echo "WARNING: Google Workspace MCP not cloned, skipping"
           fi
 
 
@@ -550,11 +550,11 @@ workflows:
             build_venv_for_arch "$BH_BUNDLE" x86_64 \
               "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" "/tmp/browser-harness"
           else
-            echo "WARNING: browser-harness sources missing — skipping (server=$BH_MCP_SERVER, repo=/tmp/browser-harness)"
+            echo "WARNING: browser-harness sources missing, skipping (server=$BH_MCP_SERVER, repo=/tmp/browser-harness)"
           fi
 
 
-          # Bundle ai-browser-profile (Tier-1 deps only — skip optional embedding deps).
+          # Bundle ai-browser-profile (Tier-1 deps only; skip optional embedding deps).
           ABP_BUNDLE="$APP_BUNDLE/Contents/Resources/ai-browser-profile"
           if [ -d "/tmp/ai-browser-profile/ai_browser_profile" ]; then
             mkdir -p "$ABP_BUNDLE"
@@ -678,42 +678,31 @@ workflows:
               --sign "$SIGN_IDENTITY" "$WHATSAPP_BIN"
           fi
 
-          # Sign Google Workspace MCP native binaries (.so/.dylib in venv)
-          WORKSPACE_MCP_BUNDLE="$APP_BUNDLE/Contents/Resources/google-workspace-mcp"
-          if [ -d "$WORKSPACE_MCP_BUNDLE/.venv" ]; then
-            find "$WORKSPACE_MCP_BUNDLE/.venv" -type f \
-              \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
-              file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
-                codesign --force --options runtime --timestamp $CS_PAGESIZE \
-                  --sign "$SIGN_IDENTITY" "$native_bin"
-            done
-            # Sign the venv Python binary itself (python, not python3 which is a wrapper script)
-            if [ -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" ]; then
-              if file "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" 2>/dev/null | grep -q "Mach-O"; then
-                codesign --force --options runtime --timestamp $CS_PAGESIZE \
-                  --sign "$SIGN_IDENTITY" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
-              fi
-            fi
-          fi
-
-          # Sign browser-harness + ai-browser-profile MCP venvs (same pattern as Google Workspace)
-          for VENV_BUNDLE in \
+          # Sign Python MCP venvs (Google Workspace, browser-harness, ai-browser-profile).
+          # At this stage each MCP bundle contains BOTH `.venv-arm64` and `.venv-x86_64`;
+          # the per-arch thinning step later drops the wrong-arch one and renames the
+          # surviving one to plain `.venv`. We sign both arch venvs here so notarization
+          # of the universal app passes regardless of which side a user ends up on.
+          for MCP_BUNDLE in \
+            "$APP_BUNDLE/Contents/Resources/google-workspace-mcp" \
             "$APP_BUNDLE/Contents/Resources/browser-harness" \
             "$APP_BUNDLE/Contents/Resources/ai-browser-profile"; do
-            if [ -d "$VENV_BUNDLE/.venv" ]; then
-              find "$VENV_BUNDLE/.venv" -type f \
+            for VENV in "$MCP_BUNDLE/.venv-arm64" "$MCP_BUNDLE/.venv-x86_64"; do
+              [ -d "$VENV" ] || continue
+              find "$VENV" -type f \
                 \( -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
                 file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
                   codesign --force --options runtime --timestamp $CS_PAGESIZE \
                     --sign "$SIGN_IDENTITY" "$native_bin"
               done
-              if [ -f "$VENV_BUNDLE/.venv/bin/python" ]; then
-                if file "$VENV_BUNDLE/.venv/bin/python" 2>/dev/null | grep -q "Mach-O"; then
+              # Sign the venv Python binary (python, not python3 which is a wrapper script)
+              if [ -f "$VENV/bin/python" ]; then
+                if file "$VENV/bin/python" 2>/dev/null | grep -q "Mach-O"; then
                   codesign --force --options runtime --timestamp $CS_PAGESIZE \
-                    --sign "$SIGN_IDENTITY" "$VENV_BUNDLE/.venv/bin/python"
+                    --sign "$SIGN_IDENTITY" "$VENV/bin/python"
                 fi
               fi
-            fi
+            done
           done
 
 
@@ -812,6 +801,28 @@ workflows:
             ARCH_APP="/tmp/Fazm-$ARCH-app"
             rm -rf "$ARCH_APP"
             ditto "$APP_BUNDLE" "$ARCH_APP/$APP_NAME.app"
+
+            # Drop the wrong-arch Python venv from each MCP bundle, then rename the
+            # surviving venv to plain `.venv`, which is what the runtime + MCP wrapper
+            # scripts expect (see ACPBridge.swift / acp-bridge/index.ts).
+            # We ship both arches in the universal app, but each per-arch ZIP only
+            # needs one. Saves ~150 MB per arch and avoids signing arm64 wheels
+            # for x86_64 users (which would crash at import time).
+            case "$ARCH" in
+              arm64)  OTHER_ARCH=x86_64 ;;
+              x86_64) OTHER_ARCH=arm64  ;;
+            esac
+            for mcp in google-workspace-mcp browser-harness ai-browser-profile; do
+              MCP_RES="$ARCH_APP/$APP_NAME.app/Contents/Resources/$mcp"
+              [ -d "$MCP_RES" ] || continue
+              rm -rf "$MCP_RES/.venv" "$MCP_RES/.venv-$OTHER_ARCH"
+              if [ -d "$MCP_RES/.venv-$ARCH" ]; then
+                mv "$MCP_RES/.venv-$ARCH" "$MCP_RES/.venv"
+                echo "  $mcp: renamed .venv-$ARCH -> .venv (dropped .venv-$OTHER_ARCH)"
+              else
+                echo "  WARNING: $mcp has no .venv-$ARCH"
+              fi
+            done
 
             # Helper: thin a universal binary to single-arch (if it is universal)
             thin_binary() {
