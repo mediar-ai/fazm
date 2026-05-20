@@ -1088,6 +1088,7 @@ actor ACPBridge {
         sessionAcpToolsRunning.removeValue(forKey: cleanupKey)
         if aliasedKey != nil {
           sessionKeyAliases.removeValue(forKey: sk)
+          loggedAliasHops.remove("\(sk)->\(cleanupKey)")
           log("ACPBridge: query defer cleared alias '\(sk)' -> '\(cleanupKey)' (popOut live-transfer ended)")
         }
       }
@@ -1937,10 +1938,20 @@ actor ACPBridge {
   /// before a `transferSession(hadInFlight: true)` keeps consuming messages
   /// that now route to the new key. Without this, a popOut mid-turn would
   /// orphan the in-flight loop on the old (no longer routed) queue.
+  /// Tracks which (sessionKey, effectiveKey) pairs we've already logged the
+  /// alias hop for, so we log once per popOut transfer instead of once per
+  /// message. The in-flight loop calls waitForMessage hundreds of times during
+  /// a streaming response — logging each one floods the log.
+  private var loggedAliasHops: Set<String> = []
+
   private func waitForMessage(sessionKey: String, timeout: TimeInterval? = nil) async throws -> InboundMessage {
     let effectiveKey = sessionKeyAliases[sessionKey] ?? sessionKey
     if effectiveKey != sessionKey {
-      log("ACPBridge: waitForMessage alias '\(sessionKey)' -> '\(effectiveKey)'")
+      let pairKey = "\(sessionKey)->\(effectiveKey)"
+      if !loggedAliasHops.contains(pairKey) {
+        loggedAliasHops.insert(pairKey)
+        log("ACPBridge: waitForMessage alias '\(sessionKey)' -> '\(effectiveKey)' (logged once per transfer)")
+      }
     }
     // Drain any queued pending messages first
     if var queue = sessionPendingMessages[effectiveKey], !queue.isEmpty {
