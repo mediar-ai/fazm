@@ -2797,7 +2797,11 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
               const tokenAgeSec = creds?.storedAt
                 ? Math.round((Date.now() - new Date(creds.storedAt).getTime()) / 1000)
                 : null;
-              logErr(`[AUTH-DIAG] pre-warm sessions=${sessions.size} warmup, activeQueries=${activeQueries.size} concurrent, tokenAge=${tokenAgeSec != null ? tokenAgeSec + "s" : "unknown"}, key=${cfg.key}`);
+              const expiresInSec = creds?.expiresAtMs != null
+                ? Math.round((creds.expiresAtMs - Date.now()) / 1000)
+                : null;
+              const tokenPrefix = creds?.accessTokenPrefix ?? "unknown";
+              logErr(`[AUTH-DIAG] pre-warm sessions=${sessions.size} warmup, activeQueries=${activeQueries.size} concurrent, tokenAge=${tokenAgeSec != null ? tokenAgeSec + "s" : "unknown"}, tokenPrefix=${tokenPrefix}, expiresIn=${expiresInSec != null ? expiresInSec + "s" : "unknown"}, scopes=${(creds?.scopes ?? []).join(",")}, key=${cfg.key}`);
             } catch { /* ignore diagnostic errors */ }
             await startAuthFlow();
             return;
@@ -3820,7 +3824,11 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           const tokenAgeSec = creds?.storedAt
             ? Math.round((Date.now() - new Date(creds.storedAt).getTime()) / 1000)
             : null;
-          logErr(`[AUTH-DIAG] sessions=${sessions.size} warmup, activeQueries=${activeQueries.size} concurrent, tokenAge=${tokenAgeSec != null ? tokenAgeSec + "s" : "unknown"}, sessionKey=${sessionKey}`);
+          const expiresInSec = creds?.expiresAtMs != null
+            ? Math.round((creds.expiresAtMs - Date.now()) / 1000)
+            : null;
+          const tokenPrefix = creds?.accessTokenPrefix ?? "unknown";
+          logErr(`[AUTH-DIAG] sessions=${sessions.size} warmup, activeQueries=${activeQueries.size} concurrent, tokenAge=${tokenAgeSec != null ? tokenAgeSec + "s" : "unknown"}, tokenPrefix=${tokenPrefix}, expiresIn=${expiresInSec != null ? expiresInSec + "s" : "unknown"}, scopes=${(creds?.scopes ?? []).join(",")}, sessionKey=${sessionKey}`);
         } catch { /* ignore diagnostic errors */ }
         unregisterSession(sessionKey);
         imageTurnCounts.delete(sessionKey);
@@ -4782,6 +4790,43 @@ async function main(): Promise<void> {
   } catch { /* ignore */ }
 
   logErr(`Bridge main() starting (pid=${process.pid}, node=${process.version}, execPath=${process.execPath})`);
+
+  // [AUTH-SNAPSHOT] Token state at bridge startup. Logging the token prefix at
+  // boot makes it possible to correlate later 401s against rotator-side rotation
+  // events (which now log new+old token prefixes too). Without this, a 401 in
+  // mid-flight has no way to identify whether the in-memory token in this
+  // process was the one the rotator swapped in, or a stale one from the
+  // pre-rotation account. See 2026-05-20 rotation-disconnect investigation.
+  try {
+    const creds = readStoredCredentials();
+    if (creds) {
+      const ageSec = creds.storedAt ? Math.round((Date.now() - new Date(creds.storedAt).getTime()) / 1000) : null;
+      const expiresInSec = creds.expiresAtMs != null ? Math.round((creds.expiresAtMs - Date.now()) / 1000) : null;
+      logErr(`[AUTH-SNAPSHOT] boot tokenPrefix=${creds.accessTokenPrefix ?? "unknown"} tokenAge=${ageSec != null ? ageSec + "s" : "unknown"} expiresIn=${expiresInSec != null ? expiresInSec + "s" : "unknown"} scopes=${(creds.scopes ?? []).join(",")}`);
+    } else {
+      logErr(`[AUTH-SNAPSHOT] boot tokenPrefix=none (keychain read returned null)`);
+    }
+  } catch (err) {
+    logErr(`[AUTH-SNAPSHOT] boot failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // [AUTH-SNAPSHOT] Periodically log the keychain token state. If the rotator
+  // swaps the keychain entry while the bridge is running, this is the only way
+  // (short of a fresh OAuth flow) to see that the bridge's view of "the current
+  // account" has shifted. Cheap: one security CLI call every 5 minutes.
+  setInterval(() => {
+    try {
+      const creds = readStoredCredentials();
+      if (creds) {
+        const ageSec = creds.storedAt ? Math.round((Date.now() - new Date(creds.storedAt).getTime()) / 1000) : null;
+        const expiresInSec = creds.expiresAtMs != null ? Math.round((creds.expiresAtMs - Date.now()) / 1000) : null;
+        logErr(`[AUTH-SNAPSHOT] periodic tokenPrefix=${creds.accessTokenPrefix ?? "unknown"} tokenAge=${ageSec != null ? ageSec + "s" : "unknown"} expiresIn=${expiresInSec != null ? expiresInSec + "s" : "unknown"} scopes=${(creds.scopes ?? []).join(",")} sessions=${sessions.size} activeQueries=${activeQueries.size}`);
+      } else {
+        logErr(`[AUTH-SNAPSHOT] periodic tokenPrefix=none (keychain read returned null)`);
+      }
+    } catch { /* ignore */ }
+  }, 5 * 60 * 1000).unref();
+
   logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}, browser-harness=${existsSync(browserHarnessMcpPython) ? "bundled" : "missing"}, ai-browser-profile=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, browserMode=${browserMode}`);
   logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
 
