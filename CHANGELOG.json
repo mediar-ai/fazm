@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Phone web chat (chat.fazm.ai) now has new chat, pop-out, model picker, workspace selector, and a stream-target switcher so you can route your phone message into the floating bar or any open pop-out window"
+  ],
   "releases": [
     {
       "version": "2.9.26",
