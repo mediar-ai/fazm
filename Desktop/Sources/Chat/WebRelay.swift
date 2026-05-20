@@ -43,6 +43,15 @@ final class WebRelay: ObservableObject {
     /// Callback: phone requested chat history
     var onHistoryRequest: (() async -> [[String: Any]])?
 
+    /// Callback: phone requested current desktop state. The desktop side (ChatProvider)
+    /// fills this with `{model, modelLabel, workspace, availableModels, voiceEnabled, ...}`
+    /// and we wrap it with `{type: "desktop_state"}` before sending.
+    var onStateRequest: (() async -> [String: Any])?
+
+    /// Callback: phone requested the open detached pop-out list. Returns one entry per
+    /// open window with `{sessionKey, title, workspace, selectedModel, ...}`.
+    var onPopOutsRequest: (() async -> [[String: Any]])?
+
     // MARK: - Lifecycle
 
     func start() {
