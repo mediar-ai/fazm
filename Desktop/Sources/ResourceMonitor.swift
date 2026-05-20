@@ -47,6 +47,12 @@ class ResourceMonitor {
     // Minimum time between warnings (prevent spam)
     private let warningCooldown: TimeInterval = 300 // 5 minutes
 
+    // Rate-limit for /usr/bin/sample + /usr/bin/heap captures. These are heavy
+    // (sample takes ~1s of CPU; heap pauses us for 1-5s on a large heap), so we
+    // only allow one pair per minute even if multiple alerts fire.
+    private var lastSampleHeapCapture: Date?
+    private let sampleHeapCooldown: TimeInterval = 60
+
     // How often to run system-health pollers (kernel panic, fseventsd RSS, iCloud, disk)
     private let systemHealthInterval: TimeInterval = 3600 // 1 hour
 
@@ -521,11 +527,106 @@ class ResourceMonitor {
         return diagnostics
     }
 
+    /// Shell out to `/usr/bin/sample` and `/usr/bin/heap` to capture a stack
+    /// sample of every thread and a per-class heap object distribution. Both
+    /// are Apple-shipped on every Mac (no Xcode / CLTools required) and need
+    /// no entitlement to inspect the calling process.
+    ///
+    /// Files are written to `~/Library/Logs/Fazm/diagnostics/` with a reason
+    /// tag and timestamp so we can correlate them with the log line that
+    /// triggered the capture. Rate-limited to one pair per `sampleHeapCooldown`
+    /// to keep the per-incident cost bounded.
+    ///
+    /// Runs detached. Caller does not need to await.
+    private func captureSampleHeapDiagnostics(reason: String) {
+        let now = Date()
+        if let last = lastSampleHeapCapture, now.timeIntervalSince(last) < sampleHeapCooldown {
+            return
+        }
+        lastSampleHeapCapture = now
+
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let ts: String = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyyMMdd-HHmmss"
+            return f.string(from: now)
+        }()
+        let safeReason = reason.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
+        let logsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Fazm/diagnostics", isDirectory: true)
+        let samplePath = logsDir.appendingPathComponent("sample-\(safeReason)-\(ts).txt").path
+        let heapPath = logsDir.appendingPathComponent("heap-\(safeReason)-\(ts).txt").path
+
+        Task.detached(priority: .utility) { [self] in
+            do {
+                try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+            } catch {
+                log("ResourceMonitor: could not create diagnostics dir: \(error)")
+                return
+            }
+
+            // `sample <pid> 1` samples the process for 1 second of wall clock,
+            // writes a symbolicated call-tree report to -file. ~1s of CPU on
+            // the sampler side, brief pause on the target.
+            let sampleStart = Date()
+            let sampleOk = self.runShellCommand(
+                "/usr/bin/sample",
+                args: [String(pid), "1", "-file", samplePath, "-mayDie"],
+                timeout: 10.0
+            ) != nil
+            log("ResourceMonitor: sample \(sampleOk ? "wrote" : "FAILED") \(samplePath) (\(String(format: "%.1f", Date().timeIntervalSince(sampleStart)))s)")
+
+            // `heap <pid>` walks every allocation in the heap and groups by
+            // class+size. Can pause the target 1-5s on a 1GB heap. Output is
+            // 1-10MB of text. We redirect stdout to a file ourselves since
+            // runShellCommand buffers in memory.
+            let heapStart = Date()
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/heap")
+            proc.arguments = [String(pid)]
+            if let outHandle = FileManager.default.createFile(atPath: heapPath, contents: nil)
+                ? try? FileHandle(forWritingTo: URL(fileURLWithPath: heapPath))
+                : nil {
+                proc.standardOutput = outHandle
+                proc.standardError = FileHandle.nullDevice
+                do {
+                    try proc.run()
+                    let deadline = Date().addingTimeInterval(60.0)
+                    while proc.isRunning && Date() < deadline {
+                        Thread.sleep(forTimeInterval: 0.05)
+                    }
+                    if proc.isRunning {
+                        proc.terminate()
+                        log("ResourceMonitor: heap capture timed out after 60s, terminated")
+                    }
+                    try? outHandle.close()
+                    log("ResourceMonitor: heap wrote \(heapPath) (\(String(format: "%.1f", Date().timeIntervalSince(heapStart)))s)")
+                } catch {
+                    try? outHandle.close()
+                    log("ResourceMonitor: heap FAILED: \(error)")
+                }
+            } else {
+                log("ResourceMonitor: heap FAILED: could not open output file \(heapPath)")
+            }
+        }
+    }
+
     /// Collect all enhanced diagnostics and send to Sentry.
     /// Only called at critical memory threshold to avoid overhead.
     /// Runs heavy mach introspection off the main thread.
     private func collectEnhancedDiagnostics(snapshot: ResourceSnapshot) {
         let isDevBuild = self.isDevBuild
+
+        // Capture sample + heap alongside the in-process mach diagnostics.
+        // The mach calls give us totals; sample/heap give us "who". Rate-limited
+        // inside captureSampleHeapDiagnostics.
+        let reason: String = {
+            if snapshot.memoryFootprintMB >= self.memoryAutoRestartThreshold { return "auto_restart" }
+            if snapshot.memoryFootprintMB >= self.memoryCriticalThreshold { return "memory_critical" }
+            return "enhanced"
+        }()
+        captureSampleHeapDiagnostics(reason: reason)
+
         Task.detached(priority: .utility) { [self] in
             log("ResourceMonitor: === ENHANCED DIAGNOSTICS START (memory: \(snapshot.memoryFootprintMB)MB) ===")
 
