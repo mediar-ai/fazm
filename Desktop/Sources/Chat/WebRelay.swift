@@ -40,8 +40,10 @@ final class WebRelay: ObservableObject {
     /// Callback: a query arrived from the phone. Parameters: text, sessionKey
     var onQuery: ((String, String) async -> Void)?
 
-    /// Callback: phone requested chat history
-    var onHistoryRequest: (() async -> [[String: Any]])?
+    /// Callback: phone requested chat history. The (optional) sessionKey lets the
+    /// caller filter by a specific pop-out (`detached-<uuid>`), the floating bar
+    /// (`main`), etc. nil means "default" (legacy clients).
+    var onHistoryRequest: ((String?) async -> [[String: Any]])?
 
     /// Callback: phone requested current desktop state. The desktop side (ChatProvider)
     /// fills this with `{model, modelLabel, workspace, availableModels, voiceEnabled, ...}`
@@ -303,8 +305,11 @@ final class WebRelay: ObservableObject {
             }
 
         case "request_history":
-            if let history = await onHistoryRequest?() {
-                sendToPhone(["type": "chat_history", "messages": history])
+            let sessionKey = json["sessionKey"] as? String
+            if let history = await onHistoryRequest?(sessionKey) {
+                var payload: [String: Any] = ["type": "chat_history", "messages": history]
+                if let sessionKey { payload["sessionKey"] = sessionKey }
+                sendToPhone(payload)
             }
 
         case "request_state":
