@@ -85,8 +85,8 @@ struct SettingsSearchItem: Identifiable {
         // Advanced > MCP Servers
         SettingsSearchItem(name: "MCP Servers", subtitle: "Connect external tools via the Model Context Protocol", keywords: ["mcp", "server", "tools", "protocol", "integration", "external", "plugin"], section: .advanced, advancedSubsection: .mcpServers, icon: "server.rack", settingId: "advanced.mcpservers.info"),
 
-        // Advanced > AI Chat > ChatGPT Account (lives in the AI Chat subsection)
-        SettingsSearchItem(name: "ChatGPT Account", subtitle: "Use your ChatGPT subscription via OpenAI's Codex backend", keywords: ["codex", "openai", "chatgpt", "gpt", "gpt-5", "gpt5", "openai api", "openai backend", "disconnect", "personal account", "connect"], section: .advanced, advancedSubsection: .aiChat, icon: "sparkles", settingId: "advanced.codex.toggle"),
+        // Advanced > AI Chat > ChatGPT Account (Codex) (lives in the AI Chat subsection)
+        SettingsSearchItem(name: "ChatGPT Account (Codex)", subtitle: "Use your ChatGPT subscription via OpenAI's Codex backend", keywords: ["codex", "openai", "chatgpt", "gpt", "gpt-5", "gpt5", "openai api", "openai backend", "disconnect", "personal account", "connect"], section: .advanced, advancedSubsection: .aiChat, icon: "sparkles", settingId: "advanced.codex.toggle"),
         SettingsSearchItem(name: "Visible GPT Models", subtitle: "Choose which GPT models appear in the floating-bar picker", keywords: ["codex", "gpt", "gpt-5", "models", "picker", "visible", "customize", "5.3", "5.4", "5.5", "quota"], section: .advanced, advancedSubsection: .aiChat, icon: "slider.horizontal.3", settingId: "advanced.codex.models"),
 
         // Account
