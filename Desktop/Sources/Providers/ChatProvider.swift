@@ -135,6 +135,13 @@ enum ChatContentBlock: Identifiable, Equatable {
     /// conversation flow looks the way it does, instead of an italicized line
     /// of markdown that's easy to miss.
     case systemEvent(id: String, event: SystemEvent)
+    /// Browser activity card — surfaces what the managed Chrome (browser-harness MCP)
+    /// is doing right now: mode (headed/headless), what page it's on, what action
+    /// is in flight. Replaces the generic tool-call chip for `bh_*` tools so the
+    /// user can see at a glance whether the AI is driving a visible browser.
+    case browserActivity(id: String, toolUseId: String?, toolName: String,
+                         action: String, mode: String?, url: String?,
+                         status: ToolCallStatus)
 
     var id: String {
         switch self {
@@ -144,6 +151,7 @@ enum ChatContentBlock: Identifiable, Equatable {
         case .discoveryCard(let id, _, _, _): return id
         case .observerCard(let id, _, _, _, _, _): return id
         case .systemEvent(let id, _): return id
+        case .browserActivity(let id, _, _, _, _, _, _): return id
         }
     }
 
