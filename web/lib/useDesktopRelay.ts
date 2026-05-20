@@ -53,6 +53,9 @@ interface RelayHook {
   desktopState: DesktopState | null;
   popouts: PopOut[];
   targetSessionKey: string;          // "main" | "detached-<uuid>"
+  /** Switch which session this client is chatting with. Triggers a history
+   *  fetch for that session so the message list shows the right conversation. */
+  selectSession: (key: string) => void;
   setTargetSessionKey: (key: string) => void;
   startNewChat: () => void;          // resets the floating bar's main chat
   startNewPopOutChat: () => void;    // opens a brand-new detached pop-out
@@ -103,8 +106,20 @@ export function useDesktopRelay(token: string | null): RelayHook {
     switch (msg.type) {
       case "chat_history": {
         const history = (msg.messages as ChatMessage[]) || [];
-        setMessages(history);
-        trackEvent("web_chat_history_loaded", { message_count: history.length });
+        const forKey = (msg.sessionKey as string) || "main";
+        // Only apply if this history matches the session the user currently
+        // wants to see — avoids a late-arriving history of session A overwriting
+        // the display when the user has already switched to session B.
+        setTargetSessionKey((curr) => {
+          if (curr === forKey || (!msg.sessionKey && curr === "main")) {
+            setMessages(history);
+          }
+          return curr;
+        });
+        trackEvent("web_chat_history_loaded", {
+          message_count: history.length,
+          sessionKey: forKey,
+        });
         break;
       }
 
@@ -245,7 +260,9 @@ export function useDesktopRelay(token: string | null): RelayHook {
       setOnline();
       backoffMs.current = BACKOFF_INITIAL_MS;
       trackEvent("web_relay_connected");
-      ws.send(JSON.stringify({ type: "request_history" }));
+      // Ask for history of whichever session the user last had selected (defaults
+      // to "main" on a fresh load).
+      ws.send(JSON.stringify({ type: "request_history", sessionKey: "main" }));
     };
 
     ws.onmessage = (event) => {
@@ -461,6 +478,23 @@ export function useDesktopRelay(token: string | null): RelayHook {
     wsRef.current.send(JSON.stringify({ type: "request_popouts" }));
   }, []);
 
+  // Switch to a different chat session (floating bar or a specific pop-out).
+  // Clears the visible message list and asks the desktop for that session's
+  // history; the next "chat_history" push populates the UI.
+  const selectSession = useCallback((key: string) => {
+    trackEvent("web_select_session", { sessionKey: key });
+    setTargetSessionKey(key);
+    setMessages([]);
+    setSuggestions(null);
+    currentAiMessageId.current = null;
+    setIsSending(false);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({ type: "request_history", sessionKey: key })
+      );
+    }
+  }, []);
+
   // Track previous popout list so we can auto-target a newly opened pop-out
   // after the user clicks "New pop-out".
   const prevPopoutKeys = useRef<Set<string>>(new Set());
@@ -501,6 +535,7 @@ export function useDesktopRelay(token: string | null): RelayHook {
     desktopState,
     popouts,
     targetSessionKey,
+    selectSession,
     setTargetSessionKey,
     startNewChat,
     startNewPopOutChat,
