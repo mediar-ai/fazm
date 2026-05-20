@@ -568,7 +568,7 @@ workflows:
             build_venv_for_arch "$ABP_BUNDLE" x86_64 \
               "cryptography" "websocket-client" "numpy" "git+https://github.com/cclgroupltd/ccl_chromium_reader.git"
           else
-            echo "WARNING: ai-browser-profile sources missing — skipping (/tmp/ai-browser-profile)"
+            echo "WARNING: ai-browser-profile sources missing, skipping (/tmp/ai-browser-profile)"
           fi
 
 
