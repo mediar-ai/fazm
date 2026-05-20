@@ -11,6 +11,40 @@ use std::sync::Arc;
 use crate::auth::AuthDevice;
 use crate::config::Config;
 
+// ---------- Pricing A/B Test ----------
+//
+// Mirrors the website's `getPricingVariant` in
+// `fazm-website/src/app/api/checkout/route.ts`. Assignment is deterministic
+// from the user's email so the same address always gets the same arm whether
+// they check out via the website or the desktop app.
+//
+// Algorithm (must stay byte-identical to the TS version):
+//   variant = sha256(email.lower().trim()).digest()[0] % 2 == 0
+//           ? "control_999"
+//           : "treatment_1999"
+
+fn pricing_variant_for_email(email: &str, config: &Config) -> &'static str {
+    if !config.pricing_ab_enabled || config.stripe_price_id_treatment.is_empty() {
+        return "control_999";
+    }
+    use sha2::{Digest, Sha256};
+    let normalized = email.trim().to_lowercase();
+    let digest = Sha256::digest(normalized.as_bytes());
+    if digest[0] % 2 == 0 {
+        "control_999"
+    } else {
+        "treatment_1999"
+    }
+}
+
+fn price_id_for_variant<'a>(variant: &str, config: &'a Config) -> &'a str {
+    if variant == "treatment_1999" && !config.stripe_price_id_treatment.is_empty() {
+        &config.stripe_price_id_treatment
+    } else {
+        &config.stripe_price_id
+    }
+}
+
 // ---------- Create Checkout Session ----------
 
 #[derive(Deserialize)]
@@ -70,6 +104,23 @@ pub async fn create_checkout_session(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
+    // Pricing A/B test: pick variant deterministically from the Firebase email.
+    // Falls back to control when the user has no email on file (rare, but the
+    // website also gates on `email.includes("@")`).
+    let variant = if firebase_email.is_empty() {
+        "control_999"
+    } else {
+        pricing_variant_for_email(&firebase_email, &config)
+    };
+    let price_id = price_id_for_variant(variant, &config).to_string();
+    tracing::info!(
+        firebase_uid = %firebase_uid,
+        firebase_email = %firebase_email,
+        variant,
+        price_id = %price_id,
+        "Pricing variant assigned"
+    );
+
     // Create checkout session. By default, no free trial: card is charged immediately.
     // STRIPE_TRIAL_DAYS env var can override (set > 0 to re-enable a trial period).
     let trial_days = config.stripe_trial_days;
@@ -79,14 +130,34 @@ pub async fn create_checkout_session(
         ("success_url", success_url),
         ("cancel_url", cancel_url),
         ("payment_method_types[0]", "card".to_string()),
-        ("line_items[0][price]", config.stripe_price_id.clone()),
+        ("line_items[0][price]", price_id.clone()),
         ("line_items[0][quantity]", "1".to_string()),
         // Show the "Add promotion code" link on the Checkout page so users can
         // redeem promo codes (e.g. SEZGI1MO) without manual customer balance edits.
         ("allow_promotion_codes", "true".to_string()),
-        ("subscription_data[metadata][firebase_uid]", firebase_uid),
-        ("subscription_data[metadata][device_id]", auth.device_id),
+        // Tag the checkout session itself so we can reconstruct the variant
+        // from `cs_live_…` records even if the subscription metadata is lost.
+        ("metadata[pricing_variant]", variant.to_string()),
+        (
+            "subscription_data[metadata][firebase_uid]",
+            firebase_uid.clone(),
+        ),
+        (
+            "subscription_data[metadata][device_id]",
+            auth.device_id.clone(),
+        ),
+        (
+            "subscription_data[metadata][pricing_variant]",
+            variant.to_string(),
+        ),
+        ("subscription_data[metadata][source]", "desktop".to_string()),
     ];
+    if !firebase_email.is_empty() {
+        params.push((
+            "subscription_data[metadata][email]",
+            firebase_email.clone(),
+        ));
+    }
 
     // Use free trial if configured; otherwise fall back to intro coupon
     if trial_days > 0 {
