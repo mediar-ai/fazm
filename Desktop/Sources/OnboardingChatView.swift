@@ -236,7 +236,7 @@ struct OnboardingChatView: View {
                             OnboardingErrorBanner(
                                 error: error,
                                 onConnectClaude: {
-                                    ClaudeAuthWindowController.shared.show(chatProvider: chatProvider)
+                                    ConnectPersonalAccountWindowController.shared.show(chatProvider: chatProvider)
                                 },
                                 onRetry: {
                                     onboardingError = nil
@@ -1786,7 +1786,7 @@ private struct OnboardingErrorBanner: View {
                         HStack(spacing: 5) {
                             Image(systemName: "person.badge.key")
                                 .scaledFont(size: 11)
-                            Text("Connect Claude")
+                            Text("Connect Personal Account")
                                 .scaledFont(size: 12, weight: .medium)
                         }
                         .foregroundColor(.white)
