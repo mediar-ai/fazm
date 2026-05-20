@@ -5263,6 +5263,147 @@ class ChatProvider: ObservableObject {
         }
     }
 
+    // MARK: - Browser Activity (browser-harness MCP)
+
+    /// True for any browser-harness MCP tool (`bh_run`, `bh_navigate`, `bh_set_mode`, etc.).
+    /// Handles both bare `bh_*` names and the namespaced `mcp__browser-harness__bh_*` form.
+    private static func isBrowserHarnessTool(_ name: String) -> Bool {
+        if name.hasPrefix("bh_") { return true }
+        if name.hasPrefix("mcp__") && name.contains("browser-harness") { return true }
+        return false
+    }
+
+    /// Strip MCP prefix to get the bare tool name (e.g. `mcp__browser-harness__bh_run` → `bh_run`).
+    private static func bareBrowserToolName(_ name: String) -> String {
+        if name.hasPrefix("mcp__"), let last = name.split(separator: "__").last {
+            return String(last)
+        }
+        return name
+    }
+
+    /// Derive a human-readable action label + the relevant URL from a bh_* tool call.
+    private static func describeBrowserAction(toolName: String, input: [String: Any]?) -> (action: String, url: String?, modeOverride: String?) {
+        let bare = bareBrowserToolName(toolName)
+        let input = input ?? [:]
+        switch bare {
+        case "bh_navigate":
+            let url = input["url"] as? String
+            let host = url.flatMap { URL(string: $0)?.host } ?? url
+            return ("Opening \(host ?? "page")", url, nil)
+        case "bh_screenshot":
+            return ("Capturing screenshot", nil, nil)
+        case "bh_status":
+            return ("Checking browser status", nil, nil)
+        case "bh_start":
+            return ("Starting managed browser", nil, nil)
+        case "bh_stop":
+            return ("Stopping managed browser", nil, nil)
+        case "bh_set_mode":
+            let mode = (input["mode"] as? String)?.lowercased()
+            let label = mode == "headless" ? "Switching to headless mode" : "Switching to visible window"
+            return (label, nil, mode)
+        case "bh_seed_cookies":
+            let src = input["source"] as? String ?? "browser"
+            return ("Importing cookies from \(src)", nil, nil)
+        case "bh_seed_localstorage":
+            let src = input["source"] as? String ?? "browser"
+            return ("Importing localStorage from \(src)", nil, nil)
+        case "bh_seed_indexeddb":
+            let src = input["source"] as? String ?? "browser"
+            return ("Importing IndexedDB from \(src)", nil, nil)
+        case "bh_run":
+            // Infer action from the script body so the user sees something
+            // more useful than "running script".
+            let script = (input["script"] as? String) ?? ""
+            let (label, inferredUrl) = inferActionFromScript(script)
+            return (label, inferredUrl, nil)
+        default:
+            return ("Running \(bare)", nil, nil)
+        }
+    }
+
+    /// Cheap heuristic — look for the most-telling helper call in a bh_run script.
+    private static func inferActionFromScript(_ script: String) -> (String, String?) {
+        // Try to pull a URL out first; works for new_tab("...") and goto_url("...").
+        let urlPattern = #"(?:new_tab|goto_url)\(\s*['\"]([^'\"]+)['\"]"#
+        if let regex = try? NSRegularExpression(pattern: urlPattern),
+           let match = regex.firstMatch(in: script, range: NSRange(script.startIndex..., in: script)),
+           let range = Range(match.range(at: 1), in: script) {
+            let url = String(script[range])
+            let host = URL(string: url)?.host ?? url
+            return ("Opening \(host)", url)
+        }
+        if script.contains("type_text(") { return ("Typing into page", nil) }
+        if script.contains("fill_input(") { return ("Filling form field", nil) }
+        if script.contains("click_at_xy(") || script.contains("click(") { return ("Clicking on page", nil) }
+        if script.contains("press_key(") { return ("Pressing key", nil) }
+        if script.contains("capture_screenshot(") { return ("Capturing screenshot", nil) }
+        if script.contains("scroll(") { return ("Scrolling page", nil) }
+        if script.contains("wait_for_element(") { return ("Waiting for element", nil) }
+        if script.contains("wait_for_load(") { return ("Waiting for page load", nil) }
+        if script.contains("page_info(") { return ("Reading page info", nil) }
+        if script.contains("list_tabs(") { return ("Listing browser tabs", nil) }
+        if script.contains("switch_tab(") { return ("Switching tab", nil) }
+        if script.contains("http_get(") { return ("Fetching URL via browser", nil) }
+        if script.contains("cdp(") { return ("Running CDP command", nil) }
+        return ("Running browser script", nil)
+    }
+
+    private func addBrowserActivity(messageId: String, toolName: String, status: ToolCallStatus, toolUseId: String?, input: [String: Any]?) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else {
+            log("ChatProvider: browser_activity_dropped — id=\(messageId) tool=\(toolName)")
+            return
+        }
+
+        let (action, url, modeOverride) = Self.describeBrowserAction(toolName: toolName, input: input)
+        // Update the session-wide mode tracker only when bh_set_mode completes
+        // successfully — we don't know yet on .running, but the model's intent
+        // is clear from the arg.
+        if let modeOverride { currentBrowserMode = modeOverride }
+        let modeLabel = currentBrowserMode
+
+        if status == .running {
+            // Try to update an existing running block for this toolUseId (input
+            // can arrive slightly after the start event).
+            if let toolUseId {
+                for i in stride(from: messages[index].contentBlocks.count - 1, through: 0, by: -1) {
+                    if case .browserActivity(let id, let existingTuid, let name, _, _, _, .running) = messages[index].contentBlocks[i],
+                       (existingTuid == toolUseId || (existingTuid == nil && name == toolName)) {
+                        messages[index].contentBlocks[i] = .browserActivity(
+                            id: id, toolUseId: toolUseId, toolName: name,
+                            action: action, mode: modeLabel, url: url, status: .running
+                        )
+                        return
+                    }
+                }
+            }
+            messages[index].contentBlocks.append(
+                .browserActivity(
+                    id: UUID().uuidString, toolUseId: toolUseId, toolName: toolName,
+                    action: action, mode: modeLabel, url: url, status: .running
+                )
+            )
+        } else {
+            // Mark the matching running card as completed; preserve url/action
+            // unless we just learned more.
+            for i in stride(from: messages[index].contentBlocks.count - 1, through: 0, by: -1) {
+                if case .browserActivity(let id, let existingTuid, let name, let existingAction, _, let existingUrl, .running) = messages[index].contentBlocks[i] {
+                    let matches = (toolUseId != nil && existingTuid == toolUseId) || (toolUseId == nil && name == toolName)
+                    if matches {
+                        messages[index].contentBlocks[i] = .browserActivity(
+                            id: id, toolUseId: toolUseId ?? existingTuid, toolName: name,
+                            action: action.isEmpty ? existingAction : action,
+                            mode: modeLabel,
+                            url: url ?? existingUrl,
+                            status: .completed
+                        )
+                        return
+                    }
+                }
+            }
+        }
+    }
+
     /// Add tool result output to an existing tool call block
     private func addToolResult(messageId: String, toolUseId: String, name: String, output: String) {
         guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
