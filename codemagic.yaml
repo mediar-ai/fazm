@@ -443,7 +443,86 @@ workflows:
               echo "Bundled whatsapp-mcp"
           fi
 
-          # Bundle Google Workspace MCP (Python)
+          # ────────────────────────────────────────────────────────────────────
+          # Python MCP venv bundling (Google Workspace, browser-harness, ai-browser-profile)
+          #
+          # We ship the universal app with TWO venvs per MCP — `.venv-arm64` and
+          # `.venv-x86_64` — using uv's `--python-platform` to install wheels for
+          # each target on a single arm64 CI runner (no Rosetta needed). The
+          # per-arch ZIP step (further down) drops the wrong-arch venv and
+          # renames the surviving one to plain `.venv`, which is what the
+          # acp-bridge expects at runtime.
+          #
+          # Why dual venvs instead of `lipo` merging: many wheels ship single-arch
+          # native `.so` files (numpy, pydantic_core, websockets speedups, _yaml,
+          # rpds, watchfiles, etc.), and lipo-merging every one is fragile.
+          # Two clean venvs is simpler and matches the existing per-arch thin-down.
+          # ────────────────────────────────────────────────────────────────────
+
+          # Install BOTH arch Pythons (uv is already on PATH from the earlier prep step).
+          uv python install cpython-3.12-macos-aarch64-none 2>&1 | tail -1 || true
+          uv python install cpython-3.12-macos-x86_64-none  2>&1 | tail -1 || true
+
+          # Helper: build a Python venv for ($1=bundle, $2=arch) with remaining args
+          # passed verbatim to `uv pip install` (so callers can mix `-r req.txt`,
+          # package specs, paths, and `git+https://…` URLs freely).
+          build_venv_for_arch() {
+            local bundle="$1"; shift
+            local arch="$1";   shift
+            local venv="$bundle/.venv-$arch"
+
+            local platform py_dist
+            case "$arch" in
+              arm64)  platform="aarch64-apple-darwin"; py_dist="cpython-3.12-macos-aarch64-none" ;;
+              x86_64) platform="x86_64-apple-darwin";  py_dist="cpython-3.12-macos-x86_64-none"  ;;
+              *) echo "build_venv_for_arch: unknown arch $arch"; return 1 ;;
+            esac
+
+            # Resolve the uv-managed Python install dir for this arch.
+            local py_bin py_managed_dir
+            py_bin=$(uv python list --only-installed 2>&1 | awk -v d="$py_dist" '$1 == d { print $2; exit }')
+            if [ -z "$py_bin" ] || [ ! -f "$py_bin" ]; then
+              echo "ERROR: $py_dist not installed; skipping $venv"
+              return 1
+            fi
+            py_managed_dir=$(dirname "$(dirname "$py_bin")")  # …/bin/python3.12 → …
+
+            # Create venv pointed at this arch's Python. uv doesn't need to *run* the
+            # target interpreter for venv creation, so this works on arm64 host even
+            # when targeting x86_64.
+            uv venv "$venv" --python "$py_bin" --relocatable --quiet 2>&1
+            # Install wheels for the target platform (uv resolves matching wheels via --python-platform)
+            uv pip install --python "$venv/bin/python3" --link-mode copy \
+              --python-platform "$platform" \
+              "$@" --quiet 2>&1 | tail -3 || true
+
+            find "$venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+            # Replace the symlinked Python binary with a real copy and bundle libpython
+            # + stdlib so the venv is fully portable (works on machines without uv).
+            local real_py
+            real_py=$(readlink -f "$venv/bin/python" 2>/dev/null)
+            if [ -n "$real_py" ] && [ -f "$real_py" ]; then
+              rm -f "$venv/bin/python"
+              cp "$real_py" "$venv/bin/python"
+              rm -f "$venv/bin/python3" "$venv/bin/python3.12"
+              for wrapper_name in python3 python3.12; do
+                printf '#!/bin/sh\nVENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"\nexport PYTHONHOME="$VENV_DIR"\nexec "$VENV_DIR/bin/python" "$@"\n' > "$venv/bin/$wrapper_name"
+                chmod +x "$venv/bin/$wrapper_name"
+              done
+              [ -f "$py_managed_dir/lib/libpython3.12.dylib" ] && \
+                cp "$py_managed_dir/lib/libpython3.12.dylib" "$venv/lib/libpython3.12.dylib"
+              if [ -d "$py_managed_dir/lib/python3.12" ]; then
+                rsync -a --ignore-existing --exclude='__pycache__' "$py_managed_dir/lib/python3.12/" "$venv/lib/python3.12/"
+              fi
+              find "$venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$venv/pyvenv.cfg"
+            fi
+            echo "Built $venv ($arch)"
+          }
+
+
+          # Bundle Google Workspace MCP sources + dual-arch venvs
           WORKSPACE_MCP_BUNDLE="$APP_BUNDLE/Contents/Resources/google-workspace-mcp"
           if [ -d "/tmp/google_workspace_mcp" ]; then
             mkdir -p "$WORKSPACE_MCP_BUNDLE"
@@ -451,100 +530,31 @@ workflows:
               --exclude='*.pyc' --exclude='.ruff_cache' --exclude='tests' \
               --exclude='docs' --exclude='build' --exclude='dist' --exclude='*.egg-info' \
               /tmp/google_workspace_mcp/ "$WORKSPACE_MCP_BUNDLE/"
-            # Extract dependencies to requirements.txt (used by venv build step below)
             python3 -c 'import tomllib; f=open("/tmp/google_workspace_mcp/pyproject.toml","rb"); deps=tomllib.load(f)["project"]["dependencies"]; [print(d) for d in deps]' > "$WORKSPACE_MCP_BUNDLE/requirements.txt" 2>/dev/null || true
             echo "Bundled Google Workspace MCP source"
+            build_venv_for_arch "$WORKSPACE_MCP_BUNDLE" arm64  -r "$WORKSPACE_MCP_BUNDLE/requirements.txt"
+            build_venv_for_arch "$WORKSPACE_MCP_BUNDLE" x86_64 -r "$WORKSPACE_MCP_BUNDLE/requirements.txt"
           else
             echo "WARNING: Google Workspace MCP not cloned — skipping"
           fi
 
-          # Build Google Workspace MCP venv directly into app bundle
-          if [ -f "$WORKSPACE_MCP_BUNDLE/requirements.txt" ]; then
-            echo "Creating Google Workspace MCP venv in app bundle..."
-            # Use uv-managed standalone python (python-build-standalone) for full portability.
-            # The resulting binary uses @executable_path/../lib/libpython3.12.dylib (relative),
-            # so it works on any Mac without needing system Python or Xcode CLT installed.
-            uv python install 3.12 2>&1 | tail -1 || true
-            uv venv "$WORKSPACE_MCP_BUNDLE/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1
-            uv pip install --python "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" --link-mode copy \
-              -r "$WORKSPACE_MCP_BUNDLE/requirements.txt" --quiet 2>&1 | tail -3 || true
-            # Strip __pycache__ to save space (keep .dist-info — needed by importlib.metadata)
-            find "$WORKSPACE_MCP_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-            # Replace absolute Python symlink with a copy + bundle libpython for portability
-            GWMCP_REAL_PYTHON=$(readlink -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python" 2>/dev/null)
-            GWMCP_MANAGED_DIR=$(dirname "$(dirname "$GWMCP_REAL_PYTHON")")
-            if [ -n "$GWMCP_REAL_PYTHON" ] && [ -f "$GWMCP_REAL_PYTHON" ]; then
-              rm -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
-              cp "$GWMCP_REAL_PYTHON" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python"
-              rm -f "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3" "$WORKSPACE_MCP_BUNDLE/.venv/bin/python3.12"
-              # Create wrapper scripts that set PYTHONHOME so the bundled Python
-              # can find its stdlib regardless of where the app is installed.
-              # The real binary is "python"; wrappers resolve the venv path at runtime.
-              for wrapper_name in python3 python3.12; do
-                printf '#!/bin/sh\nVENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"\nexport PYTHONHOME="$VENV_DIR"\nexec "$VENV_DIR/bin/python" "$@"\n' > "$WORKSPACE_MCP_BUNDLE/.venv/bin/$wrapper_name"
-                chmod +x "$WORKSPACE_MCP_BUNDLE/.venv/bin/$wrapper_name"
-              done
-              # Copy libpython so @executable_path/../lib/libpython3.12.dylib resolves
-              if [ -f "$GWMCP_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
-                cp "$GWMCP_MANAGED_DIR/lib/libpython3.12.dylib" "$WORKSPACE_MCP_BUNDLE/.venv/lib/libpython3.12.dylib"
-              fi
-              # Copy stdlib so Python can find encodings, os, etc. on machines without uv
-              if [ -d "$GWMCP_MANAGED_DIR/lib/python3.12" ]; then
-                rsync -a --ignore-existing --exclude='__pycache__' "$GWMCP_MANAGED_DIR/lib/python3.12/" "$WORKSPACE_MCP_BUNDLE/.venv/lib/python3.12/"
-              fi
-              # Final __pycache__ cleanup — catches any .pyc files introduced by rsync or uv
-              find "$WORKSPACE_MCP_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-              # Rewrite pyvenv.cfg so Python finds stdlib relative to venv, not the managed install
-              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$WORKSPACE_MCP_BUNDLE/.venv/pyvenv.cfg"
-            fi
-            echo "Google Workspace MCP venv created in app bundle"
-          else
-            echo "WARNING: Google Workspace MCP requirements.txt not found — skipping venv"
-          fi
 
-
-          # Bundle browser-harness MCP (Python). Mirrors run.sh logic.
-          # The MCP wrapper (server.py) is checked into this repo under acp-bridge/.
+          # Bundle browser-harness MCP (MCP wrapper checked into this repo under acp-bridge/).
           BH_BUNDLE="$APP_BUNDLE/Contents/Resources/browser-harness"
           BH_MCP_SERVER="acp-bridge/browser-harness-server.py"
           if [ -f "$BH_MCP_SERVER" ] && [ -d "/tmp/browser-harness" ]; then
             mkdir -p "$BH_BUNDLE"
             cp -f "$BH_MCP_SERVER" "$BH_BUNDLE/server.py"
-            echo "Creating browser-harness venv in app bundle..."
-            uv python install 3.12 2>&1 | tail -1 || true
-            uv venv "$BH_BUNDLE/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1
-            uv pip install --python "$BH_BUNDLE/.venv/bin/python3" --link-mode copy \
-              "mcp>=1.0.0" \
-              "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" \
-              "/tmp/browser-harness" \
-              --quiet 2>&1 | tail -3 || true
-            find "$BH_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-            BH_REAL_PYTHON=$(readlink -f "$BH_BUNDLE/.venv/bin/python" 2>/dev/null)
-            BH_MANAGED_DIR=$(dirname "$(dirname "$BH_REAL_PYTHON")")
-            if [ -n "$BH_REAL_PYTHON" ] && [ -f "$BH_REAL_PYTHON" ]; then
-              rm -f "$BH_BUNDLE/.venv/bin/python"
-              cp "$BH_REAL_PYTHON" "$BH_BUNDLE/.venv/bin/python"
-              rm -f "$BH_BUNDLE/.venv/bin/python3" "$BH_BUNDLE/.venv/bin/python3.12"
-              for wrapper_name in python3 python3.12; do
-                printf '#!/bin/sh\nVENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"\nexport PYTHONHOME="$VENV_DIR"\nexec "$VENV_DIR/bin/python" "$@"\n' > "$BH_BUNDLE/.venv/bin/$wrapper_name"
-                chmod +x "$BH_BUNDLE/.venv/bin/$wrapper_name"
-              done
-              if [ -f "$BH_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
-                cp "$BH_MANAGED_DIR/lib/libpython3.12.dylib" "$BH_BUNDLE/.venv/lib/libpython3.12.dylib"
-              fi
-              if [ -d "$BH_MANAGED_DIR/lib/python3.12" ]; then
-                rsync -a --ignore-existing --exclude='__pycache__' "$BH_MANAGED_DIR/lib/python3.12/" "$BH_BUNDLE/.venv/lib/python3.12/"
-              fi
-              find "$BH_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$BH_BUNDLE/.venv/pyvenv.cfg"
-            fi
-            echo "browser-harness venv created in app bundle"
+            build_venv_for_arch "$BH_BUNDLE" arm64 \
+              "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" "/tmp/browser-harness"
+            build_venv_for_arch "$BH_BUNDLE" x86_64 \
+              "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" "/tmp/browser-harness"
           else
             echo "WARNING: browser-harness sources missing — skipping (server=$BH_MCP_SERVER, repo=/tmp/browser-harness)"
           fi
 
 
-          # Bundle ai-browser-profile (Python). Tier-1 deps only — skip optional embedding deps.
+          # Bundle ai-browser-profile (Tier-1 deps only — skip optional embedding deps).
           ABP_BUNDLE="$APP_BUNDLE/Contents/Resources/ai-browser-profile"
           if [ -d "/tmp/ai-browser-profile/ai_browser_profile" ]; then
             mkdir -p "$ABP_BUNDLE"
@@ -553,33 +563,10 @@ workflows:
               --exclude='node_modules' --exclude='.ruff_cache' \
               --exclude='*.png' --exclude='*.jpg' --exclude='*.gif' \
               /tmp/ai-browser-profile/ai_browser_profile/ "$ABP_BUNDLE/ai_browser_profile/"
-            echo "Creating ai-browser-profile venv in app bundle..."
-            uv venv "$ABP_BUNDLE/.venv" --python 3.12 --relocatable --python-preference only-managed --quiet 2>&1
-            uv pip install --python "$ABP_BUNDLE/.venv/bin/python3" --link-mode copy \
-              "cryptography" "websocket-client" "numpy" \
-              "git+https://github.com/cclgroupltd/ccl_chromium_reader.git" \
-              --quiet 2>&1 | tail -3 || true
-            find "$ABP_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-            ABP_REAL_PYTHON=$(readlink -f "$ABP_BUNDLE/.venv/bin/python" 2>/dev/null)
-            ABP_MANAGED_DIR=$(dirname "$(dirname "$ABP_REAL_PYTHON")")
-            if [ -n "$ABP_REAL_PYTHON" ] && [ -f "$ABP_REAL_PYTHON" ]; then
-              rm -f "$ABP_BUNDLE/.venv/bin/python"
-              cp "$ABP_REAL_PYTHON" "$ABP_BUNDLE/.venv/bin/python"
-              rm -f "$ABP_BUNDLE/.venv/bin/python3" "$ABP_BUNDLE/.venv/bin/python3.12"
-              for wrapper_name in python3 python3.12; do
-                printf '#!/bin/sh\nVENV_DIR="$(cd "$(dirname "$0")/.." && pwd)"\nexport PYTHONHOME="$VENV_DIR"\nexec "$VENV_DIR/bin/python" "$@"\n' > "$ABP_BUNDLE/.venv/bin/$wrapper_name"
-                chmod +x "$ABP_BUNDLE/.venv/bin/$wrapper_name"
-              done
-              if [ -f "$ABP_MANAGED_DIR/lib/libpython3.12.dylib" ]; then
-                cp "$ABP_MANAGED_DIR/lib/libpython3.12.dylib" "$ABP_BUNDLE/.venv/lib/libpython3.12.dylib"
-              fi
-              if [ -d "$ABP_MANAGED_DIR/lib/python3.12" ]; then
-                rsync -a --ignore-existing --exclude='__pycache__' "$ABP_MANAGED_DIR/lib/python3.12/" "$ABP_BUNDLE/.venv/lib/python3.12/"
-              fi
-              find "$ABP_BUNDLE/.venv" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-              printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$ABP_BUNDLE/.venv/pyvenv.cfg"
-            fi
-            echo "ai-browser-profile venv created in app bundle"
+            build_venv_for_arch "$ABP_BUNDLE" arm64 \
+              "cryptography" "websocket-client" "numpy" "git+https://github.com/cclgroupltd/ccl_chromium_reader.git"
+            build_venv_for_arch "$ABP_BUNDLE" x86_64 \
+              "cryptography" "websocket-client" "numpy" "git+https://github.com/cclgroupltd/ccl_chromium_reader.git"
           else
             echo "WARNING: ai-browser-profile sources missing — skipping (/tmp/ai-browser-profile)"
           fi
