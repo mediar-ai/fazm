@@ -380,6 +380,12 @@ final class ChatMessage: Identifiable, Equatable {
                 return content
             case .toolCall:
                 return nil
+            case .browserActivity(_, _, _, let action, let mode, let url, _):
+                var s = "Browser"
+                if let mode { s += " (\(mode))" }
+                s += ": " + action
+                if let url, !url.isEmpty { s += " — " + url }
+                return s
             }
         }
         return parts.joined(separator: "\n\n")
@@ -1087,6 +1093,10 @@ class ChatProvider: ObservableObject {
         var forceNewTextBlock: Bool = false
     }
     private var streamingBuffers: [String: StreamingBuffer] = [:]
+    /// Last-known mode the model put the browser-harness Chrome into. Defaults to
+    /// "headed" because that's also the bundled MCP server's default. Updated when
+    /// the agent calls `bh_set_mode(...)`. Used to label every browserActivity card.
+    private var currentBrowserMode: String = "headed"
     /// Tick interval for the streaming drip-flush. 25ms = 40 Hz; combined with
     /// the floor in `streamingSliceSize`, this gives a smooth typewriter cadence
     /// while keeping main-thread mutation rate well under what the UI can
@@ -5193,6 +5203,14 @@ class ChatProvider: ObservableObject {
         // Ensure text after the tool call starts a new content block, even if
         // the text_block_boundary message hasn't arrived yet.
         streamingBuffers[messageId, default: StreamingBuffer()].forceNewTextBlock = true
+
+        // Route browser-harness tools to their own richer card so the user can see
+        // mode (headed/headless), current page, and current action at a glance
+        // instead of a generic "Using bh_navigate" chip.
+        if Self.isBrowserHarnessTool(toolName) {
+            addBrowserActivity(messageId: messageId, toolName: toolName, status: status, toolUseId: toolUseId, input: input)
+            return
+        }
 
         guard let index = messages.firstIndex(where: { $0.id == messageId }) else {
             // Silent-drop: tool activity arrived for a message that's no longer
