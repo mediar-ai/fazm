@@ -1920,12 +1920,37 @@ class ChatProvider: ObservableObject {
             pendingMessages.removeAll { ($0.sessionKey ?? "floating") == "floating" }
             floatingChatSessionId = UUID().uuidString
 
+            // Live-transfer the "sending" lock for the in-flight query, if any.
+            //
+            // Why this matters: popOutToWindow() calls window.closeAIConversation()
+            // right after transferSession, and closeAIConversation() calls cancelChat()
+            // which calls `provider.isSending(sessionKey: "floating")` -> stopAgent.
+            // If the lock is still under the old key, stopAgent fires an interrupt that
+            // kills the in-flight query we WANT to continue in the popout. The user
+            // sees the tool-call checkmark followed by an eternal spinner because the
+            // result (with `interrupted=true`) lands on detached-X but the in-flight
+            // `submitQuery` Task is polling "floating" and never resumes.
+            //
+            // Moving the key here makes isSending(sessionKey: fromKey) == false, so
+            // cancelChat() correctly skips the interrupt. The bridge-side counterpart
+            // (re-keying activeQueries) ensures any subsequent stopAgent calls also
+            // target the new key.
+            let hadInFlight = sendingSessionKeys.contains(fromKey)
+            if hadInFlight {
+                sendingSessionKeys.remove(fromKey)
+                sendingSessionKeys.insert(toKey)
+                isSending = !sendingSessionKeys.isEmpty
+                log("ChatProvider: Transferred in-flight sending lock from '\(fromKey)' to '\(toKey)' — interrupt suppressed")
+            } else {
+                log("ChatProvider: No in-flight query at transferSession (sendingSessionKeys=\(sendingSessionKeys.sorted()))")
+            }
+
             // Re-key the bridge's in-memory session from "floating" to the detached key
             // so the detached window's first query finds it instantly (no resume needed).
             // Then reset "floating" so the next floating bar query starts fresh.
             let bridge = acpBridge
             Task {
-                await bridge.transferSession(fromKey: "floating", toKey: toKey)
+                await bridge.transferSession(fromKey: "floating", toKey: toKey, hadInFlight: hadInFlight)
                 await bridge.resetSession(key: "floating")
             }
         }
