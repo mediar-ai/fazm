@@ -62,6 +62,11 @@ struct ConnectPersonalAccountSheet: View {
         }
         .frame(width: 440, height: 460)
         .background(FazmColors.backgroundPrimary)
+        .onAppear {
+            // Refresh detection in case the user installed claude or codex CLI
+            // mid-session (the startup probe wouldn't have seen them).
+            chatProvider.checkClaudeConnectionStatus(autoSwitchToPersonal: false)
+        }
     }
 
     // MARK: - Claude (primary)
