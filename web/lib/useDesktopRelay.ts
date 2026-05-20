@@ -12,6 +12,11 @@ export interface ChatMessage {
   toolActivities?: { name: string; status: "running" | "completed" }[];
 }
 
+export interface Suggestions {
+  question: string;
+  options: string[];
+}
+
 interface RelayHook {
   isConnected: boolean;
   isDesktopOnline: boolean;
@@ -19,6 +24,8 @@ interface RelayHook {
   sendMessage: (text: string) => void;
   stopGeneration: () => void;
   isSending: boolean;
+  suggestions: Suggestions | null;
+  clearSuggestions: () => void;
 }
 
 const BACKOFF_INITIAL_MS = 3000;
@@ -29,6 +36,7 @@ export function useDesktopRelay(token: string | null): RelayHook {
   const [isDesktopOnline, setIsDesktopOnline] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const currentAiMessageId = useRef<string | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -67,10 +75,22 @@ export function useDesktopRelay(token: string | null): RelayHook {
         const aiId = crypto.randomUUID();
         currentAiMessageId.current = aiId;
         setIsSending(true);
+        // New turn — clear any stale suggestions from the previous response.
+        setSuggestions(null);
         setMessages((prev) => [
           ...prev,
           { id: aiId, text: "", sender: "ai", isStreaming: true },
         ]);
+        break;
+      }
+
+      case "suggestions": {
+        const question = (msg.question as string) || "";
+        const options = (msg.options as string[]) || [];
+        if (options.length > 0) {
+          setSuggestions({ question, options });
+          trackEvent("web_suggestions_received", { option_count: options.length });
+        }
         break;
       }
 
@@ -286,6 +306,8 @@ export function useDesktopRelay(token: string | null): RelayHook {
         sender: "user",
       };
       setMessages((prev) => [...prev, userMsg]);
+      // User sent a reply — suggestion pills are now stale.
+      setSuggestions(null);
       trackEvent("web_message_sent", { text_length: text.length });
 
       wsRef.current.send(
@@ -294,6 +316,10 @@ export function useDesktopRelay(token: string | null): RelayHook {
     },
     []
   );
+
+  const clearSuggestions = useCallback(() => {
+    setSuggestions(null);
+  }, []);
 
   const stopGeneration = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -313,5 +339,14 @@ export function useDesktopRelay(token: string | null): RelayHook {
     setIsSending(false);
   }, []);
 
-  return { isConnected, isDesktopOnline, messages, sendMessage, stopGeneration, isSending };
+  return {
+    isConnected,
+    isDesktopOnline,
+    messages,
+    sendMessage,
+    stopGeneration,
+    isSending,
+    suggestions,
+    clearSuggestions,
+  };
 }
