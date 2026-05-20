@@ -53,7 +53,7 @@ enum ChatQueryLifecycle {
 
         if provider.isClaudeAuthRequired {
             state.showConnectClaudeButton = true
-            state.streaming.currentAIMessage = ChatMessage(text: "Please connect your Claude account to continue.", sender: .ai)
+            state.streaming.currentAIMessage = ChatMessage(text: "Please connect your Claude Code or ChatGPT account to continue.", sender: .ai)
         } else if provider.showCreditExhaustedAlert {
             provider.showCreditExhaustedAlert = false
             if provider.isClaudeConnected {
@@ -62,7 +62,7 @@ enum ChatQueryLifecycle {
                 state.streaming.currentAIMessage = ChatMessage(text: "Switched to your Claude account. You can keep chatting.", sender: .ai)
             } else {
                 state.showConnectClaudeButton = true
-                state.streaming.currentAIMessage = ChatMessage(text: "You've used all your built-in Claude usage. Connect your Claude account to keep chatting.", sender: .ai)
+                state.streaming.currentAIMessage = ChatMessage(text: "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting.", sender: .ai)
             }
         } else if let errorText = provider.errorMessage {
             let isRateLimit = errorText.contains("usage limit") || errorText.contains("rate limit")
