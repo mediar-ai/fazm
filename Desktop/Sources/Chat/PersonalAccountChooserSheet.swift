@@ -92,14 +92,14 @@ struct PersonalAccountChooserSheet: View {
                     Image(systemName: "checkmark.circle.fill")
                         .scaledFont(size: 11)
                         .foregroundColor(.green)
-                    Text("Detected from Claude Code CLI")
+                    Text("Detected from Claude Code CLI — one click to use it")
                         .scaledFont(size: 11)
                         .foregroundColor(.green)
                 }
             }
 
             Button(action: onPickClaude) {
-                Text("Connect Claude Account")
+                Text(isClaudeConnected ? "Use Existing Claude Session" : "Connect Claude Account")
                     .scaledFont(size: 13, weight: .semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
@@ -136,23 +136,22 @@ struct PersonalAccountChooserSheet: View {
                     Image(systemName: "checkmark.circle.fill")
                         .scaledFont(size: 11)
                         .foregroundColor(.green)
-                    Text("Detected from ~/.codex/auth.json")
+                    Text("Detected from ~/.codex/auth.json — one click to use it")
                         .scaledFont(size: 11)
                         .foregroundColor(.green)
                 }
             }
 
             Button(action: onPickCodex) {
-                Text(detected ? "Already Connected" : "Connect ChatGPT Account")
+                Text(detected ? "Use ChatGPT" : "Connect ChatGPT Account")
                     .scaledFont(size: 13, weight: .semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(detected ? FazmColors.backgroundTertiary : Color(red: 0.063, green: 0.639, blue: 0.498))
-                    .foregroundColor(detected ? FazmColors.textSecondary : .white)
+                    .background(Color(red: 0.063, green: 0.639, blue: 0.498))
+                    .foregroundColor(.white)
                     .cornerRadius(8)
             }
             .buttonStyle(.plain)
-            .disabled(detected)
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 10).fill(FazmColors.backgroundSecondary))
@@ -238,13 +237,41 @@ private struct ChooserWindowContent: View {
             codexAuthMode: codexBackend.authMode,
             onPickClaude: {
                 onDismiss()
-                ClaudeAuthWindowController.shared.show(chatProvider: chatProvider)
+                if chatProvider.isClaudeConnected {
+                    // Creds already in keychain — just flip to personal; the
+                    // bridge adopts them on the next session/new. No OAuth.
+                    Task { await chatProvider.switchBridgeMode(to: "personal") }
+                } else {
+                    // No creds — run the existing Claude OAuth flow as-is.
+                    ClaudeAuthWindowController.shared.show(chatProvider: chatProvider)
+                }
             },
             onPickCodex: {
                 onDismiss()
-                chatProvider.startCodexLogin()
-                // CodexAuthWindowController is opened automatically by the
-                // bridge's codex_login_url callback wired in ChatProvider.
+                let detected = codexBackend.authMode == "chatgpt"
+                                || codexBackend.authMode == "api_key"
+                if detected {
+                    // Already authed — switch active model to a GPT one so
+                    // the next query routes through Codex instead of the
+                    // capped built-in Claude path. Prefer the user's last
+                    // picker selection or the first eligible GPT model.
+                    let target = codexBackend.currentModelId
+                        ?? codexBackend.modelsForPicker.first?.modelId
+                        ?? "gpt-5.5/high"
+                    chatProvider.selectModel(target)
+                } else {
+                    // Not yet authed — seed pendingPickerModelId so the
+                    // existing post-OAuth handler auto-promotes the model
+                    // once the user signs in. CodexAuthWindowController is
+                    // opened by the bridge's codex_login_url callback.
+                    if codexBackend.pendingPickerModelId == nil {
+                        codexBackend.pendingPickerModelId =
+                            codexBackend.currentModelId
+                            ?? codexBackend.modelsForPicker.first?.modelId
+                            ?? "gpt-5.5/high"
+                    }
+                    chatProvider.startCodexLogin()
+                }
             },
             onCancel: onDismiss
         )
