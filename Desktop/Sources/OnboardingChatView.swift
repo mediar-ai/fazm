@@ -1252,6 +1252,8 @@ struct OnboardingChatBubble: View {
                 return true
             case .systemEvent:
                 return true
+            case .browserActivity:
+                return true
             }
         }
     }
