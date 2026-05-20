@@ -487,17 +487,31 @@ workflows:
             # v2.9.27 (no venvs shipped) and again in v2.9.28 (build correctly failed
             # the strict-validation check below).
             #
-            # uv maintains an unversioned symlink in its install root pointing at the
-            # actual patch-version install dir, e.g.
-            #   $UV_PY_DIR/cpython-3.12-macos-x86_64-none -> cpython-3.12.9-macos-x86_64-none
-            # so we look it up directly on the filesystem. Matches uv's own resolution
-            # order: UV_PYTHON_INSTALL_DIR > XDG_DATA_HOME > $HOME/.local/share.
+            # The v2.9.29 fix assumed uv leaves an unversioned symlink
+            # ($UV_PY_DIR/cpython-3.12-macos-x86_64-none) pointing at the real
+            # patch-version dir. It does not: the install root only contains the full
+            # patch-version directory (e.g. cpython-3.12.10-macos-x86_64-none) with no
+            # shorthand alias. So we glob for the patch-version dir directly.
+            # Resolution order matches uv's: UV_PYTHON_INSTALL_DIR > XDG_DATA_HOME > $HOME/.local/share.
             local py_bin py_managed_dir uv_py_root
             uv_py_root="${UV_PYTHON_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/python}"
             py_managed_dir="$uv_py_root/$py_dist"
             py_bin="$py_managed_dir/bin/python3.12"
             if [ ! -x "$py_bin" ]; then
-              # Fallback: try `uv python find` (works for host arch when symlink missing)
+              # Glob fallback: uv installs the binary under the full patch version
+              # (e.g. cpython-3.12.10-macos-x86_64-none), no unversioned symlink alongside.
+              local arch_suffix cand
+              arch_suffix="${py_dist#cpython-3.12-}"   # "macos-aarch64-none" / "macos-x86_64-none"
+              for cand in "$uv_py_root"/cpython-3.12.*-"$arch_suffix"; do
+                if [ -x "$cand/bin/python3.12" ]; then
+                  py_managed_dir="$cand"
+                  py_bin="$cand/bin/python3.12"
+                  break
+                fi
+              done
+            fi
+            if [ ! -x "$py_bin" ]; then
+              # Final fallback: `uv python find` (works for host arch only)
               local found
               found=$(uv python find "$py_dist" 2>/dev/null)
               if [ -n "$found" ] && [ -x "$found" ]; then
@@ -505,7 +519,8 @@ workflows:
                 py_managed_dir=$(dirname "$(dirname "$py_bin")")
               else
                 echo "ERROR: cannot locate uv-managed Python for $py_dist"
-                echo "  Looked for: $py_managed_dir/bin/python3.12"
+                echo "  Looked for: $uv_py_root/$py_dist/bin/python3.12"
+                echo "  Globbed:    $uv_py_root/cpython-3.12.*-${py_dist#cpython-3.12-}"
                 echo "  uv python install dir: $uv_py_root"
                 echo "  Directory contents:"
                 ls -la "$uv_py_root" 2>&1 | sed 's/^/    /'
