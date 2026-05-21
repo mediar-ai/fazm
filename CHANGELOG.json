@@ -1,5 +1,8 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed Settings &gt; Import sessions failing with \"ai-browser-profile not bundled\" on universal builds (Sparkle/.dmg)",
+    "Made error messages in Settings &gt; Browser Automation cards selectable so they can be copied for support"
+  ],
   "releases": [
     {
       "version": "2.9.32",
