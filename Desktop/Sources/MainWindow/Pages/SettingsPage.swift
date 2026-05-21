@@ -145,6 +145,12 @@ struct SettingsContentView: View {
     // bundled browser-harness MCP, optionally seeded via ai-browser-profile).
     @AppStorage("browserMode") private var browserMode: String = "extension"
 
+    // Assrt QA testing MCP (beta) — sibling MCP that adds assrt_test / assrt_plan /
+    // assrt_diagnose tools plus assrt_seed_* cookie/IDB seeders. Additive to whichever
+    // browser mode is active; off by default while in beta. Picked up at ACP bridge
+    // launch time, so flipping it fires com.fazm.control restartBridge below.
+    @AppStorage("assrtEnabled") private var assrtEnabled: Bool = false
+
     // Managed browser: import-sessions UI state
     @State private var managedImportSource: String = "arc:Default"
     // Empty by default = import every origin the source browser has data for.
@@ -1531,6 +1537,62 @@ struct SettingsContentView: View {
                             .scaledFont(size: 11)
                             .foregroundColor(FazmColors.textTertiary)
                             .italic()
+                    }
+                }
+            }
+
+            // Assrt QA testing card (beta) — additive to whichever browser mode is active.
+            // Bundles @assrt-ai/assrt as a sibling MCP exposing structured QA scenarios
+            // plus the same cookie/IDB seeders as browser-harness. Restarts the bridge
+            // on toggle so FAZM_ASSRT_ENABLED takes effect on the next query.
+            settingsCard(settingId: "aichat.assrt") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "checkmark.seal")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textTertiary)
+                        Text("Assrt QA Testing")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Text("BETA")
+                            .scaledFont(size: 9, weight: .bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange)
+                            .cornerRadius(4)
+                        Spacer()
+                        Toggle("", isOn: $assrtEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .onChange(of: assrtEnabled) { _, newValue in
+                                AnalyticsManager.shared.settingToggled(setting: "assrt_enabled", enabled: newValue)
+                                // FAZM_ASSRT_ENABLED is read at ACP bridge spawn time,
+                                // so flipping the toggle requires a bridge restart to
+                                // pick up the new env var.
+                                DistributedNotificationCenter.default().postNotificationName(
+                                    NSNotification.Name("com.fazm.control"),
+                                    object: nil,
+                                    userInfo: ["command": "restartBridge"],
+                                    deliverImmediately: true
+                                )
+                            }
+                    }
+
+                    Text("Adds AI-powered QA testing tools (assrt_test, assrt_plan, assrt_diagnose) plus extra cookie/localStorage/IndexedDB importers. Works alongside whichever browser mode is selected above.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+
+                    if assrtEnabled {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 6, height: 6)
+                            Text("Bundled MCP active. Restart any open chat to use it.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textTertiary)
+                        }
                     }
                 }
             }
