@@ -494,6 +494,56 @@ else
 fi
 
 
+# Bundle @assrt-ai/assrt MCP server (Node). Provides AI-powered QA testing tools
+# (assrt_test / assrt_plan / assrt_diagnose) plus cookie/localStorage/IndexedDB
+# seeding (assrt_seed_*). Sibling to browser-harness; both can be enabled.
+# Gated at runtime by FAZM_ASSRT_ENABLED (Settings > Browser Automation > Assrt).
+# Published: https://www.npmjs.com/package/@assrt-ai/assrt
+ASSRT_PKG_VERSION="0.4.8"
+ASSRT_BUNDLE="$APP_BUNDLE/Contents/Resources/assrt"
+ASSRT_NPM_BIN=""
+for candidate in "$(command -v npm 2>/dev/null)" /opt/homebrew/bin/npm /usr/local/bin/npm; do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        ASSRT_NPM_BIN="$candidate"
+        break
+    fi
+done
+if [ -n "$ASSRT_NPM_BIN" ]; then
+    substep "Bundling @assrt-ai/assrt@${ASSRT_PKG_VERSION} via $ASSRT_NPM_BIN"
+    mkdir -p "$ASSRT_BUNDLE"
+    # npm install needs a package.json sentinel; minimal one is fine.
+    if [ ! -f "$ASSRT_BUNDLE/package.json" ]; then
+        printf '{"name":"fazm-assrt-bundle","version":"0.0.0","private":true,"dependencies":{}}\n' > "$ASSRT_BUNDLE/package.json"
+    fi
+    # Resolve currently bundled version (if any) to avoid re-installing on every run.
+    ASSRT_HAVE_VERSION=""
+    if [ -f "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/package.json" ]; then
+        ASSRT_HAVE_VERSION=$(grep -m1 '"version"' "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/package.json" | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+    fi
+    if [ "$ASSRT_HAVE_VERSION" = "$ASSRT_PKG_VERSION" ]; then
+        substep "Bundled assrt-mcp already at v${ASSRT_PKG_VERSION} (skipping reinstall)"
+    else
+        # --ignore-scripts: skips the package's postinstall (which would try to
+        # write to ~/.assrt at build time on CI). --omit=optional: drops
+        # freestyle-sandboxes deps we don't use locally. --no-audit --no-fund:
+        # quiet output.
+        (cd "$ASSRT_BUNDLE" && "$ASSRT_NPM_BIN" install --silent --no-audit --no-fund \
+            --omit=optional --ignore-scripts \
+            "@assrt-ai/assrt@${ASSRT_PKG_VERSION}" 2>&1 | tail -3) || true
+        if [ -f "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/mcp/server.mjs" ]; then
+            substep "Bundled @assrt-ai/assrt@${ASSRT_PKG_VERSION}"
+        else
+            substep "Warning: failed to install @assrt-ai/assrt — assrt MCP will not be available"
+        fi
+    fi
+    # Drop a tombstone with the expected entry point so acp-bridge can fail loud
+    # if the install layout drifts in a future npm version.
+    printf '%s\n' "node_modules/@assrt-ai/assrt/mcp/server.mjs" > "$ASSRT_BUNDLE/.entry"
+else
+    substep "Warning: npm not found on PATH — skipping @assrt-ai/assrt bundling"
+fi
+
+
 substep "Copying .env.app"
 if [ -f ".env.app.dev" ]; then
     cp -f .env.app.dev "$APP_BUNDLE/Contents/Resources/.env"
