@@ -335,11 +335,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Start the always-on screen observer recorder for Gemini analysis (local-only, no feature flag)
         SessionRecordingManager.shared.startScreenObserver()
 
-        // Test trigger: show session recording permission prompt
-        // xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testSessionRecordingPermission"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testSessionRecordingPermission"),
-            object: nil, queue: .main
+        // Test trigger: show session recording permission prompt.
+        // Legacy: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testSessionRecordingPermission"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testSessionRecordingPermission` with `com.fazm.desktop-dev.testSessionRecordingPermission` (dev) or `com.fazm.app.testSessionRecordingPermission` (prod).
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testSessionRecordingPermission"
         ) { _ in
             SessionRecordingPermissionWindowController.shared.showForTesting()
         }
