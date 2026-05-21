@@ -1,5 +1,8 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed selectable chat text going blank or crashing in detached pop-out windows",
+    "Fixed markdown content rendering blank in detached pop-out windows"
+  ],
   "releases": [
     {
       "version": "2.9.33",
