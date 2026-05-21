@@ -420,12 +420,12 @@ workflows:
               echo "FATAL: $EXT_FACTORY not found — Playwright MCP layout changed?"
               exit 1
             fi
-            if ! grep -q "_fazmOverlayScript" "$EXT_FACTORY"; then
-              echo "FATAL: coreBundle.js is NOT patched with _fazmOverlayScript — overlay injection will silently no-op."
+            if ! grep -q "_fazmPingHook" "$EXT_FACTORY"; then
+              echo "FATAL: coreBundle.js is NOT patched with _fazmPingHook (v2 patch) — overlay injection / auto-hide will silently no-op."
               echo "Run: cd acp-bridge && node scripts/patch-playwright-overlay.cjs"
               exit 1
             fi
-            echo "Verified playwright-core/lib/coreBundle.js is patched with overlay injection"
+            echo "Verified playwright-core/lib/coreBundle.js is patched with overlay injection + ping hook (v2)"
           else
             echo "ERROR: acp-bridge/dist not found"
             exit 1
