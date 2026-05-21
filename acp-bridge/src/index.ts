@@ -4876,10 +4876,12 @@ process.on("SIGHUP", () => {
     if (activeQueries.size === 0) {
       clearInterval(poll);
       logErr(`[CONTROL] SIGHUP: drain complete in ${Math.round((Date.now() - startedAt) / 1000)}s — exiting for restart`);
+      killAcpProcessTree();
       process.exit(0);
     } else if (Date.now() - startedAt > MAX_WAIT_MS) {
       clearInterval(poll);
       logErr(`[CONTROL] SIGHUP: drain timeout after ${Math.round(MAX_WAIT_MS / 1000)}s — forcing exit with activeQueries=${activeQueries.size}`);
+      killAcpProcessTree();
       process.exit(0);
     }
   }, 500);
@@ -5402,8 +5404,11 @@ async function main(): Promise<void> {
   });
 }
 
-// Ensure child processes are cleaned up when this process is killed
-for (const sig of ["SIGTERM", "SIGHUP", "SIGINT"] as const) {
+// Ensure child processes are cleaned up when this process is killed. NOTE:
+// SIGHUP is deliberately NOT in this list — it has its own handler above
+// that does a graceful drain-and-restart for `com.fazm.control restartBridge`.
+// Adding SIGHUP back here would race that handler and defeat the drain.
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
   process.on(sig, () => {
     logErr(`Received ${sig}, cleaning up`);
     killAcpProcessTree();
