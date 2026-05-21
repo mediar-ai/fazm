@@ -639,7 +639,7 @@ workflows:
           # dev bundler (run.sh) uses a local tgz override for unpublished work;
           # prod always pulls from the registry. To ship Phase 3 to prod, publish
           # the new assrt-mcp version first, then bump ASSRT_PKG_VERSION here.
-          ASSRT_PKG_VERSION="0.4.8"
+          ASSRT_PKG_VERSION="0.5.0"
           ASSRT_BUNDLE="$APP_BUNDLE/Contents/Resources/assrt"
           if command -v npm &>/dev/null; then
             mkdir -p "$ASSRT_BUNDLE"
