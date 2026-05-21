@@ -5472,13 +5472,18 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    // MARK: - Browser Activity (browser-harness MCP)
+    // MARK: - Browser Activity (browser-harness + assrt MCPs)
 
-    /// True for any browser-harness MCP tool (`bh_run`, `bh_navigate`, `bh_set_mode`, etc.).
-    /// Handles both bare `bh_*` names and the namespaced `mcp__browser-harness__bh_*` form.
+    /// True for any browser-harness MCP tool (`bh_run`, `bh_navigate`, `bh_set_mode`, etc.)
+    /// or any assrt MCP tool (`assrt_test`, `assrt_seed_*`, etc.). Both servers drive
+    /// the same managed Chrome at port 9655, so they share the browser-activity card.
+    /// Handles both bare names (`bh_*`, `assrt_*`) and the namespaced
+    /// `mcp__browser-harness__bh_*` / `mcp__assrt__assrt_*` forms.
     private static func isBrowserHarnessTool(_ name: String) -> Bool {
         if name.hasPrefix("bh_") { return true }
+        if name.hasPrefix("assrt_") { return true }
         if name.hasPrefix("mcp__") && name.contains("browser-harness") { return true }
+        if name.hasPrefix("mcp__assrt__") { return true }
         return false
     }
 
@@ -5520,6 +5525,27 @@ class ChatProvider: ObservableObject {
         case "bh_seed_indexeddb":
             let src = input["source"] as? String ?? "browser"
             return ("Importing IndexedDB from \(src)", nil, nil)
+        // Assrt MCP — assrt_seed_* mirror the bh_seed_* shape; assrt_test/plan/diagnose
+        // are QA-flow tools that take a URL.
+        case "assrt_seed_cookies":
+            let src = input["source"] as? String ?? "browser"
+            return ("Importing cookies from \(src)", nil, nil)
+        case "assrt_seed_localstorage":
+            let src = input["source"] as? String ?? "browser"
+            return ("Importing localStorage from \(src)", nil, nil)
+        case "assrt_seed_indexeddb":
+            let src = input["source"] as? String ?? "browser"
+            return ("Importing IndexedDB from \(src)", nil, nil)
+        case "assrt_test":
+            let url = input["url"] as? String
+            return ("Running QA test scenario", url, nil)
+        case "assrt_plan":
+            let url = input["url"] as? String
+            return ("Generating QA test plan", url, nil)
+        case "assrt_diagnose":
+            return ("Diagnosing test failure", nil, nil)
+        case "assrt_analyze_video":
+            return ("Analyzing test recording", nil, nil)
         case "bh_run":
             // Infer action from the script body so the user sees something
             // more useful than "running script".
