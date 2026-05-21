@@ -794,7 +794,20 @@ struct ChatPromptBuilder {
     /// the .app bundle; without them, `__pycache__/*.pyc` files written next to imported sources
     /// invalidate the bundle's code-signing seal (codesign verify=FAILED, breaks Sparkle).
     private static var bundledPythonPath: String {
-        let py = Bundle.main.bundlePath + "/Contents/Resources/google-workspace-mcp/.venv/bin/python3"
+        // Universal .dmg artifacts ship `.venv-arm64` + `.venv-x86_64` side by
+        // side; only per-arch ZIP slices get the thinned `.venv/`. See
+        // resolveMcpVenvPython in SettingsPage.swift for the parallel logic.
+        let mcpDir = Bundle.main.bundlePath + "/Contents/Resources/google-workspace-mcp"
+        let fm = FileManager.default
+        var py = "\(mcpDir)/.venv/bin/python3"
+        if !fm.fileExists(atPath: py) {
+            #if arch(arm64)
+            let archSuffix = "arm64"
+            #else
+            let archSuffix = "x86_64"
+            #endif
+            py = "\(mcpDir)/.venv-\(archSuffix)/bin/python3"
+        }
         return "PYTHONDONTWRITEBYTECODE=1 PYTHONPYCACHEPREFIX=\"$HOME/.fazm/pycache\" \(py)"
     }
 
