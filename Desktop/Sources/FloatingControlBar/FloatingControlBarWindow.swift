@@ -1555,11 +1555,10 @@ class FloatingControlBarManager {
         }
 
         // Debug: show the Claude auth sheet popup
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testClaudeAuth"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testClaudeAuth"),
-            object: nil,
-            queue: .main
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testClaudeAuth"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testClaudeAuth` with `com.fazm.desktop-dev.testClaudeAuth` or `com.fazm.app.testClaudeAuth`.
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testClaudeAuth"
         ) { [weak self] notification in
             Task { @MainActor in
                 guard let provider = self?.chatProvider else { return }
@@ -1577,11 +1576,10 @@ class FloatingControlBarManager {
         }
 
         // Debug: show the paywall popup
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testPaywall"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testPaywall"),
-            object: nil,
-            queue: .main
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testPaywall"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testPaywall` with `com.fazm.desktop-dev.testPaywall` or `com.fazm.app.testPaywall`.
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testPaywall"
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let provider = self?.chatProvider else { return }
@@ -1592,7 +1590,9 @@ class FloatingControlBarManager {
         }
 
         // Programmatic control: unified command interface for all floating bar controls.
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.control"), object: nil, userInfo: ["command": "getState"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.control"), object: nil, userInfo: ["command": "getState"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped (target one build only, recommended when both dev and prod are running):
+        //   `com.fazm.desktop-dev.control` for dev, `com.fazm.app.control` for prod.
         //
         // Supported commands:
         //   getState                            — writes JSON state to /tmp/fazm-control-state.json
@@ -1618,10 +1618,8 @@ class FloatingControlBarManager {
         //   getBridgeState                      — signal SIGUSR2 to the bridge so it dumps sessions / activeQueries / PID to /tmp/fazm-bridge-state.json
         //   restartBridge                       — terminate the running bridge subprocess and let ChatProvider relaunch it (clears leaked claude subprocesses)
         //   testBrowserSetupRetry:<key>:<ob>:<text> — simulate the post-browser-extension-setup retry (key empty = main/nil, "floating", or "detached-<uuid>"; ob=0|1 = was onboarding; text = pending message)
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.control"),
-            object: nil,
-            queue: .main
+        DistributedNotificationCenter.default().addFazmObserver(
+            "control"
         ) { [weak self] notification in
             Task { @MainActor in
                 guard let self else { return }
