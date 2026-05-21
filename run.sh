@@ -516,10 +516,17 @@ fi
 
 # Bundle @assrt-ai/assrt MCP server (Node). Provides AI-powered QA testing tools
 # (assrt_test / assrt_plan / assrt_diagnose) plus cookie/localStorage/IndexedDB
-# seeding (assrt_seed_*). Sibling to browser-harness; both can be enabled.
+# seeding (assrt_seed_*) and freeform browser control (assrt_open_session /
+# assrt_navigate / assrt_screenshot / assrt_close_session, Phase 3).
+# Sibling to browser-harness; both can be enabled.
 # Gated at runtime by FAZM_ASSRT_ENABLED (Settings > Browser Automation > Assrt).
 # Published: https://www.npmjs.com/package/@assrt-ai/assrt
-ASSRT_PKG_VERSION="0.4.8"
+#
+# Source override: when ASSRT_PKG_LOCAL_TGZ points at a local tgz (produced by
+# `npm pack` from ~/assrt-mcp/npm/), install from that file instead of the
+# registry. Used during cross-repo development so Phase 3 work can be
+# exercised in Fazm before publishing a new @assrt-ai/assrt version.
+ASSRT_PKG_VERSION="0.5.0-fazm-dev"
 ASSRT_BUNDLE="$APP_BUNDLE/Contents/Resources/assrt"
 ASSRT_NPM_BIN=""
 for candidate in "$(command -v npm 2>/dev/null)" /opt/homebrew/bin/npm /usr/local/bin/npm; do
@@ -528,19 +535,32 @@ for candidate in "$(command -v npm 2>/dev/null)" /opt/homebrew/bin/npm /usr/loca
         break
     fi
 done
+# Auto-detect local development tgz when env var not set and the standard
+# path exists. Keeps a fresh ./run.sh working without manual env setup.
+if [ -z "${ASSRT_PKG_LOCAL_TGZ:-}" ] && [ -f "$HOME/assrt-mcp/npm/assrt-ai-assrt-${ASSRT_PKG_VERSION}.tgz" ]; then
+    ASSRT_PKG_LOCAL_TGZ="$HOME/assrt-mcp/npm/assrt-ai-assrt-${ASSRT_PKG_VERSION}.tgz"
+fi
 if [ -n "$ASSRT_NPM_BIN" ]; then
-    substep "Bundling @assrt-ai/assrt@${ASSRT_PKG_VERSION} via $ASSRT_NPM_BIN"
+    if [ -n "${ASSRT_PKG_LOCAL_TGZ:-}" ] && [ -f "$ASSRT_PKG_LOCAL_TGZ" ]; then
+        ASSRT_INSTALL_SPEC="$ASSRT_PKG_LOCAL_TGZ"
+        substep "Bundling @assrt-ai/assrt@${ASSRT_PKG_VERSION} via $ASSRT_NPM_BIN (local tgz: $ASSRT_PKG_LOCAL_TGZ)"
+    else
+        ASSRT_INSTALL_SPEC="@assrt-ai/assrt@${ASSRT_PKG_VERSION}"
+        substep "Bundling @assrt-ai/assrt@${ASSRT_PKG_VERSION} via $ASSRT_NPM_BIN (registry)"
+    fi
     mkdir -p "$ASSRT_BUNDLE"
     # npm install needs a package.json sentinel; minimal one is fine.
     if [ ! -f "$ASSRT_BUNDLE/package.json" ]; then
         printf '{"name":"fazm-assrt-bundle","version":"0.0.0","private":true,"dependencies":{}}\n' > "$ASSRT_BUNDLE/package.json"
     fi
-    # Resolve currently bundled version (if any) to avoid re-installing on every run.
+    # Resolve currently bundled version. Skip reinstall when version matches
+    # AND we're not on a local tgz (local tgz contents can change without a
+    # version bump during cross-repo dev).
     ASSRT_HAVE_VERSION=""
     if [ -f "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/package.json" ]; then
         ASSRT_HAVE_VERSION=$(grep -m1 '"version"' "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/package.json" | sed 's/.*"version": *"\([^"]*\)".*/\1/')
     fi
-    if [ "$ASSRT_HAVE_VERSION" = "$ASSRT_PKG_VERSION" ]; then
+    if [ "$ASSRT_HAVE_VERSION" = "$ASSRT_PKG_VERSION" ] && [ -z "${ASSRT_PKG_LOCAL_TGZ:-}" ]; then
         substep "Bundled assrt-mcp already at v${ASSRT_PKG_VERSION} (skipping reinstall)"
     else
         # --ignore-scripts: skips the package's postinstall (which would try to
@@ -549,7 +569,7 @@ if [ -n "$ASSRT_NPM_BIN" ]; then
         # quiet output.
         (cd "$ASSRT_BUNDLE" && "$ASSRT_NPM_BIN" install --silent --no-audit --no-fund \
             --omit=optional --ignore-scripts \
-            "@assrt-ai/assrt@${ASSRT_PKG_VERSION}" 2>&1 | tail -3) || true
+            "$ASSRT_INSTALL_SPEC" 2>&1 | tail -3) || true
         if [ -f "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/mcp/server.mjs" ]; then
             substep "Bundled @assrt-ai/assrt@${ASSRT_PKG_VERSION}"
         else
