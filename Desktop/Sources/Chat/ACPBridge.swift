@@ -554,6 +554,11 @@ actor ACPBridge {
       env["FAZM_VOICE_RESPONSE"] = "true"
     }
 
+    // Bundle scope: "app" or "desktop-dev". The bridge uses this to namespace
+    // its `/tmp/fazm-bridge-state.json` dump so dev's and prod's bridges
+    // don't overwrite each other's state when both apps are running.
+    env["FAZM_BUNDLE_SCOPE"] = AppPaths.bundleScope
+
     // Browser automation mode: "extension" (Playwright + Chrome extension, default)
     // or "managed" (Fazm-bundled browser-harness driving its own Chrome). The two
     // are mutually exclusive in acp-bridge to avoid dual-Chrome state confusion.
