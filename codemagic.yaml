@@ -610,8 +610,60 @@ workflows:
               "cryptography" "websocket-client" "numpy" "git+https://github.com/cclgroupltd/ccl_chromium_reader.git"
             build_venv_for_arch "$ABP_BUNDLE" x86_64 \
               "cryptography" "websocket-client" "numpy" "git+https://github.com/cclgroupltd/ccl_chromium_reader.git"
+            # Install the ai_browser_profile package itself into BOTH per-arch
+            # site-packages so `python -m ai_browser_profile.<sub>` resolves from
+            # any cwd. Matches the parallel step in run.sh (the dev bundler).
+            # Required for assrt's seed.ts, which spawns the module without
+            # setting cwd; without this, the prod app silently fails to seed
+            # cookies / localStorage / IndexedDB via the Assrt path.
+            for ARCH_NAME in arm64 x86_64; do
+              ABP_SITE="$ABP_BUNDLE/.venv-$ARCH_NAME/lib/python3.12/site-packages"
+              if [ -d "$ABP_SITE" ] && [ -d "$ABP_BUNDLE/ai_browser_profile" ]; then
+                rsync -a --delete "$ABP_BUNDLE/ai_browser_profile/" "$ABP_SITE/ai_browser_profile/"
+              fi
+            done
           else
             echo "WARNING: ai-browser-profile sources missing, skipping (/tmp/ai-browser-profile)"
+          fi
+
+
+          # Bundle @assrt-ai/assrt MCP server (Node, npm). Provides AI-powered QA
+          # testing (assrt_test/plan/diagnose), cookie/localStorage/IndexedDB
+          # seeding (assrt_seed_*), and Phase 3 freeform browser control
+          # (assrt_open_session/navigate/screenshot/close_session) when shipped.
+          # Sibling MCP, additive to browser-harness; gated at runtime by the
+          # FAZM_ASSRT_ENABLED env (Settings > Browser Automation > Assrt toggle).
+          #
+          # Version pinning: bump ASSRT_PKG_VERSION when a new @assrt-ai/assrt is
+          # published to npm (https://www.npmjs.com/package/@assrt-ai/assrt). The
+          # dev bundler (run.sh) uses a local tgz override for unpublished work;
+          # prod always pulls from the registry. To ship Phase 3 to prod, publish
+          # the new assrt-mcp version first, then bump ASSRT_PKG_VERSION here.
+          ASSRT_PKG_VERSION="0.4.8"
+          ASSRT_BUNDLE="$APP_BUNDLE/Contents/Resources/assrt"
+          if command -v npm &>/dev/null; then
+            mkdir -p "$ASSRT_BUNDLE"
+            # npm install needs a package.json sentinel; minimal one is fine.
+            if [ ! -f "$ASSRT_BUNDLE/package.json" ]; then
+              printf '{"name":"fazm-assrt-bundle","version":"0.0.0","private":true,"dependencies":{}}\n' > "$ASSRT_BUNDLE/package.json"
+            fi
+            # --ignore-scripts: skip the package's postinstall (which would try
+            # to write to ~/.assrt on CI). --omit=optional: drop
+            # freestyle-sandboxes dep we don't use locally. --no-audit/--no-fund:
+            # quiet output. Pure JS — no native bins to sign, no per-arch split.
+            (cd "$ASSRT_BUNDLE" && npm install --silent --no-audit --no-fund \
+              --omit=optional --ignore-scripts \
+              "@assrt-ai/assrt@${ASSRT_PKG_VERSION}" 2>&1 | tail -3) || true
+            if [ -f "$ASSRT_BUNDLE/node_modules/@assrt-ai/assrt/mcp/server.mjs" ]; then
+              echo "Bundled @assrt-ai/assrt@${ASSRT_PKG_VERSION}"
+              # Tombstone for the bridge: fail loud if the install layout
+              # drifts in a future npm version.
+              printf '%s\n' "node_modules/@assrt-ai/assrt/mcp/server.mjs" > "$ASSRT_BUNDLE/.entry"
+            else
+              echo "WARNING: failed to install @assrt-ai/assrt@${ASSRT_PKG_VERSION} — assrt MCP will not be available in this build"
+            fi
+          else
+            echo "WARNING: npm not on PATH at assrt bundling step — assrt MCP will not be available"
           fi
 
 
@@ -670,6 +722,19 @@ workflows:
             exit 1
           fi
           echo "All Python MCP venvs verified."
+
+          # Soft-check assrt bundling. Unlike Python MCPs (where missing = crash
+          # on launch), assrt is gated by the FAZM_ASSRT_ENABLED runtime toggle;
+          # users with the toggle off won't notice. We log a warning rather than
+          # fail the build so a transient npm registry hiccup doesn't block a
+          # release of unrelated fixes.
+          ASSRT_ENTRY="$APP_BUNDLE/Contents/Resources/assrt/node_modules/@assrt-ai/assrt/mcp/server.mjs"
+          if [ -f "$ASSRT_ENTRY" ]; then
+            ASSRT_VER=$(grep -m1 '"version"' "$APP_BUNDLE/Contents/Resources/assrt/node_modules/@assrt-ai/assrt/package.json" 2>/dev/null | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+            echo "  OK:   assrt MCP @ ${ASSRT_VER:-unknown}"
+          else
+            echo "  WARN: assrt MCP not bundled — Settings > Browser Automation > Assrt will be unavailable in this build."
+          fi
           echo
 
 
@@ -805,6 +870,19 @@ workflows:
               fi
             done
           done
+
+          # Sign assrt MCP native bins. @assrt-ai/assrt is pure JS today, but
+          # any transitive npm dep can ship a Node native addon (.node binary)
+          # or .dylib. If any are present, they need to be signed for
+          # notarization to pass. Loop is a no-op when there's no native code.
+          if [ -d "$APP_BUNDLE/Contents/Resources/assrt/node_modules" ]; then
+            find "$APP_BUNDLE/Contents/Resources/assrt/node_modules" -type f \
+              \( -name "*.node" -o -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
+              file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
+                codesign --force --options runtime --timestamp $CS_PAGESIZE \
+                  --sign "$SIGN_IDENTITY" "$native_bin"
+            done
+          fi
 
 
           # Sign Sparkle components — innermost first
@@ -1060,6 +1138,18 @@ workflows:
                 fi
               fi
             done
+
+            # Re-sign assrt MCP native bins after the per-arch thinning step.
+            # Same shape as the universal signing loop — assrt is pure JS today,
+            # but any transitive native addon must be signed for notarization.
+            if [ -d "$A/Contents/Resources/assrt/node_modules" ]; then
+              find "$A/Contents/Resources/assrt/node_modules" -type f \
+                \( -name "*.node" -o -name "*.so" -o -name "*.dylib" \) 2>/dev/null | while read native_bin; do
+                file "$native_bin" 2>/dev/null | grep -q "Mach-O" && \
+                  codesign --force --options runtime --timestamp $CS_PAGESIZE \
+                    --sign "$SIGN_IDENTITY" "$native_bin"
+              done
+            fi
 
             # Sign Sparkle components (innermost first)
             SPARKLE_FW="$A/Contents/Frameworks/Sparkle.framework"
