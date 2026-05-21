@@ -137,6 +137,14 @@ const aiBrowserProfileDir = join(resourcesDir, "ai-browser-profile");
 const aiBrowserProfileVenvDir = resolveMcpVenvDir(aiBrowserProfileDir);
 const aiBrowserProfilePython = join(aiBrowserProfileVenvDir, "bin", "python3");
 
+// @assrt-ai/assrt — Node MCP server providing AI-powered QA testing tools
+// (assrt_test / assrt_plan / assrt_diagnose) plus seeding (assrt_seed_*).
+// Bundled by run.sh into Resources/assrt/node_modules/@assrt-ai/assrt/.
+// Gated by FAZM_ASSRT_ENABLED — when off, the server is not registered.
+const assrtMcpDir = join(resourcesDir, "assrt");
+const assrtMcpEntry = join(assrtMcpDir, "node_modules", "@assrt-ai", "assrt", "mcp", "server.mjs");
+const assrtEnabled = process.env.FAZM_ASSRT_ENABLED === "true";
+
 // Which browser automation flow is active. "extension" = the existing
 // Playwright + Chrome-extension flow (default). "managed" = browser-harness
 // driving its own Chrome instance, optionally seeded with cookies via
