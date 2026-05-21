@@ -191,9 +191,11 @@ struct RoutinesSection: View {
     private func openComposeWithPrompt() {
         // Open the floating bar prefilled with a routine-creation prompt so
         // the user just has to describe their routine in plain English.
+        // Post to the bundle-scoped name so a click in this build's settings
+        // only opens this build's floating bar (dev + prod side-by-side safe).
         let preset = "Create a routine that "
         DistributedNotificationCenter.default().postNotificationName(
-            .init("com.fazm.testQuery"),
+            .init("com.fazm.\(AppPaths.bundleScope).testQuery"),
             object: nil,
             userInfo: ["text": preset, "openBar": "true"],
             deliverImmediately: true
