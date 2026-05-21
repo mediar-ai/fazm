@@ -236,7 +236,7 @@ struct OnboardingChatView: View {
                             OnboardingErrorBanner(
                                 error: error,
                                 onConnectClaude: {
-                                    PersonalAccountChooserWindowController.shared.show(chatProvider: chatProvider)
+                                    PersonalAccountChooserWindowController.shared.show(chatProvider: chatProvider, source: "onboarding")
                                 },
                                 onRetry: {
                                     onboardingError = nil
