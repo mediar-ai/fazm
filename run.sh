@@ -481,6 +481,16 @@ WRAPPER
             fi
             printf 'home = bin\nimplementation = CPython\nversion_info = 3.12\ninclude-system-site-packages = false\n' > "$ABP_BUNDLE/.venv/pyvenv.cfg"
         fi
+        # Install the ai_browser_profile package itself into site-packages so
+        # `python -m ai_browser_profile.cookies` resolves from any cwd. Assrt's
+        # seed.ts spawns the module without setting cwd, so this is required for
+        # assrt_seed_* tools to work; the existing browser-harness import flow
+        # already happens to set cwd, but standardizing here keeps both paths
+        # working.
+        ABP_SITE_PACKAGES="$ABP_BUNDLE/.venv/lib/python3.12/site-packages"
+        if [ -d "$ABP_SITE_PACKAGES" ] && [ -d "$ABP_BUNDLE/ai_browser_profile" ]; then
+            rsync -a --delete "$ABP_BUNDLE/ai_browser_profile/" "$ABP_SITE_PACKAGES/ai_browser_profile/"
+        fi
         substep "Bundled ai-browser-profile with venv"
     else
         substep "Warning: uv not found — ai-browser-profile will not work without dependencies"
