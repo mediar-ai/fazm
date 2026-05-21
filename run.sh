@@ -267,6 +267,16 @@ cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 fazm-dev" "$APP_BUNDLE/Contents/Info.plist"
 
+# Stamp a dev marker so analytics/About don't show the placeholder "1.0" from Info.plist.
+# Keep the marketing string stable so OnboardingChatPersistence's version-change check
+# doesn't blow away mid-onboarding state on every rebuild. Use a build-time timestamp
+# for CFBundleVersion so Sparkle never considers a prod release "newer" than dev —
+# without this, clicking "Install Update" inside Fazm Dev would clobber the dev bundle
+# with the prod payload.
+DEV_BUILD_NUMBER=$(date +%s)
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.0.0-dev" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $DEV_BUILD_NUMBER" "$APP_BUNDLE/Contents/Info.plist"
+
 auth_debug "AFTER plist edits: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
 # Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
