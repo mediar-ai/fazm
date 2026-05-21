@@ -3702,6 +3702,41 @@ struct SettingsContentView: View {
         .buttonStyle(.plain)
     }
 
+    // Mirror of BrowserExtensionSetup.stepBadge — kept private to SettingsPage so we
+    // don't reach into another view's helpers across module boundaries.
+    private func assrtStepBadge(_ number: String, done: Bool) -> some View {
+        Group {
+            if done {
+                Image(systemName: "checkmark")
+                    .scaledFont(size: 11, weight: .bold)
+                    .foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.green))
+            } else {
+                Text(number)
+                    .scaledFont(size: 11, weight: .bold)
+                    .foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(FazmColors.textTertiary.opacity(0.5)))
+            }
+        }
+    }
+
+    // Poll every 2s for Chrome.app to appear after the user clicks Download Chrome.
+    // Stops once detected or when the view disappears.
+    private func startAssrtChromeCheckTimer() {
+        guard assrtChromeCheckTimer == nil else { return }
+        assrtChromeCheckTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            if FileManager.default.fileExists(atPath: "/Applications/Google Chrome.app") {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    assrtChromeInstalled = true
+                }
+                assrtChromeCheckTimer?.invalidate()
+                assrtChromeCheckTimer = nil
+            }
+        }
+    }
+
     private func settingsCard<Content: View>(settingId: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         let card = content()
             .padding(20)
