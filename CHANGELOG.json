@@ -3,7 +3,8 @@
     "Fixed Settings &gt; Import sessions failing with \"ai-browser-profile not bundled\" on universal builds (Sparkle/.dmg)",
     "Made error messages in Settings &gt; Browser Automation cards selectable so they can be copied for support",
     "Fixed empty chat canvas during AI response streaming",
-    "Added Assrt QA testing MCP \u2014 opt-in browser automation tools (Settings &gt; Browser Automation &gt; Assrt). Imports your real browser session into both managed browsers when enabled"
+    "Added Assrt QA testing MCP \u2014 opt-in browser automation tools (Settings &gt; Browser Automation &gt; Assrt). Imports your real browser session into both managed browsers when enabled",
+    "Fixed a crash when popping out or closing chat windows during streaming responses"
   ],
   "releases": [
     {
