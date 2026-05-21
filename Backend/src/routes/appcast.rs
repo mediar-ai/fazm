@@ -1,6 +1,6 @@
 use axum::{
-    extract::Extension,
-    http::{header, StatusCode},
+    extract::{Extension, Query},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
@@ -13,6 +13,11 @@ use crate::firestore;
 
 const GITHUB_REPO: &str = "mediar-ai/fazm";
 const GITHUB_API: &str = "https://api.github.com";
+
+/// Public R2 mirror that serves the same Fazm.zip enclosures. Used for CN clients,
+/// where github.com download throughput is unusable behind the GFW. Layout matches
+/// the Codemagic R2 upload step: `<base>/releases/v<version>/Fazm.zip`.
+const R2_PUBLIC_BASE: &str = "https://pub-35fbe74936d04a5eb285ae26952b0cf4.r2.dev";
 
 /// Minimum supported app version. Clients below this see the latest update marked as
 /// a Sparkle critical update (non-skippable prompt, aggressive re-prompt on relaunch).
@@ -35,6 +40,12 @@ const STALE_TTL: Duration = Duration::from_secs(24 * 3600);
 /// (~30s) but we want to fail fast and serve stale rather than hold a connection open.
 const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(8);
 
+#[derive(Clone, Default)]
+struct AppcastCache {
+    github: Option<CacheEntry>,
+    r2: Option<CacheEntry>,
+}
+
 #[derive(Clone)]
 struct CacheEntry {
     xml: String,
@@ -44,7 +55,53 @@ struct CacheEntry {
 /// In-memory cache of the rendered appcast XML. Per-process, so each Cloud Run
 /// instance maintains its own copy. With min=2..max=3 instances and a 5 min TTL,
 /// upstream fetches drop to ~24/hr, well under GitHub's 60 req/hr unauthenticated cap.
-static APPCAST_CACHE: LazyLock<Mutex<Option<CacheEntry>>> = LazyLock::new(|| Mutex::new(None));
+/// We cache each mirror variant separately because the rendered XML differs.
+static APPCAST_CACHE: LazyLock<Mutex<AppcastCache>> = LazyLock::new(|| Mutex::new(AppcastCache::default()));
+
+/// Which mirror's URLs to embed in enclosure tags.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum Mirror {
+    Github,
+    R2,
+}
+
+#[derive(Deserialize, Default)]
+pub struct AppcastQuery {
+    /// `region=cn` swaps enclosure URLs to the R2 mirror. The desktop app sets this
+    /// when Locale.current.region.identifier == "CN"; absent → GitHub (existing behavior).
+    region: Option<String>,
+}
+
+fn pick_mirror(query: &AppcastQuery, headers: &HeaderMap) -> Mirror {
+    // 1) Explicit ?region=cn from the desktop app wins (set by locale detection)
+    if matches!(query.region.as_deref(), Some("cn") | Some("CN")) {
+        return Mirror::R2;
+    }
+    // 2) Cloudflare-injected geo header if we're ever fronted by CF (no-op otherwise)
+    let country = headers
+        .get("cf-ipcountry")
+        .or_else(|| headers.get("x-country"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_ascii_uppercase());
+    if country.as_deref() == Some("CN") {
+        return Mirror::R2;
+    }
+    Mirror::Github
+}
+
+/// Rewrite a GitHub release asset URL to its R2 mirror equivalent. R2 layout (set by
+/// the Codemagic step): `<base>/releases/v<version>/<filename>`. Returns the input
+/// unchanged if the URL doesn't match the expected GitHub release shape.
+fn rewrite_to_r2(github_url: &str, version: &str, build_number: &str) -> String {
+    if let Some(idx) = github_url.rfind('/') {
+        let filename = &github_url[idx + 1..];
+        // Tags include the build number (e.g. v2.9.31+2009031-macos), but R2 paths only
+        // carry the semver version. Build number stays inside the file content.
+        let _ = build_number; // explicitly unused — kept for future per-build prefixes
+        return format!("{}/releases/v{}/{}", R2_PUBLIC_BASE, version, filename);
+    }
+    github_url.to_string()
+}
 
 /// Shared HTTP client. Constructing a `reqwest::Client` per request triggered a fresh
 /// TLS handshake every time (~500-800ms TTFB). One client = pooled connections =
@@ -84,11 +141,21 @@ struct GitHubAsset {
 ///   2. Stale cache + upstream succeeds: refresh and return new XML.
 ///   3. Stale cache + upstream fails: return stale XML (up to 24h old) with a warning log.
 ///   4. No cache + upstream fails: return 500 (Sparkle will retry on next 24h check).
-pub async fn appcast(Extension(config): Extension<Arc<Config>>) -> Response {
-    // Fast path: serve fresh cache without touching upstream.
+pub async fn appcast(
+    Extension(config): Extension<Arc<Config>>,
+    Query(query): Query<AppcastQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let mirror = pick_mirror(&query, &headers);
+
+    // Fast path: serve fresh per-mirror cache without touching upstream.
     {
         let guard = APPCAST_CACHE.lock().await;
-        if let Some(entry) = guard.as_ref() {
+        let entry = match mirror {
+            Mirror::Github => guard.github.as_ref(),
+            Mirror::R2 => guard.r2.as_ref(),
+        };
+        if let Some(entry) = entry {
             if entry.fetched_at.elapsed() < CACHE_TTL {
                 return ok_response(entry.xml.clone());
             }
@@ -96,35 +163,41 @@ pub async fn appcast(Extension(config): Extension<Arc<Config>>) -> Response {
     }
 
     // Slow path: regenerate from GitHub + Firestore.
-    match generate_appcast(&config).await {
+    match generate_appcast(&config, mirror).await {
         Ok(xml) => {
             let mut guard = APPCAST_CACHE.lock().await;
-            *guard = Some(CacheEntry {
+            let entry = CacheEntry {
                 xml: xml.clone(),
                 fetched_at: Instant::now(),
-            });
+            };
+            match mirror {
+                Mirror::Github => guard.github = Some(entry),
+                Mirror::R2 => guard.r2 = Some(entry),
+            }
             ok_response(xml)
         }
         Err(e) => {
-            // Fall back to stale cache if we have anything reasonably recent.
-            let stale = APPCAST_CACHE.lock().await.as_ref().and_then(|entry| {
-                if entry.fetched_at.elapsed() < STALE_TTL {
-                    Some(entry.xml.clone())
-                } else {
-                    None
-                }
-            });
+            // Fall back to per-mirror stale cache if we have anything reasonably recent.
+            let stale = {
+                let guard = APPCAST_CACHE.lock().await;
+                let entry = match mirror {
+                    Mirror::Github => guard.github.as_ref(),
+                    Mirror::R2 => guard.r2.as_ref(),
+                };
+                entry.and_then(|e| {
+                    if e.fetched_at.elapsed() < STALE_TTL {
+                        Some(e.xml.clone())
+                    } else {
+                        None
+                    }
+                })
+            };
 
             if let Some(xml) = stale {
                 tracing::warn!(
-                    "Appcast upstream failed ({}), serving stale cache (age {:?})",
+                    "Appcast upstream failed ({}) for mirror {:?}, serving stale cache",
                     e,
-                    APPCAST_CACHE
-                        .lock()
-                        .await
-                        .as_ref()
-                        .map(|c| c.fetched_at.elapsed())
-                        .unwrap_or_default()
+                    mirror
                 );
                 return ok_response(xml);
             }
@@ -154,6 +227,7 @@ fn ok_response(xml: String) -> Response {
 
 async fn generate_appcast(
     config: &Arc<Config>,
+    mirror: Mirror,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     // Fetch Firestore channel map (tag → channel) in parallel with GitHub releases
     let (firestore_result, github_result) = tokio::join!(
@@ -272,7 +346,11 @@ async fn generate_appcast(
             _ => vec![String::new()], // stable = no tag
         };
 
-        let mut enclosure_attrs = format!(r#"url="{}""#, zip_asset.browser_download_url);
+        let enclosure_url = match mirror {
+            Mirror::Github => zip_asset.browser_download_url.clone(),
+            Mirror::R2 => rewrite_to_r2(&zip_asset.browser_download_url, version, &build_number),
+        };
+        let mut enclosure_attrs = format!(r#"url="{}""#, enclosure_url);
         if !ed_sig.is_empty() {
             enclosure_attrs.push_str(&format!(
                 "\n                 sparkle:edSignature=\"{}\"",
