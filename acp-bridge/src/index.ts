@@ -157,9 +157,11 @@ const browserMode = (process.env.FAZM_BROWSER_MODE || "extension").toLowerCase()
 // When a tool exceeds its timeout, a synthetic "completed" (with error) is
 // emitted so the model can recover and the Swift bridge unblocks.
 
-const TOOL_TIMEOUT_INTERNAL_MS = 10_000;   // ToolSearch and similar: 10s
-const TOOL_TIMEOUT_MCP_MS = 120_000;       // MCP tools: 2 min
-const TOOL_TIMEOUT_DEFAULT_MS = 300_000;   // Everything else: 5 min
+const TOOL_TIMEOUT_INTERNAL_MS = 30_000;   // ToolSearch and similar: 30s
+const TOOL_TIMEOUT_MCP_MS = 300_000;       // MCP tools: 5 min
+const TOOL_TIMEOUT_TASK_MS = 1_800_000;    // Task subagent: 30 min (sub-agents can legitimately run long)
+const TOOL_TIMEOUT_BASH_MS = 900_000;      // Bash: 15 min (deploys, builds)
+const TOOL_TIMEOUT_DEFAULT_MS = 600_000;   // Everything else: 10 min
 
 // User-configurable override (seconds) via Settings > Advanced > Tool Timeout
 const toolTimeoutOverrideSec = process.env.FAZM_TOOL_TIMEOUT_SECONDS
@@ -180,6 +182,13 @@ function getToolTimeoutMs(title: string, isInternal: boolean): number {
   // User override applies to all tools (converted from seconds)
   if (toolTimeoutOverrideSec > 0) return toolTimeoutOverrideSec * 1000;
   if (isInternal) return TOOL_TIMEOUT_INTERNAL_MS;
+  // Task subagent can legitimately run for many minutes — give it 30 min ceiling
+  // before we synthesize a failure. Without this special case the default 10 min
+  // kills long-running sub-agents (the May 12 2026 regression that caused us to
+  // disable the watchdog entirely).
+  if (title === "Task") return TOOL_TIMEOUT_TASK_MS;
+  // Bash for deploys, builds, npm install on cold caches
+  if (title === "Bash") return TOOL_TIMEOUT_BASH_MS;
   if (title.startsWith("mcp__")) return TOOL_TIMEOUT_MCP_MS;
   return TOOL_TIMEOUT_DEFAULT_MS;
 }
@@ -191,12 +200,11 @@ function startToolTimer(
   sessionId: string | undefined,
   pendingTools: string[],
 ): void {
-  // Auto-cancel disabled (May 12 2026): killed too many legitimate long-running
-  // Task subagents and Bash deploys, leaving a silent empty AI bubble. Re-enable
-  // by removing this early return.
-  void toolCallId; void title; void isInternal; void sessionId; void pendingTools;
-  return;
-  // eslint-disable-next-line no-unreachable
+  // Re-enabled May 20 2026: was disabled May 12 because 5min default killed
+  // legitimate long-running Task subagents + Bash deploys. Fix: per-tool ceilings
+  // — Task=30min, Bash=15min, MCP=5min, default=10min, internal=30s. This still
+  // catches the truly-stuck tool calls (e.g. browser_tabs hanging forever) that
+  // were leaving pop-out windows frozen for hours.
   clearToolTimer(toolCallId);
 
   const timeoutMs = getToolTimeoutMs(title, isInternal);
@@ -1369,6 +1377,30 @@ function startAcpProcess(): void {
               `[ROUTE-DROP-RESCUED] available_commands_update sessionId=${notifSessionId} count=${commands.length}`,
             );
             sendWithSession(notifSessionId, { type: "available_commands_update", commands });
+            return;
+          }
+
+          // config_option_update, current_mode_update, session_info_update,
+          // and usage_update are also session-agnostic — they arrive late from
+          // codex-acp after the per-session handler has been deregistered (the
+          // floating-bar/pop-out cleanup races the agent's tail notifications).
+          // Previously these were logged as [ROUTE-DROP] and silently swallowed.
+          // Forward them through so Swift can update model/mode/usage even on
+          // late arrival. Swift ignores unknown event types, so this is safe.
+          if (
+            su === "config_option_update" ||
+            su === "current_mode_update" ||
+            su === "session_info_update" ||
+            su === "usage_update"
+          ) {
+            logErr(
+              `[ROUTE-DROP-RESCUED] ${su} sessionId=${notifSessionId} forwarded as session_meta_update`,
+            );
+            sendWithSession(notifSessionId, {
+              type: "session_meta_update",
+              kind: su,
+              payload: u,
+            });
             return;
           }
 
