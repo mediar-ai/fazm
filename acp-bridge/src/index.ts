@@ -4756,6 +4756,38 @@ function handleSessionUpdate(
         surpassedThreshold,
       });
       logErr(`Rate limit: status=${status}, type=${rateLimitType}, utilization=${utilization}, resets=${resetsAt ? new Date(resetsAt * 1000).toISOString() : "n/a"}`);
+      // Drop a rejection signal file for the claude-account-rotator watcher.
+      // ClaudeMeter polls /api/oauth/usage and gets server-side 429'd from time
+      // to time, blinding the rotator for up to an hour. When that happens the
+      // rotator falls through to staleness-skip while inference quota silently
+      // burns out under it (see 2026-05-20 incident). The ACP bridge sees the
+      // ACTUAL inference rejection in-band; surfacing it as a flag file gives
+      // the rotator a second authoritative signal it can use to emergency-
+      // rotate without waiting for the menu bar to come back online.
+      // Best-effort, never throws into the bridge's hot path.
+      if (status === "rejected") {
+        try {
+          const rotatorDir = join(homedir(), "claude-account-rotator");
+          if (existsSync(rotatorDir)) {
+            const signalPath = join(rotatorDir, "rejection.signal");
+            const payload = {
+              status,
+              rateLimitType,
+              utilization,
+              resetsAt: resetsAt ? new Date(resetsAt * 1000).toISOString() : null,
+              observedAt: new Date().toISOString(),
+              source: "fazm-acp-bridge",
+              pid: process.pid,
+            };
+            writeFileSync(signalPath, JSON.stringify(payload, null, 2) + "\n", { mode: 0o644 });
+          }
+        } catch (e) {
+          // Swallow: signal file is a hint, not a contract. The user can still
+          // rotate manually; we just don't want a filesystem error to crash
+          // the bridge's rate-limit handler.
+          logErr(`rejection.signal write failed (non-fatal): ${(e as Error).message}`);
+        }
+      }
       break;
     }
 
