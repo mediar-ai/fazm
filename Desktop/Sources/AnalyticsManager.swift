@@ -1176,6 +1176,52 @@ class AnalyticsManager {
         PostHogManager.shared.track("claude_disconnected")
     }
 
+    // MARK: - Personal Account Chooser
+
+    /// User saw the "Connect Personal Account" chooser sheet.
+    /// `source` describes where it opened from (e.g. "onboarding",
+    /// "floating_bar", "popout", "debug_trigger").
+    func personalAccountChooserOpened(source: String, claudeDetected: Bool, codexDetected: Bool) {
+        PostHogManager.shared.track("personal_account_chooser_opened", properties: [
+            "source": source,
+            "claude_detected": claudeDetected,
+            "codex_detected": codexDetected,
+        ])
+    }
+
+    /// User picked a provider from the chooser. `alreadyAuthed` distinguishes
+    /// "use existing session/credentials" from "run OAuth flow".
+    func personalAccountChooserPicked(provider: String, alreadyAuthed: Bool) {
+        PostHogManager.shared.track("personal_account_chooser_picked", properties: [
+            "provider": provider,           // "claude" | "codex"
+            "already_authed": alreadyAuthed,
+        ])
+    }
+
+    /// User dismissed the chooser without picking a provider.
+    func personalAccountChooserCancelled() {
+        PostHogManager.shared.track("personal_account_chooser_cancelled")
+    }
+
+    // MARK: - OAuth Outcomes
+
+    /// Claude OAuth flow rejected (e.g. HTTP 403 — no Pro/Max subscription).
+    /// Mirrored to Sentry as a breadcrumb so we can correlate with later errors.
+    func claudeAuthFailed(reason: String, httpStatus: Int?) {
+        PostHogManager.shared.track("claude_oauth_failed", properties: [
+            "reason": reason,
+            "http_status": httpStatus ?? 0,
+        ])
+    }
+
+    /// Codex / ChatGPT OAuth flow failed (cancelled, network error, or
+    /// auth.json write failure).
+    func codexLoginFailed(reason: String) {
+        PostHogManager.shared.track("codex_oauth_failed", properties: [
+            "reason": reason,
+        ])
+    }
+
     // MARK: - Display Info
 
     func trackDisplayInfo() {
