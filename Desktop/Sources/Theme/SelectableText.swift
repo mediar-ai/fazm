@@ -29,6 +29,15 @@ class AutoSizingTextView: NSTextView {
         invalidateIntrinsicContentSize()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // updateNSView applies text even while detached (so content is never lost),
+        // but skips the size invalidation when detached. Re-invalidate on attach so
+        // SwiftUI re-queries our intrinsic size and the text becomes visible.
+        guard window != nil, superview != nil else { return }
+        invalidateIntrinsicContentSize()
+    }
+
     // Don't show NSTextView's default context menu — let SwiftUI's .contextMenu handle it
     override func menu(for event: NSEvent) -> NSMenu? {
         return nil
@@ -79,11 +88,10 @@ struct SelectableText: NSViewRepresentable {
     }
 
     func updateNSView(_ textView: AutoSizingTextView, context: Context) {
-        // Bail when detached: SwiftUI sometimes re-runs updates on representables
-        // whose hosting window is mid-teardown (e.g. popout close during streaming
-        // or context compaction). Invalidating constraints then propagates up to
-        // _postWindowNeedsUpdateConstraints, which throws NSException → SIGABRT.
-        guard textView.window != nil, textView.superview != nil else { return }
+        // Always apply content, even when detached. SwiftUI re-runs updateNSView on a
+        // freshly mounted representable before its window attachment completes (e.g. a
+        // finished AI message re-mounting after streaming); if we bailed here the text
+        // would never be set and the message would render blank.
         let scaledSize = round(fontSize * fontScale)
         if textView.string != text {
             textView.string = text
@@ -97,6 +105,10 @@ struct SelectableText: NSViewRepresentable {
             textView.textContainer?.maximumNumberOfLines = 0
             textView.textContainer?.lineBreakMode = .byWordWrapping
         }
+        // Only invalidate the intrinsic size when attached. On a detached/torn-down
+        // window this propagates to _postWindowNeedsUpdateConstraints and throws
+        // NSException → SIGABRT. viewDidMoveToWindow re-invalidates once attached.
+        guard textView.window != nil, textView.superview != nil else { return }
         if let exc = ObjCExceptionCatcher.catching({ textView.invalidateIntrinsicContentSize() }) {
             log("SelectableText: NSException during invalidateIntrinsicContentSize — \(exc.name.rawValue): \(exc.reason ?? "nil")")
         }
