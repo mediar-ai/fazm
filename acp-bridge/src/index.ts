@@ -4923,11 +4923,18 @@ process.on("SIGUSR2", () => {
       memoryRss: process.memoryUsage().rss,
       memoryHeapUsed: process.memoryUsage().heapUsed,
     };
-    const path = "/tmp/fazm-bridge-state.json";
+    const legacyPath = "/tmp/fazm-bridge-state.json";
+    // Bundle-scoped path so dev's bridge and prod's bridge can both dump state
+    // without overwriting each other. Falls back to "app" if the parent app
+    // didn't set FAZM_BUNDLE_SCOPE (older Swift builds, defensive default).
+    const scope = process.env.FAZM_BUNDLE_SCOPE || "app";
+    const scopedPath = `/tmp/fazm-bridge-state-${scope}.json`;
+    const body = JSON.stringify(payload, null, 2);
     // `writeFileSync` is the ESM-imported top-of-file binding (line ~34).
     // Don't use `require("fs")` — this is an ES module so `require` is undefined.
-    writeFileSync(path, JSON.stringify(payload, null, 2));
-    logErr(`[CONTROL] SIGUSR2: bridge state dumped to ${path} (sessions=${sessions.size}, activeQueries=${activeQueries.size})`);
+    writeFileSync(legacyPath, body);
+    writeFileSync(scopedPath, body);
+    logErr(`[CONTROL] SIGUSR2: bridge state dumped to ${legacyPath} and ${scopedPath} (sessions=${sessions.size}, activeQueries=${activeQueries.size})`);
   } catch (err) {
     logErr(`[CONTROL] SIGUSR2 dump failed: ${(err as Error).message}`);
   }
