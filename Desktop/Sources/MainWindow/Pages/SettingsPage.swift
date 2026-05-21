@@ -2040,7 +2040,17 @@ struct SettingsContentView: View {
         let bhPython = Self.resolveMcpVenvPython(in: bhDir)
         let bhServer = "\(bhDir)/server.py"
 
-        NSLog("[ManagedImport] start source=\(source) domains=\(domains)")
+        // When assrt-mcp is enabled, it owns a standalone Chrome at
+        // ~/.assrt/managed-chrome (see assrt-mcp/src/core/managed-chrome.ts and
+        // ACPBridge.swift). Mirror cookies + LS + IDB into that profile too so
+        // both browsers have the imported sessions. Cheap: just file copies
+        // after the bh-side import finishes, no second CDP roundtrip.
+        let assrtEnabled = UserDefaults.standard.bool(forKey: "assrtEnabled")
+        let extraDestProfiles: [String] = assrtEnabled
+            ? [("~/.assrt/managed-chrome" as NSString).expandingTildeInPath]
+            : []
+
+        NSLog("[ManagedImport] start source=\(source) domains=\(domains) extraDests=\(extraDestProfiles)")
         NSLog("[ManagedImport] abpPython=\(abpPython) bhPython=\(bhPython)")
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -2058,7 +2068,8 @@ struct SettingsContentView: View {
                 cwd: abpDir,
                 source: source,
                 bhPython: bhPython,
-                bhServer: bhServer
+                bhServer: bhServer,
+                extraDestProfiles: extraDestProfiles
             )
             NSLog("[ManagedImport] bulk_import ok=\(result.ok) summary=\(result.summary) error=\(result.error ?? "<none>")")
 
@@ -2147,19 +2158,28 @@ struct SettingsContentView: View {
         cwd: String,
         source: String,
         bhPython: String,
-        bhServer: String
+        bhServer: String,
+        extraDestProfiles: [String] = []
     ) -> (ok: Bool, summary: String, error: String?) {
         guard FileManager.default.fileExists(atPath: python) else {
             return (false, "skipped", "ai-browser-profile not bundled at \(python)")
         }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: python)
-        proc.arguments = [
+        var args: [String] = [
             "-m", "ai_browser_profile.bulk_import",
             "--from", source,
             "--bh-python", bhPython,
             "--bh-server", bhServer,
         ]
+        // Repeatable --extra-dest-profile flag. Each path is an additional
+        // Chrome user-data-dir that bulk_import will mirror cookies/LS/IDB into
+        // after the bh-side import (see _mirror_to_extra_dest in bulk_import.py).
+        for extra in extraDestProfiles {
+            args.append("--extra-dest-profile")
+            args.append(extra)
+        }
+        proc.arguments = args
         proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
         let stdout = Pipe()
         let stderr = Pipe()
