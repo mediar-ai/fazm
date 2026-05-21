@@ -916,6 +916,10 @@ actor ACPBridge {
         sessionAcpToolsRunning[toKey] = tr
         moved.append("toolsRunning=\(tr)")
       }
+      if let ts = sessionLastToolActivityAt.removeValue(forKey: fromKey) {
+        sessionLastToolActivityAt[toKey] = ts
+        moved.append("lastToolActivity")
+      }
       sessionKeyAliases[fromKey] = toKey
       log("ACPBridge: live-transferred in-flight session state '\(fromKey)' -> '\(toKey)' (\(moved.joined(separator: ",")))")
     }
@@ -1079,6 +1083,7 @@ actor ACPBridge {
     if let sk = sessionKey {
       sessionInterrupted[sk] = false
       sessionAcpToolsRunning[sk] = 0
+      sessionLastToolActivityAt[sk] = nil
       // Clear any stale messages for this session from a previous interrupted query
       if let queue = sessionPendingMessages[sk], !queue.isEmpty {
         log("ACPBridge: clearing \(queue.count) stale pending messages for session=\(sk)")
@@ -1111,6 +1116,7 @@ actor ACPBridge {
         sessionMessageGenerations.removeValue(forKey: cleanupKey)
         sessionInterrupted.removeValue(forKey: cleanupKey)
         sessionAcpToolsRunning.removeValue(forKey: cleanupKey)
+        sessionLastToolActivityAt.removeValue(forKey: cleanupKey)
         if aliasedKey != nil {
           sessionKeyAliases.removeValue(forKey: sk)
           loggedAliasHops.remove("\(sk)->\(cleanupKey)")
@@ -2017,7 +2023,11 @@ actor ACPBridge {
             let maxDeferrals = 6
             while box.isPending(generation: gen), deferrals < maxDeferrals {
               let toolsRunning = await self?.getSessionAcpToolsRunning(effectiveKey) ?? 0
-              let recentActivity = await self?.hasRecentToolActivity() ?? false
+              // Per-session recent activity ONLY. Previously this called the
+              // global `hasRecentToolActivity()`, which meant any OTHER busy
+              // session prevented this session from timing out — stuck pop-outs
+              // could sit for ~1 hour because other pop-outs kept firing tools.
+              let recentActivity = await self?.hasRecentToolActivity(sessionKey: effectiveKey) ?? false
               guard toolsRunning > 0 || recentActivity else { break }
               deferrals += 1
               log("ACPBridge: waitForMessage[\(effectiveKey)] timeout deferred (\(deferrals)/\(maxDeferrals)) running=\(toolsRunning) recentActivity=\(recentActivity)")
