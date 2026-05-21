@@ -55,6 +55,47 @@ import { classifyApiFailure } from "./api-failure.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// --- Persistent bridge log ---
+// In prod, bridge stderr goes to the Swift parent via a pipe and is never
+// persisted, so silent stalls (model-side inference hangs, MCP-tool timeouts
+// the watchdog logs about, etc.) are invisible after the fact. Tee everything
+// written to process.stderr into ~/Library/Logs/Fazm/acp-bridge.log so future
+// stalls are diagnosable. Disabled with FAZM_BRIDGE_LOG_DISABLED=1.
+//
+// Rotation: if the existing file is >10 MB at startup, rename it to .1 (and
+// the prior .1 to .2). Keeps two generations on disk, ~30 MB max.
+(function initBridgeFileLog() {
+  if (process.env.FAZM_BRIDGE_LOG_DISABLED === "1") return;
+  try {
+    const logDir = join(homedir(), "Library", "Logs", "Fazm");
+    mkdirSync(logDir, { recursive: true });
+    const logPath = join(logDir, "acp-bridge.log");
+    // Rotate at 10 MB; keep .1 (one generation).
+    try {
+      const st = statSync(logPath);
+      if (st.size > 10 * 1024 * 1024) {
+        const prev = logPath + ".1";
+        try { unlinkSync(prev); } catch (_) { /* may not exist */ }
+        try { renameSync(logPath, prev); } catch (_) { /* swallow */ }
+      }
+    } catch (_) { /* file may not exist yet — fine */ }
+    // Header so each bridge boot is identifiable in the log.
+    const header = `\n=== bridge boot pid=${process.pid} ppid=${process.ppid} t=${new Date().toISOString()} ===\n`;
+    try { appendFileSync(logPath, header); } catch (_) { /* disk full / RO — skip tee */ return; }
+    // Wrap process.stderr.write so every line is also appended to the log.
+    // Keep the original so we still pipe to the Swift parent.
+    const origWrite = process.stderr.write.bind(process.stderr) as typeof process.stderr.write;
+    (process.stderr as any).write = function teeWrite(chunk: any, ...rest: any[]): boolean {
+      try {
+        const buf = typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        // Fire-and-forget; never let a log-file failure break stderr.
+        appendFileSync(logPath, buf);
+      } catch (_) { /* swallow */ }
+      return origWrite(chunk, ...(rest as [any, any?]));
+    };
+  } catch (_) { /* never let log init crash the bridge */ }
+})();
+
 // --- Parent-death watchdog ---
 // If the Fazm Swift app dies (crash, force-kill, run.sh restart without graceful
 // shutdown), our PPID flips to 1 (launchd) and we'd otherwise live forever, dragging
