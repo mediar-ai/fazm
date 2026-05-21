@@ -3,7 +3,8 @@
     "Added optional Assrt QA testing MCP (beta) in Settings > Browser Automation; bundles AI-powered test scenarios and extra cookie/localStorage/IndexedDB importers alongside the existing browser tools",
     "Fixed pop-out chat windows getting stuck on tool calls when another session was busy; tool activity is now tracked per-session so one slow tool can no longer freeze every other open conversation",
     "Re-enabled the tool watchdog with safer per-tool ceilings (Task subagent 30 min, Bash 15 min, MCP 5 min, default 10 min) so genuinely hung tools auto-recover instead of leaving the chat spinning forever",
-    "Stopped silently dropping late notifications from the agent (config, mode, usage updates) that arrived after a chat session closed; previously these could leave the UI showing stale model or mode info"
+    "Stopped silently dropping late notifications from the agent (config, mode, usage updates) that arrived after a chat session closed; previously these could leave the UI showing stale model or mode info",
+    "Removed the 1M-context Sonnet and Opus picker entries; previously selecting Fast/Smart could land users on a model variant their Claude account did not have the entitlement for, surfacing a hard \"Usage credits are required for long context requests\" error with no recovery"
   ],
   "releases": [
     {
