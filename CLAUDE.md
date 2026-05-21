@@ -91,35 +91,64 @@ See `scripts/SESSION-RECORDING.md` for full guide — toggle per-user recording,
 - **App log file**: `/private/tmp/fazm-dev.log` (dev builds) or `/private/tmp/fazm.log` (production)
 
 ### Debug Triggers (running app)
+
+**Targeting one build (dev OR prod) when both are running**
+
+Every debug notification is registered under TWO names:
+
+| Form | Notification name | Who responds |
+|------|-------------------|--------------|
+| **Legacy (broadcast)** | `com.fazm.<suffix>` (e.g. `com.fazm.testQuery`) | Every running Fazm build (dev + prod) |
+| **Bundle-scoped** | `com.fazm.<bundleID-suffix>.<suffix>` (e.g. `com.fazm.desktop-dev.testQuery`, `com.fazm.app.testQuery`) | That specific build only |
+
+When dev (`Fazm Dev.app`, bundle ID `com.fazm.desktop-dev`) and prod (`Fazm.app`, bundle ID `com.fazm.app`) are both running, the legacy name wakes BOTH. Use the bundle-scoped form to target one build.
+
 Replay the post-onboarding tutorial:
 ```bash
+# Both builds (legacy):
 xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.replayTutorial"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+
+# Dev only:
+xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.desktop-dev.replayTutorial"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
 ```
 
-Send a text query to the floating bar (no voice/UI needed):
+Send a text query to the floating bar (no voice/UI needed). Use the dev-scoped name if both builds are running:
 ```bash
+# Dev only (recommended while developing):
+xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.desktop-dev.testQuery"), object: nil, userInfo: ["text": "your query here"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+
+# Both builds (legacy):
 xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testQuery"), object: nil, userInfo: ["text": "your query here"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
 ```
 
 Run the full tutorial programmatically (skips overlay, auto-sends all 3 steps). See `test-tutorial` skill for details:
 ```bash
-xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testTutorial"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+# Dev only:
+xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.desktop-dev.testTutorial"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
 ```
+
+The other scoped notification names follow the same `com.fazm.<bundleID-suffix>.<event>` shape: `testAnalysisOverlay`, `testAnalyzeNow`, `testClaudeAuth`, `testPaywall`, `testSessionRecordingPermission`, `testUpdateAvailable`, `founderChat`, `routinesChanged`, `control`.
 
 ### Programmatic Control (com.fazm.control)
 
-Full programmatic control of the floating bar, replacing the need for macOS accessibility/MCP automation. Send a `com.fazm.control` distributed notification with `["command": "<cmd>"]` in userInfo.
+Full programmatic control of the floating bar, replacing the need for macOS accessibility/MCP automation. Send a `com.fazm.control` distributed notification (or `com.fazm.desktop-dev.control` / `com.fazm.app.control` to target one build) with `["command": "<cmd>"]` in userInfo.
 
-**Get state** (writes JSON to `/tmp/fazm-control-state.json`):
+**Get state** (writes JSON to `/tmp/fazm-control-state.json` AND a bundle-scoped copy at `/tmp/fazm-control-state-<scope>.json`):
 ```bash
-xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.control"), object: nil, userInfo: ["command": "getState"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-cat /tmp/fazm-control-state.json
+# Dev only:
+xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.desktop-dev.control"), object: nil, userInfo: ["command": "getState"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+cat /tmp/fazm-control-state-desktop-dev.json
+
+# Prod only:
+xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.app.control"), object: nil, userInfo: ["command": "getState"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+cat /tmp/fazm-control-state-app.json
 ```
+When both builds are running, ALWAYS read the bundle-scoped output file (`-desktop-dev.json` or `-app.json`); the legacy `/tmp/fazm-control-state.json` is last-writer-wins.
 
 **Supported commands:**
 | Command | Description |
 |---------|-------------|
-| `getState` | Writes full state JSON to `/tmp/fazm-control-state.json` |
+| `getState` | Writes full state JSON to `/tmp/fazm-control-state.json` AND `/tmp/fazm-control-state-<scope>.json` (e.g. `-desktop-dev.json`). Read the scoped file when both builds are running. |
 | `newChat` | Starts a new chat session |
 | `popOut` | Pops conversation out to a detached window |
 | `setModel:<id>` | Sets AI model (e.g. `setModel:claude-sonnet-4-6` or `setModel:claude-opus-4-6`) |
