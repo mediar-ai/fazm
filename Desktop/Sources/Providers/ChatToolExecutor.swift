@@ -341,10 +341,15 @@ class ChatToolExecutor {
         // also post the same notification when it updates run state. Case-insensitive
         // match; a UUID literal in a routine prompt that contains "cron_jobs" is fine
         // (a spurious refresh is cheap, just a small DB read).
+        //
+        // Posted to the bundle-scoped name so only THIS build's briefing refreshes
+        // (dev and prod have separate cron_jobs tables — see CLAUDE.md "SQLite
+        // Database & Active User"). External posters can still use the legacy
+        // unscoped name `com.fazm.routinesChanged` to wake every running build.
         let lower = query.lowercased()
         if lower.contains("cron_jobs") || lower.contains("cron_runs") {
             DistributedNotificationCenter.default().postNotificationName(
-                NSNotification.Name("com.fazm.routinesChanged"),
+                NSNotification.Name("com.fazm.\(AppPaths.bundleScope).routinesChanged"),
                 object: nil, userInfo: nil, deliverImmediately: true
             )
         }
