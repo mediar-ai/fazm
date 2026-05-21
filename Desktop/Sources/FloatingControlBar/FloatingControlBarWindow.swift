@@ -1287,7 +1287,7 @@ class FloatingControlBarManager {
 
         barWindow.onConnectClaude = { [weak chatProvider] in
             guard let provider = chatProvider else { return }
-            PersonalAccountChooserWindowController.shared.show(chatProvider: provider)
+            PersonalAccountChooserWindowController.shared.show(chatProvider: provider, source: "floating_bar")
         }
 
         barWindow.onCodexLogin = { [weak chatProvider] in
@@ -1736,7 +1736,7 @@ class FloatingControlBarManager {
                     // can verify Claude/Codex detection badges + routing
                     // without going through onboarding or hitting the cap.
                     if let cp = self.chatProvider {
-                        PersonalAccountChooserWindowController.shared.show(chatProvider: cp)
+                        PersonalAccountChooserWindowController.shared.show(chatProvider: cp, source: "debug_trigger")
                     }
                     log("FloatingControlBarManager: openConnectPersonalSheet invoked")
                 } else if command.hasPrefix("testBrowserSetupRetry:") {
