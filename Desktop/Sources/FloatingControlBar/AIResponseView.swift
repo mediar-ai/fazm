@@ -135,7 +135,7 @@ struct AIResponseView: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
+                        LazyVStack(alignment: .leading, spacing: 16) {
                             // Previous chat exchanges — regular ones rendered individually
                             ForEach(regularExchanges) { exchange in
                                 chatExchangeView(exchange)
