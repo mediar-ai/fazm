@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform as _platform
 import shutil
 import socket
 import subprocess
@@ -40,6 +41,22 @@ from mcp.server.fastmcp import FastMCP
 
 SERVER_DIR = Path(__file__).resolve().parent
 BUNDLE_RESOURCES_DIR = SERVER_DIR.parent  # .../Fazm.app/Contents/Resources
+
+# Per-arch venv resolver. The universal .dmg ships both `.venv-arm64/` and
+# `.venv-x86_64/` side by side (no thinning step runs on the DMG path), while
+# the Sparkle per-arch ZIP gets thinned down to a single `.venv/`. Mirror what
+# resolveMcpVenvDir() does in acp-bridge/src/index.ts so both installer paths
+# work.
+_HOST_VENV_SUFFIX = "arm64" if _platform.machine() == "arm64" else "x86_64"
+
+def _resolve_venv_dir(base: Path) -> Path:
+    thinned = base / ".venv"
+    if (thinned / "bin" / "python3").exists():
+        return thinned
+    arch = base / f".venv-{_HOST_VENV_SUFFIX}"
+    if (arch / "bin" / "python3").exists():
+        return arch
+    return thinned
 
 FAZM_DATA = Path.home() / ".fazm" / "browser-harness"
 PROFILE_DIR = FAZM_DATA / "profile"
@@ -58,12 +75,12 @@ CHROME_BIN = os.environ.get(
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 )
 
-# browser-harness CLI inside our bundled venv
-BROWSER_HARNESS_BIN = str(SERVER_DIR / ".venv" / "bin" / "browser-harness")
+# browser-harness CLI inside our bundled venv (per-arch aware)
+BROWSER_HARNESS_BIN = str(_resolve_venv_dir(SERVER_DIR) / "bin" / "browser-harness")
 
 # ai-browser-profile bundled sibling (used by bh_seed_cookies/localstorage)
 ABP_DIR = BUNDLE_RESOURCES_DIR / "ai-browser-profile"
-ABP_PYTHON = ABP_DIR / ".venv" / "bin" / "python3"
+ABP_PYTHON = _resolve_venv_dir(ABP_DIR) / "bin" / "python3"
 
 # Default exec timeout for a single tool call (seconds).
 EXEC_TIMEOUT_SEC = int(os.environ.get("FAZM_BH_EXEC_TIMEOUT", "300"))
@@ -305,8 +322,8 @@ def _run_harness(script: str, timeout: int = EXEC_TIMEOUT_SEC) -> dict:
 
     env = os.environ.copy()
     env["BU_CDP_URL"] = CDP_URL
-    # Make sure our bundled venv's bin dir is first on PATH.
-    env["PATH"] = f"{SERVER_DIR / '.venv' / 'bin'}:" + env.get("PATH", "")
+    # Make sure our bundled venv's bin dir is first on PATH (per-arch aware).
+    env["PATH"] = f"{_resolve_venv_dir(SERVER_DIR) / 'bin'}:" + env.get("PATH", "")
 
     try:
         proc = subprocess.run(
