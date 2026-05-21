@@ -150,6 +150,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Without this, writing to a dead FFmpeg stdin or agent-bridge pipe kills the process.
         signal(SIGPIPE, SIG_IGN)
 
+        // Log uncaught NSExceptions to fazm.log + Sentry. The .ips report omits the reason
+        // string, so when AppKit throws (e.g. _postWindowNeedsUpdateConstraints during a
+        // SwiftUI representable update on a torn-down window) we previously had no signal.
+        // 2026-05-21 prod crash repro: 5+ streaming popouts + context compaction.
+        NSSetUncaughtExceptionHandler { exception in
+            let name = exception.name.rawValue
+            let reason = exception.reason ?? "<nil>"
+            let stack = exception.callStackSymbols.joined(separator: "\n")
+            log("FATAL NSException [\(name)]: \(reason)\n\(stack)")
+            SentrySDK.capture(exception: exception)
+        }
+
         // Seed UserDefaults defaults for keys whose SwiftUI `@AppStorage` default is `true`.
         // `@AppStorage` only supplies the fallback inside the property wrapper; raw
         // `UserDefaults.standard.bool(forKey:)` returns `false` until the key is written.
