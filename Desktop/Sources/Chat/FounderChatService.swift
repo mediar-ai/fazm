@@ -51,11 +51,12 @@ class FounderChatService: ObservableObject {
     /// ```
     /// xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.founderChat"), object: nil, userInfo: ["text": "Reply from founder", "sender": "founder", "senderName": "Matt"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
     /// ```
+    /// Bundle-scoped form (target dev or prod individually): replace
+    /// `com.fazm.founderChat` with `com.fazm.desktop-dev.founderChat` (dev)
+    /// or `com.fazm.app.founderChat` (prod).
     private func setupTestNotificationListener() {
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.founderChat"),
-            object: nil,
-            queue: .main
+        DistributedNotificationCenter.default().addFazmObserver(
+            "founderChat"
         ) { [weak self] notification in
             guard let userInfo = notification.userInfo,
                   let text = userInfo["text"] as? String else { return }
