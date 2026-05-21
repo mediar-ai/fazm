@@ -1595,7 +1595,7 @@ class FloatingControlBarManager {
         //   `com.fazm.desktop-dev.control` for dev, `com.fazm.app.control` for prod.
         //
         // Supported commands:
-        //   getState                            — writes JSON state to /tmp/fazm-control-state.json
+        //   getState                            — writes JSON state to /tmp/fazm-control-state.json (legacy) and /tmp/fazm-control-state-<scope>.json
         //   newChat                             — starts a new chat session
         //   popOut                              — pops conversation out to a detached window
         //   newPopOutChat                       — opens a brand-new chat directly in a detached window
@@ -1611,11 +1611,11 @@ class FloatingControlBarManager {
         //   setWorkspace:<path>                 — sets the working directory
         //   stopAgent                           — interrupt the floating bar's in-flight query
         // -- Test / diagnostics surface (added for CPU regression bisection) --
-        //   listPopOuts                         — writes /tmp/fazm-control-popouts.json with every detached window's sessionKey, workspace, model, frame, busy/visible state
+        //   listPopOuts                         — writes /tmp/fazm-control-popouts.json (legacy) and /tmp/fazm-control-popouts-<scope>.json with every detached window's sessionKey, workspace, model, frame, busy/visible state
         //   closePopOut:<sessionKey>            — close a specific detached window by sessionKey (tears down its ACP subprocess)
         //   closeAllPopOuts                     — close every detached window (full test cleanup)
         //   sendQueryToWindow:<sessionKey>:<t>  — deliver text `<t>` to the pop-out matching `<sessionKey>` (drives the same path as a user typing into that window)
-        //   getBridgeState                      — signal SIGUSR2 to the bridge so it dumps sessions / activeQueries / PID to /tmp/fazm-bridge-state.json
+        //   getBridgeState                      — signal SIGUSR2 to the bridge so it dumps sessions / activeQueries / PID to /tmp/fazm-bridge-state.json (legacy) and /tmp/fazm-bridge-state-<scope>.json
         //   restartBridge                       — terminate the running bridge subprocess and let ChatProvider relaunch it (clears leaked claude subprocesses)
         //   testBrowserSetupRetry:<key>:<ob>:<text> — simulate the post-browser-extension-setup retry (key empty = main/nil, "floating", or "detached-<uuid>"; ob=0|1 = was onboarding; text = pending message)
         DistributedNotificationCenter.default().addFazmObserver(
@@ -1765,7 +1765,10 @@ class FloatingControlBarManager {
 
     }
 
-    /// Write current floating bar state to /tmp/fazm-control-state.json for programmatic access.
+    /// Write current floating bar state to `/tmp/fazm-control-state.json` (legacy,
+    /// last-writer-wins between dev/prod) AND to a bundle-scoped variant
+    /// `/tmp/fazm-control-state-<scope>.json` so external scripts can read one
+    /// build's state without races against a sibling build.
     private func writeControlState() {
         let state = window?.state
         let voiceEnabled = UserDefaults.standard.bool(forKey: "voiceResponseEnabled")
@@ -1797,14 +1800,19 @@ class FloatingControlBarManager {
 
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
-            try? json.write(toFile: "/tmp/fazm-control-state.json", atomically: true, encoding: .utf8)
-            log("FloatingControlBarManager: State written to /tmp/fazm-control-state.json")
+            let legacy = "/tmp/fazm-control-state.json"
+            let scoped = AppPaths.scopedTmpPath("control-state", ext: "json")
+            try? json.write(toFile: legacy, atomically: true, encoding: .utf8)
+            try? json.write(toFile: scoped, atomically: true, encoding: .utf8)
+            log("FloatingControlBarManager: State written to \(legacy) and \(scoped)")
         }
     }
 
-    /// Dump every open detached pop-out to /tmp/fazm-control-popouts.json so external
-    /// tools can enumerate sessions, target a specific one with sendQueryToWindow, or
-    /// confirm cleanup after closeAllPopOuts. Used by the CPU-regression A/B harness.
+    /// Dump every open detached pop-out to `/tmp/fazm-control-popouts.json` (legacy,
+    /// last-writer-wins between dev/prod) AND to a bundle-scoped variant
+    /// `/tmp/fazm-control-popouts-<scope>.json`. External tools can enumerate sessions,
+    /// target a specific one with sendQueryToWindow, or confirm cleanup after
+    /// closeAllPopOuts. Used by the CPU-regression A/B harness.
     private func writePopOutsList() {
         let summaries = DetachedChatWindowController.shared.popOutsSummary()
         let payload: [String: Any] = [
@@ -1814,8 +1822,11 @@ class FloatingControlBarManager {
         ]
         if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
-            try? json.write(toFile: "/tmp/fazm-control-popouts.json", atomically: true, encoding: .utf8)
-            log("FloatingControlBarManager: Pop-out list (\(summaries.count) windows) written to /tmp/fazm-control-popouts.json")
+            let legacy = "/tmp/fazm-control-popouts.json"
+            let scoped = AppPaths.scopedTmpPath("control-popouts", ext: "json")
+            try? json.write(toFile: legacy, atomically: true, encoding: .utf8)
+            try? json.write(toFile: scoped, atomically: true, encoding: .utf8)
+            log("FloatingControlBarManager: Pop-out list (\(summaries.count) windows) written to \(legacy) and \(scoped)")
         }
     }
 
@@ -1828,9 +1839,15 @@ class FloatingControlBarManager {
     private func dumpBridgeState() {
         guard let bridgePid = findBridgePid() else {
             log("FloatingControlBarManager: getBridgeState — no acp-bridge process found")
-            // Write a small marker so callers don't read stale data.
+            // Write a small marker so callers don't read stale data. Mirror to
+            // both legacy and bundle-scoped paths so a dev-targeted getBridgeState
+            // doesn't leave prod's stale snapshot looking authoritative.
             let payload = "{\"error\":\"no_bridge_process_found\",\"timestamp\":\(Date().timeIntervalSince1970)}\n"
             try? payload.write(toFile: "/tmp/fazm-bridge-state.json", atomically: true, encoding: .utf8)
+            try? payload.write(
+                toFile: AppPaths.scopedTmpPath("bridge-state", ext: "json"),
+                atomically: true, encoding: .utf8
+            )
             return
         }
         let signalResult = kill(bridgePid, SIGUSR2)
