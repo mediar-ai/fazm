@@ -332,8 +332,12 @@ final class WebRelay: ObservableObject {
             let command = json["command"] as? String ?? ""
             guard !command.isEmpty else { return }
             log("WebRelay: control command from web: \(command)")
+            // Post to the bundle-scoped name so only THIS build's floating bar
+            // responds. The web relay is paired with this specific process via
+            // QR / device pairing, so it must not wake a sibling build (dev/prod
+            // side-by-side) that the user wasn't pairing with.
             DistributedNotificationCenter.default().postNotificationName(
-                NSNotification.Name("com.fazm.control"),
+                NSNotification.Name("com.fazm.\(AppPaths.bundleScope).control"),
                 object: nil,
                 userInfo: ["command": command],
                 deliverImmediately: true
@@ -358,8 +362,9 @@ final class WebRelay: ObservableObject {
             // by posting the control notification, so behaviour matches the floating
             // bar's "Stop" button exactly (clears in-flight query, releases the bridge).
             log("WebRelay: stop from web")
+            // Bundle-scoped so we don't stop a sibling build's agent.
             DistributedNotificationCenter.default().postNotificationName(
-                NSNotification.Name("com.fazm.control"),
+                NSNotification.Name("com.fazm.\(AppPaths.bundleScope).control"),
                 object: nil,
                 userInfo: ["command": "stopAgent"],
                 deliverImmediately: true
