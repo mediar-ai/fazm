@@ -1069,6 +1069,14 @@ class ChatProvider: ObservableObject {
                         self?.claudeAuthFailed = true
                         self?.claudeAuthFailedReason = reason
                         self?.claudeAuthRetryCooldownEnd = Date().addingTimeInterval(30)
+                        AnalyticsManager.shared.claudeAuthFailed(reason: reason, httpStatus: httpStatus)
+                        let crumb = Breadcrumb(level: .error, category: "claude-oauth")
+                        crumb.message = "Claude OAuth rejected (HTTP \(httpStatus ?? 0)): \(reason.prefix(200))"
+                        crumb.data = [
+                            "http_status": httpStatus ?? 0,
+                            "reason": String(reason.prefix(500)),
+                        ]
+                        SentrySDK.addBreadcrumb(crumb)
                     }
                 }
             )
@@ -1584,6 +1592,14 @@ class ChatProvider: ObservableObject {
                         self?.claudeAuthFailed = true
                         self?.claudeAuthFailedReason = reason
                         self?.claudeAuthRetryCooldownEnd = Date().addingTimeInterval(30)
+                        AnalyticsManager.shared.claudeAuthFailed(reason: reason, httpStatus: httpStatus)
+                        let crumb = Breadcrumb(level: .error, category: "claude-oauth")
+                        crumb.message = "Claude OAuth rejected (HTTP \(httpStatus ?? 0)): \(reason.prefix(200))"
+                        crumb.data = [
+                            "http_status": httpStatus ?? 0,
+                            "reason": String(reason.prefix(500)),
+                        ]
+                        SentrySDK.addBreadcrumb(crumb)
                     }
                 }
             )
@@ -1738,6 +1754,11 @@ class ChatProvider: ObservableObject {
                         // OAuth never landed — drop the pending picker selection so the
                         // dropdown stops showing "Connecting…" and the user can retry.
                         CodexBackendManager.shared.pendingPickerModelId = nil
+                        AnalyticsManager.shared.codexLoginFailed(reason: error)
+                        let crumb = Breadcrumb(level: .error, category: "codex-oauth")
+                        crumb.message = "Codex OAuth failed: \(error.prefix(200))"
+                        crumb.data = ["error": String(error.prefix(500))]
+                        SentrySDK.addBreadcrumb(crumb)
                     }
                 }
             )
