@@ -1415,12 +1415,13 @@ class FloatingControlBarManager {
 
         self.window = barWindow
 
-        // Debug: replay post-onboarding tutorial via distributed notification
-        // Trigger from terminal: `defaults write com.fazm.app hasSeenPostOnboardingTutorial -bool false && /usr/bin/notifyutil -p com.fazm.replayTutorial`
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.replayTutorial"),
-            object: nil,
-            queue: .main
+        // Debug: replay post-onboarding tutorial via distributed notification.
+        // Legacy trigger (fires on every running Fazm build):
+        //   defaults write com.fazm.app hasSeenPostOnboardingTutorial -bool false && /usr/bin/notifyutil -p com.fazm.replayTutorial
+        // Bundle-scoped trigger (this build only, e.g. dev):
+        //   notifyutil -p com.fazm.desktop-dev.replayTutorial
+        DistributedNotificationCenter.default().addFazmObserver(
+            "replayTutorial"
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let barState = self.barState else { return }
@@ -1430,11 +1431,10 @@ class FloatingControlBarManager {
         }
 
         // Debug: programmatically run the full tutorial chat guide (skip overlay)
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testTutorial"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testTutorial"),
-            object: nil,
-            queue: .main
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testTutorial"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testTutorial` with `com.fazm.desktop-dev.testTutorial` (dev) or `com.fazm.app.testTutorial` (prod).
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testTutorial"
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let barState = self.barState, let window = self.window, let provider = self.chatProvider else { return }
@@ -1490,12 +1490,11 @@ class FloatingControlBarManager {
             }
         }
 
-        // Debug: send a text query via distributed notification
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testQuery"), object: nil, userInfo: ["text": "your query here"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testQuery"),
-            object: nil,
-            queue: .main
+        // Debug: send a text query via distributed notification.
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testQuery"), object: nil, userInfo: ["text": "your query here"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped (this build only): replace `com.fazm.testQuery` with `com.fazm.desktop-dev.testQuery` (dev) or `com.fazm.app.testQuery` (prod).
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testQuery"
         ) { [weak self] notification in
             Task { @MainActor in
                 guard let self, let window = self.window, let provider = self.chatProvider else { return }
@@ -1521,11 +1520,10 @@ class FloatingControlBarManager {
         }
 
         // Debug: test the Gemini analysis overlay
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testAnalysisOverlay"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testAnalysisOverlay"),
-            object: nil,
-            queue: .main
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testAnalysisOverlay"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testAnalysisOverlay` with `com.fazm.desktop-dev.testAnalysisOverlay` or `com.fazm.app.testAnalysisOverlay`.
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testAnalysisOverlay"
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let barFrame = self.barWindowFrame else { return }
@@ -1540,11 +1538,10 @@ class FloatingControlBarManager {
         }
 
         // Debug: force Gemini analysis with current buffered chunks (no need to wait for 60)
-        // Trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testAnalyzeNow"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.testAnalyzeNow"),
-            object: nil,
-            queue: .main
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testAnalyzeNow"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testAnalyzeNow` with `com.fazm.desktop-dev.testAnalyzeNow` or `com.fazm.app.testAnalyzeNow`.
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testAnalyzeNow"
         ) { _ in
             Task {
                 log("FloatingControlBarManager: Force analyzeNow triggered (\(await GeminiAnalysisService.shared.bufferedChunkCount) chunks)")
