@@ -2543,14 +2543,31 @@ function isUserMcpServer(name: string): boolean {
 
 function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: string; description?: string }>): void {
   logErr(`Raw models from ACP SDK: ${JSON.stringify(availableModels)}`);
-  // Filter out the "default" pseudo-model — it's not a real selectable model
-  const filtered = availableModels.filter(m => m.modelId !== "default");
-  if (filtered.length === 0) return;
-  const json = JSON.stringify(filtered);
+  // Strip [1m] context variants and the "default" pseudo-model. The 1M entitlement is
+  // gated server-side per-account, and Anthropic's "Usage credits are required for long
+  // context requests" error string doesn't match the auto-downgrade regex in handleQuery,
+  // so any user who picks a [1m] variant from the picker gets a hard failure with no
+  // recovery. Rewriting modelId/name preserves the entry (so Sonnet stays in the picker
+  // when the SDK only exposes sonnet[1m]) and dedupes if both forms come back.
+  const seen = new Set<string>();
+  const transformed = availableModels
+    .filter(m => m.modelId !== "default")
+    .map(m => ({
+      ...m,
+      modelId: m.modelId.replace(/\s*\[1m\]/gi, ""),
+      name: m.name.replace(/\s*\[1m\]/gi, "").trim(),
+    }))
+    .filter(m => {
+      if (seen.has(m.modelId)) return false;
+      seen.add(m.modelId);
+      return true;
+    });
+  if (transformed.length === 0) return;
+  const json = JSON.stringify(transformed);
   if (json === lastEmittedModelsJson) return;
   lastEmittedModelsJson = json;
-  send({ type: "models_available", models: filtered });
-  logErr(`Emitted models_available: ${filtered.map(m => `${m.modelId}=${m.name}`).join(", ")}`);
+  send({ type: "models_available", models: transformed });
+  logErr(`Emitted models_available: ${transformed.map(m => `${m.modelId}=${m.name}`).join(", ")}`);
 }
 
 interface WarmupSessionConfig {
