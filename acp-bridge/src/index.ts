@@ -2236,6 +2236,17 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
       if (existsSync(macOsChromeBin)) {
         assrtEnv.push({ name: "ASSRT_CHROME_BIN", value: macOsChromeBin });
       }
+      // Point assrt's managed Chrome at the same on-disk profile that
+      // browser-harness uses, so the existing "Import sessions" flow (which
+      // imports into browser-harness's profile via ai_browser_profile.bulk_import)
+      // also populates whatever assrt opens. Forwarded from
+      // ACPBridge.swift, which sets it to ~/.fazm/browser-harness/profile.
+      if (process.env.ASSRT_MANAGED_USER_DATA_DIR) {
+        assrtEnv.push({
+          name: "ASSRT_MANAGED_USER_DATA_DIR",
+          value: process.env.ASSRT_MANAGED_USER_DATA_DIR,
+        });
+      }
       // Pass through GEMINI_API_KEY if set so assrt_analyze_video registers.
       if (process.env.GEMINI_API_KEY) {
         assrtEnv.push({ name: "GEMINI_API_KEY", value: process.env.GEMINI_API_KEY });
@@ -2246,7 +2257,7 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
         args: [assrtMcpEntry],
         env: assrtEnv,
       });
-      logErr(`Assrt MCP enabled (entry=${assrtMcpEntry}, cdp=9655, abpPython=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"})`);
+      logErr(`Assrt MCP enabled (entry=${assrtMcpEntry}, cdp=9655, abpPython=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, sharedProfile=${process.env.ASSRT_MANAGED_USER_DATA_DIR || "default"})`);
     } else {
       logErr(`[FAZM-ASSRT-MISSING] FAZM_ASSRT_ENABLED=true but assrt-mcp not bundled at ${assrtMcpEntry}. Run ./run.sh to rebuild.`);
     }
