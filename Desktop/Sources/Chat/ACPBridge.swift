@@ -563,20 +563,13 @@ actor ACPBridge {
     // Assrt QA testing MCP (beta) — additive to whichever browser mode is active.
     // When enabled, the bridge registers @assrt-ai/assrt as a sibling MCP server
     // exposing assrt_test / assrt_plan / assrt_diagnose plus seed_* cookie/IDB
-    // tools and Phase 3 freeform browser control. The seed tools target the same
-    // managed Chrome port (9655) that the browser-harness flow uses. Off by
-    // default while in beta.
+    // tools and Phase 3 freeform browser control. Assrt is fully standalone:
+    // it owns its own Chrome on port 9755 with profile at ~/.assrt/managed-chrome
+    // and never attaches to browser-harness's Chrome on 9655. Cookies are kept
+    // in sync via runManagedBrowserImport(), which mirrors the import into both
+    // profiles using ai_browser_profile.bulk_import --extra-dest-profile.
     if defaults.bool(forKey: "assrtEnabled") {
       env["FAZM_ASSRT_ENABLED"] = "true"
-      // Point assrt's managed-Chrome at the SAME profile browser-harness uses
-      // (~/.fazm/browser-harness/profile). That way the existing "Import
-      // sessions" flow (runManagedBrowserImport in SettingsPage.swift, which
-      // shells out to ai_browser_profile.bulk_import) lands cookies +
-      // LocalStorage + IndexedDB in one place that both browser-harness AND
-      // assrt's managed Chrome read from. Without this, assrt would default to
-      // ~/.assrt/managed-chrome and the user would need a second import.
-      let bhProfile = ("~/.fazm/browser-harness/profile" as NSString).expandingTildeInPath
-      env["ASSRT_MANAGED_USER_DATA_DIR"] = bhProfile
     }
 
     // Playwright MCP extension mode — only meaningful when browserMode == "extension"
