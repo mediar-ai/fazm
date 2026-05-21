@@ -166,12 +166,21 @@ final class PersonalAccountChooserWindowController {
     private var window: NSWindow?
     private var hostingView: NSHostingView<AnyView>?
 
-    func show(chatProvider: ChatProvider) {
+    /// Open the chooser. `source` is the analytics tag for where it opened
+    /// from (e.g. "onboarding", "floating_bar", "popout", "debug_trigger").
+    func show(chatProvider: ChatProvider, source: String) {
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+
+        AnalyticsManager.shared.personalAccountChooserOpened(
+            source: source,
+            claudeDetected: chatProvider.isClaudeConnected,
+            codexDetected: CodexBackendManager.shared.authMode == "chatgpt"
+                || CodexBackendManager.shared.authMode == "api_key"
+        )
 
         let controller = self
         let content = ChooserWindowContent(
@@ -236,8 +245,12 @@ private struct ChooserWindowContent: View {
             isClaudeConnected: chatProvider.isClaudeConnected,
             codexAuthMode: codexBackend.authMode,
             onPickClaude: {
+                let alreadyAuthed = chatProvider.isClaudeConnected
+                AnalyticsManager.shared.personalAccountChooserPicked(
+                    provider: "claude", alreadyAuthed: alreadyAuthed
+                )
                 onDismiss()
-                if chatProvider.isClaudeConnected {
+                if alreadyAuthed {
                     // Creds already in keychain — just flip to personal; the
                     // bridge adopts them on the next session/new. No OAuth.
                     Task { await chatProvider.switchBridgeMode(to: "personal") }
@@ -247,9 +260,12 @@ private struct ChooserWindowContent: View {
                 }
             },
             onPickCodex: {
-                onDismiss()
                 let detected = codexBackend.authMode == "chatgpt"
                                 || codexBackend.authMode == "api_key"
+                AnalyticsManager.shared.personalAccountChooserPicked(
+                    provider: "codex", alreadyAuthed: detected
+                )
+                onDismiss()
                 if detected {
                     // Already authed — switch active model to a GPT one so
                     // the next query routes through Codex instead of the
@@ -273,7 +289,10 @@ private struct ChooserWindowContent: View {
                     chatProvider.startCodexLogin()
                 }
             },
-            onCancel: onDismiss
+            onCancel: {
+                AnalyticsManager.shared.personalAccountChooserCancelled()
+                onDismiss()
+            }
         )
         .onAppear {
             // Refresh detection in case the user installed claude or codex CLI
