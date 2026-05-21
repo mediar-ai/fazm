@@ -1038,7 +1038,7 @@ class DetachedChatWindowController {
 
         win.onConnectClaude = { [weak chatProvider] in
             guard let provider = chatProvider else { return }
-            PersonalAccountChooserWindowController.shared.show(chatProvider: provider)
+            PersonalAccountChooserWindowController.shared.show(chatProvider: provider, source: "popout")
         }
 
         win.onCodexLogin = { [weak chatProvider] in
