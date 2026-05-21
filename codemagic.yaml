@@ -1571,6 +1571,73 @@ workflows:
             echo "Stub installer DMG uploaded to GitHub release"
           fi
 
+      - name: Mirror release artifacts to Cloudflare R2 (China-accessible)
+        script: |
+          set -e
+          # R2 is GitHub/GCS's only viable mirror for mainland China users, where both
+          # github.com and storage.googleapis.com are GFW-throttled. The website's
+          # /download route and the stub installer's ManifestLoader fall back to R2
+          # when their primary fails; Sparkle picks R2 enclosures when ?region=cn is set.
+          # Required env vars (Codemagic env group `fazm_secrets`):
+          #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_PUBLIC_BASE
+          if [ -z "${R2_ACCESS_KEY_ID:-}" ] || [ -z "${R2_SECRET_ACCESS_KEY:-}" ] || \
+             [ -z "${R2_ENDPOINT:-}" ] || [ -z "${R2_PUBLIC_BASE:-}" ]; then
+            echo "WARNING: R2_* env vars not set — skipping R2 mirror (CN users will see fallback failures)"
+            exit 0
+          fi
+
+          if ! command -v rclone >/dev/null 2>&1; then
+            brew install --quiet rclone
+          fi
+
+          MIRROR_DIR="/tmp/r2-mirror-$$"
+          mkdir -p "$MIRROR_DIR"
+
+          # Stage every artifact under one dir so a single `rclone copy` does the lot.
+          cp "$SPARKLE_ZIP_PATH" "$MIRROR_DIR/Fazm.zip"
+          [ -f "$DMG_PATH" ]  && cp "$DMG_PATH"  "$MIRROR_DIR/Fazm.dmg"
+          [ -f "$STUB_DMG" ]  && cp "$STUB_DMG"  "$MIRROR_DIR/Fazm-Installer.dmg"
+          cp "$ARCH_ARM64_ZIP"  "$MIRROR_DIR/Fazm-arm64.zip"
+          cp "$ARCH_X86_64_ZIP" "$MIRROR_DIR/Fazm-x86_64.zip"
+
+          # R2-flavored latest.json: payload URLs point to R2 so the installer's R2
+          # fallback path is self-consistent (no cross-host download retry needed).
+          R2_VERSION_BASE="${R2_PUBLIC_BASE%/}/releases/v${VERSION}"
+          python3 -c "
+          import json
+          m = {
+            'version': '$VERSION',
+            'arm64':  {'url': '$R2_VERSION_BASE/Fazm-arm64.zip',  'size': int('$ARM64_SIZE'),  'sha256': '$ARM64_SHA256'},
+            'x86_64': {'url': '$R2_VERSION_BASE/Fazm-x86_64.zip', 'size': int('$X86_64_SIZE'), 'sha256': '$X86_64_SHA256'},
+          }
+          json.dump(m, open('$MIRROR_DIR/latest.json', 'w'), indent=2)
+          "
+
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = $R2_ACCESS_KEY_ID
+          secret_access_key = $R2_SECRET_ACCESS_KEY
+          endpoint = $R2_ENDPOINT
+          acl = private
+          no_check_bucket = true
+          EOF
+
+          rclone copy "$MIRROR_DIR" "r2:fazm-releases/releases/v${VERSION}/" \
+            --transfers=4 --s3-upload-concurrency=4 --stats=15s
+
+          # Only stable (non-staging) builds advance the mutable "latest" prefix that
+          # the website redirect and installer fallback both resolve.
+          if [ "$IS_STAGING" != "true" ]; then
+            rclone copy "$MIRROR_DIR" "r2:fazm-releases/releases/latest/" \
+              --transfers=4 --s3-upload-concurrency=4 --stats=15s
+          fi
+
+          rm -rf "$MIRROR_DIR"
+          echo "R2 mirror updated: ${R2_PUBLIC_BASE}/releases/v${VERSION}/ (staging=$IS_STAGING)"
+
     artifacts:
       - build/*.app
       - build/*.dmg
