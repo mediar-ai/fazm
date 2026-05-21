@@ -422,8 +422,17 @@ actor ACPBridge {
   private var sessionMessageGenerations: [String: UInt64] = [:]
   /// Per-session interrupt flags
   private var sessionInterrupted: [String: Bool] = [:]
-  /// Per-session ACP tool counts (for timeout deferral)
+  /// Per-session ACP tool counts (for timeout deferral). Populated by parsing
+  /// `session=<sessionKey>` out of the bridge's "Tool started/completed" stderr
+  /// lines, so one busy session's tools no longer prevent OTHER sessions'
+  /// `waitForMessage` from timing out. Before this was per-session, a single
+  /// stuck pop-out could keep every other pop-out in `timeout deferred` for
+  /// up to ~1 hour because the global activity counter masked their idleness.
   private var sessionAcpToolsRunning: [String: Int] = [:]
+  /// Per-session timestamp of the most recent Tool started/completed event.
+  /// Used together with `sessionAcpToolsRunning` so `hasRecentToolActivity(sessionKey:)`
+  /// can answer per-session instead of leaking activity across sessions.
+  private var sessionLastToolActivityAt: [String: Date] = [:]
   /// Reverse map: ACP sessionId → sessionKey. Populated from session_started
   /// and session_expired events. Used as a routing fallback in deliverMessage
   /// when an inbound message (typically a cancellation `result`) arrives
@@ -617,11 +626,18 @@ actor ACPBridge {
           log("ACPBridge stderr: \(trimmed)")
         }
         // Track ACP tool activity so waitForMessage doesn't time out
-        // while tools are actively running inside ACP (Terminal, text_editor, etc.)
-        if text.contains("Tool started") {
-          Task { await self?.adjustAcpToolCount(delta: 1) }
-        } else if text.contains("Tool completed") {
-          Task { await self?.adjustAcpToolCount(delta: -1) }
+        // while tools are actively running inside ACP (Terminal, text_editor, etc.).
+        // Parse `session=<sessionKey>` so the deferral is per-session: one busy
+        // pop-out must not keep other (idle/stuck) pop-outs from timing out.
+        // Bridge stderr format (acp-bridge/src/index.ts:4411, 4577):
+        //   `Tool started: <name> (id=<toolId>, kind=<kind>, session=<sessionKey>) ...`
+        //   `Tool completed: <name> (id=<toolId> session=<sessionKey>) status=... ...`
+        // sessionKey is `floating`, `detached-<UUID>`, etc.; `?` when bridge
+        // couldn't resolve it (treat as no-key → global only).
+        if text.contains("Tool started") || text.contains("Tool completed") {
+          let delta = text.contains("Tool started") ? 1 : -1
+          let sessionKey = Self.parseSessionKey(fromStderr: text)
+          Task { await self?.adjustAcpToolCount(sessionKey: sessionKey, delta: delta) }
         }
         if text.contains("FatalProcessOutOfMemory")
           || text.contains("JavaScript heap out of memory")
@@ -2019,9 +2035,34 @@ actor ACPBridge {
   }
 
   private func getSessionAcpToolsRunning(_ sessionKey: String) -> Int {
-    // Per-session tracking isn't instrumented from stderr yet; fall back to
-    // the global count which still usefully defers timeouts when ANY tool is running.
-    return sessionAcpToolsRunning[sessionKey] ?? acpToolsRunning
+    // Per-session tracking is now instrumented from stderr (see startReadingStdout
+    // stderr handler + parseSessionKey). Return ONLY the per-session count; falling
+    // back to the global would re-introduce the cross-session bleed bug where one
+    // busy pop-out kept all other sessions' waitForMessage from timing out.
+    return sessionAcpToolsRunning[sessionKey] ?? 0
+  }
+
+  private func hasRecentToolActivity(sessionKey: String) -> Bool {
+    // Per-session variant. If no per-session timestamp exists (e.g., session
+    // never ran an ACP tool), return false — do NOT leak to the global window.
+    guard let last = sessionLastToolActivityAt[sessionKey] else { return false }
+    return Date().timeIntervalSince(last) < toolActivityWindow
+  }
+
+  /// Parses `session=<sessionKey>` from a bridge stderr line. The bridge emits
+  /// this token in both `Tool started:` and `Tool completed:` log lines; see
+  /// acp-bridge/src/index.ts:4411 and :4577. Returns nil when the bridge
+  /// couldn't resolve a sessionKey (emits `session=?`) — those tools fall back
+  /// to global-only tracking, preserving legacy non-session behavior.
+  nonisolated static func parseSessionKey(fromStderr text: String) -> String? {
+    guard let range = text.range(of: "session=") else { return nil }
+    let after = text[range.upperBound...]
+    // Token ends at `)`, space, or comma; sessionKey itself never contains those.
+    let end = after.firstIndex(where: { $0 == ")" || $0 == " " || $0 == "," })
+    let raw = end.map { String(after[..<$0]) } ?? String(after)
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty || trimmed == "?" { return nil }
+    return trimmed
   }
 
   private func waitForMessage(timeout: TimeInterval? = nil) async throws -> InboundMessage {
@@ -2083,9 +2124,18 @@ actor ACPBridge {
     lastExitWasOOM = true
   }
 
-  private func adjustAcpToolCount(delta: Int) {
+  /// Bump tool activity counters. When `sessionKey` is non-nil, also bumps the
+  /// per-session counter and timestamp. The global counter+timestamp are ALWAYS
+  /// bumped so the legacy `waitForMessage(timeout:)` (no-session variant) still
+  /// works for the floating bar's startup/init messages.
+  private func adjustAcpToolCount(sessionKey: String? = nil, delta: Int) {
     acpToolsRunning = max(0, acpToolsRunning + delta)
     lastToolActivityAt = Date()
+    if let sk = sessionKey {
+      let prev = sessionAcpToolsRunning[sk] ?? 0
+      sessionAcpToolsRunning[sk] = max(0, prev + delta)
+      sessionLastToolActivityAt[sk] = Date()
+    }
   }
 
   private func hasRecentToolActivity() -> Bool {
