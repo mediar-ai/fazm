@@ -2,23 +2,36 @@
  * Fazm Browser Overlay — injected into every page when Playwright MCP controls the browser.
  *
  * Shows animated glowing wings + status pill ("Browser controlled by Fazm").
- * Semi-transparent, pointer-events:none — doesn't block user interaction.
+ *
+ * Behavior:
+ *   - Visible on injection, fades to opacity 0 after 5s of no tool-call activity.
+ *   - Every browser tool call (click, type, navigate, snapshot, etc.) pings via
+ *     window.__fazmPing() — resets the 5s timer and fades the overlay back in.
+ *   - Small X button on the pill calls window.__fazmDismiss() to remove the overlay
+ *     for the rest of the page load (reappears on navigation/reload).
  *
  * HOW IT GETS INJECTED:
- * - scripts/patch-playwright-overlay.cjs patches Playwright's extensionContextFactory.js
- *   (runs as npm postinstall) to call page.evaluate() with this script on every page load.
- * - addInitScript() doesn't work on CDP-connected contexts (extension mode), so we use
- *   page 'load'/'domcontentloaded' event listeners instead.
- * - The patch reads this file from disk at Playwright MCP startup (path relative to __dirname).
+ *   - acp-bridge/scripts/patch-playwright-overlay.cjs patches Playwright's coreBundle.js
+ *     (runs as npm postinstall) to call page.evaluate() with this script on every page load
+ *     AND wraps BrowserBackend.callTool() to call window.__fazmPing() after every tool call.
+ *   - addInitScript() doesn't work on CDP-connected contexts (extension mode), so we use
+ *     page 'load'/'domcontentloaded' event listeners instead.
  *
  * TO MODIFY THE OVERLAY: edit this file, rebuild with run.sh. No other changes needed.
  */
 (function injectFazmOverlay() {
-  console.log('[fazm-overlay] injectFazmOverlay called, existing:', !!document.getElementById('fazm-overlay'));
-  if (document.getElementById('fazm-overlay')) return;
+  // Re-injection (same page, fired by load/domcontentloaded again) → treat as a ping.
+  if (document.getElementById('fazm-overlay')) {
+    if (typeof window.__fazmPing === 'function') window.__fazmPing();
+    return;
+  }
+  // User dismissed the overlay earlier on this page load → don't re-inject.
+  if (window.__fazmDismissed) return;
 
   var overlay = document.createElement('div');
   overlay.id = 'fazm-overlay';
+  overlay.style.transition = 'opacity 0.5s ease';
+  overlay.style.opacity = '1';
   overlay.innerHTML = '<style>'
     + '#fazm-canvas2{position:fixed;inset:0;z-index:2147483647;pointer-events:none;overflow:hidden}'
     + '.fazm-wing{position:absolute;pointer-events:none}'
@@ -40,8 +53,10 @@
     + '@keyframes fazm-float3{0%,100%{transform:translate(-10%,10%) scale(.9)}33%{transform:translate(10%,-10%) scale(1.2)}66%{transform:translate(20%,-5%) scale(1)}}'
     + '@keyframes fazm-float4{0%,100%{transform:translate(10%,10%) scale(1)}33%{transform:translate(-15%,-10%) scale(1.1)}66%{transform:translate(-5%,-15%) scale(.85)}}'
     + '@keyframes fazm-spin3{to{transform:rotate(360deg)}}'
-    + '#fazm-pill3{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;z-index:2147483647!important;pointer-events:none!important;display:flex!important;align-items:center!important;gap:8px!important;padding:5px 16px!important;background:rgba(0,0,0,.2)!important;border-radius:12px!important;border:1px solid rgba(147,51,234,.15)!important;font-family:-apple-system,BlinkMacSystemFont,sans-serif!important;font-size:12px!important;color:rgba(0,0,0,.5)!important;font-weight:600!important;backdrop-filter:blur(8px)!important;box-shadow:none!important;white-space:nowrap!important;max-height:28px!important;height:28px!important;line-height:1!important;overflow:hidden!important}'
+    + '#fazm-pill3{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;z-index:2147483647!important;pointer-events:none!important;display:flex!important;align-items:center!important;gap:8px!important;padding:5px 10px 5px 16px!important;background:rgba(0,0,0,.2)!important;border-radius:12px!important;border:1px solid rgba(147,51,234,.15)!important;font-family:-apple-system,BlinkMacSystemFont,sans-serif!important;font-size:12px!important;color:rgba(0,0,0,.5)!important;font-weight:600!important;backdrop-filter:blur(8px)!important;box-shadow:none!important;white-space:nowrap!important;max-height:28px!important;height:28px!important;line-height:1!important;overflow:hidden!important}'
     + '#fazm-pill3 .fazm-sp3{width:10px!important;height:10px!important;border:1.5px solid rgba(147,51,234,.15)!important;border-top-color:rgba(168,85,247,.4)!important;border-radius:50%!important;animation:fazm-spin3 1s linear infinite!important;flex-shrink:0!important}'
+    + '#fazm-pill3 #fazm-close{pointer-events:auto!important;cursor:pointer!important;width:16px!important;height:16px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:50%!important;color:rgba(0,0,0,.45)!important;font-size:14px!important;line-height:1!important;font-weight:500!important;background:rgba(0,0,0,.06)!important;flex-shrink:0!important;transition:background .15s,color .15s!important;user-select:none!important;margin-left:2px!important}'
+    + '#fazm-pill3 #fazm-close:hover{background:rgba(0,0,0,.18)!important;color:rgba(0,0,0,.75)!important}'
     + '</style>'
     + '<div id="fazm-canvas2">'
     + '<div class="fazm-wing" id="fazm-w-top"></div>'
@@ -56,13 +71,58 @@
     + '<div id="fazm-pill3">'
     + '<div class="fazm-sp3"></div>'
     + '<span>Browser controlled by Fazm \u00b7 Feel free to switch tabs or use other apps</span>'
+    + '<span id="fazm-close" title="Hide overlay" aria-label="Hide overlay">\u00d7</span>'
     + '</div>';
 
-  if (document.documentElement) {
+  function setupPingAndClose() {
+    var HIDE_MS = 5000;
+    var fadeTimer = null;
+
+    function fadeOut() {
+      if (!overlay.parentNode) return;
+      overlay.style.opacity = '0';
+    }
+    function fadeIn() {
+      if (!overlay.parentNode) return;
+      overlay.style.opacity = '1';
+    }
+    function ping() {
+      if (window.__fazmDismissed) return;
+      fadeIn();
+      if (fadeTimer) clearTimeout(fadeTimer);
+      fadeTimer = setTimeout(fadeOut, HIDE_MS);
+    }
+    function dismiss() {
+      window.__fazmDismissed = true;
+      if (fadeTimer) clearTimeout(fadeTimer);
+      window.__fazmPing = function () {};
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }
+
+    window.__fazmPing = ping;
+    window.__fazmDismiss = dismiss;
+
+    var closeBtn = overlay.querySelector('#fazm-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        dismiss();
+      }, true);
+    }
+
+    // Start visible with 5s timer; subsequent tool calls ping to reset.
+    ping();
+  }
+
+  function attach() {
     document.documentElement.appendChild(overlay);
+    setupPingAndClose();
+  }
+
+  if (document.documentElement) {
+    attach();
   } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      document.documentElement.appendChild(overlay);
-    });
+    document.addEventListener('DOMContentLoaded', attach);
   }
 })();
