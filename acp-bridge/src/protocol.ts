@@ -574,6 +574,21 @@ export interface AvailableCommandsUpdateMessage {
 }
 
 /**
+ * Generic forwarder for session-agnostic notifications that arrive late from
+ * the agent (after the per-session handler has been deregistered): codex-acp's
+ * `config_option_update`, `current_mode_update`, `session_info_update`,
+ * `usage_update`. Without this catch-all they were [ROUTE-DROP]'d silently.
+ * Swift can inspect `kind` and update model/mode/usage UI; unknown kinds are
+ * ignored.
+ */
+export interface SessionMetaUpdateMessage {
+  type: "session_meta_update";
+  kind: "config_option_update" | "current_mode_update" | "session_info_update" | "usage_update";
+  payload: unknown;
+  sessionId?: string;
+}
+
+/**
  * Emitted after a successful `session/fork` upstream call. Swift uses this
  * to pivot the UI: bank the new sessionId as the active conversation,
  * preserve the source sessionId as resumable, and present the forked thread
@@ -626,4 +641,5 @@ export type OutboundMessage =
   | CodexLoginErrorMessage
   | WarmupCompleteMessage
   | AvailableCommandsUpdateMessage
+  | SessionMetaUpdateMessage
   | SessionForkedMessage;
