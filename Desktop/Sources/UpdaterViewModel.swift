@@ -410,12 +410,11 @@ final class UpdaterViewModel: ObservableObject {
         isInitialized = true
 
         // Test hook: fake an available update for UI testing (dev builds only)
-        // xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testUpdateAvailable"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Legacy trigger: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testUpdateAvailable"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testUpdateAvailable` with `com.fazm.desktop-dev.testUpdateAvailable`.
         if Bundle.main.bundleIdentifier == "com.fazm.desktop-dev" {
-            DistributedNotificationCenter.default().addObserver(
-                forName: NSNotification.Name("com.fazm.testUpdateAvailable"),
-                object: nil,
-                queue: .main
+            DistributedNotificationCenter.default().addFazmObserver(
+                "testUpdateAvailable"
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.updateAvailable = true
