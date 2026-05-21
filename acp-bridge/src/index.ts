@@ -2170,6 +2170,56 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
   });
   } // end else (browserMode !== "managed")
 
+  // --- Assrt QA testing MCP (additive, gated by FAZM_ASSRT_ENABLED) ---
+  // Registers @assrt-ai/assrt as a sibling MCP server. Provides:
+  //   * assrt_test / assrt_plan / assrt_diagnose — structured QA scenarios
+  //   * assrt_seed_cookies / _localstorage / _indexeddb — same shape as bh_seed_*
+  //   * assrt_analyze_video — only when GEMINI_API_KEY is set
+  // Targets the same managed Chrome port (9655) that browser-harness uses,
+  // so the cookie import flow in Settings seeds whichever Chrome is alive.
+  // When browser-harness is not running, assrt auto-spawns its own Chrome
+  // with persistent profile at ~/.assrt/managed-chrome (see assrt-mcp's
+  // managed-chrome.ts).
+  if (assrtEnabled) {
+    if (existsSync(assrtMcpEntry)) {
+      const assrtEnv: Array<{ name: string; value: string }> = [
+        // Pin the same port used by browser-harness so seeding + reads land
+        // on whichever Chrome is alive (either browser-harness's or assrt's
+        // own managed Chrome).
+        { name: "ASSRT_CDP_ENDPOINT", value: "http://127.0.0.1:9655" },
+      ];
+      // Reuse the bundled ai-browser-profile venv for assrt_seed_* tools.
+      // assrt's seed.ts shells out to the ai-browser-profile Python CLI and
+      // resolves the interpreter from ASSRT_ABP_PYTHON when set.
+      if (existsSync(aiBrowserProfilePython)) {
+        assrtEnv.push({ name: "ASSRT_ABP_PYTHON", value: aiBrowserProfilePython });
+        // Same trick used elsewhere: redirect Python's stdlib lookup to the
+        // bundled venv root so the relocatable layout still finds its lib.
+        assrtEnv.push({ name: "PYTHONHOME", value: aiBrowserProfileVenvDir });
+        assrtEnv.push({ name: "PYTHONDONTWRITEBYTECODE", value: "1" });
+      }
+      // If the user has Chrome installed in the standard macOS location,
+      // hand assrt the path explicitly so it doesn't have to autodetect.
+      const macOsChromeBin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+      if (existsSync(macOsChromeBin)) {
+        assrtEnv.push({ name: "ASSRT_CHROME_BIN", value: macOsChromeBin });
+      }
+      // Pass through GEMINI_API_KEY if set so assrt_analyze_video registers.
+      if (process.env.GEMINI_API_KEY) {
+        assrtEnv.push({ name: "GEMINI_API_KEY", value: process.env.GEMINI_API_KEY });
+      }
+      servers.push({
+        name: "assrt",
+        command: process.execPath, // bundled Node
+        args: [assrtMcpEntry],
+        env: assrtEnv,
+      });
+      logErr(`Assrt MCP enabled (entry=${assrtMcpEntry}, cdp=9655, abpPython=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"})`);
+    } else {
+      logErr(`[FAZM-ASSRT-MISSING] FAZM_ASSRT_ENABLED=true but assrt-mcp not bundled at ${assrtMcpEntry}. Run ./run.sh to rebuild.`);
+    }
+  }
+
   // mcp-server-macos-use (native macOS accessibility automation)
   if (existsSync(macosUseBinary)) {
     servers.push({
@@ -2454,7 +2504,7 @@ function emitMcpServers(servers: McpServerConfig[]): void {
 }
 
 // Names of built-in MCP servers (hardcoded in buildMcpServers)
-const BUILTIN_MCP_NAMES = new Set(["fazm_tools", "playwright", "macos-use", "whatsapp", "google-workspace", "browser-harness"]);
+const BUILTIN_MCP_NAMES = new Set(["fazm_tools", "playwright", "macos-use", "whatsapp", "google-workspace", "browser-harness", "assrt"]);
 function isUserMcpServer(name: string): boolean {
   return !BUILTIN_MCP_NAMES.has(name);
 }
@@ -4850,7 +4900,7 @@ async function main(): Promise<void> {
     } catch { /* ignore */ }
   }, 5 * 60 * 1000).unref();
 
-  logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}, browser-harness=${existsSync(browserHarnessMcpPython) ? "bundled" : "missing"}, ai-browser-profile=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, browserMode=${browserMode}`);
+  logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}, browser-harness=${existsSync(browserHarnessMcpPython) ? "bundled" : "missing"}, ai-browser-profile=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, assrt=${existsSync(assrtMcpEntry) ? "bundled" : "missing"}, browserMode=${browserMode}, assrtEnabled=${assrtEnabled}`);
   logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
 
   // Check Google Workspace MCP availability (venv bundled in app)
