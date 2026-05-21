@@ -1281,9 +1281,12 @@ class ChatProvider: ObservableObject {
         // row in `cron_jobs`. The notification is posted by ChatToolExecutor when an
         // execute_sql write touches that table; using DistributedNotificationCenter
         // means the launchd routine runner could post the same name later if needed.
-        routinesChangedObserver = DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.fazm.routinesChanged"),
-            object: nil, queue: .main
+        // Listens on both the legacy `com.fazm.routinesChanged` and the bundle-scoped
+        // `com.fazm.<scope>.routinesChanged`. addFazmObserver doesn't return tokens,
+        // and we don't need to deregister these for the lifetime of the process, so
+        // the previous `routinesChangedObserver` token is no longer needed.
+        DistributedNotificationCenter.default().addFazmObserver(
+            "routinesChanged"
         ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -1293,7 +1296,6 @@ class ChatProvider: ObservableObject {
     }
 
     private var terminationObserver: NSObjectProtocol?
-    private var routinesChangedObserver: NSObjectProtocol?
 
     // MARK: - Web Relay Setup
 
