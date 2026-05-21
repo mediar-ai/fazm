@@ -1520,6 +1520,14 @@ workflows:
           ARM64_SIZE=$(stat -f%z "$ARCH_ARM64_ZIP" 2>/dev/null || stat -c%s "$ARCH_ARM64_ZIP")
           X86_64_SIZE=$(stat -f%z "$ARCH_X86_64_ZIP" 2>/dev/null || stat -c%s "$ARCH_X86_64_ZIP")
 
+          # Persist to $CM_ENV so the later "Mirror to Cloudflare R2" step can build
+          # its own latest.json. Without these, int('$ARM64_SIZE') sees an empty string
+          # and the R2 step crashes with "invalid literal for int() with base 10: ''".
+          echo "ARM64_SHA256=$ARM64_SHA256" >> $CM_ENV
+          echo "X86_64_SHA256=$X86_64_SHA256" >> $CM_ENV
+          echo "ARM64_SIZE=$ARM64_SIZE" >> $CM_ENV
+          echo "X86_64_SIZE=$X86_64_SIZE" >> $CM_ENV
+
           # Generate and upload latest.json manifest
           python3 -c "
           import json
