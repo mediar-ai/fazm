@@ -208,7 +208,7 @@ To promote: `./scripts/promote_release.sh <tag>` (staging → beta → stable). 
 **Runtime env vars (`.env.app`):**
 - Local: edit `.env.app` (gitignored, contains secrets)
 - CI/CD: the `FAZM_APP_ENV` secret in Codemagic's `fazm_secrets` group holds the base64-encoded `.env.app`
-- **When adding/changing env vars in `.env.app`, you MUST also update `FAZM_APP_ENV` in Codemagic UI** (Settings → Environment variables → fazm_secrets). The Codemagic API cannot read/write team-level variable groups — UI only.
+- **When adding/changing env vars in `.env.app`, you MUST also update `FAZM_APP_ENV` in Codemagic** (UI Settings → Environment variables → `fazm_secrets`, or `POST https://api.codemagic.io/apps/$APP_ID/variables` with `"group":"fazm_secrets"`).
 - Generate the base64 value: `cat .env.app | base64`
 - The build will fail if required Vertex vars are missing (verified in codemagic.yaml)
 
