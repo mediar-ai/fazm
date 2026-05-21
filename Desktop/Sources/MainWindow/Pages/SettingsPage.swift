@@ -2031,9 +2031,9 @@ struct SettingsContentView: View {
 
         let resourcePath = Bundle.main.resourcePath ?? ""
         let abpDir = "\(resourcePath)/ai-browser-profile"
-        let abpPython = "\(abpDir)/.venv/bin/python3"
+        let abpPython = Self.resolveMcpVenvPython(in: abpDir)
         let bhDir = "\(resourcePath)/browser-harness"
-        let bhPython = "\(bhDir)/.venv/bin/python3"
+        let bhPython = Self.resolveMcpVenvPython(in: bhDir)
         let bhServer = "\(bhDir)/server.py"
 
         NSLog("[ManagedImport] start source=\(source) domains=\(domains)")
@@ -2107,6 +2107,31 @@ struct SettingsContentView: View {
             return (nil, out.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return ("exit \(proc.terminationStatus): \(err.trimmingCharacters(in: .whitespacesAndNewlines))", nil)
+    }
+
+    // Resolve the Python interpreter inside a bundled MCP directory. Codemagic
+    // ships the universal .dmg with `.venv-arm64/` and `.venv-x86_64/` side by
+    // side (per-arch wheels) and only renames the surviving one to plain
+    // `.venv/` when slicing into single-arch ZIPs for Sparkle delivery. The
+    // universal artifact installed from the .dmg therefore has NO `.venv/` dir
+    // at runtime, which made every `\(mcpDir)/.venv/bin/python3` lookup fail in
+    // prod (Settings > Import sessions → "ai-browser-profile not bundled").
+    // Mirror acp-bridge/src/index.ts's `resolveMcpVenvDir`: prefer the thinned
+    // `.venv/`, then fall back to the host-arch directory. Returns the
+    // canonical `.venv/bin/python3` path even when nothing exists, so callers
+    // get a sensible error message.
+    private static func resolveMcpVenvPython(in mcpDir: String) -> String {
+        let fm = FileManager.default
+        let thinned = "\(mcpDir)/.venv/bin/python3"
+        if fm.fileExists(atPath: thinned) { return thinned }
+        #if arch(arm64)
+        let archSuffix = "arm64"
+        #else
+        let archSuffix = "x86_64"
+        #endif
+        let archSpecific = "\(mcpDir)/.venv-\(archSuffix)/bin/python3"
+        if fm.fileExists(atPath: archSpecific) { return archSpecific }
+        return thinned
     }
 
     // Single-call zero-tab orchestrator. Invokes ai_browser_profile.bulk_import
