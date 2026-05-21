@@ -1,4 +1,5 @@
 import Cocoa
+import ObjCExceptionCatcher
 import SwiftUI
 
 /// NSTextView subclass that reports its layout height as intrinsicContentSize
@@ -15,11 +16,16 @@ class AutoSizingTextView: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
+        // Skip when detached — propagating up to a torn-down NSWindow
+        // raises NSInternalInconsistencyException from _postWindowNeedsUpdateConstraints.
+        // Crash repro: 2026-05-21 prod 11:09 with 5+ streaming popouts + context compaction.
+        guard window != nil, superview != nil else { return }
         invalidateIntrinsicContentSize()
     }
 
     override func layout() {
         super.layout()
+        guard window != nil, superview != nil else { return }
         invalidateIntrinsicContentSize()
     }
 
@@ -73,6 +79,11 @@ struct SelectableText: NSViewRepresentable {
     }
 
     func updateNSView(_ textView: AutoSizingTextView, context: Context) {
+        // Bail when detached: SwiftUI sometimes re-runs updates on representables
+        // whose hosting window is mid-teardown (e.g. popout close during streaming
+        // or context compaction). Invalidating constraints then propagates up to
+        // _postWindowNeedsUpdateConstraints, which throws NSException → SIGABRT.
+        guard textView.window != nil, textView.superview != nil else { return }
         let scaledSize = round(fontSize * fontScale)
         if textView.string != text {
             textView.string = text
@@ -86,6 +97,8 @@ struct SelectableText: NSViewRepresentable {
             textView.textContainer?.maximumNumberOfLines = 0
             textView.textContainer?.lineBreakMode = .byWordWrapping
         }
-        textView.invalidateIntrinsicContentSize()
+        if let exc = ObjCExceptionCatcher.catching({ textView.invalidateIntrinsicContentSize() }) {
+            log("SelectableText: NSException during invalidateIntrinsicContentSize — \(exc.name.rawValue): \(exc.reason ?? "nil")")
+        }
     }
 }
