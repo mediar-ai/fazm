@@ -193,9 +193,11 @@ class AnalysisOverlayWindow {
             """
         }
 
-        // Use the testQuery notification to inject into the floating bar session
+        // Use the testQuery notification to inject into the floating bar session.
+        // Post to the bundle-scoped name so this build's overlay only wakes this
+        // build's floating bar, not a sibling build (dev + prod side-by-side).
         DistributedNotificationCenter.default().postNotificationName(
-            .init("com.fazm.testQuery"),
+            .init("com.fazm.\(AppPaths.bundleScope).testQuery"),
             object: nil,
             userInfo: ["text": message],
             deliverImmediately: true
