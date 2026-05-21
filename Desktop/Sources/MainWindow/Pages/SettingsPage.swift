@@ -146,10 +146,16 @@ struct SettingsContentView: View {
     @AppStorage("browserMode") private var browserMode: String = "extension"
 
     // Assrt QA testing MCP (beta) — sibling MCP that adds assrt_test / assrt_plan /
-    // assrt_diagnose tools plus assrt_seed_* cookie/IDB seeders. Additive to whichever
-    // browser mode is active; off by default while in beta. Picked up at ACP bridge
-    // launch time, so flipping it fires com.fazm.control restartBridge below.
+    // assrt_diagnose tools plus assrt_seed_* cookie/IDB seeders and Phase 3 browser
+    // control (assrt_open_session / assrt_navigate / assrt_screenshot / assrt_close_session).
+    // Additive to whichever browser mode is active; off by default while in beta.
+    // Picked up at ACP bridge launch time, so flipping it fires com.fazm.control restartBridge below.
     @AppStorage("assrtEnabled") private var assrtEnabled: Bool = false
+    // Chrome install state for the Assrt seed/Phase 3 prereq step. Mirrors the
+    // pattern from BrowserExtensionSetup (poll while the user installs Chrome,
+    // flip when /Applications/Google Chrome.app appears).
+    @State private var assrtChromeInstalled: Bool = false
+    @State private var assrtChromeCheckTimer: Timer? = nil
 
     // Managed browser: import-sessions UI state
     @State private var managedImportSource: String = "arc:Default"
@@ -1542,11 +1548,16 @@ struct SettingsContentView: View {
             }
 
             // Assrt QA testing card (beta) — additive to whichever browser mode is active.
-            // Bundles @assrt-ai/assrt as a sibling MCP exposing structured QA scenarios
-            // plus the same cookie/IDB seeders as browser-harness. Restarts the bridge
-            // on toggle so FAZM_ASSRT_ENABLED takes effect on the next query.
+            // Bundles @assrt-ai/assrt as a sibling MCP exposing structured QA scenarios,
+            // cookie/localStorage/IndexedDB seeders, and Phase 3 freeform browser control.
+            // Restarts the bridge on toggle so FAZM_ASSRT_ENABLED takes effect on the next query.
+            //
+            // Numbered steps mirror BrowserExtensionSetup so the prereq (Chrome installed)
+            // is visible and actionable even when the user is using assrt outside of
+            // extension mode. Step 1 must turn green before step 2 can do useful work for
+            // any tool that drives a real browser (assrt_open_session / assrt_seed_*).
             settingsCard(settingId: "aichat.assrt") {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Image(systemName: "checkmark.seal")
                             .scaledFont(size: 16)
@@ -1562,38 +1573,96 @@ struct SettingsContentView: View {
                             .background(Color.orange)
                             .cornerRadius(4)
                         Spacer()
-                        Toggle("", isOn: $assrtEnabled)
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .labelsHidden()
-                            .onChange(of: assrtEnabled) { _, newValue in
-                                AnalyticsManager.shared.settingToggled(setting: "assrt_enabled", enabled: newValue)
-                                // FAZM_ASSRT_ENABLED is read at ACP bridge spawn time,
-                                // so flipping the toggle requires a bridge restart to
-                                // pick up the new env var.
-                                DistributedNotificationCenter.default().postNotificationName(
-                                    NSNotification.Name("com.fazm.control"),
-                                    object: nil,
-                                    userInfo: ["command": "restartBridge"],
-                                    deliverImmediately: true
-                                )
-                            }
                     }
 
-                    Text("Adds AI-powered QA testing tools (assrt_test, assrt_plan, assrt_diagnose) plus extra cookie/localStorage/IndexedDB importers. Works alongside whichever browser mode is selected above.")
+                    Text("AI-powered QA testing tools (assrt_test, assrt_plan, assrt_diagnose) plus extra cookie/localStorage/IndexedDB importers and a Phase 3 browser-control surface (assrt_open_session, assrt_navigate, assrt_screenshot, assrt_close_session). Works alongside whichever browser mode is selected above.")
                         .scaledFont(size: 12)
                         .foregroundColor(FazmColors.textTertiary)
 
-                    if assrtEnabled {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 6, height: 6)
-                            Text("Bundled MCP active. Restart any open chat to use it.")
+                    // Step 1: Install Chrome — required for any assrt tool that drives a
+                    // real browser (assrt_open_session, assrt_seed_*). The cloud-driven
+                    // tools (assrt_test/plan/diagnose) work without Chrome, so we phrase
+                    // this as "Required for browser actions" rather than a hard block.
+                    HStack(alignment: .top, spacing: 12) {
+                        assrtStepBadge("1", done: assrtChromeInstalled)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(assrtChromeInstalled ? "Google Chrome is installed" : "Install Google Chrome")
+                                .scaledFont(size: 13, weight: .medium)
+                                .foregroundColor(assrtChromeInstalled ? FazmColors.textTertiary : FazmColors.textPrimary)
+                            Text("Required for the local browser tools (assrt_open_session, assrt_seed_*). assrt_test runs in the cloud and works without Chrome.")
                                 .scaledFont(size: 11)
-                                .foregroundColor(FazmColors.textTertiary)
+                                .foregroundColor(FazmColors.textQuaternary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if !assrtChromeInstalled {
+                                Button(action: {
+                                    if let url = URL(string: "https://www.google.com/chrome/") {
+                                        NSWorkspace.shared.open(url)
+                                    }
+                                    startAssrtChromeCheckTimer()
+                                }) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "arrow.down.circle")
+                                            .scaledFont(size: 11)
+                                        Text("Download Chrome")
+                                            .scaledFont(size: 12)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Step 2: Enable the toggle. Browser-dependent tools still need step 1
+                    // green to do anything useful; the cloud tools work either way.
+                    HStack(alignment: .top, spacing: 12) {
+                        assrtStepBadge("2", done: assrtEnabled)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(assrtEnabled ? "Assrt MCP enabled" : "Enable Assrt MCP")
+                                    .scaledFont(size: 13, weight: .medium)
+                                    .foregroundColor(assrtEnabled ? FazmColors.textTertiary : FazmColors.textPrimary)
+                                Spacer()
+                                Toggle("", isOn: $assrtEnabled)
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+                                    .labelsHidden()
+                                    .onChange(of: assrtEnabled) { _, newValue in
+                                        AnalyticsManager.shared.settingToggled(setting: "assrt_enabled", enabled: newValue)
+                                        // FAZM_ASSRT_ENABLED is read at ACP bridge spawn time,
+                                        // so flipping the toggle requires a bridge restart to
+                                        // pick up the new env var.
+                                        DistributedNotificationCenter.default().postNotificationName(
+                                            NSNotification.Name("com.fazm.control"),
+                                            object: nil,
+                                            userInfo: ["command": "restartBridge"],
+                                            deliverImmediately: true
+                                        )
+                                    }
+                            }
+                            if assrtEnabled {
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 6, height: 6)
+                                    Text("Bundled MCP active. Restart any open chat to use it.")
+                                        .scaledFont(size: 11)
+                                        .foregroundColor(FazmColors.textTertiary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onAppear {
+                    assrtChromeInstalled = FileManager.default.fileExists(
+                        atPath: "/Applications/Google Chrome.app"
+                    )
+                }
+                .onDisappear {
+                    assrtChromeCheckTimer?.invalidate()
+                    assrtChromeCheckTimer = nil
                 }
             }
 
