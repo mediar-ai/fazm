@@ -46,6 +46,15 @@ fileprivate class PlainCopyNSTextView: NSTextView {
         }
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // updateNSView applies the attributed string even while detached (so content
+        // is never lost), but skips the size invalidation when detached. Re-invalidate
+        // on attach so SwiftUI re-queries our intrinsic size and the text becomes visible.
+        guard window != nil, superview != nil else { return }
+        invalidateIntrinsicContentSize()
+    }
+
     // Don't show NSTextView's default context menu — let SwiftUI's .contextMenu handle it
     override func menu(for event: NSEvent) -> NSMenu? {
         return nil
@@ -92,14 +101,19 @@ struct PlainCopyText: NSViewRepresentable {
     }
 
     func updateNSView(_ tv: NSTextView, context: Context) {
-        // See SelectableText.updateNSView — detached views must skip updates,
-        // otherwise invalidate-intrinsic propagates up to a torn-down window and throws.
-        guard tv.window != nil, tv.superview != nil else { return }
+        // Always apply content, even when detached. SwiftUI re-runs updateNSView on a
+        // freshly mounted representable before its window attachment completes (e.g. a
+        // finished AI message re-mounting after streaming); if we bailed here the text
+        // would never be set and the message would render blank. Only the intrinsic-size
+        // invalidation is gated on attachment, since invalidating into a torn-down window
+        // propagates to _postWindowNeedsUpdateConstraints and throws → SIGABRT.
+        // viewDidMoveToWindow re-invalidates once the view re-attaches.
+        let attached = tv.window != nil && tv.superview != nil
         // Update if content or attributes changed (e.g. font scale)
         if tv.textStorage?.string != attributedString.string || !attributedString.isEqual(to: tv.attributedString()) {
             if let exception = ObjCExceptionCatcher.catching({
                 tv.textStorage?.setAttributedString(self.attributedString)
-                tv.invalidateIntrinsicContentSize()
+                if attached { tv.invalidateIntrinsicContentSize() }
             }) {
                 log("PlainCopyText: NSException during setAttributedString — \(exception.name.rawValue): \(exception.reason ?? "nil"). String length=\(self.attributedString.length), attrs=\(self.attributedString.length > 0 ? String(describing: self.attributedString.attributes(at: 0, effectiveRange: nil).keys) : "empty")")
                 // Fallback: set plain text to avoid crash
@@ -112,7 +126,7 @@ struct PlainCopyText: NSViewRepresentable {
                             .foregroundColor: NSColor.white,
                         ]
                     ))
-                    tv.invalidateIntrinsicContentSize()
+                    if attached { tv.invalidateIntrinsicContentSize() }
                 }) {
                     log("PlainCopyText: NSException in fallback path — \(fallbackExc.name.rawValue): \(fallbackExc.reason ?? "nil")")
                 }
