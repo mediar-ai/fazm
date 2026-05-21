@@ -1442,8 +1442,10 @@ struct SettingsContentView: View {
                         // already wrote the new value to UserDefaults; just fire restartBridge
                         // so ChatProvider relaunches the bridge subprocess on the next query
                         // and picks up the new FAZM_BROWSER_MODE env var.
+                        // Bundle-scoped: restart only THIS build's bridge, not a
+                        // sibling build (dev + prod side-by-side safe).
                         DistributedNotificationCenter.default().postNotificationName(
-                            NSNotification.Name("com.fazm.control"),
+                            NSNotification.Name("com.fazm.\(AppPaths.bundleScope).control"),
                             object: nil,
                             userInfo: ["command": "restartBridge"],
                             deliverImmediately: true
@@ -1634,9 +1636,10 @@ struct SettingsContentView: View {
                                         AnalyticsManager.shared.settingToggled(setting: "assrt_enabled", enabled: newValue)
                                         // FAZM_ASSRT_ENABLED is read at ACP bridge spawn time,
                                         // so flipping the toggle requires a bridge restart to
-                                        // pick up the new env var.
+                                        // pick up the new env var. Bundle-scoped so a sibling
+                                        // build's bridge isn't restarted too.
                                         DistributedNotificationCenter.default().postNotificationName(
-                                            NSNotification.Name("com.fazm.control"),
+                                            NSNotification.Name("com.fazm.\(AppPaths.bundleScope).control"),
                                             object: nil,
                                             userInfo: ["command": "restartBridge"],
                                             deliverImmediately: true
