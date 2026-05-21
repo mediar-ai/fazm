@@ -1876,17 +1876,27 @@ class FloatingControlBarManager {
         return nil
     }
 
-    /// Terminate the running bridge subprocess. ChatProvider/ACPBridge will detect
-    /// the exit on its next stdio read and relaunch the bridge automatically
-    /// (the same path the parent-death watchdog already exercises). Useful for
-    /// clearing leaked claude subprocesses or testing fixes without restarting Fazm.
+    /// Ask the running bridge subprocess to restart gracefully. We send SIGHUP
+    /// (not SIGTERM) so the bridge can drain any in-flight queries before
+    /// exiting; ChatProvider then relaunches it with fresh env on the next
+    /// query. SIGTERM stays the immediate-kill path used by launchd and the
+    /// parent-death watchdog.
+    ///
+    /// Why graceful: the documented `com.fazm.control restartBridge` command
+    /// is the only way to pick up changed env vars (FAZM_BROWSER_MODE,
+    /// ASSRT_ENABLED, etc.) without restarting the whole app, so agents
+    /// running inside the bridge call it themselves. With an immediate SIGTERM
+    /// the bridge died mid-tool-call and the in-flight `tool_use` never got a
+    /// `tool_result`, parking the Anthropic API and the UI forever. SIGHUP
+    /// lets the calling agent's turn complete first; see SIGHUP handler in
+    /// acp-bridge/src/index.ts and the 2026-05-20 Assrt Phase-3 incident.
     private func restartBridgeSubprocess() {
         guard let bridgePid = findBridgePid() else {
             log("FloatingControlBarManager: restartBridge — no acp-bridge process found")
             return
         }
-        let result = kill(bridgePid, SIGTERM)
-        log("FloatingControlBarManager: restartBridge — SIGTERM sent to bridge PID=\(bridgePid) (kill returned \(result)). ChatProvider should relaunch on next query.")
+        let result = kill(bridgePid, SIGHUP)
+        log("FloatingControlBarManager: restartBridge — SIGHUP sent to bridge PID=\(bridgePid) (kill returned \(result)). Bridge will exit after in-flight queries drain; ChatProvider will relaunch on next query.")
     }
 
     /// Whether the floating bar window is currently visible.
