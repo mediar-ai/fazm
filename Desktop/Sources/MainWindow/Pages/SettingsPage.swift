@@ -1654,6 +1654,89 @@ struct SettingsContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Step 3: Import sessions from the user's real browser. Reuses the
+                    // exact same runManagedBrowserImport path the Managed Browser card
+                    // uses — cookies via CDP, then file-copy LocalStorage + IndexedDB —
+                    // because assrt's managed Chrome is now pointed at the same profile
+                    // (~/.fazm/browser-harness/profile) via ASSRT_MANAGED_USER_DATA_DIR.
+                    // Disabled until both prereqs are met.
+                    HStack(alignment: .top, spacing: 12) {
+                        assrtStepBadge("3", done: managedImportLastResult != nil && managedImportLastError == nil)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Import sessions from your browser")
+                                .scaledFont(size: 13, weight: .medium)
+                                .foregroundColor((managedImportLastResult != nil && managedImportLastError == nil) ? FazmColors.textTertiary : FazmColors.textPrimary)
+                            Text("Copies cookies, localStorage, and IndexedDB from your real Chrome/Arc/Brave/Edge profile into Fazm's managed Chrome — so the AI sees the same signed-in sites you do. One-time setup.")
+                                .scaledFont(size: 11)
+                                .foregroundColor(FazmColors.textQuaternary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Source profile")
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(FazmColors.textTertiary)
+                                Picker("Source", selection: $managedImportSource) {
+                                    Text("Arc (Default)").tag("arc:Default")
+                                    Text("Chrome (Default)").tag("chrome:Default")
+                                    Text("Chrome (Profile 1)").tag("chrome:Profile 1")
+                                    Text("Brave (Default)").tag("brave:Default")
+                                    Text("Edge (Default)").tag("edge:Default")
+                                }
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                                .controlSize(.small)
+                                .disabled(!assrtChromeInstalled || !assrtEnabled || managedImportRunning)
+                            }
+
+                            HStack(spacing: 8) {
+                                Button(action: { runManagedBrowserImport() }) {
+                                    HStack(spacing: 6) {
+                                        if managedImportRunning {
+                                            ProgressView()
+                                                .scaleEffect(0.5)
+                                                .frame(width: 12, height: 12)
+                                        } else {
+                                            Image(systemName: "arrow.down.circle")
+                                                .scaledFont(size: 12)
+                                        }
+                                        Text(managedImportRunning ? "Importing…" : "Import sessions")
+                                            .scaledFont(size: 12, weight: .medium)
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                                .disabled(!assrtChromeInstalled || !assrtEnabled || managedImportRunning)
+                            }
+
+                            if let result = managedImportLastResult {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                        .scaledFont(size: 11)
+                                    Text(result)
+                                        .scaledFont(size: 11)
+                                        .foregroundColor(FazmColors.textSecondary)
+                                }
+                            }
+                            if let err = managedImportLastError {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                        .scaledFont(size: 11)
+                                    Text(err)
+                                        .scaledFont(size: 11)
+                                        .foregroundColor(FazmColors.textSecondary)
+                                }
+                            }
+
+                            Text("macOS will ask once to release your browser's keychain item. Click Always Allow.")
+                                .scaledFont(size: 10)
+                                .foregroundColor(FazmColors.textTertiary)
+                                .italic()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onAppear {
                     assrtChromeInstalled = FileManager.default.fileExists(
