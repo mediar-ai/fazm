@@ -1526,6 +1526,7 @@ struct SettingsContentView: View {
                                 Text(result)
                                     .scaledFont(size: 11)
                                     .foregroundColor(FazmColors.textSecondary)
+                                    .textSelection(.enabled)
                             }
                         }
                         if let err = managedImportLastError {
@@ -1536,6 +1537,7 @@ struct SettingsContentView: View {
                                 Text(err)
                                     .scaledFont(size: 11)
                                     .foregroundColor(FazmColors.textSecondary)
+                                    .textSelection(.enabled)
                             }
                         }
 
@@ -1717,6 +1719,7 @@ struct SettingsContentView: View {
                                     Text(result)
                                         .scaledFont(size: 11)
                                         .foregroundColor(FazmColors.textSecondary)
+                                        .textSelection(.enabled)
                                 }
                             }
                             if let err = managedImportLastError {
@@ -1727,6 +1730,7 @@ struct SettingsContentView: View {
                                     Text(err)
                                         .scaledFont(size: 11)
                                         .foregroundColor(FazmColors.textSecondary)
+                                        .textSelection(.enabled)
                                 }
                             }
 
