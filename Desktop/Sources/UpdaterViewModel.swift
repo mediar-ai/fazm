@@ -46,6 +46,23 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     // Sparkle may terminate the app immediately after willInstallUpdate / didAbortWithError,
     // so async logging (Task + logQueue.async) would be lost.
 
+    /// Override the feed URL when the user's region is CN so the backend rewrites
+    /// enclosure URLs to the Cloudflare R2 mirror. GitHub releases (the default
+    /// enclosure host) are unreachable from mainland China behind the GFW.
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        guard let base = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+              var components = URLComponents(string: base) else {
+            return nil
+        }
+        let region = Locale.current.region?.identifier
+        guard region == "CN" else { return nil }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "region" }
+        items.append(URLQueryItem(name: "region", value: "cn"))
+        components.queryItems = items
+        return components.url?.absoluteString
+    }
+
     /// Called when Sparkle is about to check for updates (permission gate)
     func updater(_ updater: SPUUpdater, mayPerform check: SPUUpdateCheck) throws {
         logSync("Sparkle: Starting update check")
