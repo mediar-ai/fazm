@@ -551,6 +551,15 @@ actor ACPBridge {
     let browserMode = defaults.string(forKey: "browserMode") ?? "extension"
     env["FAZM_BROWSER_MODE"] = browserMode
 
+    // Assrt QA testing MCP (beta) — additive to whichever browser mode is active.
+    // When enabled, the bridge registers @assrt-ai/assrt as a sibling MCP server
+    // exposing assrt_test / assrt_plan / assrt_diagnose plus seed_* cookie/IDB
+    // tools. The seed tools target the same managed Chrome port (9655) that the
+    // browser-harness flow uses. Off by default while in beta.
+    if defaults.bool(forKey: "assrtEnabled") {
+      env["FAZM_ASSRT_ENABLED"] = "true"
+    }
+
     // Playwright MCP extension mode — only meaningful when browserMode == "extension"
     if browserMode != "managed" {
       let useExtension =
