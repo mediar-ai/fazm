@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Added optional Assrt QA testing MCP (beta) in Settings > Browser Automation; bundles AI-powered test scenarios and extra cookie/localStorage/IndexedDB importers alongside the existing browser tools"
+  ],
   "releases": [
     {
       "version": "2.9.31",
