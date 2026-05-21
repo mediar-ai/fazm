@@ -135,7 +135,12 @@ struct AIResponseView: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 16) {
+                        // NOTE: Must stay VStack, NOT LazyVStack. .defaultScrollAnchor(.bottom)
+                        // below requires the full content height to be known synchronously;
+                        // LazyVStack defers off-screen row materialization, which makes the
+                        // bottom anchor land in unrendered space when streaming starts → the
+                        // viewport appears empty until tokens arrive. Reverted from 9585586e.
+                        VStack(alignment: .leading, spacing: 16) {
                             // Previous chat exchanges — regular ones rendered individually
                             ForEach(regularExchanges) { exchange in
                                 chatExchangeView(exchange)
