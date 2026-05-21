@@ -92,6 +92,9 @@ struct PlainCopyText: NSViewRepresentable {
     }
 
     func updateNSView(_ tv: NSTextView, context: Context) {
+        // See SelectableText.updateNSView — detached views must skip updates,
+        // otherwise invalidate-intrinsic propagates up to a torn-down window and throws.
+        guard tv.window != nil, tv.superview != nil else { return }
         // Update if content or attributes changed (e.g. font scale)
         if tv.textStorage?.string != attributedString.string || !attributedString.isEqual(to: tv.attributedString()) {
             if let exception = ObjCExceptionCatcher.catching({
@@ -100,15 +103,19 @@ struct PlainCopyText: NSViewRepresentable {
             }) {
                 log("PlainCopyText: NSException during setAttributedString — \(exception.name.rawValue): \(exception.reason ?? "nil"). String length=\(self.attributedString.length), attrs=\(self.attributedString.length > 0 ? String(describing: self.attributedString.attributes(at: 0, effectiveRange: nil).keys) : "empty")")
                 // Fallback: set plain text to avoid crash
-                let plain = self.attributedString.string
-                tv.textStorage?.setAttributedString(NSAttributedString(
-                    string: plain,
-                    attributes: [
-                        .font: NSFont.systemFont(ofSize: 13),
-                        .foregroundColor: NSColor.white,
-                    ]
-                ))
-                tv.invalidateIntrinsicContentSize()
+                if let fallbackExc = ObjCExceptionCatcher.catching({
+                    let plain = self.attributedString.string
+                    tv.textStorage?.setAttributedString(NSAttributedString(
+                        string: plain,
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: 13),
+                            .foregroundColor: NSColor.white,
+                        ]
+                    ))
+                    tv.invalidateIntrinsicContentSize()
+                }) {
+                    log("PlainCopyText: NSException in fallback path — \(fallbackExc.name.rawValue): \(fallbackExc.reason ?? "nil")")
+                }
             }
         }
     }
