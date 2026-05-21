@@ -4849,6 +4849,42 @@ process.on("SIGUSR2", () => {
   }
 });
 
+// SIGHUP: graceful restart. Wait for all in-flight queries to drain, then exit
+// cleanly so ChatProvider relaunches with fresh env on the next prompt. Use
+// this instead of SIGTERM when you want to pick up a new env var (e.g.
+// ASSRT_ENABLED) without bricking the in-flight chat that triggered the
+// restart. SIGTERM still does immediate teardown for launchd / parent-death.
+//
+// History: before this handler existed, the documented `com.fazm.control
+// restartBridge` command sent SIGTERM unconditionally. When an agent inside
+// the bridge invoked restartBridge to pick up new env, the bridge died
+// mid-tool-call and the in-flight tool_use never received its tool_result —
+// the Anthropic API parked waiting on that tool_use_id, the UI stayed
+// pinned on "third action", and the session was unrecoverable. See the
+// 2026-05-20 Assrt-Phase-3 pop-out incident.
+let restartRequested = false;
+process.on("SIGHUP", () => {
+  if (restartRequested) {
+    logErr(`[CONTROL] SIGHUP: graceful restart already pending (activeQueries=${activeQueries.size})`);
+    return;
+  }
+  restartRequested = true;
+  const startedAt = Date.now();
+  const MAX_WAIT_MS = 5 * 60 * 1000;
+  logErr(`[CONTROL] SIGHUP: graceful restart requested (activeQueries=${activeQueries.size}, sessions=${sessions.size})`);
+  const poll = setInterval(() => {
+    if (activeQueries.size === 0) {
+      clearInterval(poll);
+      logErr(`[CONTROL] SIGHUP: drain complete in ${Math.round((Date.now() - startedAt) / 1000)}s — exiting for restart`);
+      process.exit(0);
+    } else if (Date.now() - startedAt > MAX_WAIT_MS) {
+      clearInterval(poll);
+      logErr(`[CONTROL] SIGHUP: drain timeout after ${Math.round(MAX_WAIT_MS / 1000)}s — forcing exit with activeQueries=${activeQueries.size}`);
+      process.exit(0);
+    }
+  }, 500);
+});
+
 process.on("unhandledRejection", (reason) => {
   logErr(`Unhandled rejection: ${reason}`);
   logCrash(`Unhandled rejection: ${reason}`);
