@@ -130,7 +130,7 @@ cat /tmp/fazm-control-state.json
 | `openInput` | Opens the AI input field |
 | `sendFollowUp:<text>` | Sends a follow-up message in active conversation |
 | `setWorkspace:<path>` | Sets the working directory |
-| `restartBridge` | Terminates the running ACP bridge subprocess; ChatProvider relaunches it on the next query. Use when you've changed an env var (e.g. `FAZM_BROWSER_MODE`) and need the bridge to pick it up. |
+| `restartBridge` | **Graceful** restart: sends SIGHUP to the running ACP bridge subprocess. The bridge waits for every in-flight query to finish, then exits, and ChatProvider relaunches it with fresh env on the next query. Use when you've changed an env var (e.g. `FAZM_BROWSER_MODE`, `ASSRT_ENABLED`) and need the bridge to pick it up. **Safe to call from inside an active chat** — the bridge defers exit until the calling agent's turn (including the `tool_use` that triggered the restart) completes, so the in-flight `tool_use_id` always gets a `tool_result`. Pre-2026-05-20 this was an immediate SIGTERM and self-bricked any session that invoked it; see the SIGHUP handler in `acp-bridge/src/index.ts` for full context. Note: the new env will only be live for **subsequent** prompts, not the agent turn that issued the restart. |
 
 State JSON includes: `model`, `modelLabel`, `voiceEnabled`, `browserMode`, `workspace`, `isVisible`, `showingAIConversation`, `showingAIResponse`, `isAILoading`, `isVoiceListening`, `chatHistoryCount`, `displayedQuery`, `queueCount`, `isTutorialActive`, `availableModels`, and optionally `currentMessagePreview`/`isStreaming`.
 
