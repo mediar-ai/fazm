@@ -62,7 +62,11 @@ enum ChatQueryLifecycle {
                 state.streaming.currentAIMessage = ChatMessage(text: "Switched to your Claude account. You can keep chatting.", sender: .ai)
             } else {
                 state.showConnectClaudeButton = true
-                state.streaming.currentAIMessage = ChatMessage(text: "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting.", sender: .ai)
+                let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
+                let body = geminiAvailable
+                    ? "You've used all your built-in AI credits. Switch to Gemini for free, or connect Claude Code or ChatGPT to keep chatting."
+                    : "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting."
+                state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
             }
         } else if let errorText = provider.errorMessage {
             let isRateLimit = errorText.contains("usage limit") || errorText.contains("rate limit")
