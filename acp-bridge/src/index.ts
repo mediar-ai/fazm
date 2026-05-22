@@ -2407,6 +2407,14 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
       }
       assrtEnv.push({ name: "ASSRT_PROVIDER", value: assrtProvider });
 
+      // Forward the active Gemini model id so Assrt's TestAgent runs the model
+      // Fazm picked instead of its bundled default. Only set when provider=gemini;
+      // we never forward Fazm's Claude ACP aliases (e.g. "claude-sonnet-4-6")
+      // because Assrt talks to Anthropic's API directly and the ids don't match.
+      if (assrtProvider === "gemini" && selectedModel) {
+        assrtEnv.push({ name: "GEMINI_MODEL", value: selectedModel });
+      }
+
       // Defense in depth: explicitly blank out ANTHROPIC_API_KEY in the Assrt
       // subprocess env. Even with ASSRT_PROVIDER pinned, Fazm's policy is "no
       // API key handed to subprocesses" — Assrt should use Claude Code OAuth
