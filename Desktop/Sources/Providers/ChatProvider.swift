@@ -1682,6 +1682,28 @@ class ChatProvider: ObservableObject {
                     log("ChatProvider: onOrphanedResult cleared \(cleared) streaming flags for sessionKey=\(key)")
                 }
             }
+            // Gemini probe result — feeds ShortcutSettings.updateGeminiModels.
+            // When the bridge replies `disabled=true` (FAZM_GEMINI_ENABLED off)
+            // we clear the gemini half of the picker; otherwise we forward the
+            // whitelist-curated entries (Flash + Gemini auto).
+            await acpBridge.setGeminiProbeResultHandler { ok, disabled, _, _, _, availableModels, error in
+                Task { @MainActor in
+                    if disabled || !ok {
+                        if let err = error, !disabled {
+                            log("ChatProvider: gemini probe failed (error=\(err)); clearing gemini picker entries")
+                        }
+                        ShortcutSettings.shared.updateGeminiModels([])
+                        return
+                    }
+                    let parsed: [(modelId: String, name: String, description: String?)] = availableModels.compactMap { dict in
+                        guard let id = dict["modelId"] as? String,
+                              let name = dict["name"] as? String else { return nil }
+                        return (modelId: id, name: name, description: dict["description"] as? String)
+                    }
+                    log("ChatProvider: gemini probe ok, advertised=\(parsed.count) models")
+                    ShortcutSettings.shared.updateGeminiModels(parsed)
+                }
+            }
             // Phase 3.2 — codex backend probe result handler. Updates the
             // CodexBackendManager singleton; the SettingsPage subsection and
             // model picker observe it.
@@ -1866,6 +1888,12 @@ class ChatProvider: ObservableObject {
             log("ChatProvider: Auto-probing Codex backend at startup")
             CodexBackendManager.shared.markProbing()
             Task { await acpBridge.sendCodexProbe() }
+
+            // Auto-probe Gemini too — the bridge replies `disabled=true` cheaply
+            // when FAZM_GEMINI_ENABLED is off, so this is safe whether the flag
+            // is on or off. The handler populates the picker if it succeeds.
+            log("ChatProvider: Auto-probing Gemini backend at startup")
+            Task { await acpBridge.sendGeminiProbe() }
 
             // Track if the bundled node binary was broken (Sparkle update corruption)
             if NodeBinaryHelper.bundledNodeWasBroken {
