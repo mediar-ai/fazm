@@ -208,6 +208,19 @@ class ShortcutSettings: ObservableObject {
     /// Last Codex models reported via `codex_probe_result`. Empty until the
     /// CodexBackendManager probe succeeds.
     private var lastCodexModels: [ModelOption] = []
+    /// Last Gemini models reported via `gemini_probe_result`. Empty when
+    /// FAZM_GEMINI_ENABLED is off (the bridge returns `disabled=true`).
+    /// Curated to two entries (Flash, Gemini auto) regardless of how many the
+    /// adapter reports; see `updateGeminiModels(_:)`.
+    private var lastGeminiModels: [ModelOption] = []
+
+    /// Whitelist of Gemini modelIds the picker should expose, in display order.
+    /// Keep this short: power users want "Flash latest" + "Gemini latest", not
+    /// every preview/lite variant gemini-cli ships. Update when the family rolls.
+    private static let geminiPickerWhitelist: [(modelId: String, short: String, label: String)] = [
+        ("gemini-3-flash-preview", "Flash", "Flash (Gemini, latest)"),
+        ("auto-gemini-3", "Gemini", "Gemini (Auto, latest)"),
+    ]
 
     /// Normalize a model ID so the bridge receives an unambiguous canonical id.
     /// Haiku/Sonnet stay as short aliases (the SDK's substring resolver handles those
@@ -257,6 +270,29 @@ class ShortcutSettings: ObservableObject {
         recomputeAvailableModels()
     }
 
+    /// Update the Gemini half of the model list from a `gemini_probe_result`.
+    /// The bridge returns 8+ raw entries (auto/pro/flash/lite across 2.5 and
+    /// 3.x); we keep only the curated whitelist (Flash latest + Gemini auto)
+    /// so the picker stays focused. Pass an empty array to clear, e.g. when
+    /// the bridge reports `disabled=true` (FAZM_GEMINI_ENABLED off).
+    func updateGeminiModels(_ probeModels: [(modelId: String, name: String, description: String?)]) {
+        if probeModels.isEmpty {
+            if !lastGeminiModels.isEmpty {
+                lastGeminiModels = []
+                recomputeAvailableModels()
+            }
+            return
+        }
+        let advertised = Set(probeModels.map { $0.modelId })
+        let kept: [ModelOption] = Self.geminiPickerWhitelist.compactMap { entry in
+            guard advertised.contains(entry.modelId) else { return nil }
+            return ModelOption(id: entry.modelId, label: entry.label, shortLabel: entry.short)
+        }
+        guard kept != lastGeminiModels else { return }
+        lastGeminiModels = kept
+        recomputeAvailableModels()
+    }
+
     /// Phase 3.4 — update the Codex half of the model list. Called when the
     /// `codex_probe_result` message arrives. Pass an empty array to clear the
     /// Codex models (e.g. when the user disables the backend).
@@ -298,7 +334,10 @@ class ShortcutSettings: ObservableObject {
     }
 
     private func recomputeAvailableModels() {
-        let merged = Self.filterContextVariants(lastClaudeModels) + lastCodexModels
+        // Order: Claude (filtered) → Codex → Gemini. Gemini sits last because
+        // it's the newest backend and currently off-by-default; promoting it
+        // when usage proves out is a one-line reorder.
+        let merged = Self.filterContextVariants(lastClaudeModels) + lastCodexModels + lastGeminiModels
         guard merged != availableModels else { return }
         availableModels = merged
         let modelDesc = merged.map { "\($0.id) = \($0.label)" }.joined(separator: ", ")
