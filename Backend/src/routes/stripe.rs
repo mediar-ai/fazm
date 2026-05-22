@@ -166,8 +166,9 @@ pub async fn create_checkout_session(
         "Pricing variant assigned"
     );
 
-    // Create checkout session. By default, no free trial: card is charged immediately.
-    // STRIPE_TRIAL_DAYS env var can override (set > 0 to re-enable a trial period).
+    // Free-trial length comes from STRIPE_TRIAL_DAYS. When > 0, Stripe creates
+    // the subscription in `trialing` status, no charge today, and auto-charges
+    // the variant price on day N. Mirrors `TRIAL_DAYS` on the website.
     let trial_days = config.stripe_trial_days;
     let mut params = vec![
         ("mode", "subscription".to_string()),
