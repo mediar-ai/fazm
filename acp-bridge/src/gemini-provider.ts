@@ -1,0 +1,393 @@
+/**
+ * GeminiProvider — wrapper around `@google/gemini-cli`'s `--experimental-acp`
+ * mode. Spawns the bundled gemini.js (Node script, not a native binary) and
+ * speaks the ACP JSON-RPC dialect over stdio.
+ *
+ * Mirrors CodexProvider so the two ACP-shaped backends share the same surface
+ * (request/notify, session handler registration, server-request handling).
+ * The two differences from Codex:
+ *   1. The binary is a JS entry, so we spawn `node bundle/gemini.js` rather
+ *      than a native binary.
+ *   2. Gemini CLI requires an explicit `authenticate` JSON-RPC call after
+ *      `initialize` (Codex authenticates implicitly via ~/.codex/auth.json).
+ *
+ * This module is feature-flagged at the index.ts level via
+ * FAZM_GEMINI_ENABLED=true; the file itself is dormant otherwise.
+ */
+
+import { spawn, type ChildProcess } from "child_process";
+import { createInterface } from "readline";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+import { existsSync } from "fs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+type ResponseHandler = {
+  resolve: (result: unknown) => void;
+  reject: (err: Error) => void;
+};
+
+type NotificationHandler = (method: string, params: unknown) => void;
+
+export class GeminiAcpError extends Error {
+  code: number;
+  data?: unknown;
+  constructor(message: string, code: number, data?: unknown) {
+    super(message);
+    this.name = "GeminiAcpError";
+    this.code = code;
+    this.data = data;
+  }
+}
+
+export interface GeminiProviderOptions {
+  /** Override the resolved gemini.js entry path (used by tests). */
+  entryPath?: string;
+  env?: NodeJS.ProcessEnv;
+  logErr?: (msg: string) => void;
+  onExit?: (code: number | null) => void;
+  onNotification?: NotificationHandler;
+  onPermissionRequest?: (params: unknown) => string;
+}
+
+export interface GeminiInitResult {
+  protocolVersion: number;
+  agentCapabilities?: Record<string, unknown>;
+  agentInfo?: { name: string; version: string; title?: string };
+  authMethods?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+  }>;
+}
+
+/** Relative path to the bundled CLI entry inside acp-bridge/node_modules. */
+const DEFAULT_ENTRY_REL = join(
+  "node_modules",
+  "@google",
+  "gemini-cli",
+  "bundle",
+  "gemini.js",
+);
+
+/** Decide which gemini-cli auth method to use based on environment. */
+export function pickGeminiAuthMethod(env: NodeJS.ProcessEnv): string | null {
+  if (env.GOOGLE_GENAI_USE_VERTEXAI === "true" || env.GOOGLE_GENAI_USE_VERTEXAI === "1") {
+    return "vertex-ai";
+  }
+  if (env.GEMINI_API_KEY || env.GOOGLE_API_KEY) {
+    return "gemini-api-key";
+  }
+  // OAuth-personal requires an interactive browser flow that's hostile to a
+  // background subprocess; refuse rather than hang.
+  return null;
+}
+
+export class GeminiProvider {
+  readonly name = "gemini";
+
+  private process: ChildProcess | null = null;
+  private stdinWriter: ((line: string) => void) | null = null;
+  private responseHandlers = new Map<number, ResponseHandler>();
+  private sessionNotificationHandlers = new Map<string, NotificationHandler>();
+  private nextRpcId = 1;
+  private isInitialized = false;
+  private initPromise: Promise<GeminiInitResult> | null = null;
+  private cachedInit: GeminiInitResult | null = null;
+  private authComplete = false;
+  /** Most recent stderr blob containing a turn error so query.ts can replace
+   *  the generic JSON-RPC "Internal error" with the real reason. */
+  private lastTurnError: { message: string; at: number } | null = null;
+
+  private readonly entryPath: string;
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly logErr: (msg: string) => void;
+  private readonly onExitHook?: (code: number | null) => void;
+  private readonly onNotificationHook?: NotificationHandler;
+  private readonly onPermissionRequest: (params: unknown) => string;
+
+  constructor(opts: GeminiProviderOptions = {}) {
+    this.entryPath = opts.entryPath ?? GeminiProvider.resolveDefaultEntry();
+    this.env = opts.env ?? process.env;
+    this.logErr = opts.logErr ?? ((m) => process.stderr.write(`[gemini-provider] ${m}\n`));
+    this.onExitHook = opts.onExit;
+    this.onNotificationHook = opts.onNotification;
+    this.onPermissionRequest = opts.onPermissionRequest ?? GeminiProvider.defaultPermissionResolver;
+  }
+
+  static resolveDefaultEntry(): string {
+    const bridgeRoot = join(__dirname, "..");
+    return join(bridgeRoot, DEFAULT_ENTRY_REL);
+  }
+
+  static defaultPermissionResolver(params: unknown): string {
+    const p = params as Record<string, unknown> | undefined;
+    const options = (p?.options as Array<{ kind: string; optionId: string }>) ?? [];
+    return (
+      options.find((o) => o.kind === "allow_always")?.optionId
+      ?? options.find((o) => o.kind === "allow_once")?.optionId
+      ?? options[0]?.optionId
+      ?? "allow"
+    );
+  }
+
+  isRunning(): boolean {
+    return this.process !== null;
+  }
+
+  registerSessionHandler(sessionId: string, handler: NotificationHandler): void {
+    this.sessionNotificationHandlers.set(sessionId, handler);
+  }
+
+  unregisterSessionHandler(sessionId: string): void {
+    this.sessionNotificationHandlers.delete(sessionId);
+  }
+
+  start(): void {
+    if (this.process) return;
+
+    if (!existsSync(this.entryPath)) {
+      throw new Error(`gemini-cli entry not found: ${this.entryPath}`);
+    }
+
+    this.logErr(`spawning gemini-cli: node ${this.entryPath} --experimental-acp`);
+    const proc = spawn(process.execPath, [this.entryPath, "--experimental-acp"], {
+      env: this.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
+    });
+
+    if (!proc.stdin || !proc.stdout || !proc.stderr) {
+      throw new Error("gemini-cli subprocess pipes not available");
+    }
+
+    this.process = proc;
+
+    this.stdinWriter = (line: string) => {
+      try {
+        proc.stdin?.write(line + "\n");
+      } catch (err) {
+        this.logErr(`stdin write failed: ${err}`);
+      }
+    };
+
+    const stdoutRl = createInterface({ input: proc.stdout, terminal: false });
+    stdoutRl.on("line", (line) => this.handleStdoutLine(line));
+
+    proc.stderr.on("data", (data: Buffer) => {
+      const text = data.toString().trim();
+      if (!text) return;
+      this.logErr(`(stderr) ${text}`);
+      for (const line of text.split("\n")) {
+        const turnErr = GeminiProvider.extractTurnError(line);
+        if (turnErr) this.lastTurnError = { message: turnErr, at: Date.now() };
+      }
+    });
+
+    proc.on("exit", (code) => {
+      this.logErr(`gemini-cli exited code=${code}`);
+      this.process = null;
+      this.stdinWriter = null;
+      this.isInitialized = false;
+      this.authComplete = false;
+      this.initPromise = null;
+      this.cachedInit = null;
+      for (const [, handler] of this.responseHandlers) {
+        handler.reject(new Error(`gemini-cli exited (code ${code})`));
+      }
+      this.responseHandlers.clear();
+      this.onExitHook?.(code);
+    });
+  }
+
+  shutdown(): void {
+    const proc = this.process;
+    if (!proc) return;
+    const pid = proc.pid;
+    try {
+      if (pid) process.kill(-pid, "SIGTERM");
+      else proc.kill("SIGTERM");
+    } catch {
+      try { proc.kill("SIGTERM"); } catch { /* already dead */ }
+    }
+    this.process = null;
+  }
+
+  request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    if (!this.process) this.start();
+    const id = this.nextRpcId++;
+    const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+
+    return new Promise((resolve, reject) => {
+      this.responseHandlers.set(id, { resolve, reject });
+      if (this.stdinWriter) {
+        this.stdinWriter(msg);
+      } else {
+        this.responseHandlers.delete(id);
+        reject(new Error("gemini-cli stdin not available"));
+      }
+    });
+  }
+
+  notify(method: string, params: Record<string, unknown> = {}): void {
+    if (!this.process) this.start();
+    const msg = JSON.stringify({ jsonrpc: "2.0", method, params });
+    this.stdinWriter?.(msg);
+  }
+
+  async initialize(): Promise<GeminiInitResult> {
+    if (this.cachedInit) return this.cachedInit;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      const result = (await this.request("initialize", {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      })) as GeminiInitResult;
+      this.isInitialized = true;
+      this.cachedInit = result;
+      this.logErr(
+        `initialized: protocol=${result.protocolVersion}, agent=${result.agentInfo?.name}@${result.agentInfo?.version}`,
+      );
+      return result;
+    })();
+
+    try {
+      return await this.initPromise;
+    } catch (err) {
+      this.initPromise = null;
+      throw err;
+    }
+  }
+
+  /**
+   * Pick an auth method from env and send `authenticate` to the agent.
+   * Idempotent: once successful, subsequent calls short-circuit.
+   * Throws if no usable auth method is configured (e.g. no GEMINI_API_KEY
+   * and Vertex mode is off).
+   */
+  async authenticate(): Promise<void> {
+    if (this.authComplete) return;
+    const methodId = pickGeminiAuthMethod(this.env);
+    if (!methodId) {
+      throw new Error(
+        "No usable Gemini auth method: set GEMINI_API_KEY, or GOOGLE_GENAI_USE_VERTEXAI=true with GOOGLE_CLOUD_PROJECT.",
+      );
+    }
+    await this.request("authenticate", { methodId });
+    this.authComplete = true;
+    this.logErr(`authenticated via ${methodId}`);
+  }
+
+  /** Get cached init result (or null if not yet initialized). */
+  getInitResult(): GeminiInitResult | null {
+    return this.cachedInit;
+  }
+
+  /** Return the most recent gemini-cli turn error if it was captured within
+   *  `maxAgeMs`. gemini-query uses this to replace the generic JSON-RPC
+   *  "Internal error" with the real reason. */
+  getRecentTurnError(maxAgeMs = 8000): string | null {
+    if (!this.lastTurnError) return null;
+    if (Date.now() - this.lastTurnError.at > maxAgeMs) return null;
+    return this.lastTurnError.message;
+  }
+
+  /**
+   * Parse a gemini-cli stderr line for an error message worth surfacing.
+   * gemini-cli prints various non-fatal lines (telemetry, "Skipping project
+   * agents"). Only treat lines containing "Error:" or "RESOURCE_EXHAUSTED" or
+   * "exhausted your daily quota" as turn errors.
+   */
+  static extractTurnError(line: string): string | null {
+    // eslint-disable-next-line no-control-regex
+    const clean = line.replace(/\x1b\[[0-9;]*m/g, "").trim();
+    if (!clean) return null;
+    if (
+      clean.includes("RESOURCE_EXHAUSTED") ||
+      clean.toLowerCase().includes("exhausted your daily quota") ||
+      /\bError:\s/.test(clean)
+    ) {
+      return clean.length > 400 ? clean.slice(0, 400) + "…" : clean;
+    }
+    return null;
+  }
+
+  private handleStdoutLine(line: string): void {
+    if (!line.trim()) return;
+    let msg: Record<string, unknown>;
+    try {
+      msg = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      this.logErr(`failed to parse stdout: ${line.slice(0, 200)}`);
+      return;
+    }
+
+    const id = msg.id;
+    const method = msg.method;
+
+    if (typeof method === "string" && id !== undefined && id !== null) {
+      this.handleServerRequest(id as number, method, msg.params);
+      return;
+    }
+
+    if (id !== undefined && id !== null) {
+      const handler = this.responseHandlers.get(id as number);
+      if (!handler) return;
+      this.responseHandlers.delete(id as number);
+      if ("error" in msg) {
+        const err = msg.error as { code: number; message: string; data?: unknown };
+        handler.reject(new GeminiAcpError(err.message, err.code, err.data));
+      } else {
+        handler.resolve(msg.result);
+      }
+      return;
+    }
+
+    if (typeof method === "string") {
+      this.routeNotification(method, msg.params);
+    }
+  }
+
+  private handleServerRequest(id: number, method: string, params: unknown): void {
+    if (method === "session/request_permission") {
+      const optionId = this.onPermissionRequest(params);
+      this.stdinWriter?.(JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        result: { outcome: { outcome: "selected", optionId } },
+      }));
+      return;
+    }
+    if (method === "session/update") {
+      this.routeNotification(method, params);
+      this.stdinWriter?.(JSON.stringify({ jsonrpc: "2.0", id, result: null }));
+      return;
+    }
+    this.logErr(`unhandled server request: ${method} (id=${id})`);
+    this.stdinWriter?.(JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: `Method not handled: ${method}` },
+    }));
+  }
+
+  private routeNotification(method: string, params: unknown): void {
+    const sessionId = GeminiProvider.extractSessionId(params);
+    const sessionHandler = sessionId ? this.sessionNotificationHandlers.get(sessionId) : undefined;
+    if (sessionHandler) {
+      sessionHandler(method, params);
+    } else if (this.onNotificationHook) {
+      this.onNotificationHook(method, params);
+    }
+  }
+
+  private static extractSessionId(params: unknown): string | undefined {
+    const p = params as Record<string, unknown> | undefined;
+    if (typeof p?.sessionId === "string") return p.sessionId;
+    const update = p?.update as Record<string, unknown> | undefined;
+    if (typeof update?.sessionId === "string") return update.sessionId;
+    return undefined;
+  }
+}
