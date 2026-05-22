@@ -51,6 +51,16 @@ import {
   codexSessionCount,
   clearCodexSessions,
 } from "./codex-query.js";
+import { GeminiProvider } from "./gemini-provider.js";
+import {
+  handleGeminiQuery,
+  isGeminiModel,
+  dropGeminiSession,
+  interruptGeminiSession,
+  interruptAllGeminiSessions,
+  geminiSessionCount,
+  clearGeminiSessions,
+} from "./gemini-query.js";
 import { classifyApiFailure } from "./api-failure.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1148,6 +1158,89 @@ async function handleCodexLogout(): Promise<void> {
     logErr(`[codex-oauth] failed to delete auth.json: ${err}`);
   }
   await handleCodexInitProbe();
+}
+
+// --- Gemini provider (off by default; gated on FAZM_GEMINI_ENABLED) ---
+// Lazily instantiated; only spawned when the feature flag is on AND the bridge
+// receives either a gemini_init_probe message or a query whose model id is a
+// Gemini one. Default-off path is zero impact: no subprocess, no env reads
+// beyond the single boolean check below.
+let geminiProvider: GeminiProvider | null = null;
+
+function isGeminiEnabled(): boolean {
+  const v = process.env.FAZM_GEMINI_ENABLED;
+  return v === "true" || v === "1";
+}
+
+function getGeminiProvider(): GeminiProvider | null {
+  if (!isGeminiEnabled()) return null;
+  if (!geminiProvider) {
+    geminiProvider = new GeminiProvider({
+      logErr: (m) => logErr(`[gemini] ${m}`),
+      onNotification: (method, params) => {
+        const p = params as Record<string, unknown> | undefined;
+        const sid = (p?.sessionId as string | undefined)
+          ?? ((p?.update as Record<string, unknown> | undefined)?.sessionId as string | undefined);
+        logErr(`[gemini] unrouted notification method=${method} sessionId=${sid ?? "?"}`);
+      },
+    });
+  }
+  return geminiProvider;
+}
+
+async function handleGeminiInitProbe(): Promise<void> {
+  if (!isGeminiEnabled()) {
+    send({
+      type: "gemini_probe_result",
+      ok: false,
+      disabled: true,
+      error: "Gemini disabled (set FAZM_GEMINI_ENABLED=true to enable).",
+    });
+    return;
+  }
+  try {
+    const provider = getGeminiProvider();
+    if (!provider) {
+      send({ type: "gemini_probe_result", ok: false, disabled: true });
+      return;
+    }
+    provider.start();
+    const init = await provider.initialize();
+    await provider.authenticate();
+
+    let currentModelId: string | undefined;
+    let availableModels: Array<{ modelId: string; name: string; description?: string }> | undefined;
+    try {
+      const probeSession = (await provider.request("session/new", {
+        cwd: homedir(),
+        mcpServers: [],
+      })) as {
+        sessionId: string;
+        models?: {
+          currentModelId?: string;
+          availableModels?: Array<{ modelId: string; name: string; description?: string }>;
+        };
+      };
+      currentModelId = probeSession.models?.currentModelId;
+      availableModels = probeSession.models?.availableModels;
+    } catch (probeErr) {
+      logErr(`[gemini] probe session/new failed: ${probeErr}`);
+    }
+    send({
+      type: "gemini_probe_result",
+      ok: true,
+      agent: init.agentInfo ? `${init.agentInfo.name}@${init.agentInfo.version}` : undefined,
+      authMethods: init.authMethods?.map((m) => m.id),
+      currentModelId,
+      availableModels,
+    });
+  } catch (err) {
+    send({
+      type: "gemini_probe_result",
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 async function handleCodexLogin(): Promise<void> {
@@ -2999,6 +3092,31 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       send,
       sendWithSession,
       getProvider: getCodexProvider,
+      buildMcpServers,
+      registerSession,
+    });
+    return;
+  }
+
+  // Route Gemini-prefixed models to gemini-cli's ACP surface, only when the
+  // feature flag is on. If a gemini-* model id arrives while disabled, surface
+  // a clear error rather than silently falling through to Claude (which would
+  // 400 on the unknown model id and produce a confusing user-visible message).
+  if (isGeminiModel(msg.model)) {
+    const provider = getGeminiProvider();
+    if (!provider) {
+      logErr(`[gemini-query] Gemini disabled but received query for ${msg.model}`);
+      send({
+        type: "error",
+        message: "Gemini is disabled. Set FAZM_GEMINI_ENABLED=true and restart the bridge.",
+      });
+      return;
+    }
+    await handleGeminiQuery(msg, {
+      logErr,
+      send,
+      sendWithSession,
+      getProvider: () => provider,
       buildMcpServers,
       registerSession,
     });
@@ -5260,6 +5378,9 @@ async function main(): Promise<void> {
           } else if (codexProvider && interruptCodexSession(targetKey, codexProvider)) {
             // Same key may be a codex session — interrupt and drop it.
             logErr(`Interrupt requested for codex session key=${targetKey} (cancelled + dropped)`);
+          } else if (geminiProvider && interruptGeminiSession(targetKey, geminiProvider)) {
+            // Or a gemini session.
+            logErr(`Interrupt requested for gemini session key=${targetKey} (cancelled + dropped)`);
           } else {
             logErr(`Interrupt requested for session key=${targetKey} but no active query found`);
           }
@@ -5290,6 +5411,10 @@ async function main(): Promise<void> {
           if (codexProvider && codexSessionCount() > 0) {
             const n = interruptAllCodexSessions(codexProvider);
             logErr(`Interrupted ${n} codex session(s)`);
+          }
+          if (geminiProvider && geminiSessionCount() > 0) {
+            const n = interruptAllGeminiSessions(geminiProvider);
+            logErr(`Interrupted ${n} gemini session(s)`);
           }
         }
         break;
@@ -5409,10 +5534,13 @@ async function main(): Promise<void> {
 
       case "resetSession": {
         const key = (msg as any).sessionKey;
-        // Drop any codex session under this key first — same key can map to
-        // either provider depending on the user's selected model.
+        // Drop any codex or gemini session under this key first — the same
+        // key can map to any provider depending on the user's selected model.
         if (key && codexProvider) {
           dropCodexSession(key, codexProvider);
+        }
+        if (key && geminiProvider) {
+          dropGeminiSession(key, geminiProvider);
         }
         if (key && sessions.has(key)) {
           const oldSessionId = sessions.get(key)?.sessionId;
@@ -5452,12 +5580,21 @@ async function main(): Promise<void> {
         if (codexProvider?.isRunning()) {
           try { codexProvider.shutdown(); } catch { /* already gone */ }
         }
+        if (geminiProvider?.isRunning()) {
+          try { geminiProvider.shutdown(); } catch { /* already gone */ }
+        }
         process.exit(0);
         break;
 
       case "codex_init_probe":
         handleCodexInitProbe().catch((err) => {
           logErr(`codex probe handler threw: ${err}`);
+        });
+        break;
+
+      case "gemini_init_probe":
+        handleGeminiInitProbe().catch((err) => {
+          logErr(`gemini probe handler threw: ${err}`);
         });
         break;
 
