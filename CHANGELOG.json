@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Clearer guidance when the browser extension connection test fails: prompts you to keep a regular webpage open in the active tab"
+    "Clearer guidance when the browser extension connection test fails: prompts you to keep a regular webpage open in the active tab",
+    "Fixed Gemini Flash and Gemini Pro not being able to call MCP tools (capture_screenshot, browser, WhatsApp, etc.)"
   ],
   "releases": [
     {
