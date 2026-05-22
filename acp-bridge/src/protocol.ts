@@ -134,6 +134,15 @@ export interface CodexLogoutMessage {
   type: "codex_logout";
 }
 
+/**
+ * Diagnostic probe — initialize the gemini-cli ACP adapter and report agent +
+ * available models. No-ops with `disabled: true` when FAZM_GEMINI_ENABLED is
+ * not set (default).
+ */
+export interface GeminiInitProbeMessage {
+  type: "gemini_init_probe";
+}
+
 export interface CancelAuthMessage {
   type: "cancel_auth";
 }
@@ -178,7 +187,8 @@ export type InboundMessage =
   | CodexInitProbeMessage
   | CodexLoginMessage
   | CodexLoginCancelMessage
-  | CodexLogoutMessage;
+  | CodexLogoutMessage
+  | GeminiInitProbeMessage;
 
 // === Bridge → Swift (stdout) ===
 
@@ -527,6 +537,25 @@ export interface CodexLoginErrorMessage {
 }
 
 /**
+ * Result of `gemini_init_probe` — reports whether gemini-cli is reachable and
+ * what models / auth methods it offers. `disabled: true` indicates the feature
+ * flag is off (FAZM_GEMINI_ENABLED != "true"); Swift should hide Gemini from
+ * the model picker in that case.
+ */
+export interface GeminiProbeResultMessage {
+  type: "gemini_probe_result";
+  ok: boolean;
+  /** True when the bridge skipped the probe because FAZM_GEMINI_ENABLED is off. */
+  disabled?: boolean;
+  /** Adapter version when reachable, e.g. "gemini-cli@0.42.0". */
+  agent?: string;
+  authMethods?: string[];
+  currentModelId?: string;
+  availableModels?: Array<{ modelId: string; name: string; description?: string }>;
+  error?: string;
+}
+
+/**
  * Emitted by the bridge once `preWarmSession` resolves (success or failure).
  * Pairs with `bridge_warmup_started` (fired from Swift right before
  * `ensureBridgeStarted`) so the client can compute the cold-start window:
@@ -639,6 +668,7 @@ export type OutboundMessage =
   | CodexLoginUrlMessage
   | CodexLoginCompleteMessage
   | CodexLoginErrorMessage
+  | GeminiProbeResultMessage
   | WarmupCompleteMessage
   | AvailableCommandsUpdateMessage
   | SessionMetaUpdateMessage
