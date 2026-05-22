@@ -60,7 +60,12 @@ struct PaywallSheet: View {
         }
         .frame(width: 400, height: 560)
         .background(FazmColors.backgroundPrimary)
-        .onAppear { loadReferralCredit() }
+        .onAppear {
+            loadReferralCredit()
+            // Refresh variant price so the CTA shows the user's actual A/B arm
+            // even on the first paywall display after sign-in.
+            Task { await SubscriptionService.shared.fetchVariantPrice() }
+        }
     }
 
     // MARK: - Paywall View
@@ -110,7 +115,7 @@ struct PaywallSheet: View {
 
             // Option cards
             VStack(spacing: 10) {
-                // Option 1: Subscribe
+                // Option 1: Subscribe (with free trial if backend configured)
                 Button(action: {
                     AnalyticsManager.shared.subscriptionUpgradeTapped(source: "paywall")
                     onSubscribe()
@@ -122,15 +127,15 @@ struct PaywallSheet: View {
                             .frame(width: 32)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Subscribe Now")
+                            Text(subscribeButtonTitle)
                                 .scaledFont(size: 14, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
                             if referralCredit > 0 {
-                                Text("$9.99/mo ($\(referralCredit) credit applied)")
+                                Text("\(priceLabel)/mo ($\(referralCredit) credit applied)")
                                     .scaledFont(size: 12)
                                     .foregroundColor(FazmColors.success)
                             } else {
-                                Text("$9.99/mo, billed monthly")
+                                Text(subscribeButtonSubtitle)
                                     .scaledFont(size: 12)
                                     .foregroundColor(FazmColors.textTertiary)
                             }
@@ -371,6 +376,49 @@ struct PaywallSheet: View {
             }
             .buttonStyle(.plain)
             .padding(.bottom, 20)
+        }
+    }
+
+    // MARK: - Dynamic Pricing Copy
+
+    /// Variant-aware price as a string like "$9.99" or "$19.99".
+    /// Driven by `SubscriptionService.cachedPriceCents`, which the service
+    /// populates from `GET /api/stripe/variant-price` on launch.
+    private var priceLabel: String {
+        let cents = SubscriptionService.shared.cachedPriceCents
+        let dollars = Double(cents) / 100.0
+        return String(format: "$%.2f", dollars)
+    }
+
+    /// Whether a free trial is configured on the backend (Stripe-side trial,
+    /// applied at checkout). Independent of the client-side pre-paywall free
+    /// week.
+    private var hasFreeTrial: Bool {
+        SubscriptionService.shared.cachedTrialDays > 0
+    }
+
+    private var trialDays: Int { SubscriptionService.shared.cachedTrialDays }
+
+    /// Subheader under "Try Fazm Pro free".
+    private var headerSubtitle: String {
+        if hasFreeTrial {
+            return "Start your \(trialDays)-day free trial. No charge today."
+        } else {
+            return "Subscribe to continue using Fazm"
+        }
+    }
+
+    /// Primary CTA title.
+    private var subscribeButtonTitle: String {
+        hasFreeTrial ? "Start \(trialDays)-Day Free Trial" : "Subscribe Now"
+    }
+
+    /// Primary CTA subtitle.
+    private var subscribeButtonSubtitle: String {
+        if hasFreeTrial {
+            return "Then \(priceLabel)/mo. Cancel anytime."
+        } else {
+            return "\(priceLabel)/mo, billed monthly"
         }
     }
 
