@@ -152,8 +152,19 @@ export class GeminiProvider {
     }
 
     this.logErr(`spawning gemini-cli: node ${this.entryPath} --experimental-acp`);
+    // gemini-cli silently skips MCP server registration when the workspace
+    // isn't in `~/.gemini/trustedFolders.json` (see chunk-7VVHSNDQ.js
+    // `McpClientManager.startConfiguredMcpServers()`: returns early if
+    // `!isTrustedFolder()`). `GEMINI_CLI_TRUST_WORKSPACE=true` is the
+    // documented env-var escape hatch in `checkPathTrust()` that short-
+    // circuits the whole trust check. Setting it only in the subprocess
+    // env keeps user-level gemini-cli settings untouched.
+    const spawnEnv: NodeJS.ProcessEnv = {
+      ...this.env,
+      GEMINI_CLI_TRUST_WORKSPACE: "true",
+    };
     const proc = spawn(process.execPath, [this.entryPath, "--experimental-acp"], {
-      env: this.env,
+      env: spawnEnv,
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
     });
