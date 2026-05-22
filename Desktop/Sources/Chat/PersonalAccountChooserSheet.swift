@@ -232,11 +232,16 @@ final class PersonalAccountChooserWindowController {
             onDismiss: { controller.close() }
         )
 
+        // Size the window to match whichever sheet variant will render. Sheet
+        // height grows when the Gemini card is offered.
+        let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
+        let sheetHeight: CGFloat = geminiAvailable ? 600 : 460
+
         let hostingView = NSHostingView(rootView: AnyView(content))
-        hostingView.setFrameSize(NSSize(width: 440, height: 460))
+        hostingView.setFrameSize(NSSize(width: 440, height: sheetHeight))
 
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 440, height: 460)),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 440, height: sheetHeight)),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -258,8 +263,8 @@ final class PersonalAccountChooserWindowController {
         if let screen = mouseScreen {
             let sf = screen.visibleFrame
             let x = sf.origin.x + (sf.width - 440) / 2
-            let y = sf.origin.y + (sf.height - 460) / 2
-            window.setFrame(NSRect(x: x, y: y, width: 440, height: 460), display: true)
+            let y = sf.origin.y + (sf.height - sheetHeight) / 2
+            window.setFrame(NSRect(x: x, y: y, width: 440, height: sheetHeight), display: true)
         } else {
             window.center()
         }
@@ -281,12 +286,32 @@ final class PersonalAccountChooserWindowController {
 private struct ChooserWindowContent: View {
     @ObservedObject var chatProvider: ChatProvider
     @ObservedObject var codexBackend: CodexBackendManager
+    @ObservedObject var shortcutSettings: ShortcutSettings = .shared
     let onDismiss: () -> Void
+
+    /// Gemini is offered as a free-no-cap fallback only when the bridge has
+    /// confirmed it's reachable (FAZM_GEMINI_ENABLED on + probe succeeded).
+    private var geminiAvailable: Bool {
+        shortcutSettings.availableModels.contains { $0.id.hasPrefix("gemini-") }
+    }
+
+    /// Pick the user's preferred Gemini model, defaulting to Flash for speed.
+    private var preferredGeminiModelId: String {
+        if let current = shortcutSettings.availableModels.first(where: { $0.id == shortcutSettings.selectedModel && $0.id.hasPrefix("gemini-") }) {
+            return current.id
+        }
+        if let flash = shortcutSettings.availableModels.first(where: { $0.id == "gemini-flash-latest" }) {
+            return flash.id
+        }
+        return shortcutSettings.availableModels.first(where: { $0.id.hasPrefix("gemini-") })?.id
+            ?? "gemini-flash-latest"
+    }
 
     var body: some View {
         PersonalAccountChooserSheet(
             isClaudeConnected: chatProvider.isClaudeConnected,
             codexAuthMode: codexBackend.authMode,
+            geminiAvailable: geminiAvailable,
             onPickClaude: {
                 let alreadyAuthed = chatProvider.isClaudeConnected
                 AnalyticsManager.shared.personalAccountChooserPicked(
@@ -331,6 +356,16 @@ private struct ChooserWindowContent: View {
                     }
                     chatProvider.startCodexLogin()
                 }
+            },
+            onPickGemini: {
+                AnalyticsManager.shared.personalAccountChooserPicked(
+                    provider: "gemini", alreadyAuthed: true
+                )
+                onDismiss()
+                // Gemini uses the bundled GEMINI_API_KEY (no OAuth). Switching
+                // model is enough; selectModel clears showCreditExhaustedAlert
+                // for any non-Anthropic provider, so the next query proceeds.
+                chatProvider.selectModel(preferredGeminiModelId)
             },
             onCancel: {
                 AnalyticsManager.shared.personalAccountChooserCancelled()
