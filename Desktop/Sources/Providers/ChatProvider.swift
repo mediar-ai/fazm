@@ -2226,12 +2226,12 @@ class ChatProvider: ObservableObject {
         ShortcutSettings.shared.selectedModel = modelId
         FloatingControlBarManager.shared.barState?.workspace.selectedModel = modelId
         DetachedChatWindowController.shared.applyModelToAllWindows(modelId)
-        if Self.isCodexModelId(modelId) {
-            // GPT models route through Codex, not the built-in Claude key,
-            // so the cap doesn't apply — let the user keep chatting.
+        if Self.isCodexModelId(modelId) || Self.isGeminiModelId(modelId) {
+            // GPT and Gemini models don't bill the built-in Anthropic key, so
+            // the lifetime cap doesn't apply — let the user keep chatting.
             showCreditExhaustedAlert = false
         }
-        log("ChatProvider: selectModel \(modelId) (isCodex=\(Self.isCodexModelId(modelId)))")
+        log("ChatProvider: selectModel \(modelId) (isCodex=\(Self.isCodexModelId(modelId)) isGemini=\(Self.isGeminiModelId(modelId)))")
     }
 
     /// True if the model id routes through the Codex backend (gpt-*, codex-*,
@@ -2245,6 +2245,16 @@ class ChatProvider: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// True if the model id routes through the Gemini backend (`gemini-*`,
+    /// `auto-gemini-*`). Mirrors the bridge's `isGeminiModel` regex in
+    /// `gemini-query.ts`. Gemini queries use the bundled `GEMINI_API_KEY` and
+    /// don't draw down the $10 Anthropic-key cap, so they're treated as a free
+    /// fallback in the cap-exhausted UX.
+    static func isGeminiModelId(_ modelId: String) -> Bool {
+        let lower = modelId.lowercased()
+        return lower.hasPrefix("gemini-") || lower.hasPrefix("auto-gemini-")
     }
 
     /// Phase 3.2 — kick a `codex_init_probe` through the bridge. Updates
@@ -3844,8 +3854,13 @@ class ChatProvider: ObservableObject {
         }
 
         // Pre-query guard: every user (free, trial, Pro) is capped at $10
-        // lifetime on the bundled key. Over-cap = switch to personal Claude OAuth.
-        if bridgeMode == "builtin" && isOverBuiltinCap {
+        // lifetime on the bundled Anthropic key. Over-cap = switch to personal
+        // Claude OAuth. Gemini queries don't bill the Anthropic key (they use
+        // the bundled `GEMINI_API_KEY`), so we let them through for free even
+        // when the cap is reached — Gemini is the no-friction fallback.
+        let currentModel = ShortcutSettings.shared.selectedModel
+        let isGeminiRouted = Self.isGeminiModelId(currentModel)
+        if bridgeMode == "builtin" && isOverBuiltinCap && !isGeminiRouted {
             log("ChatProvider: Builtin cost cap reached ($\(String(format: "%.2f", builtinCumulativeCostUsd))/$\(String(format: "%.0f", Self.builtinCostCapUsd))) — switching to personal mode")
             showCreditExhaustedAlert = true
             await switchBridgeMode(to: "personal")
@@ -4790,8 +4805,12 @@ class ChatProvider: ObservableObject {
             sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
 
             // Post-query: accumulate cost and check cap (builtin mode only).
-            // $10 lifetime cap applies to every user including Pro.
-            if isBuiltinMode {
+            // $10 lifetime cap applies to every user including Pro. Gemini
+            // queries are excluded — they use the bundled GEMINI_API_KEY,
+            // not the Anthropic key, so they're free regardless of cap state.
+            let queryModelId = ShortcutSettings.shared.selectedModel
+            let queryWasGemini = Self.isGeminiModelId(queryModelId)
+            if isBuiltinMode && !queryWasGemini {
                 builtinCumulativeCostUsd += queryResult.costUsd
                 if isOverBuiltinCap {
                     log("ChatProvider: Builtin cost cap reached after query ($\(String(format: "%.2f", builtinCumulativeCostUsd))) — switching to personal mode")
