@@ -21,8 +21,25 @@ final class SubscriptionService {
 
     // MARK: - Trial & Paywall
 
-    let trialDays = 0
+    /// Days of fully-free usage after Firebase account creation. During this
+    /// window `shouldShowPaywall()` returns false so the app is fully unlocked
+    /// and no card is asked. At day `trialDays + 1`, the paywall fires.
+    let trialDays = 7
     let freeMessagesPerDay = 0
+
+    /// Cached unit amount (cents) the user will be charged after their Stripe
+    /// trial expires. Set by `fetchVariantPrice()` from the backend so the
+    /// paywall renders the right number for the user's A/B-test arm instead
+    /// of a hardcoded $9.99.
+    private(set) var cachedPriceCents: Int {
+        didSet { UserDefaults.standard.set(cachedPriceCents, forKey: "fazm_price_cents") }
+    }
+    private(set) var cachedVariant: String {
+        didSet { UserDefaults.standard.set(cachedVariant, forKey: "fazm_price_variant") }
+    }
+    private(set) var cachedTrialDays: Int {
+        didSet { UserDefaults.standard.set(cachedTrialDays, forKey: "fazm_backend_trial_days") }
+    }
 
     /// Date the user's trial started — uses Firebase account creation date (actual signup).
     /// Returns cached value if available; otherwise falls back to now (fetchAccountCreationDate
@@ -93,6 +110,43 @@ final class SubscriptionService {
         }
     }
 
+    /// Fetches the user's pricing variant + unit price from the backend so the
+    /// paywall renders the right amount for the user's A/B-test arm. Cached so
+    /// the paywall has something to show even when offline.
+    func fetchVariantPrice() async {
+        guard !backendUrl.isEmpty else { return }
+        do {
+            let token = try await AuthService.shared.getIdToken(forceRefresh: false)
+            let url = URL(string: "\(backendUrl)/api/stripe/variant-price")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(deviceId, forHTTPHeaderField: "X-Device-Id")
+            request.timeoutInterval = 10
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                log("SubscriptionService: fetchVariantPrice failed — HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                return
+            }
+
+            struct VariantPriceResponse: Decodable {
+                let variant: String
+                let price_cents: Int
+                let price_id: String
+                let trial_days: Int
+            }
+
+            let result = try JSONDecoder().decode(VariantPriceResponse.self, from: data)
+            cachedPriceCents = result.price_cents
+            cachedVariant = result.variant
+            cachedTrialDays = result.trial_days
+            log("SubscriptionService: variant=\(result.variant) price_cents=\(result.price_cents) trial_days=\(result.trial_days)")
+        } catch {
+            log("SubscriptionService: fetchVariantPrice error: \(error.localizedDescription)")
+        }
+    }
+
     /// Whether the free trial period has expired.
     var isTrialExpired: Bool {
         let elapsed = Calendar.current.dateComponents([.day], from: trialStartDate, to: Date()).day ?? 0
@@ -122,10 +176,12 @@ final class SubscriptionService {
     }
 
     /// Whether the paywall should be shown right now.
-    /// Hard paywall: any user without an active Stripe subscription is gated immediately.
-    /// No free trial, no free daily messages.
+    /// Free until day `trialDays` after Firebase account creation. After that,
+    /// the paywall fires unless the user has an active Stripe subscription
+    /// (which includes the post-checkout Stripe trial status `trialing`).
     func shouldShowPaywall() -> Bool {
-        return !isActive
+        if isActive { return false }
+        return isTrialExpired
     }
 
     /// Clear cached subscription state on sign-out so the next user doesn't
@@ -145,11 +201,19 @@ final class SubscriptionService {
         self.isActive = UserDefaults.standard.bool(forKey: "fazm_sub_active")
         self.status = UserDefaults.standard.string(forKey: "fazm_sub_status") ?? "none"
         self.currentPeriodEnd = UserDefaults.standard.object(forKey: "fazm_sub_period_end") as? Date
+        // Restore cached pricing-variant state. Defaults assume control until
+        // the backend response lands; the paywall reads these directly.
+        let storedCents = UserDefaults.standard.integer(forKey: "fazm_price_cents")
+        self.cachedPriceCents = storedCents > 0 ? storedCents : 999
+        self.cachedVariant = UserDefaults.standard.string(forKey: "fazm_price_variant") ?? "control_999"
+        let storedTrialDays = UserDefaults.standard.integer(forKey: "fazm_backend_trial_days")
+        self.cachedTrialDays = storedTrialDays > 0 ? storedTrialDays : 0
         // Touch trialStartDate to ensure it's set on first run
         _ = trialStartDate
-        // Fetch account creation date and refresh subscription in background
+        // Fetch account creation date, variant price, and subscription in background
         Task {
             await fetchAccountCreationDate()
+            await fetchVariantPrice()
             await refreshStatus()
         }
     }
