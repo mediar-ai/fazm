@@ -75,12 +75,12 @@ struct PaywallSheet: View {
                     .padding(.top, 8)
 
                 VStack(spacing: 6) {
-                    Text("Unlock Fazm Pro")
+                    Text("Try Fazm Pro free")
                         .scaledFont(size: 15, weight: .medium)
                         .foregroundColor(FazmColors.textPrimary)
                         .multilineTextAlignment(.center)
 
-                    Text("Subscribe to continue using Fazm")
+                    Text(headerSubtitle)
                         .scaledFont(size: 13)
                         .foregroundColor(FazmColors.textTertiary)
                         .multilineTextAlignment(.center)
