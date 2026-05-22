@@ -587,6 +587,18 @@ actor ACPBridge {
       env["FAZM_ASSRT_ENABLED"] = "true"
     }
 
+    // Forward the runtime Gemini API key (fetched from the backend into
+    // KeyService memory) to the bridge env when Gemini is enabled. The bridge
+    // passes GEMINI_API_KEY through to the assrt subprocess, where assrt-mcp's
+    // credential resolver uses it as the last-resort fallback provider (after
+    // Claude OAuth and ANTHROPIC_API_KEY). Without this, assrt could only fall
+    // back to Gemini if the user manually exported GEMINI_API_KEY in their env.
+    // Only forwarded when FAZM_GEMINI_ENABLED is on, matching the rest of the
+    // Gemini gating, and only when we actually hold a key.
+    if env["FAZM_GEMINI_ENABLED"] == "true", let geminiKey = KeyService.shared.geminiAPIKey, !geminiKey.isEmpty {
+      env["GEMINI_API_KEY"] = geminiKey
+    }
+
     // Playwright MCP extension mode — only meaningful when browserMode == "extension"
     if browserMode != "managed" {
       let useExtension =
