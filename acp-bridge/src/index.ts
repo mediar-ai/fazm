@@ -2256,6 +2256,13 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
         env: [
           { name: "PYTHONHOME", value: browserHarnessMcpVenvDir },
           { name: "PYTHONDONTWRITEBYTECODE", value: "1" },
+          // Pin the daemon's Unix socket name so we don't collide with other
+          // browser-harness instances (e.g. the social-autoposter twitter-harness
+          // MCP server, which used to also default to BU_NAME=default and race
+          // for /tmp/bu-default.sock — whoever bound it last received ALL CLI
+          // traffic regardless of CDP URL, causing the twitter pipeline to
+          // post into Fazm's Chrome).
+          { name: "BU_NAME", value: "fazm" },
         ],
       });
       logErr(`Browser mode: managed (browser-harness MCP loaded)`);
