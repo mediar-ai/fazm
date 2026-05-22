@@ -44,6 +44,7 @@ export interface CodexQueryDeps {
     mode: "ask" | "act",
     cwd: string,
     sessionKey: string,
+    activeModel?: string,
   ) => Array<Record<string, unknown>>;
   /** Register sessionId → sessionKey in the bridge's main routing map so
    *  streaming text deltas tag outbound messages with the right sessionKey.
