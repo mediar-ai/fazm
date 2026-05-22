@@ -1446,6 +1446,15 @@ actor ACPBridge {
     sendLine("{\"type\":\"codex_init_probe\"}")
   }
 
+  /// Ask the bridge to lazy-spawn gemini-cli (ACP mode) and report reachability +
+  /// available models. The result arrives via `onGeminiProbeResult`. When
+  /// `FAZM_GEMINI_ENABLED` is off the bridge replies with `disabled=true` and
+  /// no models; the picker simply hides the Gemini half in that case.
+  func sendGeminiProbe() {
+    guard isRunning else { return }
+    sendLine("{\"type\":\"gemini_init_probe\"}")
+  }
+
   /// Start the Codex (ChatGPT) OAuth login flow. The bridge will emit
   /// `codex_login_url` with the browser URL, then `codex_login_complete`
   /// or `codex_login_error` when done.
@@ -1731,6 +1740,16 @@ actor ACPBridge {
       let error = dict["error"] as? String
       return .codexProbeResult(ok: ok, agent: agent, authMethods: authMethods, currentModelId: currentModelId, availableModels: availableModels, authMode: authMode, error: error)
 
+    case "gemini_probe_result":
+      let ok = dict["ok"] as? Bool ?? false
+      let disabled = dict["disabled"] as? Bool ?? false
+      let agent = dict["agent"] as? String
+      let authMethods = dict["authMethods"] as? [String] ?? []
+      let currentModelId = dict["currentModelId"] as? String
+      let availableModels = dict["availableModels"] as? [[String: Any]] ?? []
+      let error = dict["error"] as? String
+      return .geminiProbeResult(ok: ok, disabled: disabled, agent: agent, authMethods: authMethods, currentModelId: currentModelId, availableModels: availableModels, error: error)
+
     case "codex_login_url":
       let url = dict["url"] as? String ?? ""
       return .codexLoginUrl(url: url)
@@ -1887,6 +1906,10 @@ actor ACPBridge {
     case .codexProbeResult(let ok, let agent, let authMethods, let currentModelId, let availableModels, let authMode, let error):
       log("ACPBridge: received codex_probe_result ok=\(ok) authMode=\(authMode) models=\(availableModels.count) error=\(error ?? "-")")
       onCodexProbeResult?(ok, agent, authMethods, currentModelId, availableModels, authMode, error)
+      return
+    case .geminiProbeResult(let ok, let disabled, let agent, let authMethods, let currentModelId, let availableModels, let error):
+      log("ACPBridge: received gemini_probe_result ok=\(ok) disabled=\(disabled) models=\(availableModels.count) error=\(error ?? "-")")
+      onGeminiProbeResult?(ok, disabled, agent, authMethods, currentModelId, availableModels, error)
       return
     case .warmupComplete(let durationMs, let sessionKeys, let ok, let error, let failureStage, let failedSessions, let stderrTail):
       log("ACPBridge: received warmup_complete durationMs=\(Int(durationMs)) sessions=\(sessionKeys.joined(separator: ",")) ok=\(ok) error=\(error ?? "-") stage=\(failureStage ?? "-") failed=\(failedSessions.joined(separator: ","))")
