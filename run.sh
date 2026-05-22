@@ -526,7 +526,7 @@ fi
 # `npm pack` from ~/assrt-mcp/npm/), install from that file instead of the
 # registry. Used during cross-repo development so Phase 3 work can be
 # exercised in Fazm before publishing a new @assrt-ai/assrt version.
-ASSRT_PKG_VERSION="0.5.0"
+ASSRT_PKG_VERSION="0.5.1"
 ASSRT_BUNDLE="$APP_BUNDLE/Contents/Resources/assrt"
 ASSRT_NPM_BIN=""
 for candidate in "$(command -v npm 2>/dev/null)" /opt/homebrew/bin/npm /usr/local/bin/npm; do
