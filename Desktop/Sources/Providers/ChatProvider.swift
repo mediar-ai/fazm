@@ -2771,12 +2771,12 @@ class ChatProvider: ObservableObject {
 
         // Append global CLAUDE.md instructions if enabled
         if claudeMdEnabled, let claudeMd = claudeMdContent {
-            prompt += "\n\n<claude_md>\n\(claudeMd)\n</claude_md>"
+            prompt += "\n\n<global_instructions>\n\(claudeMd)\n</global_instructions>"
         }
 
         // Append project CLAUDE.md instructions if enabled
         if projectClaudeMdEnabled, let projectClaudeMd = projectClaudeMdContent {
-            prompt += "\n\n<project_claude_md>\n\(projectClaudeMd)\n</project_claude_md>"
+            prompt += "\n\n<project_instructions>\n\(projectClaudeMd)\n</project_instructions>"
         }
 
         // Append enabled skills as available context (global + project)
@@ -2853,10 +2853,10 @@ class ChatProvider: ObservableObject {
         // NO conversation_history — SDK handles this via resume
 
         if claudeMdEnabled, let claudeMd = claudeMdContent {
-            prompt += "\n\n<claude_md>\n\(claudeMd)\n</claude_md>"
+            prompt += "\n\n<global_instructions>\n\(claudeMd)\n</global_instructions>"
         }
         if projectClaudeMdEnabled, let projectClaudeMd = projectClaudeMdContent {
-            prompt += "\n\n<project_claude_md>\n\(projectClaudeMd)\n</project_claude_md>"
+            prompt += "\n\n<project_instructions>\n\(projectClaudeMd)\n</project_instructions>"
         }
 
         let enabledSkillNames = getEnabledSkillNames()
