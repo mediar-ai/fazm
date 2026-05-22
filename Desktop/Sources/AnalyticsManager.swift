@@ -1193,7 +1193,7 @@ class AnalyticsManager {
     /// "use existing session/credentials" from "run OAuth flow".
     func personalAccountChooserPicked(provider: String, alreadyAuthed: Bool) {
         PostHogManager.shared.track("personal_account_chooser_picked", properties: [
-            "provider": provider,           // "claude" | "codex"
+            "provider": provider,           // "claude" | "codex" | "gemini"
             "already_authed": alreadyAuthed,
         ])
     }
