@@ -240,6 +240,9 @@ actor ACPBridge {
     /// warmup-race hypothesis (user types before warmup is done → pre_response failure).
     case warmupComplete(durationMs: Double, sessionKeys: [String], ok: Bool, error: String?, failureStage: String?, failedSessions: [String], stderrTail: String?)
     case codexProbeResult(ok: Bool, agent: String?, authMethods: [String], currentModelId: String?, availableModels: [[String: Any]], authMode: String, error: String?)
+    /// Gemini ACP backend reachability + model list (gated on FAZM_GEMINI_ENABLED).
+    /// `disabled=true` when the bridge flag is off; in that case `availableModels` is empty.
+    case geminiProbeResult(ok: Bool, disabled: Bool, agent: String?, authMethods: [String], currentModelId: String?, availableModels: [[String: Any]], error: String?)
     case codexLoginUrl(url: String)
     case codexLoginComplete
     case codexLoginError(error: String)
@@ -290,6 +293,9 @@ actor ACPBridge {
   var onModelEntitlementMissing: ((_ model: String, _ downgradedTo: String, _ reason: String) -> Void)?
   /// Called when the bridge reports codex_probe_result (Codex backend reachability + auth state)
   var onCodexProbeResult: ((_ ok: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ authMode: String, _ error: String?) -> Void)?
+  /// Called when the bridge reports gemini_probe_result (Gemini ACP backend reachability + model list).
+  /// `disabled=true` means FAZM_GEMINI_ENABLED is off; treat as "no gemini models" and do not surface error.
+  var onGeminiProbeResult: ((_ ok: Bool, _ disabled: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ error: String?) -> Void)?
   /// Called when the bridge starts the Codex OAuth flow and needs the browser opened
   var onCodexLoginUrl: ((_ url: String) -> Void)?
   /// Called when Codex OAuth flow completes and auth.json has been written
@@ -348,6 +354,10 @@ actor ACPBridge {
 
   func setCodexProbeResultHandler(_ handler: @escaping @Sendable (_ ok: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ authMode: String, _ error: String?) -> Void) {
     self.onCodexProbeResult = handler
+  }
+
+  func setGeminiProbeResultHandler(_ handler: @escaping @Sendable (_ ok: Bool, _ disabled: Bool, _ agent: String?, _ authMethods: [String], _ currentModelId: String?, _ availableModels: [[String: Any]], _ error: String?) -> Void) {
+    self.onGeminiProbeResult = handler
   }
 
   func setCodexLoginHandlers(
