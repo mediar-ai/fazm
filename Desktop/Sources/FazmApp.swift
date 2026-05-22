@@ -3,6 +3,39 @@ import Sentry
 import Sparkle
 import FirebaseCore
 
+// MARK: - Sentry Noise Guard
+/// Suppresses runaway-loop Sentry events (e.g. GRDB on a corrupted DB firing thousands of
+/// identical errors per session). Allows the first N captures per fingerprint per process,
+/// then drops the rest. Resets on relaunch — a real recurring issue still surfaces daily.
+enum SentryNoiseGuard {
+    private static let lock = NSLock()
+    private static var counts: [String: Int] = [:]
+    private static let maxPerFingerprint = 3
+
+    /// Returns a fingerprint for events known to fire in tight loops. nil = not gated.
+    static func fingerprint(for event: Event, message: String) -> String? {
+        if let exceptions = event.exceptions {
+            for exc in exceptions {
+                if exc.type.hasPrefix("GRDB.DatabaseError") {
+                    if exc.value.contains("SQLite error 11") { return "grdb-malformed" }
+                    if exc.value.contains("SQLite error 10") { return "grdb-disk-io" }
+                    if exc.value.contains("SQLite error 19") { return "grdb-constraint" }
+                    return "grdb-other"
+                }
+            }
+        }
+        if message.contains("consecutive I/O errors") { return "rewind-io-loop" }
+        return nil
+    }
+
+    static func shouldCapture(fingerprint: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let n = (counts[fingerprint] ?? 0) + 1
+        counts[fingerprint] = n
+        return n <= maxPerFingerprint
+    }
+}
+
 // MARK: - Launch Mode
 /// Determines which UI to show based on command-line arguments
 enum LaunchMode: String {
@@ -299,6 +332,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let exceptions = event.exceptions, exceptions.contains(where: { exc in
                     exc.type == "Fazm.AuthError" && exc.value.contains("notSignedIn")
                 }) {
+                    return nil
+                }
+                let msg = event.message?.formatted ?? ""
+                // AuthService token-refresh retry loop fires every ~12s for users with bad refresh
+                // tokens — 5 users generated 104k events in 14 days (95% of all error volume).
+                // The permanent-failure branch already signs out and is captured separately.
+                if msg.contains("AuthService: Token refresh failed") { return nil }
+                // Session Heartbeat is a breadcrumb category, not an error condition.
+                if msg.hasPrefix("Session Heartbeat") { return nil }
+                // GRDB SQLite corruption / I/O errors retry forever from inside the DB layer.
+                // Capture once per process per fingerprint so we still see the issue without
+                // burning the entire error quota on one user's broken disk.
+                let fp = SentryNoiseGuard.fingerprint(for: event, message: msg)
+                if let fp = fp, !SentryNoiseGuard.shouldCapture(fingerprint: fp) {
                     return nil
                 }
                 return event
