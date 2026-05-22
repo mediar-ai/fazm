@@ -2209,7 +2209,17 @@ type McpServerConfigHttp = {
 
 type McpServerConfig = McpServerConfigStdio | McpServerConfigHttp;
 
-function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpServerConfig[] {
+/**
+ * Build the MCP-server list for a session.
+ *
+ * @param activeModel  Optional model id for the query/session being started.
+ *                     When provided, this overrides FAZM_SELECTED_MODEL for
+ *                     computing Assrt's ASSRT_PROVIDER hint, so a Gemini query
+ *                     gets a Gemini-pinned Assrt even if the bridge was spawned
+ *                     with a Claude default. Falls back to FAZM_SELECTED_MODEL
+ *                     (set by Swift at bridge spawn) when omitted.
+ */
+function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, activeModel?: string): McpServerConfig[] {
   const servers: McpServerConfig[] = [];
 
   // fazm-tools (stdio, connects back via Unix socket)
@@ -2371,17 +2381,44 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string): McpSe
       if (existsSync(macOsChromeBin)) {
         assrtEnv.push({ name: "ASSRT_CHROME_BIN", value: macOsChromeBin });
       }
-      // Pass through GEMINI_API_KEY if set so assrt_analyze_video registers.
+      // Pass through GEMINI_API_KEY if set so assrt_analyze_video registers and,
+      // when ASSRT_PROVIDER=gemini, so the agent loop can authenticate.
       if (process.env.GEMINI_API_KEY) {
         assrtEnv.push({ name: "GEMINI_API_KEY", value: process.env.GEMINI_API_KEY });
       }
+
+      // Pin Assrt's credential provider to whatever model Fazm currently has
+      // selected. Swift writes the selected model into FAZM_SELECTED_MODEL
+      // (ACPBridge.swift). Without this hint Assrt's keychain.ts always
+      // prefers Claude OAuth, which 401s when the active chat is Gemini.
+      const selectedModel = (process.env.FAZM_SELECTED_MODEL ?? "").toLowerCase();
+      let assrtProvider: "anthropic" | "gemini" | "codex" = "anthropic";
+      if (isGeminiModel(selectedModel)) {
+        assrtProvider = "gemini";
+      } else if (isCodexModel(selectedModel)) {
+        // Codex/ChatGPT OAuth tokens don't authenticate the OpenAI Chat
+        // Completions API; Assrt's agent.ts has no codex-acp transport yet,
+        // so the keychain layer logs a warning and falls back to Claude OAuth.
+        // We still pass the hint through so the fallback decision (and its
+        // log line) lives in one place.
+        assrtProvider = "codex";
+      }
+      assrtEnv.push({ name: "ASSRT_PROVIDER", value: assrtProvider });
+
+      // Defense in depth: explicitly blank out ANTHROPIC_API_KEY in the Assrt
+      // subprocess env. Even with ASSRT_PROVIDER pinned, Fazm's policy is "no
+      // API key handed to subprocesses" — Assrt should use Claude Code OAuth
+      // from the user's Keychain, not the bundled key inherited from the
+      // bridge process. Empty string is falsy in keychain.ts's truthy check.
+      assrtEnv.push({ name: "ANTHROPIC_API_KEY", value: "" });
+
       servers.push({
         name: "assrt",
         command: process.execPath, // bundled Node
         args: [assrtMcpEntry],
         env: assrtEnv,
       });
-      logErr(`Assrt MCP enabled (entry=${assrtMcpEntry}, cdp=9755, profile=~/.assrt/managed-chrome, abpPython=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"})`);
+      logErr(`Assrt MCP enabled (entry=${assrtMcpEntry}, cdp=9755, profile=~/.assrt/managed-chrome, abpPython=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, provider=${assrtProvider}, model=${selectedModel || "<unset>"})`);
     } else {
       logErr(`[FAZM-ASSRT-MISSING] FAZM_ASSRT_ENABLED=true but assrt-mcp not bundled at ${assrtMcpEntry}. Run ./run.sh to rebuild.`);
     }
