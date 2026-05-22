@@ -210,7 +210,7 @@ class ShortcutSettings: ObservableObject {
     private var lastCodexModels: [ModelOption] = []
     /// Last Gemini models reported via `gemini_probe_result`. Empty when
     /// FAZM_GEMINI_ENABLED is off (the bridge returns `disabled=true`).
-    /// Curated to two entries (Flash, Gemini auto) regardless of how many the
+    /// Curated to two entries (Flash, Pro) regardless of how many the
     /// adapter reports; see `updateGeminiModels(_:)`.
     private var lastGeminiModels: [ModelOption] = []
 
@@ -224,7 +224,7 @@ class ShortcutSettings: ObservableObject {
     /// only un-versioned `gemini-pro-latest` / `gemini-flash-latest` resolve.
     private static let geminiPickerWhitelist: [(modelId: String, short: String, label: String)] = [
         ("gemini-flash-latest", "Flash", "Flash (Gemini, latest)"),
-        ("gemini-pro-latest", "Gemini", "Gemini (Pro, latest)"),
+        ("gemini-pro-latest", "Pro", "Pro (Gemini, latest)"),
     ]
 
     /// Normalize a model ID so the bridge receives an unambiguous canonical id.
