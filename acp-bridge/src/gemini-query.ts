@@ -95,7 +95,10 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
     return;
   }
 
-  const mcpServers = buildMcpServers(mode, cwd, sessionKey);
+  // Pass the model id so sibling MCP servers (Assrt) pin their credential
+  // provider to Gemini for this session instead of inheriting the bridge-spawn
+  // default (which is usually Claude). See buildMcpServers' Assrt block.
+  const mcpServers = buildMcpServers(mode, cwd, sessionKey, modelId);
 
   let entry = geminiSessions.get(sessionKey);
   if (entry && (entry.cwd !== cwd || entry.modelId !== modelId)) {
