@@ -45,6 +45,50 @@ fn price_id_for_variant<'a>(variant: &str, config: &'a Config) -> &'a str {
     }
 }
 
+/// Unit amount in cents for a variant. Kept in lockstep with the Stripe prices
+/// so the desktop paywall can render the correct figure without an extra Stripe
+/// round-trip. If we ever change the prices, update here too.
+fn price_cents_for_variant(variant: &str) -> u32 {
+    match variant {
+        "treatment_1999" => 1999,
+        _ => 999,
+    }
+}
+
+// ---------- Variant Price Lookup ----------
+
+#[derive(Serialize)]
+pub struct VariantPriceResponse {
+    pub variant: String,
+    pub price_cents: u32,
+    pub price_id: String,
+    pub trial_days: u32,
+}
+
+/// GET /api/stripe/variant-price
+/// Returns the pricing-A/B-test variant and unit price for the authenticated
+/// user, so the desktop paywall can render "Start 7-day free trial. Then $X/mo."
+/// without hardcoding a number that would mislead the treatment cohort.
+pub async fn variant_price(
+    Extension(config): Extension<Arc<Config>>,
+    Extension(auth): Extension<AuthDevice>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let firebase_email = auth.firebase_email.clone().unwrap_or_default();
+    let variant = if firebase_email.is_empty() {
+        "control_999"
+    } else {
+        pricing_variant_for_email(&firebase_email, &config)
+    };
+    let price_id = price_id_for_variant(variant, &config).to_string();
+    let price_cents = price_cents_for_variant(variant);
+    Ok(Json(VariantPriceResponse {
+        variant: variant.to_string(),
+        price_cents,
+        price_id,
+        trial_days: config.stripe_trial_days,
+    }))
+}
+
 // ---------- Create Checkout Session ----------
 
 #[derive(Deserialize)]
@@ -63,7 +107,8 @@ pub struct CreateCheckoutResponse {
 
 /// POST /api/stripe/create-checkout-session
 /// Creates a Stripe Checkout Session for the Fazm subscription.
-/// Flat $9.99/month, no free trial. Card is charged immediately on checkout.
+/// Pricing variant (control $9.99 / treatment $19.99) chosen by email hash.
+/// Trial length is `STRIPE_TRIAL_DAYS` env (0 = charge immediately).
 pub async fn create_checkout_session(
     Extension(config): Extension<Arc<Config>>,
     Extension(auth): Extension<AuthDevice>,
