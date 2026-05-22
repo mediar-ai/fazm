@@ -72,6 +72,10 @@ async fn main() {
             axum::routing::post(routes::stripe::create_portal_session),
         )
         .route(
+            "/api/stripe/variant-price",
+            axum::routing::get(routes::stripe::variant_price),
+        )
+        .route(
             "/api/referral/generate",
             axum::routing::post(routes::referral::generate),
         )
