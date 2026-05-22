@@ -215,11 +215,16 @@ class ShortcutSettings: ObservableObject {
     private var lastGeminiModels: [ModelOption] = []
 
     /// Whitelist of Gemini modelIds the picker should expose, in display order.
-    /// Keep this short: power users want "Flash latest" + "Gemini latest", not
-    /// every preview/lite variant gemini-cli ships. Update when the family rolls.
+    /// We use the un-versioned `*-latest` aliases so the picker auto-rolls when
+    /// Google ships a new pro/flash generation (mediar-web uses the same strings).
+    /// IMPORTANT: these aliases are NOT in gemini-cli's curated `availableModels`
+    /// probe response, but they work fine when sent via `session/set_model`.
+    /// That's why `updateGeminiModels` does NOT gate on the advertised set.
+    /// Versioned variants like `gemini-2.5-pro-latest` return 404 on v1beta —
+    /// only un-versioned `gemini-pro-latest` / `gemini-flash-latest` resolve.
     private static let geminiPickerWhitelist: [(modelId: String, short: String, label: String)] = [
-        ("gemini-3-flash-preview", "Flash", "Flash (Gemini, latest)"),
-        ("auto-gemini-3", "Gemini", "Gemini (Auto, latest)"),
+        ("gemini-flash-latest", "Flash", "Flash (Gemini, latest)"),
+        ("gemini-pro-latest", "Gemini", "Gemini (Pro, latest)"),
     ]
 
     /// Normalize a model ID so the bridge receives an unambiguous canonical id.
@@ -283,10 +288,12 @@ class ShortcutSettings: ObservableObject {
             }
             return
         }
-        let advertised = Set(probeModels.map { $0.modelId })
-        let kept: [ModelOption] = Self.geminiPickerWhitelist.compactMap { entry in
-            guard advertised.contains(entry.modelId) else { return nil }
-            return ModelOption(id: entry.modelId, label: entry.label, shortLabel: entry.short)
+        // Probe succeeded (non-empty) ⇒ Gemini CLI is alive and authenticated.
+        // We expose the curated `*-latest` aliases unconditionally because they
+        // aren't in the bridge's curated probe list but resolve correctly when
+        // sent via `session/set_model`. Tested 2026-05-21 against gemini-cli@0.42.0.
+        let kept: [ModelOption] = Self.geminiPickerWhitelist.map { entry in
+            ModelOption(id: entry.modelId, label: entry.label, shortLabel: entry.short)
         }
         guard kept != lastGeminiModels else { return }
         lastGeminiModels = kept
