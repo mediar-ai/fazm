@@ -1360,6 +1360,10 @@ actor ACPBridge {
         // Handled immediately in deliverMessage(); should never reach here
         break
 
+      case .geminiProbeResult:
+        // Handled immediately in deliverMessage(); should never reach here
+        break
+
       case .warmupComplete:
         // Handled immediately in deliverMessage(); should never reach here
         break
