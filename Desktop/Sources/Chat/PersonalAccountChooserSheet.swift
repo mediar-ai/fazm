@@ -9,14 +9,20 @@ import AppKit
 struct PersonalAccountChooserSheet: View {
     let isClaudeConnected: Bool       // green badge when Claude Code CLI creds detected
     let codexAuthMode: String         // "chatgpt" | "api_key" | "none"
+    let geminiAvailable: Bool         // Gemini ACP backend reachable (FAZM_GEMINI_ENABLED on + probe ok)
     let onPickClaude: () -> Void      // dispatches to OAuth or direct-use depending on detection
     let onPickCodex: () -> Void       // dispatches to OAuth or direct-use depending on detection
+    let onPickGemini: () -> Void      // switches active model to Gemini; no auth needed (built-in key)
     let onCancel: () -> Void
+
+    private var sheetHeight: CGFloat {
+        geminiAvailable ? 600 : 460
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Connect Personal Account")
+                Text("Keep Chatting")
                     .scaledFont(size: 18, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
 
@@ -39,11 +45,16 @@ struct PersonalAccountChooserSheet: View {
             Divider().foregroundColor(FazmColors.border)
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("Pick a provider. You'll keep using your own subscription instead of Fazm's built-in credits.")
+                Text(geminiAvailable
+                     ? "Switch to Gemini (free, no limit) or connect a personal Claude or ChatGPT subscription."
+                     : "Pick a provider. You'll keep using your own subscription instead of Fazm's built-in credits.")
                     .scaledFont(size: 13)
                     .foregroundColor(FazmColors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if geminiAvailable {
+                    geminiCard
+                }
                 claudeCard
                 codexCard
             }
@@ -60,8 +71,46 @@ struct PersonalAccountChooserSheet: View {
             .buttonStyle(.plain)
             .padding(.bottom, 18)
         }
-        .frame(width: 440, height: 460)
+        .frame(width: 440, height: sheetHeight)
         .background(FazmColors.backgroundPrimary)
+    }
+
+    private var geminiCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle")
+                    .scaledFont(size: 16)
+                    .foregroundColor(FazmColors.purplePrimary)
+                Text("Google Gemini")
+                    .scaledFont(size: 15, weight: .semibold)
+                    .foregroundColor(FazmColors.textPrimary)
+                Text("Free")
+                    .scaledFont(size: 10, weight: .semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(FazmColors.purplePrimary))
+                Spacer()
+            }
+
+            Text("Keep using Fazm with Gemini Flash or Pro. No account to connect, no usage cap.")
+                .scaledFont(size: 12)
+                .foregroundColor(FazmColors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: onPickGemini) {
+                Text("Switch to Gemini")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(FazmColors.purplePrimary)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10).fill(FazmColors.backgroundSecondary))
     }
 
     private var claudeCard: some View {
@@ -73,12 +122,6 @@ struct PersonalAccountChooserSheet: View {
                 Text("Claude Code")
                     .scaledFont(size: 15, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
-                Text("Recommended")
-                    .scaledFont(size: 10, weight: .semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(FazmColors.purplePrimary))
                 Spacer()
             }
 
