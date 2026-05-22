@@ -2387,11 +2387,13 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
         assrtEnv.push({ name: "GEMINI_API_KEY", value: process.env.GEMINI_API_KEY });
       }
 
-      // Pin Assrt's credential provider to whatever model Fazm currently has
-      // selected. Swift writes the selected model into FAZM_SELECTED_MODEL
-      // (ACPBridge.swift). Without this hint Assrt's keychain.ts always
-      // prefers Claude OAuth, which 401s when the active chat is Gemini.
-      const selectedModel = (process.env.FAZM_SELECTED_MODEL ?? "").toLowerCase();
+      // Pin Assrt's credential provider to whatever model is currently active
+      // for this session. activeModel (passed by each query handler) wins so a
+      // mid-bridge model switch is reflected in newly spawned sessions; Swift's
+      // FAZM_SELECTED_MODEL is the fallback for the initial session before any
+      // query has arrived. Without this hint Assrt's keychain.ts always prefers
+      // Claude OAuth and 401s when the active chat is Gemini.
+      const selectedModel = (activeModel || process.env.FAZM_SELECTED_MODEL || "").toLowerCase();
       let assrtProvider: "anthropic" | "gemini" | "codex" = "anthropic";
       if (isGeminiModel(selectedModel)) {
         assrtProvider = "gemini";
@@ -2979,7 +2981,7 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
         try {
           const sessionParams: Record<string, unknown> = {
             cwd: warmCwd,
-            mcpServers: buildMcpServers("act", warmCwd, cfg.key),
+            mcpServers: buildMcpServers("act", warmCwd, cfg.key, cfg.model),
             ...buildMeta(cfg.systemPrompt, cfg.key),
           };
 
@@ -3021,7 +3023,7 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
               await acpRequest("session/resume", {
                 sessionId: cfg.resume,
                 cwd: warmResumeCwd,
-                mcpServers: buildMcpServers("act", warmResumeCwd, cfg.key),
+                mcpServers: buildMcpServers("act", warmResumeCwd, cfg.key, cfg.model),
               });
               sessionId = cfg.resume;
               logErr(`Pre-warm resumed session: ${sessionId} (key=${cfg.key}, model=${cfg.model}, cwd=${warmResumeCwd}, jsonl=${resumeJsonlPath})`);
@@ -3394,7 +3396,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         await acpRequest("session/resume", {
           sessionId: msg.resume,
           cwd: resolvedResumeCwd,
-          mcpServers: buildMcpServers(mode, resolvedResumeCwd, sessionKey),
+          mcpServers: buildMcpServers(mode, resolvedResumeCwd, sessionKey, requestedModel),
         });
         sessionId = msg.resume;
         // Track Swift's requestedCwd in the live sessions Map (it drives the
@@ -3428,7 +3430,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     if (!sessionId) {
       const sessionParams: Record<string, unknown> = {
         cwd: requestedCwd,
-        mcpServers: buildMcpServers(mode, requestedCwd, sessionKey),
+        mcpServers: buildMcpServers(mode, requestedCwd, sessionKey, requestedModel),
         ...buildMeta(msg.systemPrompt, sessionKey),
       };
       const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string; models?: { availableModels?: Array<{ modelId: string; name: string; description?: string }> } };
@@ -4034,7 +4036,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           // Create a fresh session and retry
           const freshParams: Record<string, unknown> = {
             cwd: requestedCwd,
-            mcpServers: buildMcpServers(currentMode, requestedCwd, sessionKey),
+            mcpServers: buildMcpServers(currentMode, requestedCwd, sessionKey, requestedModel),
             ...buildMeta(msg.systemPrompt, sessionKey),
           };
           const freshResult = (await acpRequest("session/new", freshParams)) as { sessionId: string };
@@ -4463,7 +4465,7 @@ async function handleForkSession(msg: import("./protocol.js").ForkSessionMessage
     const result = (await acpRequest("session/fork", {
       sessionId: sourceEntry.sessionId,
       cwd,
-      mcpServers: buildMcpServers(mode, cwd, msg.toSessionKey),
+      mcpServers: buildMcpServers(mode, cwd, msg.toSessionKey, model),
     })) as { sessionId: string };
 
     // For in-place fork, unregister the source first so the same key cleanly
