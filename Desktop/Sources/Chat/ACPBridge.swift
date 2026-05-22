@@ -587,6 +587,16 @@ actor ACPBridge {
       env["FAZM_ASSRT_ENABLED"] = "true"
     }
 
+    // Mirror the user's currently-selected chat model into the bridge env so
+    // sibling MCP servers (notably Assrt) can pin their credential provider to
+    // match. Without this, Assrt's keychain.ts would always prefer Claude OAuth
+    // and 401 on Gemini-selected sessions. The bridge reads this in
+    // buildMcpServers() and translates the model id to an ASSRT_PROVIDER value.
+    let selectedModel = defaults.string(forKey: "shortcut_selectedModel") ?? ""
+    if !selectedModel.isEmpty {
+      env["FAZM_SELECTED_MODEL"] = selectedModel
+    }
+
     // Forward the runtime Gemini API key (fetched from the backend into
     // KeyService memory) to the bridge env when Gemini is enabled. The bridge
     // passes GEMINI_API_KEY through to the assrt subprocess, where assrt-mcp's
