@@ -111,7 +111,11 @@ export async function handleCodexQuery(msg: QueryMessage, deps: CodexQueryDeps):
     return;
   }
 
-  const mcpServers = buildMcpServers(mode, cwd, sessionKey);
+  // Pass the model id so sibling MCP servers (Assrt) see the active provider
+  // for this session instead of the bridge-spawn default. Codex/ChatGPT OAuth
+  // doesn't authenticate Assrt's chat backends today; Assrt's keychain layer
+  // logs a warning and falls back to Claude OAuth when ASSRT_PROVIDER=codex.
+  const mcpServers = buildMcpServers(mode, cwd, sessionKey, modelId);
 
   // Reuse cached session for the same sessionKey + cwd + model, otherwise drop it.
   let entry = codexSessions.get(sessionKey);
