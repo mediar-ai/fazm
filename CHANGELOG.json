@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Added Google Gemini as a free option when built-in AI credits run out, alongside Connect Claude and Connect ChatGPT"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.36",
+      "date": "2026-05-22",
+      "changes": [
+        "Added Google Gemini as a free option when built-in AI credits run out, alongside Connect Claude and Connect ChatGPT"
+      ]
+    },
     {
       "version": "2.9.35",
       "date": "2026-05-22",
