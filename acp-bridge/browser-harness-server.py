@@ -322,6 +322,12 @@ def _run_harness(script: str, timeout: int = EXEC_TIMEOUT_SEC) -> dict:
 
     env = os.environ.copy()
     env["BU_CDP_URL"] = CDP_URL
+    # Pin the daemon socket name so we never collide with another
+    # browser-harness instance (e.g. social-autoposter's twitter-harness
+    # MCP server, which used to also default to BU_NAME=default and silently
+    # take over /tmp/bu-default.sock, routing twitter pipeline CLI calls into
+    # Fazm's Chrome on port 9655 instead of the twitter-harness Chrome on 9555).
+    env["BU_NAME"] = "fazm"
     # Make sure our bundled venv's bin dir is first on PATH (per-arch aware).
     env["PATH"] = f"{_resolve_venv_dir(SERVER_DIR) / 'bin'}:" + env.get("PATH", "")
 
