@@ -503,7 +503,7 @@ struct BrowserExtensionSetup: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
 
-                Text("Make sure Chrome is open and the extension page shows \"Connected\".")
+                Text("Make sure Chrome has a regular webpage open in the active tab (not just the extension page), the extension shows \"Connected\", then try again.")
                     .scaledFont(size: 12)
                     .foregroundColor(FazmColors.textQuaternary)
                     .multilineTextAlignment(.center)
@@ -840,7 +840,7 @@ struct BrowserExtensionSetup: View {
                         log("BrowserExtensionSetup: Connection test succeeded")
                         AnalyticsManager.shared.browserExtensionConnectionTested(success: true)
                     } else {
-                        verifyError = "Could not connect to the Chrome extension. Make sure Chrome is open and try again."
+                        verifyError = "Could not connect to the Chrome extension. Make sure Chrome has a regular webpage open in the active tab (not just the extension page) and try again."
                         log("BrowserExtensionSetup: Connection test returned false")
                         AnalyticsManager.shared.browserExtensionConnectionTested(success: false, error: "not_connected")
                     }
@@ -850,7 +850,7 @@ struct BrowserExtensionSetup: View {
                     isVerifying = false
                     let msg = error.localizedDescription
                     if msg.contains("timeout") || msg.contains("Extension connection timeout") {
-                        verifyError = "Connection timed out. Make sure Chrome is running and the extension is installed, then try again."
+                        verifyError = "Connection timed out. Make sure Chrome is running with a regular webpage open in the active tab, the extension is installed, then try again."
                     } else {
                         verifyError = msg
                     }

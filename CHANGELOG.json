@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Clearer guidance when the browser extension connection test fails: prompts you to keep a regular webpage open in the active tab"
+  ],
   "releases": [
     {
       "version": "2.9.34",
