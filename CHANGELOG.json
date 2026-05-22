@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Clearer guidance when the browser extension connection test fails: prompts you to keep a regular webpage open in the active tab",
-    "Fixed Gemini Flash and Gemini Pro not being able to call MCP tools (capture_screenshot, browser, WhatsApp, etc.)"
+    "Fixed Gemini Flash and Gemini Pro not being able to call MCP tools (capture_screenshot, browser, WhatsApp, etc.)",
+    "Added Google Gemini Flash (latest) and Gemini Pro (latest) as selectable models in the AI picker, alongside Claude and ChatGPT"
   ],
   "releases": [
     {
