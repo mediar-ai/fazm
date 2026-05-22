@@ -30,6 +30,7 @@ export interface GeminiQueryDeps {
     mode: "ask" | "act",
     cwd: string,
     sessionKey: string,
+    activeModel?: string,
   ) => Array<Record<string, unknown>>;
   registerSession: (sessionKey: string, entry: { sessionId: string; cwd: string; model?: string }) => void;
 }
