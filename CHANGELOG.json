@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Added Google Gemini as a free option when built-in AI credits run out, alongside Connect Claude and Connect ChatGPT"
+  ],
   "releases": [
     {
       "version": "2.9.35",
