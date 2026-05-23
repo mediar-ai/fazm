@@ -1432,6 +1432,7 @@ struct SettingsContentView: View {
                     Picker("Mode", selection: $browserMode) {
                         Text("Use my Chrome (extension)").tag("extension")
                         Text("Use Fazm's managed Chrome (beta)").tag("managed")
+                        Text("No browser MCP (Assrt only)").tag("off")
                     }
                     .pickerStyle(.radioGroup)
                     .labelsHidden()
