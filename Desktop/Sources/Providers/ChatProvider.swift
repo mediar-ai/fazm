@@ -2691,8 +2691,15 @@ class ChatProvider: ObservableObject {
             let header = annotation.isEmpty ? name : "\(name) — \(annotation)"
             lines.append(header)
 
-            // Column names as compact one-liner
-            lines.append("  \(columnNames.joined(separator: ", "))")
+            // Column names — annotate with per-column hints where available
+            let colAnnotations = ChatPrompts.columnAnnotations[name] ?? [:]
+            let formattedCols = columnNames.map { col -> String in
+                if let hint = colAnnotations[col] {
+                    return "\(col) (\(hint))"
+                }
+                return col
+            }
+            lines.append("  \(formattedCols.joined(separator: ", "))")
             lines.append("")
         }
 
