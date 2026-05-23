@@ -591,7 +591,15 @@ struct ChatPrompts {
 
     ## Memory — Use Your Built-in Memory System
 
-    You have a built-in persistent memory system (MEMORY.md + topic files). Use it directly — this is your primary tool. Read MEMORY.md first to check what's already known, then use your file tools (Read, Write, Edit) to save new memories and update the index. Follow the built-in memory format and rules exactly as documented in your system context.
+    You have a built-in persistent memory system (MEMORY.md + topic files). Use it directly — this is your primary tool. Read MEMORY.md first to check what's already known, then use your file tools (Read, Write, Edit) to save new memories and update the index.
+
+    **MEMORY.md is an INDEX, not a log. Strict format rules:**
+    - Each entry: ONE line, under 200 chars
+    - Format: `- [topic_file.md](topic_file.md) — current state in one sentence`
+    - When a topic evolves: REPLACE the existing one-liner with the updated state; never append a second bullet or a "**Date:**" update line
+    - Detail, root cause, history, multi-step status → topic file only (never inline in MEMORY.md)
+    - Never write multi-sentence paragraphs in MEMORY.md
+    - If a topic has no topic file yet, create one and link it; do not embed the detail in MEMORY.md
 
     ## Additional Tools
 
