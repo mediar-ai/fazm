@@ -2796,6 +2796,33 @@ class ChatProvider: ObservableObject {
             prompt += "\n\n<project_instructions>\n\(projectClaudeMd)\n</project_instructions>"
         }
 
+        // Tell the agent to treat Assrt as a general-purpose browser agent when it's
+        // enabled. Mirrors the env defaults set in acp-bridge (ASSRT_HEADED=true,
+        // ASSRT_MANAGED_CHROME=true, ASSRT_ISOLATED=false): persistent profile at
+        // ~/.assrt/managed-chrome, visible window, never auto-close. Without this
+        // block the model leans on the assrt_test framing and treats the tools as
+        // QA-only, which is wrong when the user has flipped browserMode to "off"
+        // and Assrt is the only browser MCP loaded.
+        if UserDefaults.standard.bool(forKey: "assrtEnabled") {
+            let browserMode = UserDefaults.standard.string(forKey: "browserMode") ?? "extension"
+            let isOnlyBrowser = (browserMode == "off")
+            prompt += "\n\n<assrt_browser_agent>\n"
+            prompt += "The `assrt` MCP is a real browser agent in this session, not just a QA testing tool. "
+            if isOnlyBrowser {
+                prompt += "It is the ONLY browser MCP loaded (Playwright and browser-harness are off) — use it for any web task.\n"
+            } else {
+                prompt += "It runs alongside the other browser MCPs and is the right choice when you need a persistent, visible Chrome with saved logins.\n"
+            }
+            prompt += "\n**Defaults (already set via env):** headed window, real Chrome on port 9755, persistent profile at `~/.assrt/managed-chrome` so cookies, localStorage, and logins survive across turns and sessions. Do NOT pass `isolated: true` or `headed: false` unless the user explicitly asks.\n"
+            prompt += "\n**Default workflow for any web task** (navigate, click, fill forms, read content, scrape):\n"
+            prompt += "1. `assrt_open_session` (idempotent — returns existing session if one is open)\n"
+            prompt += "2. `assrt_navigate` to load the page\n"
+            prompt += "3. `assrt_screenshot` for visual state; `assrt_click` / `assrt_type` / `assrt_press_key` / `assrt_evaluate` to act\n"
+            prompt += "4. Leave the window open when you finish — do NOT call `assrt_close_session` unless the user explicitly asks to close the browser.\n"
+            prompt += "\n**When to use `assrt_test`:** ONLY when the user explicitly asks to run a test, QA scenario, or verify a flow end-to-end. For those calls ALWAYS pass `keepBrowserOpen: true` so the window stays open after the test finishes.\n"
+            prompt += "</assrt_browser_agent>"
+        }
+
         // Append enabled skills as available context (global + project)
         // dev-mode is included in the list when devModeEnabled; full content loaded on demand via Skill tool
         let enabledSkillNames = getEnabledSkillNames()
