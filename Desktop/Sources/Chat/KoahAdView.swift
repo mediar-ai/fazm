@@ -40,9 +40,11 @@ enum KoahIDs {
     /// Use this for everything pre-launch.
     static let demoPublisherID = "b8578b83-6798-4c40-9b78-5e6ee261e0ea"
 
-    /// Active publisher ID — Demo for now. Flip to `productionPublisherID` only when we
-    /// have an Order Form signed AND the privacy disclosure live.
-    static let activePublisherID = demoPublisherID
+    /// Active publisher ID. Production as of 2026-05-22 (privacy disclosure shipped in
+    /// fazm-website/src/app/privacy/page.tsx; section "Advertising and Free Tier"
+    /// describes the Koah data flow). Order Form with Koah still TBD; pre-Order-Form
+    /// traffic is allowed under the signed Publisher Agreement and Demo billing rules.
+    static let activePublisherID = productionPublisherID
 }
 
 // MARK: - Redactor
