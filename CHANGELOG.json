@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Fixed Assrt QA tests failing with 401 when Gemini was the selected model; Assrt now uses Gemini, Claude OAuth, or Anthropic API key based on the currently selected chat model",
-    "Switched Assrt's Gemini default to Flash (was Pro), matching the cost/latency profile of the Anthropic Haiku default, and forwarding the Gemini model the user picks in Fazm"
+    "Switched Assrt's Gemini default to Flash (was Pro), matching the cost/latency profile of the Anthropic Haiku default, and forwarding the Gemini model the user picks in Fazm",
+    "Added a third browser mode in Settings, No browser MCP (Assrt only), which disables both Playwright and the bundled browser-harness so only the Assrt browser is available"
   ],
   "releases": [
     {
