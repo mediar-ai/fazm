@@ -104,16 +104,21 @@ enum KoahContextRedactor {
 
 /// Decides whether to render a Koah ad in this session.
 ///
-/// Order of checks (cheap to expensive):
-/// 1. Subscription active → never. Paid users see zero ads. Ever.
-/// 2. PostHog feature flag `koah_enabled` → must be true. Default off; turned on per-user
+/// Order of checks:
+/// 1. Dev override (UserDefaults `fazm_koah_force_show=true`) → always show, bypasses
+///    everything. ONLY for local smoke testing — never ship a build with this enabled
+///    for end users. Toggle with `defaults write com.fazm.desktop-dev fazm_koah_force_show -bool true`.
+/// 2. Subscription active → never. Paid users see zero ads. Ever.
+/// 3. PostHog feature flag `koah_enabled` → must be true. Default off; turned on per-user
 ///    for testing.
-/// 3. (Future) per-conversation user opt-out from in-app settings.
+/// 4. (Future) per-conversation user opt-out from in-app settings.
 @MainActor
 enum KoahAdGate {
     static let featureFlag = "koah_enabled"
+    static let devForceShowKey = "fazm_koah_force_show"
 
     static func shouldShowAd() -> Bool {
+        if UserDefaults.standard.bool(forKey: devForceShowKey) { return true }
         if SubscriptionService.shared.isActive { return false }
         return PostHogManager.shared.isFeatureEnabled(featureFlag)
     }
