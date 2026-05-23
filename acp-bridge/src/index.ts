@@ -2257,7 +2257,11 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
   // --- Browser automation: extension flow (Playwright) vs managed flow (browser-harness) ---
   // The two flows are mutually exclusive to avoid dual-Chrome state confusion.
   // Default = "extension" (existing behavior). Override via FAZM_BROWSER_MODE=managed.
-  if (browserMode === "managed") {
+  // FAZM_BROWSER_MODE=off disables BOTH (no playwright, no browser-harness) — useful
+  // when the user only wants the Assrt MCP browser available, or no browser at all.
+  if (browserMode === "off") {
+    logErr(`Browser mode: off (no playwright, no browser-harness)`);
+  } else if (browserMode === "managed") {
     if (existsSync(browserHarnessMcpPython) && existsSync(browserHarnessMcpServer)) {
       servers.push({
         name: "browser-harness",
