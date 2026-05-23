@@ -1602,7 +1602,7 @@ class FloatingControlBarManager {
         //   setModel:<id>                       — sets AI model (e.g. "setModel:claude-sonnet-4-6")
         //   toggleVoice                         — toggles voice response (TTS) on/off
         //   setVoice:on|off                     — explicitly sets voice response
-        //   setBrowserMode:extension|managed    — sets browser automation mode (auto-restarts the ACP bridge so FAZM_BROWSER_MODE takes effect)
+        //   setBrowserMode:extension|managed|off — sets browser automation mode; "off" disables both Playwright and browser-harness (auto-restarts the ACP bridge so FAZM_BROWSER_MODE takes effect)
         //   show                                — shows the floating bar
         //   hide                                — hides the floating bar
         //   toggle                              — toggles floating bar visibility
@@ -1657,7 +1657,7 @@ class FloatingControlBarManager {
                     self.writeControlState()
                 } else if command.hasPrefix("setBrowserMode:") {
                     let mode = String(command.dropFirst("setBrowserMode:".count))
-                    if mode == "extension" || mode == "managed" {
+                    if mode == "extension" || mode == "managed" || mode == "off" {
                         let previous = UserDefaults.standard.string(forKey: "browserMode") ?? "extension"
                         UserDefaults.standard.set(mode, forKey: "browserMode")
                         log("FloatingControlBarManager: browserMode set to \(mode) (was \(previous))")
@@ -1670,7 +1670,7 @@ class FloatingControlBarManager {
                         }
                         self.writeControlState()
                     } else {
-                        log("FloatingControlBarManager: setBrowserMode invalid value: '\(mode)' (expected 'extension' or 'managed')")
+                        log("FloatingControlBarManager: setBrowserMode invalid value: '\(mode)' (expected 'extension', 'managed', or 'off')")
                     }
                 } else if command == "stopAgent" {
                     self.chatProvider?.stopAgent()
