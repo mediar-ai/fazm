@@ -20,6 +20,7 @@
 // Background: Koah does not yet ship a macOS Swift SDK; the JavaScript SDK is the only
 // option for the Fazm desktop target. JS SDK docs: https://docs.koahlabs.com/sdk/javascript
 
+import AppKit
 import Foundation
 import SwiftUI
 import WebKit
@@ -284,6 +285,56 @@ private struct KoahWebView: NSViewRepresentable {
                     break
                 }
             }
+        }
+
+        // MARK: Click-through handling
+        //
+        // Koah's ad click-through fires either as a `target="_blank"` link or a
+        // `window.open(...)` call from inside the JS SDK. WKWebView ignores both by
+        // default — `_blank` links route through `createWebViewWith` (which returns nil
+        // unless implemented), and `window.open` goes nowhere. Result: the ad looks
+        // unclickable. We route every click-through URL out to the system browser.
+
+        nonisolated func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            if let url = navigationAction.request.url {
+                Task { @MainActor in Self.openExternally(url) }
+            }
+            return nil
+        }
+
+        nonisolated func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            // Bounce explicit user clicks (and form submissions) out to the system
+            // browser. Allow everything else (script-initiated loads, iframe content,
+            // the initial HTML harness load) to proceed inside the WebView so the SDK
+            // and the ad creative can render.
+            let url = navigationAction.request.url
+            let scheme = url?.scheme?.lowercased()
+            let isUserGesture = navigationAction.navigationType == .linkActivated
+                || navigationAction.navigationType == .formSubmitted
+
+            if isUserGesture, let url, scheme == "http" || scheme == "https" {
+                Task { @MainActor in Self.openExternally(url) }
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
+
+        @MainActor
+        private static func openExternally(_ url: URL) {
+            guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
+            NSWorkspace.shared.open(url)
+            NSLog("[Koah] click-through opened: \(url.absoluteString)")
         }
     }
 }
