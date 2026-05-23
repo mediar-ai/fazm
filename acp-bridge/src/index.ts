@@ -2391,6 +2391,24 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
         assrtEnv.push({ name: "GEMINI_API_KEY", value: process.env.GEMINI_API_KEY });
       }
 
+      // Treat Assrt as a general-purpose browser agent (not just a QA tool):
+      //   ASSRT_HEADED=true        → default to a visible Chrome window so the user
+      //                              can watch the agent work (overridable per-call).
+      //   ASSRT_MANAGED_CHROME=true → spawn a real Chrome on port 9755 with a
+      //                              user-data-dir at ~/.assrt/managed-chrome so
+      //                              cookies/localStorage/logins persist across runs.
+      //   ASSRT_ISOLATED=false     → keep the persistent profile (no in-memory mode).
+      // These defaults make assrt usable for everyday "open this site, click around,
+      // grab data" tasks. assrt_open_session already defaults to headed+managed, but
+      // assrt_test would otherwise default to headless+ephemeral. We also instruct
+      // the agent (via the <assrt_browser_agent> system-prompt block in
+      // ChatProvider.buildSystemPrompt) to prefer assrt_open_session / assrt_navigate
+      // / assrt_click over assrt_test and never to call assrt_close_session unless
+      // the user explicitly asks.
+      assrtEnv.push({ name: "ASSRT_HEADED", value: "true" });
+      assrtEnv.push({ name: "ASSRT_MANAGED_CHROME", value: "true" });
+      assrtEnv.push({ name: "ASSRT_ISOLATED", value: "false" });
+
       // Pin Assrt's credential provider to whatever model is currently active
       // for this session. activeModel (passed by each query handler) wins so a
       // mid-bridge model switch is reflected in newly spawned sessions; Swift's
