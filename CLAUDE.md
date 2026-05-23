@@ -154,7 +154,7 @@ When both builds are running, ALWAYS read the bundle-scoped output file (`-deskt
 | `setModel:<id>` | Sets AI model (e.g. `setModel:claude-sonnet-4-6` or `setModel:claude-opus-4-6`) |
 | `toggleVoice` | Toggles voice response (TTS) on/off |
 | `setVoice:on` / `setVoice:off` | Explicitly sets voice response |
-| `setBrowserMode:extension` / `setBrowserMode:managed` | Sets browser automation mode (`extension` = user's real Chrome via Playwright extension; `managed` = Fazm's bundled browser-harness driving its own Chrome). Auto-restarts the ACP bridge so `FAZM_BROWSER_MODE` takes effect on the next query. |
+| `setBrowserMode:extension` / `setBrowserMode:managed` / `setBrowserMode:off` | Sets browser automation mode. `extension` = user's real Chrome via Playwright extension; `managed` = Fazm's bundled browser-harness driving its own Chrome; `off` = no browser MCP registered (pair with `assrtEnabled` for an Assrt-only browsing surface). Auto-restarts the ACP bridge so `FAZM_BROWSER_MODE` takes effect on the next query. |
 | `show` / `hide` / `toggle` | Controls floating bar visibility |
 | `openInput` | Opens the AI input field |
 | `sendFollowUp:<text>` | Sends a follow-up message in active conversation |
