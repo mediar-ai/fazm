@@ -158,6 +158,21 @@ struct AIResponseView: View {
                                 currentContentView
                             }
 
+                            // Koah contextual ad slot — PoC, gated by `koah_enabled` PostHog
+                            // flag (default off) AND no active subscription. Renders below the
+                            // assistant's completed response. Uses Demo publisher ID until
+                            // explicitly promoted to production. See KoahAdView.swift.
+                            if !isLoading,
+                               let msg = currentMessage,
+                               !userInput.isEmpty,
+                               !msg.copyableText.isEmpty,
+                               msg.isStreaming == false,
+                               KoahAdGate.shouldShowAd() {
+                                KoahAdView(question: userInput, answer: msg.copyableText)
+                                    .padding(.top, 8)
+                                    .id("koah-ad-\(msg.id)")
+                            }
+
                             // Chat observer cards that arrived while the current query was streaming
                             consolidatedPendingChatObserverCards
 
