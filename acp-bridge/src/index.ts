@@ -1973,6 +1973,34 @@ let lastCreditExhaustedSessionKey: string | null = null;
  *  When reusing such a session, we apply a TTFT watchdog — if ACP doesn't respond
  *  within 30s, the session is discarded and a fresh one is created. */
 const interruptedSessions = new Set<string>();
+/** Per-ACP-sessionId ring of the last few completed tool calls.
+ *  When a session gets interrupted mid-turn, the priorContext replay (text only,
+ *  no SDK tool history) used to forget what the agent was actually working on.
+ *  This map remembers the last N completed tools per session so the recovery
+ *  preamble can say "before being interrupted, you ran Bash, Read, Edit on X".
+ *  Trimmed on session/close and on recovery consumption to bound memory. */
+type RecentToolSummary = {
+  title: string;
+  summary: string | null;   // brief input summary (e.g. "command: git status")
+  outputBrief: string | null; // first ~200 chars of result, no images
+  status: string;            // "completed" | "failed" | "cancelled"
+  completedAt: number;       // unix ms — sorted ascending in display
+};
+const recentToolsBySession = new Map<string, RecentToolSummary[]>();
+const RECENT_TOOLS_MAX = 5;
+function recordRecentTool(sessionId: string, entry: RecentToolSummary): void {
+  if (!sessionId) return;
+  const arr = recentToolsBySession.get(sessionId) ?? [];
+  arr.push(entry);
+  while (arr.length > RECENT_TOOLS_MAX) arr.shift();
+  recentToolsBySession.set(sessionId, arr);
+}
+function consumeRecentTools(sessionId: string): RecentToolSummary[] {
+  const arr = recentToolsBySession.get(sessionId);
+  if (!arr || arr.length === 0) return [];
+  recentToolsBySession.delete(sessionId);
+  return arr;
+}
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 let authMethods: AuthMethod[] = [];
@@ -3565,8 +3593,39 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const ctxEntries = Array.isArray(msg.priorContext) ? msg.priorContext : [];
       // Cap replay to keep token cost bounded; most "what was I doing" recoveries
       // only need the last handful of turns. Trim from the END (most recent kept).
-      const MAX_REPLAY = 20;
+      // Bumped 20 → 40 on 2026-05-23 after user feedback that interrupt-recovery
+      // dropped too much context. Each entry is hard-capped at 4000 chars below,
+      // so worst case ~160k chars of preamble — fine for modern context windows.
+      const MAX_REPLAY = 40;
       let replay = ctxEntries.slice(-MAX_REPLAY);
+      // Detect whether the trailing assistant turn is an interrupt-marked
+      // partial (saved by Swift with the marker
+      // "_⚠️ (interrupted — partial response)_"). For interrupt-triggered
+      // recovery, we KEEP that partial as context so the agent can resume
+      // the train of thought instead of forgetting what it was about to say.
+      // For every other recovery cause (workspace_changed, stale chunk replay,
+      // upstream session expired), the trailing assistant text remains
+      // unreliable and the drop-all behavior still applies.
+      const INTERRUPT_MARKER = "(interrupted — partial response)";
+      const tail = replay.length > 0 ? replay[replay.length - 1] : null;
+      const trailingIsInterruptedPartial =
+        recoveryCause === "stuck_session" &&
+        tail !== null &&
+        tail.role === "assistant" &&
+        (tail.text ?? "").includes(INTERRUPT_MARKER);
+      // Capture the partial (with marker stripped) BEFORE we strip trailing
+      // assistant turns below, so we can re-inject it as a tagged "you were
+      // partway through replying" block in the preamble.
+      let interruptedPartial: string | null = null;
+      if (trailingIsInterruptedPartial && tail) {
+        const cleaned = (tail.text ?? "")
+          .replace(/\s*_?⚠️ \(interrupted — partial response\)_?\s*$/u, "")
+          .trim();
+        if (cleaned.length > 0) {
+          // Hard-cap at 4000 chars to match the per-entry transcript cap below.
+          interruptedPartial = cleaned.slice(0, 4000);
+        }
+      }
       // Drop ALL trailing assistant turns. When recovery fires, the prior
       // assistant turn is by definition unreliable: it was either interrupted
       // mid-stream or replayed stale chunks from a previous turn. Even when
@@ -3581,6 +3640,11 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // This subsumes the earlier toxic-pattern filter (empty / [Interrupted] /
       // leaked User:/Assistant: markers) — those were special cases of the
       // same general problem.
+      //
+      // For interrupt-triggered recovery, we still strip the assistant turn
+      // from the main transcript loop (so the model doesn't see two copies),
+      // but the captured `interruptedPartial` is re-injected with explicit
+      // framing in the preamble below.
       while (
         replay.length > 0 &&
         replay[replay.length - 1].role === "assistant"
@@ -3588,6 +3652,12 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         replay = replay.slice(0, -1);
       }
       const restoredCount = replay.length;
+      // Pull any recent tool summaries the bridge recorded on the
+      // now-poisoned session before interrupt fired. Consumed once: the next
+      // recovery cycle for a different sessionId will not see these.
+      const recentTools = resumeFailedFromId
+        ? consumeRecentTools(resumeFailedFromId)
+        : [];
 
       // [POISON-FIX-PLAN] L2a — SHIPPED 2026-05-12. Recovery preamble used to
       // use `User:` / `Assistant:` role labels, `--- RECENT TRANSCRIPT ---`
@@ -3618,6 +3688,39 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             return `${who}: ${text}`;
           })
           .join("\n\n");
+        // Optional tool-history block. Only shown on interrupt-recovery — for
+        // workspace_changed and other recovery causes, the prior tool calls
+        // belong to a workflow that's no longer current.
+        let toolHistoryBlock = "";
+        if (recoveryCause === "stuck_session" && recentTools.length > 0) {
+          const toolLines = recentTools.map((t) => {
+            const statusTag = t.status === "completed" ? "" : ` (${t.status})`;
+            const inputBit = t.summary ? ` [${t.summary}]` : "";
+            const outputBit = t.outputBrief
+              ? ` → ${t.outputBrief.slice(0, 200)}`
+              : "";
+            return `• ${t.title}${statusTag}${inputBit}${outputBit}`;
+          });
+          toolHistoryBlock =
+            `\n\nBefore the interruption, you completed these tool calls ` +
+            `(oldest first; treat as background memory, do NOT re-run unless ` +
+            `the new message asks for it):\n` +
+            toolLines.join("\n");
+        }
+        // Optional partial-reply block. Only shown on interrupt-recovery and
+        // only when Swift saved a non-empty partial. Framed as a memory aid,
+        // NOT as text to continue from verbatim.
+        let partialReplyBlock = "";
+        if (recoveryCause === "stuck_session" && interruptedPartial) {
+          partialReplyBlock =
+            `\n\nYou were partway through replying when the user interrupted ` +
+            `you. The streamed-so-far text was:\n` +
+            `"""\n${interruptedPartial}\n"""\n` +
+            `Treat this as a memory of what you intended to say, NOT as a ` +
+            `template to extend verbatim. If the user's new message continues ` +
+            `the same topic, you may build on these ideas; if they ask ` +
+            `something different, ignore the partial entirely.`;
+        }
         const preamble =
           `[Session restored from local history.]\n` +
           `The previous session (${resumeFailedFromId}) was interrupted before ` +
@@ -3635,13 +3738,24 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           `task unless the user explicitly references it.\n\n` +
           `Earlier in this conversation (${restoredCount} message${restoredCount === 1 ? "" : "s"}, oldest first):\n` +
           transcript +
+          toolHistoryBlock +
+          partialReplyBlock +
           `\n\n[End of restored context. The user has just sent the message ` +
           `below — write your actual reply to it. Do not continue, summarize, ` +
           `or quote the transcript above, and do not emit any bracketed ` +
           `placeholder text in place of a real reply.]\n\n` +
           fullPrompt;
         fullPrompt = preamble;
-        logErr(`Session expired: replayed ${restoredCount} prior messages into new session ${sessionId}`);
+        const extras: string[] = [];
+        if (recentTools.length > 0)
+          extras.push(`${recentTools.length} recent tools`);
+        if (interruptedPartial)
+          extras.push(`${interruptedPartial.length}-char partial reply`);
+        const extrasStr = extras.length > 0 ? ` + ${extras.join(", ")}` : "";
+        logErr(
+          `Session expired: replayed ${restoredCount} prior messages${extrasStr} ` +
+            `into new session ${sessionId} (cause=${recoveryCause})`,
+        );
       } else {
         logErr(`Session expired: no priorContext provided, starting fresh (key=${sessionKey})`);
       }
@@ -4898,6 +5012,23 @@ function handleSessionUpdate(
         const sessionTag = tracked
           ? ` session=${tracked.sessionKey ?? tracked.sessionId ?? "?"}`
           : "";
+        // Record a compact summary of this completed tool for the interrupt-
+        // recovery preamble. Skip ToolSearch (internal) and pure tool_search
+        // discovery, which would only clutter the preamble. `tracked.sessionId`
+        // is the ACP sessionId — same key the recovery path uses to look up
+        // `recentToolsBySession`. Bounded at RECENT_TOOLS_MAX entries per id.
+        if (!isInternalTool && tracked?.sessionId) {
+          const outputBrief = output
+            ? output.replace(/\s+/g, " ").slice(0, 200)
+            : null;
+          recordRecentTool(tracked.sessionId, {
+            title,
+            summary: summary || null,
+            outputBrief,
+            status,
+            completedAt: Date.now(),
+          });
+        }
         inFlightTools.delete(toolCallId);
 
         logErr(
