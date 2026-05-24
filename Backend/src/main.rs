@@ -91,6 +91,22 @@ async fn main() {
             "/api/referral/validate",
             axum::routing::post(routes::referral::validate),
         )
+        .route(
+            "/api/composio/connect",
+            axum::routing::post(routes::composio::connect),
+        )
+        .route(
+            "/api/composio/status",
+            axum::routing::get(routes::composio::status),
+        )
+        .route(
+            "/api/composio/disconnect",
+            axum::routing::post(routes::composio::disconnect),
+        )
+        .route(
+            "/api/composio/mcp/:toolkit",
+            axum::routing::post(routes::composio::mcp_proxy),
+        )
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // Public routes (release management uses its own shared-secret auth)
