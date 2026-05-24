@@ -1833,11 +1833,9 @@ private struct OnboardingErrorBanner: View {
         let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
         switch error {
         case .creditExhausted:
-            return geminiAvailable
-                ? "You've used all your built-in AI credits. Switch to Gemini for free, or connect your Claude Code or ChatGPT account to continue setup."
-                : "You've used all your built-in AI credits. Connect your Claude Code or ChatGPT account to continue setup."
+            return AccountErrorCopy.message(reason: .creditExhausted, surface: .onboarding, geminiAvailable: geminiAvailable)
         case .claudeAuthRequired:
-            return "Please connect your Claude Code or ChatGPT account to continue setup."
+            return AccountErrorCopy.message(reason: .authRequired, surface: .onboarding, geminiAvailable: geminiAvailable)
         case .general(let text):
             return text
         }
