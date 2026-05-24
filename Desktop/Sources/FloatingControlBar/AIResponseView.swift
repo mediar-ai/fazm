@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Persisted list of recently-used workspace directory paths (max 5, MRU order).
+/// Persisted list of recently-used workspace directory paths (max 9, MRU order).
+/// The dropdown filters out the current workspace, so up to 8 entries are shown.
 enum RecentWorkspaces {
     private static let key = "recentWorkspacePaths"
-    private static let maxCount = 5
+    private static let maxCount = 9
 
     static func list() -> [String] {
         UserDefaults.standard.stringArray(forKey: key) ?? []
