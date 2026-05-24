@@ -3637,7 +3637,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // For every other recovery cause (workspace_changed, stale chunk replay,
       // upstream session expired), the trailing assistant text remains
       // unreliable and the drop-all behavior still applies.
-      const INTERRUPT_MARKER = "(interrupted — partial response)";
+      // Swift stamps one of two markers when an interrupt fires:
+      //   - rawText.isEmpty=false → "_⚠️ (interrupted — partial response)_"
+      //   - rawText.isEmpty=true  → "_⚠️ (interrupted before any text)_"
+      // We need both to trigger interrupt-recovery (the empty case is exactly
+      // when the tool-history block is most valuable: model started a tool,
+      // streamed no text, then got cancelled — recovery preamble should still
+      // surface "you were running X").
+      const INTERRUPT_MARKER_RE = /⚠️ \(interrupted(?: — partial response| before any text)?\)/u;
       const tail = replay.length > 0 ? replay[replay.length - 1] : null;
       // Fire whenever the trailing assistant turn is interrupt-marked, regardless
       // of recoveryCause. The implicit-recovery path (in-app interrupt, no resume
@@ -3645,14 +3652,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const trailingIsInterruptedPartial =
         tail !== null &&
         tail.role === "assistant" &&
-        (tail.text ?? "").includes(INTERRUPT_MARKER);
+        INTERRUPT_MARKER_RE.test(tail.text ?? "");
       // Capture the partial (with marker stripped) BEFORE we strip trailing
       // assistant turns below, so we can re-inject it as a tagged "you were
       // partway through replying" block in the preamble.
       let interruptedPartial: string | null = null;
       if (trailingIsInterruptedPartial && tail) {
         const cleaned = (tail.text ?? "")
-          .replace(/\s*_?⚠️ \(interrupted — partial response\)_?\s*$/u, "")
+          .replace(/\s*_?⚠️ \(interrupted(?: — partial response| before any text)?\)_?\s*$/u, "")
           .trim();
         if (cleaned.length > 0) {
           // Hard-cap at 4000 chars to match the per-entry transcript cap below.
