@@ -4,7 +4,8 @@
     "Switched Assrt's Gemini default to Flash (was Pro), matching the cost/latency profile of the Anthropic Haiku default, and forwarding the Gemini model the user picks in Fazm",
     "Added a third browser mode in Settings, No browser MCP (Assrt only), which disables both Playwright and the bundled browser-harness so only the Assrt browser is available",
     "Reframed the Assrt MCP as a general-purpose browser agent: defaults to a visible Chrome window, uses a persistent profile so logins/cookies survive across sessions, and the agent now leaves the window open between turns instead of closing it",
-    "Enabled live contextual sponsored content from Koah next to assistant responses for free-tier users; paid subscribers continue to see zero ads, and conversation context is redacted (emails, phone numbers, tokens, UUIDs) before any data leaves your Mac. See <a href='https://fazm.ai/privacy'>privacy policy</a> section 5 for details"
+    "Enabled live contextual sponsored content from Koah next to assistant responses for free-tier users; paid subscribers continue to see zero ads, and conversation context is redacted (emails, phone numbers, tokens, UUIDs) before any data leaves your Mac. See <a href='https://fazm.ai/privacy'>privacy policy</a> section 5 for details",
+    "Fixed Shift+Enter in the Chat with Founder composer; it now inserts a newline instead of sending the message, so multi-line messages no longer arrive as fragments"
   ],
   "releases": [
     {
