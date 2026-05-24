@@ -2001,6 +2001,13 @@ function consumeRecentTools(sessionId: string): RecentToolSummary[] {
   recentToolsBySession.delete(sessionId);
   return arr;
 }
+/** Tracks the last-interrupted ACP session ID per sessionKey. When the user
+ *  stops a stream mid-turn, the session is unregistered and Swift sends the
+ *  next prompt WITHOUT a resume id (resume is only for app-restart scenarios).
+ *  This map lets the priorContext preamble path still locate the dead session's
+ *  `recentToolsBySession` entries so the tool-history block survives the
+ *  implicit recovery. Consumed on the next prompt for the same sessionKey. */
+const lastInterruptedSessionByKey = new Map<string, string>();
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 let authMethods: AuthMethod[] = [];
@@ -3585,12 +3592,22 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
 
     fullPrompt = msg.prompt;
 
-    // If session/resume failed and we just created a fresh session, the upstream
-    // conversation history is gone. Tell the UI immediately, and (if the client
-    // supplied recent local history) prepend a compact recovery preamble so the
-    // model can pick up the thread instead of replying as a stranger.
-    if (resumeFailedFromId && isNewSession) {
-      const ctxEntries = Array.isArray(msg.priorContext) ? msg.priorContext : [];
+    // Prepend a priorContext preamble whenever we just created a fresh session
+    // AND the client supplied recent history. Two cases trigger this:
+    //   (1) Explicit recovery (resume_failed / stuck_session / workspace_changed):
+    //       `resumeFailedFromId` is set; we also emit a user-facing
+    //       `session_expired` notice tailored to the cause.
+    //   (2) Implicit recovery — the previous session was unregistered (most
+    //       commonly because the user interrupted mid-stream), Swift sends the
+    //       next prompt without a `resume` id, and the bridge would otherwise
+    //       hand the SDK a context-less fresh session. Without this path the
+    //       40-message window and the partial/tool blocks below never fire on
+    //       the most frequent interrupt-then-follow-up scenario. No UI notice
+    //       in this case — the user knows they hit stop.
+    const hasPriorContext =
+      Array.isArray(msg.priorContext) && msg.priorContext.length > 0;
+    if (isNewSession && hasPriorContext) {
+      const ctxEntries = msg.priorContext as Array<{ role?: string; text?: string }>;
       // Cap replay to keep token cost bounded; most "what was I doing" recoveries
       // only need the last handful of turns. Trim from the END (most recent kept).
       // Bumped 20 → 40 on 2026-05-23 after user feedback that interrupt-recovery
@@ -3608,8 +3625,10 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // unreliable and the drop-all behavior still applies.
       const INTERRUPT_MARKER = "(interrupted — partial response)";
       const tail = replay.length > 0 ? replay[replay.length - 1] : null;
+      // Fire whenever the trailing assistant turn is interrupt-marked, regardless
+      // of recoveryCause. The implicit-recovery path (in-app interrupt, no resume
+      // id) leaves recoveryCause null but still needs the partial preserved.
       const trailingIsInterruptedPartial =
-        recoveryCause === "stuck_session" &&
         tail !== null &&
         tail.role === "assistant" &&
         (tail.text ?? "").includes(INTERRUPT_MARKER);
@@ -5630,6 +5649,9 @@ async function main(): Promise<void> {
             // and skips resume entirely.
             unregisterSession(targetKey);
             imageTurnCounts.delete(targetKey);
+            // Remember which dead session belonged to this sessionKey so the
+            // next prompt's priorContext preamble can locate its recentTools.
+            lastInterruptedSessionByKey.set(targetKey, ctx.sessionId);
             logErr(`Session ${ctx.sessionId} marked as interrupted and invalidated (next prompt will force fresh session with priorContext replay)`);
           } else if (codexProvider && interruptCodexSession(targetKey, codexProvider)) {
             // Same key may be a codex session — interrupt and drop it.
@@ -5655,6 +5677,9 @@ async function main(): Promise<void> {
             // cached entry so the next prompt cannot reuse a dirty session.
             unregisterSession(key);
             imageTurnCounts.delete(key);
+            // Remember which dead session belonged to this sessionKey so the
+            // next prompt's priorContext preamble can locate its recentTools.
+            lastInterruptedSessionByKey.set(key, ctx.sessionId);
             logErr(`Session ${ctx.sessionId} (key=${key}) marked as interrupted and invalidated`);
           }
           if (activeSessionId && !activeQueries.size) {
