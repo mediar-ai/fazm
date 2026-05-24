@@ -711,6 +711,20 @@ function logStuckToolsOnInterrupt(reason: string, sessionId?: string): void {
         `elapsed=${(elapsedMs / 1000).toFixed(1)}s, lastStatus=${tool.lastStatus})` +
         (summary ? ` [${summary}]` : " [no input captured]"),
     );
+    // Persist as a cancelled RecentToolSummary so the next prompt's recovery
+    // preamble can tell the model "you were running X when the user stopped
+    // you". Without this, the preamble only sees tools that COMPLETED before
+    // the interrupt — which usually misses the most relevant one (the tool
+    // that was actually mid-flight at the moment of cancellation).
+    if (tool.sessionId) {
+      recordRecentTool(tool.sessionId, {
+        title: tool.title,
+        summary: summary || null,
+        outputBrief: `(cancelled mid-flight after ${(elapsedMs / 1000).toFixed(1)}s)`,
+        status: "cancelled",
+        completedAt: now,
+      });
+    }
   }
 }
 
