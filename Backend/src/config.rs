@@ -48,6 +48,13 @@ pub struct Config {
     // req/hr/IP unauthenticated), protecting against burst-induced 403s when
     // many Sparkle clients sync within the same hour.
     pub github_token: Option<String>,
+    // Composio (third-party integrations: Gmail, Slack, GitHub, etc.)
+    // The API key stays server-side and gates the /api/composio/* routes.
+    // Each toolkit maps a Composio auth_config_id (OAuth shell) and a Composio
+    // mcp_server_id (the MCP endpoint that exposes that toolkit's tools).
+    pub composio_api_key: String,
+    pub composio_gmail_auth_config_id: String,
+    pub composio_gmail_mcp_server_id: String,
 }
 
 impl Config {
@@ -121,6 +128,11 @@ impl Config {
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            composio_api_key: std::env::var("COMPOSIO_API_KEY").unwrap_or_default(),
+            composio_gmail_auth_config_id: std::env::var("COMPOSIO_GMAIL_AUTH_CONFIG_ID")
+                .unwrap_or_default(),
+            composio_gmail_mcp_server_id: std::env::var("COMPOSIO_GMAIL_MCP_SERVER_ID")
+                .unwrap_or_default(),
         }
     }
 }
