@@ -53,7 +53,9 @@ enum ChatQueryLifecycle {
 
         if provider.isClaudeAuthRequired {
             state.showConnectClaudeButton = true
-            state.streaming.currentAIMessage = ChatMessage(text: "Please connect your Claude Code or ChatGPT account to continue.", sender: .ai)
+            let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
+            let body = AccountErrorCopy.message(reason: .authRequired, surface: .chat, geminiAvailable: geminiAvailable)
+            state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
         } else if provider.showCreditExhaustedAlert {
             provider.showCreditExhaustedAlert = false
             if provider.isClaudeConnected {
@@ -63,9 +65,7 @@ enum ChatQueryLifecycle {
             } else {
                 state.showConnectClaudeButton = true
                 let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
-                let body = geminiAvailable
-                    ? "You've used all your built-in AI credits. Switch to Gemini for free, or connect Claude Code or ChatGPT to keep chatting."
-                    : "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting."
+                let body = AccountErrorCopy.message(reason: .creditExhausted, surface: .chat, geminiAvailable: geminiAvailable)
                 state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
             }
         } else if let errorText = provider.errorMessage {
