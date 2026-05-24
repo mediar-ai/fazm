@@ -3674,8 +3674,20 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // Pull any recent tool summaries the bridge recorded on the
       // now-poisoned session before interrupt fired. Consumed once: the next
       // recovery cycle for a different sessionId will not see these.
-      const recentTools = resumeFailedFromId
-        ? consumeRecentTools(resumeFailedFromId)
+      //
+      // Lookup priority:
+      //   1. resumeFailedFromId — set on explicit recovery (resume_failed /
+      //      stuck_session / workspace_changed via msg.resume path).
+      //   2. lastInterruptedSessionByKey — set on user interrupt, consumed
+      //      here so an in-app interrupt-then-follow-up (no resume id) still
+      //      surfaces the tools the dead session ran.
+      const implicitInterruptedId = lastInterruptedSessionByKey.get(sessionKey);
+      const recoverySessionId = resumeFailedFromId ?? implicitInterruptedId ?? null;
+      if (implicitInterruptedId) {
+        lastInterruptedSessionByKey.delete(sessionKey);
+      }
+      const recentTools = recoverySessionId
+        ? consumeRecentTools(recoverySessionId)
         : [];
 
       // [POISON-FIX-PLAN] L2a — SHIPPED 2026-05-12. Recovery preamble used to
@@ -3707,11 +3719,16 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             return `${who}: ${text}`;
           })
           .join("\n\n");
-        // Optional tool-history block. Only shown on interrupt-recovery — for
-        // workspace_changed and other recovery causes, the prior tool calls
-        // belong to a workflow that's no longer current.
+        // Interrupt-recovery signal: either an explicit stuck_session recovery,
+        // or the implicit case where the user hit stop and we detected the
+        // interrupt marker in the trailing assistant turn. Workspace_changed
+        // and resume_failed deliberately skip the tool/partial blocks — those
+        // tool calls belong to a workflow that's no longer current.
+        const isInterruptRecovery =
+          recoveryCause === "stuck_session" ||
+          (recoveryCause === null && trailingIsInterruptedPartial);
         let toolHistoryBlock = "";
-        if (recoveryCause === "stuck_session" && recentTools.length > 0) {
+        if (isInterruptRecovery && recentTools.length > 0) {
           const toolLines = recentTools.map((t) => {
             const statusTag = t.status === "completed" ? "" : ` (${t.status})`;
             const inputBit = t.summary ? ` [${t.summary}]` : "";
@@ -3726,11 +3743,11 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             `the new message asks for it):\n` +
             toolLines.join("\n");
         }
-        // Optional partial-reply block. Only shown on interrupt-recovery and
-        // only when Swift saved a non-empty partial. Framed as a memory aid,
-        // NOT as text to continue from verbatim.
+        // Optional partial-reply block. Fires on any interrupt-recovery when
+        // Swift saved a non-empty partial. Framed as a memory aid, NOT as text
+        // to continue from verbatim.
         let partialReplyBlock = "";
-        if (recoveryCause === "stuck_session" && interruptedPartial) {
+        if (isInterruptRecovery && interruptedPartial) {
           partialReplyBlock =
             `\n\nYou were partway through replying when the user interrupted ` +
             `you. The streamed-so-far text was:\n` +
@@ -3740,13 +3757,24 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             `the same topic, you may build on these ideas; if they ask ` +
             `something different, ignore the partial entirely.`;
         }
+        // Lead line varies by trigger: explicit recovery names the dead session
+        // and explains why; implicit recovery (in-app interrupt or normal
+        // continuation) just frames the context replay without scary copy.
+        const leadLine = resumeFailedFromId
+          ? `The previous session (${resumeFailedFromId}) was interrupted ` +
+            `before it could finish. Below is recent conversation context ` +
+            `replayed from the user's local message store — treat it as ` +
+            `background only. The prior assistant turn (if any) was dropped ` +
+            `because it was incomplete or unreliable.`
+          : isInterruptRecovery
+            ? `The conversation below was interrupted before your last reply ` +
+              `finished streaming. The streamed-so-far text is preserved as a ` +
+              `dedicated block further down; treat the rest as background context.`
+            : `Below is recent conversation context from the user's local ` +
+              `message store — treat it as background only.`;
         const preamble =
           `[Session restored from local history.]\n` +
-          `The previous session (${resumeFailedFromId}) was interrupted before ` +
-          `it could finish. Below is recent conversation context replayed from ` +
-          `the user's local message store — treat it as background only. The ` +
-          `prior assistant turn (if any) was dropped because it was incomplete ` +
-          `or unreliable.\n\n` +
+          leadLine + `\n\n` +
           `Answer the user's new message at the bottom directly and naturally, ` +
           `in your own voice. Do NOT narrate, quote, or echo the context above. ` +
           `Do NOT begin your reply with any template-placeholder text such as ` +
@@ -3771,11 +3799,12 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (interruptedPartial)
           extras.push(`${interruptedPartial.length}-char partial reply`);
         const extrasStr = extras.length > 0 ? ` + ${extras.join(", ")}` : "";
+        const causeLabel = recoveryCause ?? (isInterruptRecovery ? "interrupted_followup" : "fresh_session_with_context");
         logErr(
-          `Session expired: replayed ${restoredCount} prior messages${extrasStr} ` +
-            `into new session ${sessionId} (cause=${recoveryCause})`,
+          `Prepended priorContext preamble: ${restoredCount} prior messages${extrasStr} ` +
+            `into new session ${sessionId} (cause=${causeLabel})`,
         );
-      } else {
+      } else if (resumeFailedFromId) {
         logErr(`Session expired: no priorContext provided, starting fresh (key=${sessionKey})`);
       }
 
