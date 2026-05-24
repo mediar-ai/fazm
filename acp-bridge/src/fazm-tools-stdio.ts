@@ -139,7 +139,39 @@ function notifyObserverCardReady(): void {
   }
 }
 
-const TOOL_TIMEOUT_MS = 30_000;
+const DEFAULT_TOOL_TIMEOUT_MS = 30_000;
+
+/**
+ * Per-tool timeouts. A single 30s ceiling was unsafe for two classes of tool:
+ *
+ *   1. Tools that legitimately block on user input or media playback
+ *      (speak_response waits for TTS to finish; ask_followup blocks until the
+ *      user clicks a quick-reply). These should never time out from the
+ *      bridge's perspective; the user is the timeout.
+ *
+ *   2. Tools whose Swift-side work depends on machine load. capture_screenshot
+ *      on a RAM-pressured 8GB Mac was clocking in at 30,012ms, one millisecond
+ *      past the ceiling, which would have surfaced a misleading "tool call
+ *      timed out after 30s" error while the underlying capture actually
+ *      completed. Doubling the ceiling here costs nothing on fast machines and
+ *      buys headroom on slow ones.
+ *
+ * Everything else stays at the 30s default.
+ */
+const TOOL_TIMEOUTS_MS: Record<string, number> = {
+  // User-blocking tools: time out only after the conversation-level inactivity
+  // timeout (ACPBridge 600s) takes over. Ten-minute ceiling here is a
+  // last-resort safety net so a wedged pipe doesn't leak the callId forever.
+  speak_response: 600_000,
+  ask_followup: 600_000,
+  // Screen capture on slow/low-RAM Macs grazes the 30s default in production
+  // (observed 30,012ms on an 8GB Mac at 68% memory pressure). Give it room.
+  capture_screenshot: 60_000,
+};
+
+function timeoutForTool(name: string): number {
+  return TOOL_TIMEOUTS_MS[name] ?? DEFAULT_TOOL_TIMEOUT_MS;
+}
 
 async function requestSwiftTool(
   name: string,
@@ -151,14 +183,16 @@ async function requestSwiftTool(
     return "Error: not connected to bridge";
   }
 
+  const timeoutMs = timeoutForTool(name);
+
   return new Promise<string>((resolve) => {
     const timer = setTimeout(() => {
       if (pendingToolCalls.has(callId)) {
         pendingToolCalls.delete(callId);
-        logErr(`Tool call timed out after ${TOOL_TIMEOUT_MS}ms: ${name} (${callId})`);
-        resolve(`Error: tool call timed out after ${TOOL_TIMEOUT_MS / 1000}s`);
+        logErr(`Tool call timed out after ${timeoutMs}ms: ${name} (${callId})`);
+        resolve(`Error: tool call timed out after ${timeoutMs / 1000}s`);
       }
-    }, TOOL_TIMEOUT_MS);
+    }, timeoutMs);
 
     pendingToolCalls.set(callId, {
       resolve: (result: string) => {
