@@ -3810,13 +3810,18 @@ class ChatProvider: ObservableObject {
         }
 
         // If we're attempting a resume, gather recent local history for the bridge.
-        // Always compute priorContext (last 20 messages) and send it to the bridge,
+        // Always compute priorContext (last N messages) and send it to the bridge,
         // even when no resume id is provided. The bridge ignores it on the happy
         // path and only consults it for recovery: (1) session/resume fails upstream,
         // or (2) a prior turn returned empty text (poisoned ACP session). Without
         // priorContext on every send, those recovery paths can't replay history,
         // and the user would see the model wake up with no memory of the conversation.
-        // Tradeoff: one DB read (~20 rows) per send. Worth it for robustness.
+        // Tradeoff: one DB read (~40 rows) per send. Worth it for robustness.
+        //
+        // Window bumped 20 → 40 on 2026-05-23 (paired with MAX_REPLAY bump in
+        // acp-bridge/src/index.ts) after user feedback that interrupt-recovery
+        // dropped too much context on long tool-heavy turns.
+        let priorContextLimit = 40
         var priorContextForBridge: [(role: String, text: String)]? = nil
         do {
             let storeContext: String?
@@ -3847,7 +3852,7 @@ class ChatProvider: ObservableObject {
                 //   instead of stranding pre-rollover messages.
                 let recent: [ChatMessage]
                 if sessionKey == "floating" {
-                    recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: floatingChatSessionId, limit: 20)
+                    recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: floatingChatSessionId, limit: priorContextLimit)
                 } else if let key = sessionKey, key.hasPrefix("detached-") {
                     let storageKey = "acpSessionId_\(key)_\(bridgeMode)"
                     var ids = Self.loadSessionChain(storageKey: storageKey)
@@ -3858,12 +3863,12 @@ class ChatProvider: ObservableObject {
                     }
                     if ids.isEmpty {
                         // No chain yet (first turn ever in this popout) — load by context only.
-                        recent = await ChatMessageStore.loadMessages(context: ctx, sessionIds: nil, limit: 20)
+                        recent = await ChatMessageStore.loadMessages(context: ctx, sessionIds: nil, limit: priorContextLimit)
                     } else {
-                        recent = await ChatMessageStore.loadMessages(context: ctx, sessionIds: ids, limit: 20)
+                        recent = await ChatMessageStore.loadMessages(context: ctx, sessionIds: ids, limit: priorContextLimit)
                     }
                 } else {
-                    recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: nil, limit: 20)
+                    recent = await ChatMessageStore.loadMessages(context: ctx, sessionId: nil, limit: priorContextLimit)
                 }
                 let mapped = recent.compactMap { msg -> (role: String, text: String)? in
                     let role = msg.sender == .user ? "user" : "assistant"
@@ -3873,8 +3878,8 @@ class ChatProvider: ObservableObject {
                 }
                 if !mapped.isEmpty { priorContextForBridge = mapped }
             } else {
-                // main / nil: pull from in-memory messages (oldest first, last 20)
-                let recent = self.messages.suffix(20)
+                // main / nil: pull from in-memory messages (oldest first, last N)
+                let recent = self.messages.suffix(priorContextLimit)
                 let mapped = recent.compactMap { msg -> (role: String, text: String)? in
                     let role = msg.sender == .user ? "user" : "assistant"
                     let text = msg.text.trimmingCharacters(in: .whitespacesAndNewlines)
