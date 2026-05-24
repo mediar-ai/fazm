@@ -2501,6 +2501,50 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
     });
   }
 
+  // Composio MCP servers (HTTP, proxied through Fazm backend).
+  //
+  // The Swift side enables a toolkit by:
+  //   1. setting `composio<Name>Enabled` in UserDefaults after the user
+  //      completes the OAuth flow, then
+  //   2. spawning the bridge with `FAZM_COMPOSIO_TOOLKITS=<csv>` plus
+  //      `FAZM_AUTH_TOKEN=<firebase id token>` and `FAZM_BACKEND_URL=<url>`.
+  //
+  // We register one HTTP MCP server per toolkit. The backend proxy at
+  // `/api/composio/mcp/<toolkit>` enforces auth and forwards to Composio's
+  // hosted MCP with the calling user's `user_id`, so the Composio API key
+  // itself never leaves our backend.
+  //
+  // Observer sessions skip Composio (they don't need user tools); the early
+  // `return servers` for observer above already enforces that.
+  const composioToolkitsCsv = process.env.FAZM_COMPOSIO_TOOLKITS || "";
+  const composioBackendUrl = (process.env.FAZM_BACKEND_URL || "").replace(/\/+$/, "");
+  const composioAuthToken = process.env.FAZM_AUTH_TOKEN || "";
+  if (composioToolkitsCsv && composioBackendUrl && composioAuthToken) {
+    const toolkits = composioToolkitsCsv
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    for (const toolkit of toolkits) {
+      // Prefix the MCP server name with `composio_` so the agent's tool
+      // namespace clearly distinguishes Composio-managed tools (e.g.
+      // `composio_gmail__GMAIL_FETCH_EMAILS`) from local stdio MCP tools.
+      servers.push({
+        name: `composio_${toolkit}`,
+        type: "http",
+        url: `${composioBackendUrl}/api/composio/mcp/${toolkit}`,
+        headers: [
+          { name: "Authorization", value: `Bearer ${composioAuthToken}` },
+        ],
+      });
+      logErr(`Composio MCP enabled: ${toolkit} → ${composioBackendUrl}/api/composio/mcp/${toolkit}`);
+    }
+  } else if (composioToolkitsCsv) {
+    logErr(
+      `[FAZM-COMPOSIO-MISSING] FAZM_COMPOSIO_TOOLKITS=${composioToolkitsCsv} but ` +
+        `FAZM_BACKEND_URL or FAZM_AUTH_TOKEN is missing — Composio MCP servers skipped.`,
+    );
+  }
+
   // Append user-defined MCP servers from ~/.fazm/mcp-servers.json
   // Format mirrors Claude Code's mcpServers: { "name": { "command": "...", "args": [...], "env": {...}, "enabled": true } }
   const userMcpConfigPath = join(homedir(), ".fazm", "mcp-servers.json");
@@ -2739,9 +2783,14 @@ function emitMcpServers(servers: McpServerConfig[]): void {
   logErr(`Emitted mcp_servers_available: ${payload.map(s => `${s.name}(${s.builtin ? "builtin" : "user"})`).join(", ")}`);
 }
 
-// Names of built-in MCP servers (hardcoded in buildMcpServers)
+// Names of built-in MCP servers (hardcoded in buildMcpServers).
+// Composio toolkits are also builtin — they're registered by Fazm when the
+// user opts in via the in-app integrations flow, not by editing
+// ~/.fazm/mcp-servers.json. Matching on the `composio_` prefix means future
+// toolkits (Slack, GitHub, etc.) don't need this set updated.
 const BUILTIN_MCP_NAMES = new Set(["fazm_tools", "playwright", "macos-use", "whatsapp", "google-workspace", "browser-harness", "assrt"]);
 function isUserMcpServer(name: string): boolean {
+  if (name.startsWith("composio_")) return false;
   return !BUILTIN_MCP_NAMES.has(name);
 }
 
