@@ -644,17 +644,25 @@ actor ACPBridge {
     // HTTP MCP server pointed at our backend proxy at
     // `${FAZM_BACKEND_URL}/api/composio/mcp/<toolkit>`. The proxy holds the
     // Composio API key server-side and forwards requests under this user's
-    // Firebase identity. We pass the current ID token so the bridge can
-    // sign the MCP requests; the token lives for ~1 hour and refreshes on
-    // the next bridge start. Multi-hour sessions will eventually 401 on
-    // Composio tool calls; the in-app skill nudges the user to "reconnect"
-    // (which calls `restartBridge`) when that happens.
+    // Firebase identity.
+    //
+    // We always inject FAZM_AUTH_TOKEN (when signed in) so the agent can call
+    // /api/composio/connect from a skill to *start* the OAuth flow even before
+    // any toolkit is enabled. FAZM_COMPOSIO_TOOLKITS is the post-OAuth signal
+    // that tells the bridge to actually register MCP servers.
+    //
+    // Token lifetime: ~1 hour. Long-running sessions will eventually 401 on
+    // Composio tool calls; the skill nudges the user to reconnect (which
+    // triggers `restartBridge`) when that happens. Refresh-on-tool-failure
+    // is a v2 problem.
+    var firebaseToken: String? = nil
+    if let token = try? await AuthService.shared.getIdToken(), !token.isEmpty {
+      firebaseToken = token
+      env["FAZM_AUTH_TOKEN"] = token
+    }
     let composioFlags = ["composioGmailEnabled"].filter { defaults.bool(forKey: $0) }
     if !composioFlags.isEmpty {
-      // Best-effort token fetch. If sign-in is stale, we just skip Composio
-      // for this session — the bridge will register without it.
-      if let token = try? await AuthService.shared.getIdToken(), !token.isEmpty {
-        env["FAZM_AUTH_TOKEN"] = token
+      if firebaseToken != nil {
         let toolkits = composioFlags.compactMap { flag -> String? in
           switch flag {
           case "composioGmailEnabled": return "gmail"
