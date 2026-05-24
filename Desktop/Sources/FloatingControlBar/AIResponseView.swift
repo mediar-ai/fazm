@@ -425,19 +425,30 @@ struct AIResponseView: View {
                     ProgressView()
                         .scaleEffect(0.6)
                         .frame(width: 16, height: 16)
-                    let hasRunningTools = currentMessage?.contentBlocks.contains(where: {
-                        if case .toolCall(_, _, .running, _, _, _) = $0 { return true }
-                        return false
-                    }) ?? false
+                    // Pull running tool names so we can show the user which tool
+                    // is actually in flight. A 45s Terminal exec used to look
+                    // identical to a hung session ("using tools" + spinner);
+                    // naming the tool + showing elapsed seconds beyond 10s tells
+                    // the user real work is happening so they don't double-click
+                    // the Report Issue button thinking the agent is dead.
+                    let runningTools: [String] = currentMessage?.contentBlocks.compactMap {
+                        if case .toolCall(_, let name, .running, _, _, _) = $0 { return name }
+                        return nil
+                    } ?? []
                     // A query queued behind first-launch warmup would otherwise
                     // show a bare "thinking" spinner that looks stuck — name the
                     // actual wait so the user knows it's cold-starting, not hung.
-                    let headerLabel = streaming.isBridgeWarmingUp
-                        ? "preparing assistant…"
-                        : (hasRunningTools ? "using tools" : "thinking")
-                    Text(headerLabel)
-                        .scaledFont(size: 14)
-                        .foregroundColor(.secondary)
+                    if streaming.isBridgeWarmingUp {
+                        Text("preparing assistant…")
+                            .scaledFont(size: 14)
+                            .foregroundColor(.secondary)
+                    } else if !runningTools.isEmpty {
+                        RunningToolLabel(toolNames: runningTools)
+                    } else {
+                        Text("thinking")
+                            .scaledFont(size: 14)
+                            .foregroundColor(.secondary)
+                    }
                 }
             } else {
                 workspaceLabel
@@ -1897,16 +1908,40 @@ struct ReportIssueButton: View {
     @Environment(\.fazmWindowIsVisible) private var windowIsVisible
 
     var body: some View {
-        Button(action: sendReport) {
-            Image(systemName: showSent ? "checkmark" : "exclamationmark.triangle.fill")
-                .scaledFont(size: isHanging ? 13 : 11)
-                .foregroundColor(showSent ? .green : (isHanging ? .orange : .secondary))
-                .opacity(flashOpacity)
-                .scaleEffect(flashScale)
-                .shadow(color: isHanging ? .orange.opacity(flashOpacity * 0.9) : .clear, radius: 6)
+        HStack(spacing: 4) {
+            Button(action: sendReport) {
+                Image(systemName: showSent ? "checkmark" : "exclamationmark.triangle.fill")
+                    .scaledFont(size: isHanging ? 13 : 11)
+                    .foregroundColor(showSent ? .green : (isHanging ? .orange : .secondary))
+                    .opacity(flashOpacity)
+                    .scaleEffect(flashScale)
+                    .shadow(color: isHanging ? .orange.opacity(flashOpacity * 0.9) : .clear, radius: 6)
+            }
+            .buttonStyle(.plain)
+            .disabled(showSent)
+            .floatingHint(showSent ? "Report sent!" : "Report an issue")
+
+            // Visible confirmation pill: an icon swap alone was too easy to miss,
+            // which led some users to click the button twice (the second click
+            // was harmless but produced a duplicate Sentry event). Now we show
+            // an explicit "Report sent" label for ~2s after the click.
+            if showSent {
+                Text("Report sent")
+                    .scaledFont(size: 11)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.green.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.green.opacity(0.35), lineWidth: 0.5)
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
         }
-        .buttonStyle(.plain)
-        .floatingHint(showSent ? "Report sent!" : "Report an issue")
         .onChange(of: isHanging) { _, _ in syncFlash() }
         .onChange(of: windowIsVisible) { _, _ in syncFlash() }
     }
