@@ -639,6 +639,36 @@ actor ACPBridge {
       env["FAZM_RESOURCES_PATH"] = resourcePath
     }
 
+    // Composio MCP wiring. When the user has connected a Composio toolkit
+    // (Gmail today; Slack, GitHub, etc. later), the bridge registers an
+    // HTTP MCP server pointed at our backend proxy at
+    // `${FAZM_BACKEND_URL}/api/composio/mcp/<toolkit>`. The proxy holds the
+    // Composio API key server-side and forwards requests under this user's
+    // Firebase identity. We pass the current ID token so the bridge can
+    // sign the MCP requests; the token lives for ~1 hour and refreshes on
+    // the next bridge start. Multi-hour sessions will eventually 401 on
+    // Composio tool calls; the in-app skill nudges the user to "reconnect"
+    // (which calls `restartBridge`) when that happens.
+    let composioFlags = ["composioGmailEnabled"].filter { defaults.bool(forKey: $0) }
+    if !composioFlags.isEmpty {
+      // Best-effort token fetch. If sign-in is stale, we just skip Composio
+      // for this session — the bridge will register without it.
+      if let token = try? await AuthService.shared.getIdToken(), !token.isEmpty {
+        env["FAZM_AUTH_TOKEN"] = token
+        let toolkits = composioFlags.compactMap { flag -> String? in
+          switch flag {
+          case "composioGmailEnabled": return "gmail"
+          default: return nil
+          }
+        }
+        let toolkitsCSV = toolkits.joined(separator: ",")
+        env["FAZM_COMPOSIO_TOOLKITS"] = toolkitsCSV
+        log("ACPBridge: Composio toolkits enabled: \(toolkitsCSV)")
+      } else {
+        log("ACPBridge: Composio toolkit(s) enabled but no auth token available; skipping")
+      }
+    }
+
     proc.environment = env
 
     let stdin = Pipe()
