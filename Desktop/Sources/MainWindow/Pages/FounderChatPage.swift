@@ -5,7 +5,10 @@ import MarkdownUI
 struct FounderChatPage: View {
     @ObservedObject private var chatService = FounderChatService.shared
     @State private var inputText: String = ""
-    @FocusState private var isInputFocused: Bool
+    @State private var inputHeight: CGFloat = 34
+
+    private let inputMinHeight: CGFloat = 34
+    private let inputMaxHeight: CGFloat = 160
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,16 +101,34 @@ struct FounderChatPage: View {
     // MARK: - Input Bar
 
     private var inputBar: some View {
-        HStack(spacing: 12) {
-            TextField("Send a message...", text: $inputText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .scaledFont(size: 14)
-                .foregroundColor(FazmColors.textPrimary)
-                .lineLimit(1...5)
-                .focused($isInputFocused)
-                .onSubmit {
-                    sendMessage()
+        HStack(alignment: .bottom, spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                if inputText.isEmpty {
+                    Text("Send a message...")
+                        .scaledFont(size: 14)
+                        .foregroundColor(FazmColors.textTertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
                 }
+
+                FazmTextEditor(
+                    text: $inputText,
+                    fontSize: 14,
+                    textColor: NSColor(FazmColors.textPrimary),
+                    lineFragmentPadding: 8,
+                    onSubmit: { sendMessage() },
+                    focusOnAppear: false,
+                    minHeight: inputMinHeight,
+                    maxHeight: inputMaxHeight,
+                    onHeightChange: { newHeight in
+                        if abs(inputHeight - newHeight) > 1 {
+                            inputHeight = newHeight
+                        }
+                    }
+                )
+            }
+            .frame(height: inputHeight)
 
             Button(action: sendMessage) {
                 Image(systemName: "arrow.up.circle.fill")
