@@ -5770,8 +5770,22 @@ async function main(): Promise<void> {
           });
           unregisterSession(closeKey);
           imageTurnCounts.delete(closeKey);
+          // Permanent teardown: drop the tool-history entries that the
+          // priorContext preamble would have used on recovery. The interrupt
+          // path intentionally keeps these alive (see interruptedSessions /
+          // lastInterruptedSessionByKey below), but a real close means no
+          // follow-up will ever happen, so they're just dead memory.
+          recentToolsBySession.delete(entry.sessionId);
         } else {
           logErr(`close_session: no session found for key=${closeKey} (already closed?)`);
+        }
+        // Same cleanup whether or not a live entry existed: if this key was
+        // pinned by a prior interrupt, there's no future prompt coming, so
+        // drop the pending tool history for that dead sessionId too.
+        const orphanInterruptedId = lastInterruptedSessionByKey.get(closeKey);
+        if (orphanInterruptedId) {
+          recentToolsBySession.delete(orphanInterruptedId);
+          lastInterruptedSessionByKey.delete(closeKey);
         }
         break;
       }
@@ -5863,10 +5877,25 @@ async function main(): Promise<void> {
         }
         if (key && sessions.has(key)) {
           const oldSessionId = sessions.get(key)?.sessionId;
-          if (oldSessionId) interruptedSessions.delete(oldSessionId);
+          if (oldSessionId) {
+            interruptedSessions.delete(oldSessionId);
+            // resetSession means "new chat" — the conversation that owned
+            // these tool entries is gone, so drop them before they go stale.
+            recentToolsBySession.delete(oldSessionId);
+          }
           unregisterSession(key);
           imageTurnCounts.delete(key);
           logErr(`Session reset: ${key}`);
+        }
+        if (key) {
+          // Also clear any pinned interrupt mapping for this key. A reset
+          // explicitly discards prior context, so the next prompt should NOT
+          // pull tool history from the dead session.
+          const pinnedId = lastInterruptedSessionByKey.get(key);
+          if (pinnedId) {
+            recentToolsBySession.delete(pinnedId);
+            lastInterruptedSessionByKey.delete(key);
+          }
         }
         // Immediately pre-warm a fresh session so the first query doesn't wait.
         // This runs even when the key is no longer registered: `transferSession`
