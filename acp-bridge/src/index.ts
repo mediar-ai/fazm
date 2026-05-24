@@ -3817,25 +3817,34 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // `workspace_changed` is the cwd-flap recovery: the SDK can't run
       // commands in two workspaces from one session, so a new session is
       // unavoidable; the conversation continues via priorContext replay.
-      let reasonText: string;
-      if (recoveryCause === "stuck_session") {
-        reasonText = "The previous session's response was unreliable, so I restarted this chat.";
-      } else if (recoveryCause === "workspace_changed") {
-        const from = priorCwdForRecovery ? ` from ${priorCwdForRecovery.replace(/^\/Users\/[^/]+/, "~")}` : "";
-        const to = requestedCwd.replace(/^\/Users\/[^/]+/, "~");
-        reasonText = `Workspace changed${from} to ${to}; conversation continues with prior context.`;
-      } else {
-        reasonText = "The upstream chat session expired and was replaced.";
+      //
+      // Implicit recovery (user pressed stop, then sent the next prompt with no
+      // resume id) deliberately skips the UI notice: the user knows they hit
+      // stop and doesn't need a "session expired" card on every follow-up.
+      // Notice is gated on explicit recovery (resumeFailedFromId set). Implicit
+      // recovery from an in-app interrupt does not emit a notice — the user
+      // knows they pressed stop and doesn't need a UI card on every follow-up.
+      if (recoveryCause !== null && resumeFailedFromId !== null) {
+        let reasonText: string;
+        if (recoveryCause === "stuck_session") {
+          reasonText = "The previous session's response was unreliable, so I restarted this chat.";
+        } else if (recoveryCause === "workspace_changed") {
+          const from = priorCwdForRecovery ? ` from ${priorCwdForRecovery.replace(/^\/Users\/[^/]+/, "~")}` : "";
+          const to = requestedCwd.replace(/^\/Users\/[^/]+/, "~");
+          reasonText = `Workspace changed${from} to ${to}; conversation continues with prior context.`;
+        } else {
+          reasonText = "The upstream chat session expired and was replaced.";
+        }
+        sendWithSession(sessionId, {
+          type: "session_expired",
+          reason: reasonText,
+          oldSessionId: resumeFailedFromId,
+          newSessionId: sessionId,
+          contextRestored: restoredCount > 0,
+          restoredMessageCount: restoredCount,
+          sessionKey,
+        });
       }
-      sendWithSession(sessionId, {
-        type: "session_expired",
-        reason: reasonText,
-        oldSessionId: resumeFailedFromId,
-        newSessionId: sessionId,
-        contextRestored: restoredCount > 0,
-        restoredMessageCount: restoredCount,
-        sessionKey,
-      });
     }
 
     // Set up notification handler for this query, registered per-session
