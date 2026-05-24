@@ -1895,6 +1895,88 @@ struct CopyConversationButton: View {
     }
 }
 
+// MARK: - Running Tool Label
+
+/// Header label that names the in-flight tool so the user can tell a working
+/// agent from a hung one. A bare "using tools" label was indistinguishable
+/// from a dead session during long calls (45s Terminal execs, 30s screen
+/// captures on slow Macs), which led some users to click the Report Issue
+/// button mid-task. We show the specific tool name and start counting elapsed
+/// seconds after 10s so the user can see real work is happening.
+struct RunningToolLabel: View {
+    let toolNames: [String]
+
+    @State private var startedAt: Date = Date()
+    @State private var trackedSignature: String = ""
+    @State private var now: Date = Date()
+    /// Timer fires every 1s while a tool is running so the elapsed counter
+    /// stays current. Reset whenever the set of running tools changes.
+    private let ticker = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Text(label)
+            .scaledFont(size: 14)
+            .foregroundColor(.secondary)
+            .onAppear {
+                trackedSignature = signature
+                startedAt = Date()
+                now = startedAt
+            }
+            .onChange(of: signature) { _, newSignature in
+                trackedSignature = newSignature
+                startedAt = Date()
+                now = startedAt
+            }
+            .onReceive(ticker) { tick in
+                now = tick
+            }
+    }
+
+    /// Stable identity for the current set of running tools. When this changes,
+    /// we treat it as a new tool starting and reset the elapsed timer.
+    private var signature: String {
+        toolNames.sorted().joined(separator: ",")
+    }
+
+    private var label: String {
+        let elapsed = Int(now.timeIntervalSince(startedAt))
+        let body: String
+        if toolNames.count == 1 {
+            body = "running \(humanizedToolName(toolNames[0]))…"
+        } else {
+            body = "using \(toolNames.count) tools…"
+        }
+        // Only surface seconds after 10s so quick tool calls don't get a
+        // distracting counter. Once visible, it updates every second.
+        return elapsed >= 10 ? "\(body) \(elapsed)s" : body
+    }
+
+    /// Map a raw tool name to a label the user understands. Falls back to the
+    /// raw name so newly added tools just show their internal id rather than
+    /// silently disappearing from the indicator.
+    private func humanizedToolName(_ name: String) -> String {
+        switch name {
+        case "capture_screenshot": return "screen capture"
+        case "execute_sql": return "database query"
+        case "speak_response": return "voice response"
+        case "ask_followup": return "follow-up prompt"
+        case "query_browser_profile", "extract_browser_profile": return "browser profile"
+        case "edit_browser_profile": return "browser profile edit"
+        case "save_observer_card": return "saving card"
+        case "set_user_preferences": return "preferences update"
+        default:
+            if name.hasPrefix("routines_") { return "routine \(name.dropFirst("routines_".count))" }
+            if name.hasPrefix("mcp__") {
+                // mcp__server__tool → "tool" (last segment)
+                if let lastSeparator = name.range(of: "__", options: .backwards) {
+                    return String(name[lastSeparator.upperBound...])
+                }
+            }
+            return name
+        }
+    }
+}
+
 // MARK: - Report Issue Button
 
 /// Icon-only button that opens the Report Issue dialog.
