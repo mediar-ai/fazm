@@ -203,7 +203,14 @@ struct AIResponseView: View {
                             // smoothly keeps the bottom pinned. Rendering them outside the ScrollView
                             // would shrink the scroll viewport and make existing content visually
                             // jump up by the height of the chips.
-                            if !isLoading && !suggestedReplies.isEmpty {
+                            //
+                            // Render as soon as the chips are populated, even if the turn hasn't
+                            // ended yet. ask_followup is supposed to be the last tool call, but
+                            // the model often keeps generating after it, which used to leave the
+                            // pop-out stuck in a spinning state for minutes with no visible chips.
+                            // Clicking a chip while the session is still busy safely enqueues via
+                            // DetachedChatWindowController.sendQuery (busy branch).
+                            if !suggestedReplies.isEmpty {
                                 suggestedRepliesView
                                     .transition(.asymmetric(
                                         insertion: .opacity.combined(with: .move(edge: .bottom)),
@@ -215,13 +222,8 @@ struct AIResponseView: View {
                             Color.clear.frame(height: 1).id("bottom")
                         }
                         // Smoothly animate the suggested-replies chip appearance.
-                        // Either dependency can flip (isLoading→false at end of stream,
-                        // or suggestedReplies populating); both must be in the value
-                        // list so SwiftUI knows to run the transition.
                         .animation(.spring(response: 0.5, dampingFraction: 0.82),
                                    value: suggestedReplies.isEmpty)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.82),
-                                   value: isLoading)
                         // Place detector inside the scroll content so its NSView
                         // is a descendant of NSScrollView.documentView and the
                         // superview walk finds the correct NSScrollView.
