@@ -213,6 +213,16 @@ const TOOL_TIMEOUT_MCP_MS = 300_000;       // MCP tools: 5 min
 const TOOL_TIMEOUT_TASK_MS = 1_800_000;    // Task subagent: 30 min (sub-agents can legitimately run long)
 const TOOL_TIMEOUT_BASH_MS = 900_000;      // Bash: 15 min (deploys, builds)
 const TOOL_TIMEOUT_DEFAULT_MS = 600_000;   // Everything else: 10 min
+const TOOL_TIMEOUT_INTERACTIVE_MS = 1_800_000; // Tools that block on the user: 30 min
+
+// Tools that block waiting for human input. The 300s MCP ceiling kills them
+// before the user gets a chance to answer — caused the silent "didn't ask
+// me any follow-up" UX where the watchdog cancelled the turn while the
+// question was still on screen.
+const INTERACTIVE_TOOL_NAMES = new Set([
+  "mcp__fazm_tools__ask_followup",
+  "ExitPlanMode",
+]);
 
 // User-configurable override (seconds) via Settings > Advanced > Tool Timeout
 const toolTimeoutOverrideSec = process.env.FAZM_TOOL_TIMEOUT_SECONDS
@@ -233,6 +243,10 @@ function getToolTimeoutMs(title: string, isInternal: boolean): number {
   // User override applies to all tools (converted from seconds)
   if (toolTimeoutOverrideSec > 0) return toolTimeoutOverrideSec * 1000;
   if (isInternal) return TOOL_TIMEOUT_INTERNAL_MS;
+  // Interactive tools block on the user; the agent isn't stuck, it's waiting.
+  // Check BEFORE the mcp__ branch so mcp-namespaced interactive tools get the
+  // longer ceiling.
+  if (INTERACTIVE_TOOL_NAMES.has(title)) return TOOL_TIMEOUT_INTERACTIVE_MS;
   // Task subagent can legitimately run for many minutes — give it 30 min ceiling
   // before we synthesize a failure. Without this special case the default 10 min
   // kills long-running sub-agents (the May 12 2026 regression that caused us to
@@ -324,7 +338,12 @@ function startToolTimer(
         ctx.interruptRequested = true;
         ctx.abortController.abort();
         acpNotify("session/cancel", { sessionId: ctx.sessionId });
-        interruptedSessions.add(ctx.sessionId);
+        // Do NOT poison this session into interruptedSessions. ACP #442's fix
+        // (cancelled prompts no longer leak chunks into the next prompt's
+        // response) shipped in claude-agent-acp 0.29.2; verified locally via
+        // scripts/test-cancel-resume.mjs (both mid-text and mid-tool-call).
+        // The next prompt resumes the same session cleanly per the ACP spec
+        // ("cancelled ends the turn, not the session").
         if (sessionKey) {
           unregisterSession(sessionKey);
           imageTurnCounts.delete(sessionKey);
@@ -576,7 +595,8 @@ function startTaskTimer(
       ctx.interruptRequested = true;
       ctx.abortController.abort();
       acpNotify("session/cancel", { sessionId: ctx.sessionId });
-      interruptedSessions.add(ctx.sessionId);
+      // No interruptedSessions poison — adapter 0.29.2 handles cancel→resume
+      // cleanly (see scripts/test-cancel-resume.mjs).
       unregisterSession(tracked.sessionKey);
       imageTurnCounts.delete(tracked.sessionKey);
 
@@ -5717,22 +5737,19 @@ async function main(): Promise<void> {
             ctx.interruptRequested = true;
             ctx.abortController.abort();
             acpNotify("session/cancel", { sessionId: ctx.sessionId });
-            interruptedSessions.add(ctx.sessionId);
-            // Invalidate the cached session entry so the next prompt forces a
-            // fresh session via stuck-session recovery (priorContext replay).
-            // Reusing a mid-stream-cancelled session is unsafe: the upstream
-            // SDK may keep producing chunks for the cancelled prompt and
-            // deliver them as the result of the NEXT prompt on the same
-            // sessionId, contaminating the new turn (Apr 29 2026 incident —
-            // Q1's deferred response was served as Q2's answer). The resume
-            // path below picks this up via interruptedSessions.has(msg.resume)
-            // and skips resume entirely.
+            // ACP-spec compliance: cancel ends the *turn*, not the *session*.
+            // The Apr 29 2026 stale-chunk-replay bug (interruptedSessions +
+            // priorContext-replay preamble) was specifically ACP #442, fixed
+            // in claude-agent-acp 0.29.2 (the result handler now checks
+            // session.cancelled before consuming results as background tasks).
+            // Verified clean on the installed version via the standalone
+            // scripts/test-cancel-resume.mjs harness (both mid-text and
+            // mid-tool-call). So we no longer add to interruptedSessions or
+            // populate lastInterruptedSessionByKey — the next prompt resumes
+            // the same upstream session cleanly via session/resume.
             unregisterSession(targetKey);
             imageTurnCounts.delete(targetKey);
-            // Remember which dead session belonged to this sessionKey so the
-            // next prompt's priorContext preamble can locate its recentTools.
-            lastInterruptedSessionByKey.set(targetKey, ctx.sessionId);
-            logErr(`Session ${ctx.sessionId} marked as interrupted and invalidated (next prompt will force fresh session with priorContext replay)`);
+            logErr(`Session ${ctx.sessionId} cancelled (next prompt will resume normally)`);
           } else if (codexProvider && interruptCodexSession(targetKey, codexProvider)) {
             // Same key may be a codex session — interrupt and drop it.
             logErr(`Interrupt requested for codex session key=${targetKey} (cancelled + dropped)`);
@@ -5752,21 +5769,18 @@ async function main(): Promise<void> {
             ctx.interruptRequested = true;
             ctx.abortController.abort();
             acpNotify("session/cancel", { sessionId: ctx.sessionId });
-            interruptedSessions.add(ctx.sessionId);
-            // Same invalidation as the per-session branch above: drop the
-            // cached entry so the next prompt cannot reuse a dirty session.
+            // See per-session branch above: no interruptedSessions poison,
+            // no lastInterruptedSessionByKey. Adapter 0.29.2 + ACP #442 fix
+            // handles cancel→resume cleanly. Cached entry still dropped so
+            // the next prompt cleanly re-establishes via session/resume.
             unregisterSession(key);
             imageTurnCounts.delete(key);
-            // Remember which dead session belonged to this sessionKey so the
-            // next prompt's priorContext preamble can locate its recentTools.
-            lastInterruptedSessionByKey.set(key, ctx.sessionId);
-            logErr(`Session ${ctx.sessionId} (key=${key}) marked as interrupted and invalidated`);
+            logErr(`Session ${ctx.sessionId} (key=${key}) cancelled`);
           }
           if (activeSessionId && !activeQueries.size) {
             // Fallback for legacy single-query path
             acpNotify("session/cancel", { sessionId: activeSessionId });
-            interruptedSessions.add(activeSessionId);
-            logErr(`Session ${activeSessionId} marked as interrupted (legacy fallback)`);
+            logErr(`Session ${activeSessionId} cancelled (legacy fallback)`);
           }
           // Cancel any in-flight codex sessions too.
           if (codexProvider && codexSessionCount() > 0) {
