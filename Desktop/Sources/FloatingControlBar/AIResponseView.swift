@@ -1220,8 +1220,99 @@ struct AIResponseView: View {
         currentMessage?.isStreaming == true
     }
 
+    private var followUpPlaceholder: String {
+        if editingExchangeId != nil {
+            return "Edit your message…"
+        }
+        if isLoading && isThisSessionStreaming {
+            return "Type next question (queued)..."
+        }
+        return "Ask follow up..."
+    }
+
+    /// Pill above the follow-up input that signals "you are editing a past
+    /// message; submitting will rewind the conversation here." X cancels.
+    private var editingMessagePill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.and.pencil")
+                .scaledFont(size: 11, weight: .semibold)
+                .foregroundColor(FazmColors.purplePrimary)
+
+            Text("Editing message")
+                .scaledFont(size: 11, weight: .medium)
+                .foregroundColor(FazmColors.overlayForeground.opacity(0.85))
+
+            EditMessageInfoButton()
+
+            Spacer(minLength: 4)
+
+            Button(action: cancelEditingMessage) {
+                Image(systemName: "xmark.circle.fill")
+                    .scaledFont(size: 12)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Cancel edit")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(FazmColors.purplePrimary.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(FazmColors.purplePrimary.opacity(0.25), lineWidth: 0.5)
+                )
+        )
+    }
+
+    /// Stage a past message for editing in the main follow-up input. The
+    /// pencil click that triggers this came from `ExpandableQuestionBubble`.
+    /// We snapshot whatever the user had in the input + their attachments so
+    /// Cancel can restore them.
+    private func beginEditingMessage(exchangeId: String, originalText: String) {
+        // If we're already editing something else, treat this as switching
+        // targets — keep the original snapshot of the user's draft.
+        if editingExchangeId == nil {
+            preEditFollowUpText = followUpText
+            preEditAttachments = input.pendingAttachments
+        }
+        editingExchangeId = exchangeId
+        input.pendingAttachments = []  // edit path is text-only
+        followUpText = originalText
+        // Bump the focus token so FazmTextEditor takes first-responder. Doing
+        // this in the same render pass as setting `followUpText` makes the
+        // input ready to type into immediately after the pencil click.
+        editFocusToken &+= 1
+    }
+
+    /// Discard the staged edit. Restores the user's prior draft text and any
+    /// attachments they had pending before the pencil click.
+    private func cancelEditingMessage() {
+        editingExchangeId = nil
+        followUpText = preEditFollowUpText
+        input.pendingAttachments = preEditAttachments
+        preEditFollowUpText = ""
+        preEditAttachments = []
+    }
+
     private func sendFollowUp() {
         let trimmed = followUpText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Edit-and-resubmit path: route through `onEditMessage` (truncate +
+        // resubmit) instead of the normal follow-up. Attachments don't carry
+        // through an edit — the resubmit is text-only by design.
+        if let editId = editingExchangeId {
+            guard !trimmed.isEmpty else { return }
+            followUpText = ""
+            input.pendingAttachments = []
+            editingExchangeId = nil
+            preEditFollowUpText = ""
+            preEditAttachments = []
+            onEditMessage?(editId, trimmed)
+            return
+        }
+
         let attachmentsToSend = input.pendingAttachments
         guard !trimmed.isEmpty || !attachmentsToSend.isEmpty else { return }
         followUpText = ""
