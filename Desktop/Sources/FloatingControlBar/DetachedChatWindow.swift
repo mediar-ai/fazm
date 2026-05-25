@@ -407,6 +407,8 @@ class DetachedChatWindowController {
         var workspace: String = ""
         /// Per-window model selection. Added in a later version; older snapshots decode as the current global model.
         var selectedModel: String = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-sonnet-4-6"
+        /// Unsent draft input text. Lets a brand-new pop-out window (no messages yet) survive a quit/relaunch if the user typed something but never sent it. Older snapshots decode as "".
+        var draftInput: String = ""
     }
 
     private var entries: [ObjectIdentifier: WindowEntry] = [:]
@@ -565,12 +567,19 @@ class DetachedChatWindowController {
     func saveWindowRegistry() {
         let snapshots: [WindowSnapshot] = entries.values.map { entry in
             let f = entry.window.frame
+            // Capture whichever draft is live: the input field itself if the
+            // user is mid-typing, or the stashed draftInputText if the input
+            // was dismissed without sending. Whichever is non-empty wins.
+            let liveDraft = entry.window.state.input.aiInputText
+            let stashedDraft = entry.window.state.input.draftInputText
+            let draft = liveDraft.isEmpty ? stashedDraft : liveDraft
             return WindowSnapshot(
                 sessionKey: entry.sessionKey,
                 x: f.origin.x, y: f.origin.y,
                 width: f.size.width, height: f.size.height,
                 workspace: entry.window.state.workspace.workspaceDirectory,
-                selectedModel: entry.window.state.workspace.selectedModel
+                selectedModel: entry.window.state.workspace.selectedModel,
+                draftInput: draft
             )
         }
         if let data = try? JSONEncoder().encode(snapshots) {
@@ -782,28 +791,44 @@ class DetachedChatWindowController {
             group.enter()
             Task { @MainActor in
                 defer { group.leave() }
+                let hasDraft = !snapshot.draftInput.isEmpty
                 var savedMessages: [ChatMessage] = []
-                for attempt in 0..<10 {
+                // When the snapshot has a draft we already know this is a legitimate
+                // window (the user typed in it), so don't pay the 5s retry cost just to
+                // discover there genuinely were never any messages. One attempt is enough.
+                let maxAttempts = hasDraft ? 1 : 10
+                for attempt in 0..<maxAttempts {
                     savedMessages = await ChatMessageStore.loadMessages(
                         context: "__\(sessionKey)__",
                         limit: 100
                     )
                     if !savedMessages.isEmpty { break }
-                    if attempt < 9 {
+                    if attempt < maxAttempts - 1 {
                         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
                     }
                 }
-                guard !savedMessages.isEmpty else {
-                    log("DetachedChatWindowController: No messages for \(sessionKey) after 10 retries, keeping in registry for next launch")
+                if savedMessages.isEmpty && !hasDraft {
+                    log("DetachedChatWindowController: No messages for \(sessionKey) after \(maxAttempts) retries, keeping in registry for next launch")
                     failedSnapshots.append(snapshot)
                     return
                 }
 
                 let detachedState = FloatingControlBarState()
-                detachedState.loadHistory(from: savedMessages)
-                detachedState.streaming.showingAIConversation = true
-                detachedState.streaming.showingAIResponse = true
+                if !savedMessages.isEmpty {
+                    detachedState.loadHistory(from: savedMessages)
+                    detachedState.streaming.showingAIConversation = true
+                    detachedState.streaming.showingAIResponse = true
+                } else {
+                    // Brand-new pop-out: never sent a message, but the user left a
+                    // draft in the input field. Restore the empty conversation view
+                    // so the draft has somewhere to live.
+                    detachedState.streaming.showingAIConversation = true
+                    detachedState.streaming.showingAIResponse = false
+                }
                 detachedState.streaming.isAILoading = false
+                if hasDraft {
+                    detachedState.input.aiInputText = snapshot.draftInput
+                }
 
                 // Restore per-window model selection and workspace.
                 // Old snapshots (saved before per-window workspace existed) have an
@@ -869,12 +894,16 @@ class DetachedChatWindowController {
                 // Re-persist failed entries so they survive to the next launch
                 let allSnapshots = self.entries.values.map { entry in
                     let f = entry.window.frame
+                    let liveDraft = entry.window.state.input.aiInputText
+                    let stashedDraft = entry.window.state.input.draftInputText
+                    let draft = liveDraft.isEmpty ? stashedDraft : liveDraft
                     return WindowSnapshot(
                         sessionKey: entry.sessionKey,
                         x: f.origin.x, y: f.origin.y,
                         width: f.size.width, height: f.size.height,
                         workspace: entry.window.state.workspace.workspaceDirectory,
-                        selectedModel: entry.window.state.workspace.selectedModel
+                        selectedModel: entry.window.state.workspace.selectedModel,
+                        draftInput: draft
                     )
                 } + failedSnapshots
                 if let data = try? JSONEncoder().encode(allSnapshots) {
