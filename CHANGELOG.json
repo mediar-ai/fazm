@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)"
+    "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)",
+    "Added a verification-codes skill so Fazm can pull 2FA codes from Messages, WhatsApp, or Notification Center instead of asking you to read them out"
   ],
   "releases": [
     {
