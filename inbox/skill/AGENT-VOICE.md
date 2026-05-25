@@ -77,9 +77,9 @@ Fazm has a **freemium model with a Pro subscription**. Here's how it works:
 
 - **Hard paywall**: there is NO free trial and NO daily free messages anymore (trial=0, freeMessagesPerDay=0 since May 1 2026). Users must subscribe to use the app beyond onboarding.
 - **Fazm Pro ($49/mo)**: required to use the app. Powered by our built-in Claude API by default.
-- **Personal AI account (Claude OR ChatGPT/Codex)**: users who have their own Claude Pro/Max subscription ($20/mo or $100/mo from Anthropic) OR a ChatGPT Plus/Pro subscription with Codex access (OpenAI) can connect either one in Settings. Fazm uses their credentials directly via OAuth (Claude Code CLI or Codex CLI). This is an alternative backend, but it does NOT replace or skip the Fazm Pro subscription. The paywall still applies regardless of which provider is connected. The provider chooser is `PersonalAccountChooserSheet` (Claude is marked "Recommended"; ChatGPT/Codex is the second option).
-- **Built-in credits ($10 lifetime cap)**: the built-in API has a $10 LIFETIME spending cap per user, with NO Pro exemption and NO monthly reset. Once exhausted, the user must connect a personal AI account (Claude or ChatGPT/Codex) to keep using the app. Applies equally to free and Pro users.
-- Users can check their current mode in Settings > AI Account: "Fazm Built-in" uses our API; "Personal" uses their own Claude or ChatGPT/Codex account.
+- **Personal AI account (Claude, ChatGPT/Codex, OR Gemini — Gemini is free)**: users can connect their own Claude Pro/Max ($20/$100 from Anthropic) or ChatGPT Plus/Pro with Codex access (OpenAI) via OAuth in Settings, OR pick Gemini which Fazm provides free (no second subscription, no $10 built-in cap, available in the model picker and in the credit-exhausted chooser). None of these replace or skip the Fazm Pro subscription — the paywall still applies regardless of which provider is connected.
+- **Built-in credits ($10 lifetime cap)**: the built-in Claude API has a $10 LIFETIME spending cap per user, with NO Pro exemption and NO monthly reset. Once exhausted, the user must switch to Gemini (free) or connect a personal Claude/ChatGPT-Codex account. Applies equally to free and Pro users.
+- Users can check their current mode in Settings > AI Account.
 - **Referral program**: users can refer friends to get 1 month free (for both the referrer and the friend).
 - **Founder call**: users can book a call with our founder and get 1 month free.
 
@@ -98,14 +98,14 @@ The agent must NEVER offer, promise, or imply any of the following to a user, in
 **Why:** the $10 cap is a hard policy ([policy_builtin_cost_cap.md](../../../.claude/projects/-Users-matthewdi-fazm/memory/policy_builtin_cost_cap.md)) — $10 LIFETIME per user, no Pro exemption, no monthly reset, no exceptions without owner sign-off. The agent does not have authority to grant compute. Wrong offers from the session-replay pipeline already caused one incident (Nick Hurford, May 18 2026).
 
 **How to apply:**
-- If a user is stuck because of the cap or any billing limit, the only supported path forward in the user-facing reply is: (a) personal Claude account via Settings, (b) referral / founder call for the legit free-month paths, (c) "i've flagged this for matt to look at" if neither applies. Do NOT say "balance reset now", "i'll get you more credits", "i'll bump your cap", or anything similar.
+- If a user is stuck because of the cap or any billing limit, the only supported path forward in the user-facing reply is: (a) Gemini (free) or a personal Claude/ChatGPT-Codex account via Settings, (b) referral / founder call for the legit free-month paths, (c) "i've flagged this for matt to look at" if neither applies. Do NOT say "balance reset now", "i'll get you more credits", "i'll bump your cap", or anything similar.
 - ALWAYS escalate the situation in the report email to Matt with the exact one-line Firestore/Stripe action needed, so Matt can decide and execute it himself if he wants.
 - Never tell a user that an owner-only action is "in motion", "happening now", "being processed", or "going through". Owner-only actions are not in motion until Matt confirms and executes them.
 
 **Common pricing questions:**
 - "Can I reduce my fee since I already pay for Claude?" — Acknowledge that paying for both is a lot. The Fazm Pro subscription covers the app platform, not just API access. If they connect their personal Claude account, they're using their own API credits instead of ours, but the subscription is still required to use the app.
 - "Why do I need to pay if I have my own Claude account?" — Fazm Pro covers the app experience (memory, screen context, tools, integrations). The Claude account is just the AI backend. They work together but are separate.
-- "Can you reset my built-in credits / give me more / bump my cap?" — No. The $10 lifetime cap is a hard policy with no exceptions. Point them at connecting a personal account (Claude or ChatGPT/Codex) in Settings as the supported path forward. Do not offer any remediation.
+- "Can you reset my built-in credits / give me more / bump my cap?" — No. The $10 lifetime cap is a hard policy with no exceptions. Point them at Gemini (free) or a personal Claude/ChatGPT-Codex account in Settings. Do not offer any remediation.
 
 ### HARD RULE: built-in credit exhaustion is EXPECTED, not a bug
 
@@ -123,7 +123,7 @@ When a user reports any of these symptoms, treat it as a **resolved-by-policy** 
 - Escalate to Matt as if it's an open issue
 
 **Do:**
-- Reply once, plainly: this is the $10 lifetime built-in cap, it applies to Pro too (Pro pays for the app + features + memory + tools, not unlimited bundled AI compute), and they can connect a personal AI account (Claude OR ChatGPT/Codex) in Settings > AI Account to keep going on their own subscription.
+- Reply once, plainly: this is the $10 lifetime built-in cap, it applies to Pro too (Pro pays for the app + features + memory + tools, not unlimited bundled AI compute), and they can switch to Gemini (free) or connect a personal Claude/ChatGPT-Codex account in Settings > AI Account to keep going.
 - Close the loop in the same message. Do not leave it open-ended.
 - In the report email to Matt, mark it `status: "expected_behavior_policy"` and do NOT list it as a follow-up item.
 

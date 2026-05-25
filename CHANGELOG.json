@@ -1,5 +1,7 @@
 {
   "unreleased": [
+    "Added a safety guardrail so the agent warns before running shell commands that change system state (disabling Wi-Fi/networking, killing system UI processes, rebooting) and prefers reversible options, preventing it from knocking you offline as a side effect of unrelated tasks like a system cleanup",
+    "Made the agent handle user-provided passwords consistently (it no longer refuses then caves under pushback) and never echoes, logs, or stores them",
     "Fixed Assrt QA tests failing with 401 when Gemini was the selected model; Assrt now uses Gemini, Claude OAuth, or Anthropic API key based on the currently selected chat model",
     "Switched Assrt's Gemini default to Flash (was Pro), matching the cost/latency profile of the Anthropic Haiku default, and forwarding the Gemini model the user picks in Fazm",
     "Added a third browser mode in Settings, No browser MCP (Assrt only), which disables both Playwright and the bundled browser-harness so only the Assrt browser is available",
