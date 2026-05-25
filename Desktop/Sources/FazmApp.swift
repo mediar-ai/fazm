@@ -1065,6 +1065,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Freeze detached window registry before windows tear down
         DetachedChatWindowController.shared.prepareForTermination()
 
+        // Persist the floating bar's unsent draft so it survives a relaunch.
+        // Read either the live input (user mid-typing) or the stashed draft
+        // (user opened bar, typed, dismissed without sending) — whichever is
+        // non-empty. Empty value clears any stale saved draft.
+        if let inputState = FloatingControlBarManager.shared.barState?.input {
+            let liveDraft = inputState.aiInputText
+            let stashedDraft = inputState.draftInputText
+            let pending = liveDraft.isEmpty ? stashedDraft : liveDraft
+            if pending.isEmpty {
+                UserDefaults.standard.removeObject(forKey: FloatingControlBarManager.floatingDraftKey)
+            } else {
+                UserDefaults.standard.set(pending, forKey: FloatingControlBarManager.floatingDraftKey)
+            }
+        }
+
         // Stop ACP bridge and all child processes (MCP servers) to prevent orphans
         FloatingControlBarManager.shared.chatProvider?.stopBridge()
 
