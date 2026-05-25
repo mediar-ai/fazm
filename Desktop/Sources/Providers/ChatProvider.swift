@@ -1663,14 +1663,23 @@ class ChatProvider: ObservableObject {
                         cleared += 1
                     }
                     // Pop-outs hold their own currentAIMessage reference; clear it directly.
+                    // Previously this only flipped isStreaming when it was already true — but
+                    // when the orphan fires after a 600s waitForMessage timeout (ACP #688 /
+                    // #630 — final PromptResponse never sent even though the agent streamed
+                    // text successfully), the isStreaming flag may already have been false-d
+                    // by an earlier chunk handler while the spinner UI still believes the
+                    // turn is active. The right behavior on an orphaned/timed-out result is
+                    // unconditional: spinner off, streaming flag off, regardless of prior
+                    // state. Repro: F945755F session 71aa928e on 2026-05-25, which streamed
+                    // a complete refactor narrative, then sat silent 11min until the
+                    // waitForMessage timeout fired; orphan logged "cleared 0 streaming flags"
+                    // but the user still saw the spinner.
                     for entry in DetachedChatWindowController.shared.entriesSnapshot()
                         where entry.sessionKey == key {
                         let popoutState = entry.window.state
-                        if popoutState.streaming.currentAIMessage?.isStreaming == true {
-                            popoutState.streaming.currentAIMessage?.isStreaming = false
-                            cleared += 1
-                        }
+                        popoutState.streaming.currentAIMessage?.isStreaming = false
                         popoutState.streaming.isAILoading = false
+                        cleared += 1
                     }
                     // sendingSessionKeys may still hold this key (stale lock from the
                     // orphan); release it so the popout can accept the next query.
