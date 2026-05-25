@@ -51,7 +51,7 @@ export interface CodexQueryDeps {
    *  Without this, sendWithSession() emits sessionKey=nil and Swift drops
    *  the deltas — exactly the "first response works, follow-up freezes"
    *  symptom we hit on 2026-05-13. */
-  registerSession: (sessionKey: string, entry: { sessionId: string; cwd: string; model?: string }) => void;
+  registerSession: (sessionKey: string, entry: { sessionId: string; cwd: string; model?: string; provider: "claude" | "codex" | "gemini" }) => void;
 }
 
 /** Per-sessionKey codex session pool, kept here so it doesn't leak into index.ts globals. */
@@ -140,7 +140,7 @@ export async function handleCodexQuery(msg: QueryMessage, deps: CodexQueryDeps):
         entry = { sessionId: msg.resume, cwd, modelId, systemPromptDelivered: true };
         codexSessions.set(sessionKey, entry);
         codexSessionIdToKey.set(entry.sessionId, sessionKey);
-        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId });
+        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId, provider: "codex" });
         try {
           await provider.request("session/set_model", { sessionId: entry.sessionId, modelId });
         } catch (modelErr) {
@@ -168,7 +168,7 @@ export async function handleCodexQuery(msg: QueryMessage, deps: CodexQueryDeps):
         entry = { sessionId: result.sessionId, cwd, modelId, systemPromptDelivered: false };
         codexSessions.set(sessionKey, entry);
         codexSessionIdToKey.set(entry.sessionId, sessionKey);
-        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId });
+        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId, provider: "codex" });
         isNewSession = true;
         sendWithSession(entry.sessionId, { type: "session_started", sessionKey, isResume: false } as OutboundMessage);
         if (resumeAttemptedSessionId) {
