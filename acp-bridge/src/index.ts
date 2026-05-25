@@ -2710,9 +2710,30 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
   return servers;
 }
 
+// SDK tools that require a runtime Fazm does not provide.
+// `ScheduleWakeup` / `CronCreate/Delete/List` need the standalone /loop or
+// autonomous-loop runtime. `RemoteTrigger`, `Monitor`, `PushNotification`
+// hit cloud endpoints / process state we don't expose.
+// Exposing them to the model produces silent end-of-turn dead-ends —
+// the agent calls one of these, the tool returns "not in this runtime",
+// and the model emits end_turn with no visible work product.
+const FAZM_DISALLOWED_TOOLS: readonly string[] = [
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
+  "RemoteTrigger",
+  "Monitor",
+  "PushNotification",
+];
+
 function buildMeta(systemPrompt?: string, sessionKey?: string): Record<string, unknown> {
   const meta: Record<string, unknown> = {
-    claudeCode: { options: {} },
+    claudeCode: {
+      options: {
+        disallowedTools: [...FAZM_DISALLOWED_TOOLS],
+      },
+    },
   };
   if (systemPrompt) {
     meta.systemPrompt = systemPrompt;
