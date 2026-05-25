@@ -1022,6 +1022,9 @@ class FloatingControlBarManager {
     static let shared = FloatingControlBarManager()
 
     private static let kAskFazmEnabled = "askFazmBarEnabled"
+    /// UserDefaults key for an unsent draft typed into the floating bar but not submitted
+    /// before the last quit. Restored on next launch so the user doesn't lose it.
+    static let floatingDraftKey = "floatingDraftInputText"
 
     private var window: FloatingControlBarWindow?
     private var recordingCancellable: AnyCancellable?
@@ -1135,6 +1138,15 @@ class FloatingControlBarManager {
             backing: .buffered,
             defer: false
         )
+
+        // Restore any draft text the user typed but didn't send before the last quit.
+        // showAIConversation() reads draftInputText and pushes it into aiInputText
+        // (and clears the stash), so the input field shows it the moment the bar
+        // opens, regardless of whether the user clicks the pill or hits the hotkey.
+        if let savedDraft = UserDefaults.standard.string(forKey: FloatingControlBarManager.floatingDraftKey),
+           !savedDraft.isEmpty {
+            barWindow.state.input.draftInputText = savedDraft
+        }
 
         // Play/pause toggles transcription
         barWindow.onPlayPause = { [weak appState] in
