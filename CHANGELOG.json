@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)"
+  ],
   "releases": [
     {
       "version": "2.9.37",
