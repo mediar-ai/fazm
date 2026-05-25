@@ -32,7 +32,7 @@ export interface GeminiQueryDeps {
     sessionKey: string,
     activeModel?: string,
   ) => Array<Record<string, unknown>>;
-  registerSession: (sessionKey: string, entry: { sessionId: string; cwd: string; model?: string }) => void;
+  registerSession: (sessionKey: string, entry: { sessionId: string; cwd: string; model?: string; provider: "claude" | "codex" | "gemini" }) => void;
 }
 
 interface GeminiSessionEntry {
@@ -121,7 +121,7 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
         entry = { sessionId: msg.resume, cwd, modelId, systemPromptDelivered: true };
         geminiSessions.set(sessionKey, entry);
         geminiSessionIdToKey.set(entry.sessionId, sessionKey);
-        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId });
+        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId, provider: "gemini" });
         try {
           await provider.request("session/set_model", { sessionId: entry.sessionId, modelId });
         } catch (modelErr) {
@@ -145,7 +145,7 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
         entry = { sessionId: result.sessionId, cwd, modelId, systemPromptDelivered: false };
         geminiSessions.set(sessionKey, entry);
         geminiSessionIdToKey.set(entry.sessionId, sessionKey);
-        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId });
+        registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId, provider: "gemini" });
         isNewSession = true;
         sendWithSession(entry.sessionId, { type: "session_started", sessionKey, isResume: false } as OutboundMessage);
         if (resumeAttemptedSessionId) {
