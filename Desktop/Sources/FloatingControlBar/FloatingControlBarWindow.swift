@@ -1146,6 +1146,7 @@ class FloatingControlBarManager {
         if let savedDraft = UserDefaults.standard.string(forKey: FloatingControlBarManager.floatingDraftKey),
            !savedDraft.isEmpty {
             barWindow.state.input.draftInputText = savedDraft
+            log("FloatingControlBarManager: restored floating draft (\(savedDraft.count) chars)")
         }
 
         // Play/pause toggles transcription
