@@ -69,6 +69,12 @@ struct FazmTextEditor: NSViewRepresentable {
     // Behavior
     var onSubmit: (() -> Void)? = nil
     var focusOnAppear: Bool = true
+    /// Caller-driven focus token. Each time this value changes (typically by
+    /// incrementing it), the editor takes first-responder. Use 0 to mean "no
+    /// explicit focus request" — the initial 0→0 transition does nothing.
+    /// Lets parents force focus on an editor that has `focusOnAppear: false`,
+    /// e.g. when populating the follow-up input with a past message to edit.
+    var focusRequest: Int = 0
     /// Called when user pastes file URLs (images, PDFs, text files)
     var onPasteFiles: (([URL]) -> Void)? = nil
     /// Called when user pastes raw image data (e.g. screenshot)
@@ -194,6 +200,24 @@ struct FazmTextEditor: NSViewRepresentable {
         context.coordinator.onPasteFiles = onPasteFiles
         context.coordinator.onPasteImageData = onPasteImageData
 
+        // Caller-driven focus request: focus when token changes from the
+        // last-seen value. Skip the initial 0 baseline so we don't steal
+        // focus on first render.
+        if focusRequest != context.coordinator.lastFocusRequest {
+            context.coordinator.lastFocusRequest = focusRequest
+            if focusRequest != 0, let window = scrollView.window,
+               window.firstResponder !== textView {
+                DispatchQueue.main.async {
+                    guard window.firstResponder !== textView else { return }
+                    window.makeFirstResponder(textView)
+                    // Place cursor at end so editing feels continuous with
+                    // any text the parent just programmatically inserted.
+                    let endLen = (textView.string as NSString).length
+                    textView.setSelectedRange(NSRange(location: endLen, length: 0))
+                }
+            }
+        }
+
         let scaledSize = round(fontSize * fontScale)
         let newFont = NSFont.systemFont(ofSize: scaledSize)
         if textView.font != newFont {
@@ -246,6 +270,9 @@ struct FazmTextEditor: NSViewRepresentable {
         /// Last computed content height — read by sizeThatFits to avoid
         /// calling ensureLayout during SwiftUI's layout pass.
         var lastHeight: CGFloat = 0
+        /// Last focusRequest token we honored — used to detect edge transitions
+        /// without re-focusing on every render.
+        var lastFocusRequest: Int = 0
 
         init(
             text: Binding<String>,
