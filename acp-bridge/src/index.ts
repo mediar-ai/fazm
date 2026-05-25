@@ -3457,30 +3457,10 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     // overrides below must NOT second-guess it back to the old workspace.
     let cwdMigrationResumeId: string | null = null;
 
-    let existing = sessions.get(sessionKey);
-    // Cross-provider switch: the shared `sessions` map is written by every
-    // adapter (claude / codex / gemini) for outbound-message routing, so an
-    // entry here might belong to a different provider than the one this
-    // query routes to. Calling session/set_model on the Claude SDK with a
-    // sessionId owned by codex-acp or gemini-cli returns -32603
-    // "Session not found" because each adapter has its own private session
-    // map. Detect the mismatch, drop the foreign in-memory entry (handler
-    // + adapter-private map + shared map), and fall through to session/new.
-    if (existing && existing.provider !== "claude") {
-      logErr(`[PROVIDER-SWITCH] dropping ${existing.provider} session ${existing.sessionId.slice(0, 8)} for key=${sessionKey} (incoming Claude query for model=${requestedModel})`);
-      try {
-        if (existing.provider === "codex") {
-          dropCodexSession(sessionKey, getCodexProvider());
-        } else if (existing.provider === "gemini") {
-          const gprov = getGeminiProvider();
-          if (gprov) dropGeminiSession(sessionKey, gprov);
-        }
-      } catch (cleanupErr) {
-        logErr(`[PROVIDER-SWITCH] cleanup of ${existing.provider} session ${existing.sessionId.slice(0, 8)} failed (continuing): ${cleanupErr}`);
-      }
-      unregisterSession(sessionKey);
-      existing = undefined;
-    }
+    // Cross-provider cleanup (foreign session attached to this sessionKey)
+    // already ran at the top of handleQuery, so any `existing` here is
+    // guaranteed to be Claude-owned.
+    const existing = sessions.get(sessionKey);
     // P4: a session handed out from the spare pool carries the spare's warm cwd
     // (homedir), not the pop-out's real workspace. Its first query "changes"
     // cwd, but there is no conversation to preserve — that switch is silent.
