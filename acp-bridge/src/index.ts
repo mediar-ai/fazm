@@ -3298,6 +3298,52 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
 const MAX_QUERY_RETRIES = 2;
 
 async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
+  // Cross-provider switch guard: when the incoming model belongs to a
+  // different provider than the one currently holding this sessionKey, tear
+  // down the foreign in-memory entry first so the target adapter starts a
+  // clean session. Mirrors the same check inside the Claude path below; doing
+  // it here as well covers Claude→Codex/Gemini and Codex↔Gemini transitions.
+  // Without this the previous-provider session leaks (its handler stays in
+  // the private map, the SDK subprocess keeps the session alive), which over
+  // time accumulates dead sessions on long-lived bridges.
+  const incomingProvider: SessionProvider = isCodexModel(msg.model)
+    ? "codex"
+    : isGeminiModel(msg.model)
+      ? "gemini"
+      : "claude";
+  const _switchKey = msg.sessionKey ?? (msg.model || DEFAULT_MODEL);
+  const _switchExisting = sessions.get(_switchKey);
+  if (_switchExisting && _switchExisting.provider !== incomingProvider && _switchExisting.provider !== "claude") {
+    // Only handle the non-Claude foreign cases here. The Claude→other and
+    // other→Claude paths are handled inside their respective handlers
+    // (handleQuery's Claude branch already does Claude-side cleanup; the
+    // codex/gemini handlers don't need to look at the shared map because
+    // they consult their own private maps for reuse — but the foreign entry
+    // still needs to be cleaned up so the shared map doesn't keep pointing
+    // at a dead session for routing purposes).
+    logErr(`[PROVIDER-SWITCH] dropping ${_switchExisting.provider} session ${_switchExisting.sessionId.slice(0, 8)} for key=${_switchKey} (incoming ${incomingProvider} query for model=${msg.model})`);
+    try {
+      if (_switchExisting.provider === "codex") {
+        dropCodexSession(_switchKey, getCodexProvider());
+      } else if (_switchExisting.provider === "gemini") {
+        const gprov = getGeminiProvider();
+        if (gprov) dropGeminiSession(_switchKey, gprov);
+      }
+    } catch (cleanupErr) {
+      logErr(`[PROVIDER-SWITCH] cleanup of ${_switchExisting.provider} session failed (continuing): ${cleanupErr}`);
+    }
+    unregisterSession(_switchKey);
+  } else if (_switchExisting && _switchExisting.provider === "claude" && incomingProvider !== "claude") {
+    // Claude → Codex/Gemini: close the live Claude SDK session so it doesn't
+    // sit around at 70-90% CPU forever after the user switches away. Same
+    // teardown pattern as the cwd-change branch in the Claude path.
+    logErr(`[PROVIDER-SWITCH] closing claude session ${_switchExisting.sessionId.slice(0, 8)} for key=${_switchKey} (incoming ${incomingProvider} query for model=${msg.model})`);
+    acpRequest("session/close", { sessionId: _switchExisting.sessionId }).catch((err) => {
+      logErr(`[PROVIDER-SWITCH] session/close on claude session ${_switchExisting.sessionId.slice(0, 8)} failed: ${err}`);
+    });
+    unregisterSession(_switchKey);
+  }
+
   // Phase 2.3: route Codex models to the codex-acp adapter. The Claude path
   // below is unchanged — codex models simply never reach it.
   if (isCodexModel(msg.model)) {
