@@ -40,6 +40,21 @@ struct AIResponseView: View {
     @State private var followUpText: String = ""
     @State private var preVoiceFollowUpText: String = ""
     @State private var followUpTextHeight: CGFloat = 34
+    /// When non-nil, the follow-up input is staged with a past message's text
+    /// so the user can edit it. On send, we route through `onEditMessage`
+    /// (truncate + resubmit) instead of the normal follow-up path.
+    @State private var editingExchangeId: String?
+    /// Snapshot of `followUpText` from before editing started, so Cancel can
+    /// restore whatever the user was drafting.
+    @State private var preEditFollowUpText: String = ""
+    /// Snapshot of pending attachments from before editing started. We hide
+    /// attachments during edit (the resubmit path is text-only) and put them
+    /// back if the user cancels.
+    @State private var preEditAttachments: [ChatAttachment] = []
+    /// Bumped each time we start a new edit so the follow-up FazmTextEditor
+    /// takes first-responder (without it, the user would have to click the
+    /// input to start typing).
+    @State private var editFocusToken: Int = 0
     @State private var isHanging = false
     @State private var hangTask: Task<Void, Never>?
     @State private var isStopping = false
@@ -847,7 +862,13 @@ struct AIResponseView: View {
                 ExpandableQuestionBubble(
                     question: exchange.question,
                     exchangeId: exchange.id,
-                    onEdit: onEditMessage
+                    // Show the pencil only when the parent wired a commit
+                    // handler. Tapping it stages the edit in the follow-up
+                    // input; the actual truncate + resubmit fires from
+                    // `sendFollowUp()` when the user hits send.
+                    onBeginEdit: onEditMessage == nil ? nil : { exchangeId, original in
+                        beginEditingMessage(exchangeId: exchangeId, originalText: original)
+                    }
                 )
                     .opacity(stackedBubbleIDs.contains(exchange.id) ? 0 : 1)
                     .background(
@@ -1074,6 +1095,14 @@ struct AIResponseView: View {
 
     private var followUpInputView: some View {
         VStack(spacing: 0) {
+            // Editing-message pill: appears above the input when the user
+            // clicks the pencil on a past bubble. The same input field is
+            // reused for editing so voice / select-all / paste all just work.
+            if editingExchangeId != nil {
+                editingMessagePill
+                    .padding(.bottom, 6)
+            }
+
             // Attachment thumbnails strip
             if !input.pendingAttachments.isEmpty {
                 ChatAttachmentStrip(attachments: Binding(get: { input.pendingAttachments }, set: { input.pendingAttachments = $0 }))
@@ -1088,7 +1117,7 @@ struct AIResponseView: View {
 
                 ZStack(alignment: .topLeading) {
                     if followUpText.isEmpty {
-                        Text(isLoading && isThisSessionStreaming ? "Type next question (queued)..." : "Ask follow up...")
+                        Text(followUpPlaceholder)
                             .scaledFont(size: 13)
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 8)
@@ -1100,6 +1129,7 @@ struct AIResponseView: View {
                         lineFragmentPadding: 8,
                         onSubmit: { sendFollowUp() },
                         focusOnAppear: false,
+                        focusRequest: editFocusToken,
                         onPasteFiles: { urls in
                             ChatAttachmentHelper.addFiles(from: urls, to: &input.pendingAttachments)
                         },
@@ -1212,22 +1242,24 @@ struct AIResponseView: View {
 // MARK: - Expandable Question Bubble (chat history)
 
 /// Question bubble in chat history that truncates to 2 lines with an expand chevron.
-/// When `onEdit` is provided, a pencil button (revealed on hover) lets the user
-/// edit the message and resubmit, which truncates the conversation at this
-/// exchange and restarts with the new text. The exchange is identified by its
-/// stable `exchangeId`, so the affordance shows on every real question bubble.
+/// When `onBeginEdit` is provided, a pencil button (revealed on hover) lets the
+/// user start editing this message. Editing happens in the main follow-up input
+/// at the bottom of the conversation (with an "editing" pill above it); the
+/// bubble itself stays put so the original message remains visible.
 private struct ExpandableQuestionBubble: View {
     let question: String
     var exchangeId: UUID
-    var onEdit: ((_ exchangeId: String, _ newText: String) -> Void)?
+    /// Fires when the user clicks the pencil. The parent (AIResponseView)
+    /// loads the message text into the follow-up input and shows the edit
+    /// pill; it does NOT truncate or resubmit until the user actually hits
+    /// send on the input.
+    var onBeginEdit: ((_ exchangeId: String, _ originalText: String) -> Void)?
 
     @State private var isExpanded = false
-    @State private var isEditing = false
-    @State private var editText: String = ""
     @State private var isBubbleHovered = false
 
     private var canEdit: Bool {
-        onEdit != nil
+        onBeginEdit != nil
     }
 
     private var needsExpansion: Bool {
@@ -1240,17 +1272,11 @@ private struct ExpandableQuestionBubble: View {
     }
 
     var body: some View {
-        Group {
-            if isEditing {
-                editingView
-            } else {
-                displayView
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(FazmColors.overlayForeground.opacity(0.1))
-        .cornerRadius(8)
+        displayView
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(FazmColors.overlayForeground.opacity(0.1))
+            .cornerRadius(8)
     }
 
     private var displayView: some View {
@@ -1271,8 +1297,7 @@ private struct ExpandableQuestionBubble: View {
                 canEdit: canEdit,
                 isBubbleHovered: isBubbleHovered,
                 onEditTap: {
-                    editText = question
-                    isEditing = true
+                    onBeginEdit?(exchangeId.uuidString, question)
                 }
             )
         }
@@ -1281,127 +1306,19 @@ private struct ExpandableQuestionBubble: View {
         .contentShape(Rectangle())
         .onHover { isBubbleHovered = $0 }
     }
-
-    private var editingView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            EditableTextArea(text: $editText, onSubmit: commitEdit)
-                .frame(minHeight: 60, maxHeight: 200)
-
-            HStack(spacing: 8) {
-                EditMessageInfoButton()
-
-                Spacer()
-
-                Button("Cancel") {
-                    isEditing = false
-                    editText = ""
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .scaledFont(size: 12)
-
-                Button(action: commitEdit) {
-                    Text("Save & resubmit")
-                        .scaledFont(size: 12)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(FazmColors.overlayForeground.opacity(0.15))
-                        .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .disabled(trimmedEditText.isEmpty || trimmedEditText == question)
-            }
-        }
-    }
-
-    private var trimmedEditText: String {
-        editText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func commitEdit() {
-        let trimmed = trimmedEditText
-        guard !trimmed.isEmpty, trimmed != question else { return }
-        guard let edit = onEdit else { return }
-        isEditing = false
-        editText = ""
-        edit(exchangeId.uuidString, trimmed)
-    }
 }
 
-/// Multi-line text area for editing a past message in-place. Uses NSTextView
-/// (via NSViewRepresentable) so Cmd+Return submits and the field auto-focuses.
-private struct EditableTextArea: NSViewRepresentable {
-    @Binding var text: String
-    let onSubmit: () -> Void
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        if let tv = scroll.documentView as? NSTextView {
-            tv.delegate = context.coordinator
-            tv.font = NSFont.systemFont(ofSize: 13)
-            tv.isRichText = false
-            tv.allowsUndo = true
-            tv.textContainerInset = NSSize(width: 4, height: 6)
-            tv.backgroundColor = NSColor.clear
-            tv.drawsBackground = false
-            tv.textColor = NSColor(FazmColors.overlayForeground)
-            tv.string = text
-            DispatchQueue.main.async {
-                tv.window?.makeFirstResponder(tv)
-                tv.setSelectedRange(NSRange(location: tv.string.count, length: 0))
-            }
-        }
-        scroll.borderType = .lineBorder
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        return scroll
-    }
-
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
-        guard let tv = nsView.documentView as? NSTextView else { return }
-        if tv.string != text {
-            tv.string = text
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: EditableTextArea
-        init(_ parent: EditableTextArea) { self.parent = parent }
-
-        func textDidChange(_ notification: Notification) {
-            guard let tv = notification.object as? NSTextView else { return }
-            parent.text = tv.string
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            // Cmd+Return submits. Plain Return inserts a newline (default).
-            if selector == #selector(NSResponder.insertNewline(_:)) {
-                let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-                if modifiers.contains(.command) {
-                    parent.onSubmit()
-                    return true
-                }
-            }
-            return false
-        }
-    }
-}
-
-/// Small info icon shown inline with the Cancel / Save & resubmit buttons.
-/// Hovering reveals the disclaimer about replay fidelity in a popover, so the
-/// caveat doesn't take up vertical space in the edit area.
+/// Small info icon shown next to the "Editing message" pill. Hovering reveals
+/// the disclaimer about replay fidelity in a popover, so the caveat doesn't
+/// take up vertical space inline.
 private struct EditMessageInfoButton: View {
     @State private var showHint = false
 
     var body: some View {
         Image(systemName: "info.circle")
-            .scaledFont(size: 12)
+            .scaledFont(size: 11)
             .foregroundColor(.secondary)
-            .frame(width: 20, height: 20)
+            .frame(width: 16, height: 16)
             .contentShape(Rectangle())
             .onHover { hovering in
                 showHint = hovering
