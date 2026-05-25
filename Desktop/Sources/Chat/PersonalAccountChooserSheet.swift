@@ -295,16 +295,18 @@ private struct ChooserWindowContent: View {
         shortcutSettings.availableModels.contains { $0.id.hasPrefix("gemini-") }
     }
 
-    /// Pick the user's preferred Gemini model, defaulting to Flash for speed.
+    /// Pick the user's preferred Gemini model. When the user explicitly clicks
+    /// "Switch to Gemini" from the chooser, default to Pro (smartest model);
+    /// only Flash as a last resort if Pro isn't advertised by the probe.
     private var preferredGeminiModelId: String {
-        if let current = shortcutSettings.availableModels.first(where: { $0.id == shortcutSettings.selectedModel && $0.id.hasPrefix("gemini-") }) {
-            return current.id
+        if let pro = shortcutSettings.availableModels.first(where: { $0.id == "gemini-pro-latest" }) {
+            return pro.id
         }
         if let flash = shortcutSettings.availableModels.first(where: { $0.id == "gemini-flash-latest" }) {
             return flash.id
         }
         return shortcutSettings.availableModels.first(where: { $0.id.hasPrefix("gemini-") })?.id
-            ?? "gemini-flash-latest"
+            ?? "gemini-pro-latest"
     }
 
     var body: some View {
