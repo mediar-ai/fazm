@@ -1694,12 +1694,16 @@ function startScreenshotResizeWatcher(): void {
 // yet served a real query. Its `cwd` is the spare's warm cwd (homedir), not
 // the pop-out's real workspace — so the pop-out's first query can switch cwd
 // silently (no recovery preamble) because there is no conversation to lose.
-const sessions = new Map<string, { sessionId: string; cwd: string; model?: string; uncommitted?: boolean }>();
+/** Which adapter owns this session — needed so cross-provider switches don't
+ *  call session/set_model on the wrong SDK (which returns -32603 "Session not
+ *  found" because each adapter keeps its own sessions map). */
+type SessionProvider = "claude" | "codex" | "gemini";
+const sessions = new Map<string, { sessionId: string; cwd: string; model?: string; uncommitted?: boolean; provider: SessionProvider }>();
 /** Reverse map: ACP sessionId → sessionKey, for tagging outbound messages with sessionKey */
 const sessionIdToKey = new Map<string, string>();
 
 /** Register a session, maintaining the reverse map */
-function registerSession(sessionKey: string, entry: { sessionId: string; cwd: string; model?: string; uncommitted?: boolean }): void {
+function registerSession(sessionKey: string, entry: { sessionId: string; cwd: string; model?: string; uncommitted?: boolean; provider: SessionProvider }): void {
   // Clean up any stale reverse-map entries that pointed to this key from a
   // prior unregister. unregisterSession intentionally leaves them so that a
   // late result/cancellation message for the unregistered sessionId can still
@@ -1717,7 +1721,7 @@ function registerSession(sessionKey: string, entry: { sessionId: string; cwd: st
   // Persist sessionId → cwd so resume after bridge restart can pass the
   // original cwd to the Claude Agent SDK (it uses cwd to locate the JSONL).
   recordPersistedSession(sessionKey, entry.sessionId, entry.cwd, entry.model);
-  logErr(`[SESSIONS] registered key=${sessionKey} sid=${entry.sessionId.slice(0, 8)} total=${sessions.size}`);
+  logErr(`[SESSIONS] registered key=${sessionKey} sid=${entry.sessionId.slice(0, 8)} provider=${entry.provider} total=${sessions.size}`);
 }
 
 /** Unregister a session. Keeps the sessionId→sessionKey reverse mapping so
@@ -3227,7 +3231,7 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
           // recordPersistedSession during JSONL extraction (above), so a
           // future resume with this id resolves correctly even if warmCwd
           // and the SDK's original cwd differ.
-          registerSession(cfg.key, { sessionId, cwd: warmCwd, model: cfg.model });
+          registerSession(cfg.key, { sessionId, cwd: warmCwd, model: cfg.model, provider: "claude" });
           await acpRequest("session/set_model", { sessionId, modelId: cfg.model });
           // Tell the Swift client about the pre-warmed sessionId NOW, even though
           // no user prompt has run yet. Without this, the very first prompt against
@@ -3567,7 +3571,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         // cwd-mismatch invalidation check on subsequent prompts). The SDK's
         // actual original cwd lives in the persisted store via
         // recordPersistedSession, which registerSession calls below.
-        registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
+        registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel, provider: "claude" });
         // If we used a recovered cwd (resolvedResumeCwd != requestedCwd), make
         // sure the persisted record reflects the SDK's true cwd, not Swift's.
         if (resolvedResumeCwd !== requestedCwd) {
@@ -3601,7 +3605,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
 
       sessionId = sessionResult.sessionId;
       if (sessionResult.models?.availableModels) emitModelsIfChanged(sessionResult.models.availableModels);
-      registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
+      registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel, provider: "claude" });
       isNewSession = true;
       if (requestedModel) {
         await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
@@ -4348,7 +4352,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           };
           const freshResult = (await acpRequest("session/new", freshParams)) as { sessionId: string };
           sessionId = freshResult.sessionId;
-          registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
+          registerSession(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel, provider: "claude" });
           activeSessionId = sessionId;
           if (requestedModel) {
             await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
@@ -4783,7 +4787,7 @@ async function handleForkSession(msg: import("./protocol.js").ForkSessionMessage
       unregisterSession(msg.fromSessionKey);
     }
 
-    registerSession(msg.toSessionKey, { sessionId: result.sessionId, cwd, model });
+    registerSession(msg.toSessionKey, { sessionId: result.sessionId, cwd, model, provider: "claude" });
     if (model) {
       try {
         await acpRequest("session/set_model", { sessionId: result.sessionId, modelId: model });
