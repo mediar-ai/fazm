@@ -1,16 +1,21 @@
 {
-  "unreleased": [
-    "Added a safety guardrail so the agent warns before running shell commands that change system state (disabling Wi-Fi/networking, killing system UI processes, rebooting) and prefers reversible options, preventing it from knocking you offline as a side effect of unrelated tasks like a system cleanup",
-    "Made the agent handle user-provided passwords consistently (it no longer refuses then caves under pushback) and never echoes, logs, or stores them",
-    "Fixed Assrt QA tests failing with 401 when Gemini was the selected model; Assrt now uses Gemini, Claude OAuth, or Anthropic API key based on the currently selected chat model",
-    "Switched Assrt's Gemini default to Flash (was Pro), matching the cost/latency profile of the Anthropic Haiku default, and forwarding the Gemini model the user picks in Fazm",
-    "Added a third browser mode in Settings, No browser MCP (Assrt only), which disables both Playwright and the bundled browser-harness so only the Assrt browser is available",
-    "Reframed the Assrt MCP as a general-purpose browser agent: defaults to a visible Chrome window, uses a persistent profile so logins/cookies survive across sessions, and the agent now leaves the window open between turns instead of closing it",
-    "Enabled live contextual sponsored content from Koah next to assistant responses for free-tier users; paid subscribers continue to see zero ads, and conversation context is redacted (emails, phone numbers, tokens, UUIDs) before any data leaves your Mac. See <a href='https://fazm.ai/privacy'>privacy policy</a> section 5 for details",
-    "Fixed Shift+Enter in the Chat with Founder composer; it now inserts a newline instead of sending the message, so multi-line messages no longer arrive as fragments",
-    "Improved post-interrupt context: when you stop an answer mid-stream, the next reply now sees the streamed-so-far partial, a short list of tools that just ran, and a 40-message history window (up from 20) so the agent picks up the thread instead of starting from scratch"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.37",
+      "date": "2026-05-25",
+      "changes": [
+        "Added a safety guardrail so the agent warns before running shell commands that change system state (disabling Wi-Fi/networking, killing system UI processes, rebooting) and prefers reversible options, preventing it from knocking you offline as a side effect of unrelated tasks like a system cleanup",
+        "Made the agent handle user-provided passwords consistently (it no longer refuses then caves under pushback) and never echoes, logs, or stores them",
+        "Fixed Assrt QA tests failing with 401 when Gemini was the selected model; Assrt now uses Gemini, Claude OAuth, or Anthropic API key based on the currently selected chat model",
+        "Switched Assrt's Gemini default to Flash (was Pro), matching the cost/latency profile of the Anthropic Haiku default, and forwarding the Gemini model the user picks in Fazm",
+        "Added a third browser mode in Settings, No browser MCP (Assrt only), which disables both Playwright and the bundled browser-harness so only the Assrt browser is available",
+        "Reframed the Assrt MCP as a general-purpose browser agent: defaults to a visible Chrome window, uses a persistent profile so logins/cookies survive across sessions, and the agent now leaves the window open between turns instead of closing it",
+        "Enabled live contextual sponsored content from Koah next to assistant responses for free-tier users; paid subscribers continue to see zero ads, and conversation context is redacted (emails, phone numbers, tokens, UUIDs) before any data leaves your Mac. See <a href='https://fazm.ai/privacy'>privacy policy</a> section 5 for details",
+        "Fixed Shift+Enter in the Chat with Founder composer; it now inserts a newline instead of sending the message, so multi-line messages no longer arrive as fragments",
+        "Improved post-interrupt context: when you stop an answer mid-stream, the next reply now sees the streamed-so-far partial, a short list of tools that just ran, and a 40-message history window (up from 20) so the agent picks up the thread instead of starting from scratch"
+      ]
+    },
     {
       "version": "2.9.36",
       "date": "2026-05-22",
