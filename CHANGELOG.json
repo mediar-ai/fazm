@@ -2,7 +2,8 @@
   "unreleased": [
     "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)",
     "Added a verification-codes skill so Fazm can pull 2FA codes from Messages, WhatsApp, or Notification Center instead of asking you to read them out",
-    "Fixed ask_followup chips staying hidden while the AI turn was still streaming \u2014 quick-reply buttons now appear as soon as the model emits them, so the chat no longer looks frozen when the model keeps working after ask_followup"
+    "Fixed ask_followup chips staying hidden while the AI turn was still streaming \u2014 quick-reply buttons now appear as soon as the model emits them, so the chat no longer looks frozen when the model keeps working after ask_followup",
+    "Fixed model switches into Claude from Gemini or ChatGPT failing with a session error; the floating bar now starts a fresh session instead of getting stuck"
   ],
   "releases": [
     {
