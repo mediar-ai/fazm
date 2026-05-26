@@ -19,6 +19,10 @@ struct PersonalAccountChooserSheet: View {
         geminiAvailable ? 600 : 460
     }
 
+    // Per-provider brand accents (chooser-only exception to the single-accent rule).
+    private static let geminiAccent = Color(red: 0.26, green: 0.52, blue: 0.96)   // Google blue (#4285F4)
+    private static let claudeAccent = Color(red: 0.78, green: 0.55, blue: 0.40)   // light brown / tan
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -80,7 +84,7 @@ struct PersonalAccountChooserSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: "sparkle")
                     .scaledFont(size: 16)
-                    .foregroundColor(FazmColors.purplePrimary)
+                    .foregroundColor(Self.geminiAccent)
                 Text("Google Gemini")
                     .scaledFont(size: 15, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
@@ -89,7 +93,7 @@ struct PersonalAccountChooserSheet: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(FazmColors.purplePrimary))
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Self.geminiAccent))
                 Spacer()
             }
 
@@ -103,7 +107,7 @@ struct PersonalAccountChooserSheet: View {
                     .scaledFont(size: 13, weight: .semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(FazmColors.purplePrimary)
+                    .background(Self.geminiAccent)
                     .foregroundColor(.white)
                     .cornerRadius(8)
             }
@@ -118,7 +122,7 @@ struct PersonalAccountChooserSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: "person.badge.key")
                     .scaledFont(size: 16)
-                    .foregroundColor(FazmColors.purplePrimary)
+                    .foregroundColor(Self.claudeAccent)
                 Text("Claude Code")
                     .scaledFont(size: 15, weight: .semibold)
                     .foregroundColor(FazmColors.textPrimary)
@@ -146,7 +150,7 @@ struct PersonalAccountChooserSheet: View {
                     .scaledFont(size: 13, weight: .semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(FazmColors.purplePrimary)
+                    .background(Self.claudeAccent)
                     .foregroundColor(.white)
                     .cornerRadius(8)
             }
