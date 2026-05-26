@@ -884,6 +884,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             log("AppDelegate: [MENUBAR] No Fazm window found — recreating via WindowOpener")
             WindowOpener.shared.openWindow?(id: "main")
             NSApp.activate(ignoringOtherApps: true)
+            // Same fallback as applicationShouldHandleReopen: WindowOpener may not
+            // be bound yet at cold-boot, so guarantee the floating bar is visible.
+            FloatingControlBarManager.shared.show()
         }
     }
 
@@ -1054,6 +1057,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("AppDelegate: No Fazm window found on dock click — recreating via WindowOpener")
         WindowOpener.shared.openWindow?(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+        // Fallback: at cold-boot via SMAppService, WindowOpener.openWindow can still
+        // be nil (the SwiftUI scene hasn't bound it yet), so the optional-chain above
+        // silently no-ops. Surface the floating bar so the user is never stranded
+        // with a running menu-bar icon and no way in.
+        FloatingControlBarManager.shared.show()
         return false
     }
 
