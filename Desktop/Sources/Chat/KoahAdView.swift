@@ -112,18 +112,16 @@ enum KoahContextRedactor {
 ///    everything. ONLY for local smoke testing — never ship a build with this enabled
 ///    for end users. Toggle with `defaults write com.fazm.desktop-dev fazm_koah_force_show -bool true`.
 /// 2. Subscription active → never. Paid users see zero ads. Ever.
-/// 3. PostHog feature flag `koah_enabled` → must be true. Default off; turned on per-user
-///    for testing.
+/// 3. Completed onboarding → must be true. Serve to all free users once they are onboarded.
 /// 4. (Future) per-conversation user opt-out from in-app settings.
 @MainActor
 enum KoahAdGate {
-    static let featureFlag = "koah_enabled"
     static let devForceShowKey = "fazm_koah_force_show"
 
     static func shouldShowAd() -> Bool {
         if UserDefaults.standard.bool(forKey: devForceShowKey) { return true }
         if SubscriptionService.shared.isActive { return false }
-        return PostHogManager.shared.isFeatureEnabled(featureFlag)
+        return UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
     }
 }
 
@@ -155,15 +153,54 @@ struct KoahAdView: View {
         // errored. We keep a small min-height while loading so the layout doesn't jump
         // when an ad arrives.
         let visibleHeight: CGFloat = didFail ? 0 : max(measuredHeight, 0)
-        KoahWebView(
-            question: KoahContextRedactor.redact(question),
-            answer: KoahContextRedactor.redact(answer),
-            publisherID: publisherID,
-            measuredHeight: $measuredHeight,
-            didFail: $didFail
-        )
-        .frame(height: visibleHeight)
-        .opacity(visibleHeight > 0 ? 1 : 0)
+        
+        VStack(alignment: .leading, spacing: 4) {
+            if visibleHeight > 0 {
+                HStack(alignment: .center, spacing: 6) {
+                    Text("Sponsored")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(FazmColors.textQuaternary)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        if let provider = FloatingControlBarManager.shared.chatProvider {
+                            provider.showPaywall = true
+                            PaywallWindowController.shared.show(chatProvider: provider)
+                        }
+                    }) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 8))
+                            Text("Remove Ads")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(FazmColors.purplePrimary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(FazmColors.purplePrimary.opacity(0.1))
+                        .cornerRadius(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(FazmColors.purplePrimary.opacity(0.2), lineWidth: 0.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Upgrade to Fazm Pro for an ad-free experience")
+                }
+                .padding(.horizontal, 4)
+            }
+            
+            KoahWebView(
+                question: KoahContextRedactor.redact(question),
+                answer: KoahContextRedactor.redact(answer),
+                publisherID: publisherID,
+                measuredHeight: $measuredHeight,
+                didFail: $didFail
+            )
+            .frame(height: visibleHeight)
+            .opacity(visibleHeight > 0 ? 1 : 0)
+        }
         .accessibilityLabel("Sponsored")
     }
 }
