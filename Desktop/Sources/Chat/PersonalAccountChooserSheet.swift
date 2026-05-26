@@ -376,6 +376,12 @@ private struct ChooserWindowContent: View {
         onHeightChange(geminiAvailable ? 600 : 460)
     }
 
+    /// Initial height for the inline auth sheet; the sheet refines it via its
+    /// own height preference once it renders.
+    private func reportAuthHeight() {
+        onHeightChange(380)
+    }
+
     private var pickerView: some View {
         PersonalAccountChooserSheet(
             isClaudeConnected: chatProvider.isClaudeConnected,
@@ -392,10 +398,11 @@ private struct ChooserWindowContent: View {
                     onDismiss()
                     Task { await chatProvider.switchBridgeMode(to: "personal") }
                 } else {
-                    // No creds — run the Claude OAuth flow inline within this
-                    // same window (no separate auth window).
+                    // No creds — show the Claude OAuth flow inline within this
+                    // same window (no separate auth window). The sheet's
+                    // "Connect Claude Account" button starts the actual flow.
                     showingClaudeAuth = true
-                    chatProvider.startClaudeAuth()
+                    reportAuthHeight()
                 }
             },
             onPickCodex: {
