@@ -28,7 +28,9 @@ const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
 const SUCCESS_URL = "https://console.anthropic.com/oauth/code/success?app=claude-code";
 const SCOPES = "user:inference user:profile user:file_upload user:mcp_servers user:sessions:claude_code";
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
-const TOKEN_EXPIRY_SECONDS = 31536000; // 1 year
+// (removed) TOKEN_EXPIRY_SECONDS — Anthropic now controls token lifetime
+// server-side for `user:sessions:claude_code` and `user:mcp_servers`; passing
+// a custom `expires_in` causes HTTP 400. See token-exchange comment below.
 
 // --- Error Types ---
 
@@ -254,6 +256,12 @@ async function exchangeCodeForToken(
   redirectUri: string,
   logErr: (msg: string) => void
 ): Promise<OAuthResult> {
+  // NOTE: Do NOT include `expires_in` in the token-exchange body. Anthropic
+  // rejects custom expires_in for the `user:sessions:claude_code` and
+  // `user:mcp_servers` scopes with HTTP 400
+  // ("Custom expires_in not allowed for scope ...") since mid-May 2026.
+  // The server now decides token lifetime; we honor `data.expires_in` from
+  // the response below.
   const body = {
     grant_type: "authorization_code",
     code,
@@ -261,7 +269,6 @@ async function exchangeCodeForToken(
     client_id: CLIENT_ID,
     code_verifier: codeVerifier,
     state,
-    expires_in: TOKEN_EXPIRY_SECONDS,
   };
 
   const jsonBody = JSON.stringify(body);
