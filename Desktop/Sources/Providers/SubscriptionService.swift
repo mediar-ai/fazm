@@ -238,7 +238,14 @@ final class SubscriptionService {
 
         // The backend constructs the actual success/cancel URLs using its own
         // redirect endpoint, so we don't need to send them from the client.
-        let body: [String: String] = [:]
+        // We do echo back the cached pricing variant (from /variant-price) so
+        // the price the paywall showed matches the price Stripe charges, even
+        // if the user's email-hash bucket would now resolve differently (e.g.
+        // anonymous user linked Google credentials between paywall and click).
+        var body: [String: String] = [:]
+        if !cachedVariant.isEmpty {
+            body["variant"] = cachedVariant
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
