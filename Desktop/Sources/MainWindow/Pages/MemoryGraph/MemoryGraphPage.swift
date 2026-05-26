@@ -53,11 +53,17 @@ struct MemoryGraphPage: View {
                 Spacer()
             }
 
-            // Loading / empty state — centered spinner, no extra chrome
-            if viewModel.isLoading || (viewModel.isEmpty && !viewModel.isRebuilding) {
+            // Loading spinner: only while a load/rebuild is actively in flight,
+            // or before the initial attempt has completed. Without `didAttemptLoad`,
+            // an empty graph would keep the spinner on screen forever.
+            if viewModel.isLoading || viewModel.isRebuilding || !viewModel.didAttemptLoad {
                 ProgressView()
                     .scaleEffect(1.2)
                     .tint(.white.opacity(0.4))
+            } else if viewModel.isEmpty {
+                MemoryGraphEmptyState(isRebuilding: viewModel.isRebuilding) {
+                    Task { await viewModel.rebuildGraph() }
+                }
             }
         }
         .task {
@@ -70,7 +76,44 @@ struct MemoryGraphPage: View {
                     if !viewModel.isEmpty { break }
                 }
             }
+            viewModel.didAttemptLoad = true
         }
+    }
+}
+
+// MARK: - Empty State
+
+private struct MemoryGraphEmptyState: View {
+    let isRebuilding: Bool
+    let onRebuild: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "circle.grid.cross")
+                .scaledFont(size: 28)
+                .foregroundColor(.white.opacity(0.35))
+            Text("No memory yet")
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundColor(.white.opacity(0.75))
+            Text("Chat with Fazm or let it explore your files. Your knowledge graph builds up over time.")
+                .scaledFont(size: 12)
+                .foregroundColor(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+            if !isRebuilding {
+                Button(action: onRebuild) {
+                    Text("Try again")
+                        .scaledFont(size: 12, weight: .medium)
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(24)
     }
 }
 
@@ -130,6 +173,10 @@ class MemoryGraphViewModel: ObservableObject {
     @Published var isRebuilding = false
     @Published var isEmpty = true
     @Published var selectedNodeId: String?
+    /// Set true after the first .task completes its load attempts (including retries).
+    /// Used by the view to switch from spinner → empty state when no nodes were found,
+    /// instead of spinning forever.
+    @Published var didAttemptLoad = false
 
     let scene = SCNScene()
     let cameraNode = SCNNode()
