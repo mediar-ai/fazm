@@ -148,7 +148,7 @@ struct OnboardingView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bubble.left.and.bubble.right.fill")
                         .scaledFont(size: 11)
-                    Text("Stuck? Chat with us")
+                    Text("Stuck? Chat with the founder")
                         .scaledFont(size: 12, weight: .medium)
                 }
                 .foregroundColor(FazmColors.textSecondary)
