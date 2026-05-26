@@ -178,6 +178,10 @@ struct SettingsContentView: View {
     @State private var showAddMCPServer = false
     @State private var editingMCPServer: MCPServerManager.MCPServerConfig?
     @State private var showSignOutAlert = false
+    /// `signin-optional` experiment: when an anonymous user taps "Save Account"
+    /// in the About section, present SignInView so they can link their UID to
+    /// a real Google/magic-link account without leaving Settings.
+    @State private var showSaveAccountSheet = false
     @State private var referralStatus: ReferralService.ReferralStatusResponse?
     @State private var isLoadingReferralStatus = false
     @State private var referralLinkCopied = false
@@ -3309,7 +3313,7 @@ struct SettingsContentView: View {
             if authState.isSignedIn {
                 settingsCard(settingId: "about.account") {
                     HStack(spacing: 16) {
-                        Image(systemName: "person.crop.circle")
+                        Image(systemName: authState.isAnonymous ? "person.crop.circle.badge.plus" : "person.crop.circle")
                             .scaledFont(size: 16)
                             .foregroundColor(FazmColors.textSecondary)
                             .frame(width: 24, height: 24)
@@ -3319,25 +3323,46 @@ struct SettingsContentView: View {
                                 .scaledFont(size: 16, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
 
-                            Text(authState.userEmail ?? "Signed in")
-                                .scaledFont(size: 13)
-                                .foregroundColor(FazmColors.textTertiary)
+                            if authState.isAnonymous {
+                                Text("Guest account — sign in to save your data")
+                                    .scaledFont(size: 13)
+                                    .foregroundColor(FazmColors.textTertiary)
+                            } else {
+                                Text(authState.userEmail ?? "Signed in")
+                                    .scaledFont(size: 13)
+                                    .foregroundColor(FazmColors.textTertiary)
+                            }
                         }
 
                         Spacer()
 
-                        Button(action: { showSignOutAlert = true }) {
-                            Text("Sign Out")
-                                .scaledFont(size: 13, weight: .medium)
-                                .foregroundColor(.red)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.red.opacity(0.12))
-                                )
+                        if authState.isAnonymous {
+                            Button(action: { showSaveAccountSheet = true }) {
+                                Text("Sign In")
+                                    .scaledFont(size: 13, weight: .medium)
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(.white)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button(action: { showSignOutAlert = true }) {
+                                Text("Sign Out")
+                                    .scaledFont(size: 13, weight: .medium)
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color.red.opacity(0.12))
+                                    )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .alert("Sign Out?", isPresented: $showSignOutAlert) {
@@ -3347,6 +3372,18 @@ struct SettingsContentView: View {
                     }
                 } message: {
                     Text("You will be signed out of Fazm.")
+                }
+                .sheet(isPresented: $showSaveAccountSheet) {
+                    SignInView(authState: authState)
+                        .frame(width: 480, height: 600)
+                }
+                .onReceive(authState.$isAnonymous) { isAnon in
+                    // Successful link/sign-in flipped the user from anon to
+                    // named — auto-dismiss the sheet so the user lands back
+                    // in Settings with the regular Account row.
+                    if !isAnon && showSaveAccountSheet {
+                        showSaveAccountSheet = false
+                    }
                 }
             }
 
