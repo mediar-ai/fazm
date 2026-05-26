@@ -213,18 +213,12 @@ class AuthService: NSObject {
 
     /// Start Google Sign-In using Desktop OAuth flow with localhost redirect.
     /// When the current user is anonymous (variant B of the `signin-optional`
-    /// experiment), this routes to `linkWithGoogle()` instead of creating a
-    /// new Firebase user — that preserves the anon UID and all its data
-    /// (trial start, Stripe customer, chat history, PostHog person).
+    /// experiment), `signInWithGoogleIdToken` transparently turns the REST
+    /// signInWithIdp call into a server-side link so the anon UID and all
+    /// its data are preserved — no separate code path needed here.
     func signInWithGoogle() async throws {
-        if Auth.auth().currentUser?.isAnonymous == true {
-            log("AuthService: Current user is anonymous — routing Google sign-in to link path")
-            try await linkWithGoogle()
-            return
-        }
-
         AnalyticsManager.shared.signInStarted(provider: "google")
-        log("AuthService: Starting Google Sign-In (Desktop OAuth)")
+        log("AuthService: Starting Google Sign-In (Desktop OAuth)\(isAnonymous ? " — will link to existing anon UID" : "")")
 
         let googleIdToken: String
         do {
@@ -241,10 +235,10 @@ class AuthService: NSObject {
     }
 
     /// Run the Google Desktop-OAuth dance (PKCE + localhost callback + token
-    /// exchange) and return the resulting Google id_token. Extracted so both
-    /// `signInWithGoogle()` and `linkWithGoogle()` can reuse the same flow.
-    /// `analyticsProvider` is used to tag `signInFailed` events so the link
-    /// path's failures appear separately from sign-in failures.
+    /// exchange) and return the resulting Google id_token. Extracted from the
+    /// signInWithGoogle method body so future sign-in variants (anonymous
+    /// upgrades, etc.) can reuse the dance and only differ in the final
+    /// REST exchange. `analyticsProvider` lets callers attribute failures.
     private func acquireGoogleIdTokenViaDesktopOAuth(analyticsProvider: String) async throws -> String {
         // 1. Generate PKCE code verifier + challenge
         let codeVerifier = generateCodeVerifier()
@@ -294,62 +288,6 @@ class AuthService: NSObject {
 
         // 5. Exchange the code with Google's token endpoint for an id_token
         return try await exchangeGoogleCode(authCode, codeVerifier: codeVerifier, redirectURI: redirectURI)
-    }
-
-    /// Upgrade the currently-signed-in anonymous user to a named Google user
-    /// by linking a Google credential. Preserves the Firebase UID so all
-    /// backend data, chat history, trial state, Stripe customer, and PostHog
-    /// person carry over unchanged — only the user's `email` field gets
-    /// populated and `isAnonymous` flips to false.
-    ///
-    /// Used by the paywall ("Sign in to subscribe") and Settings ("Save your
-    /// account") upgrade flows for variant-B users from the `signin-optional`
-    /// experiment.
-    func linkWithGoogle() async throws {
-        guard let currentUser = Auth.auth().currentUser, currentUser.isAnonymous else {
-            log("AuthService: linkWithGoogle called without an anonymous current user")
-            throw AuthError.notSignedIn
-        }
-        AnalyticsManager.shared.signInStarted(provider: "google_link")
-        log("AuthService: Starting Google link (Desktop OAuth)")
-
-        let googleIdToken = try await acquireGoogleIdTokenViaDesktopOAuth(analyticsProvider: "google_link")
-
-        let credential = GoogleAuthProvider.credential(withIDToken: googleIdToken, accessToken: "")
-        do {
-            let result = try await currentUser.link(with: credential)
-            log("AuthService: Linked Google credential to UID \(result.user.uid) (email: \(result.user.email ?? "nil"))")
-
-            // Refresh local state from the now-named user. The Firebase auth
-            // state listener also fires, but we update synchronously so the
-            // paywall sees the email immediately for the checkout call.
-            let idToken = try await result.user.getIDToken()
-            self.idToken = idToken
-            self.userId = result.user.uid
-            self.userEmail = result.user.email
-            self.tokenExpiry = Date().addingTimeInterval(3600)
-            saveAuthState()
-            updateAuthState()
-            setSentryUserContext()
-            setPostHogUserContext()
-
-            // The UID-hash and email-hash pricing buckets are independent, so
-            // the variant may differ after linking. Refresh the cached variant
-            // now; the paywall sheet that triggered this link will read the
-            // new value and pass it to /api/stripe/create-checkout-session via
-            // the body.variant field. Without this, the user pays whatever
-            // variant their UID-hash assigned pre-link.
-            await SubscriptionService.shared.fetchVariantPrice()
-
-            AnalyticsManager.shared.signInCompleted(provider: "google_link")
-            PostHogManager.shared.track("anonymous_account_upgraded", properties: [
-                "provider": "google"
-            ])
-        } catch {
-            AnalyticsManager.shared.signInFailed(provider: "google_link", error: error.localizedDescription)
-            logError("AuthService: Google link failed", error: error)
-            throw error
-        }
     }
 
     /// Cancel an in-flight Google sign-in by shutting down the localhost listener.
@@ -845,12 +783,23 @@ class AuthService: NSObject {
             }
         }
 
-        // Track anon state. Set when this is the initial anonymous sign-up;
-        // CLEARED on any other provider (google/apple/magic_link), which is
-        // how anon→named upgrades flip the flag — REST signInWithIdp with an
-        // existing idToken does a server-side link that keeps the UID stable
-        // but reports back as the upgraded provider, not "anonymous".
-        UserDefaults.standard.set(provider == "anonymous", forKey: Self.kIsAnonymous)
+        // Detect anon→named upgrade. If we were anonymous and now we're not,
+        // the user just completed the upgrade flow (paywall or Settings) and
+        // we should refresh the cached pricing variant (UID-hash bucket may
+        // differ from email-hash bucket) and emit the analytics event.
+        let wasAnonymous = UserDefaults.standard.bool(forKey: Self.kIsAnonymous)
+        let isNowAnonymous = (provider == "anonymous")
+        UserDefaults.standard.set(isNowAnonymous, forKey: Self.kIsAnonymous)
+        if wasAnonymous && !isNowAnonymous {
+            log("AuthService: anon→named upgrade detected (provider=\(provider))")
+            PostHogManager.shared.track("anonymous_account_upgraded", properties: [
+                "provider": provider
+            ])
+            // Re-fetch the variant so the post-link paywall + checkout use the
+            // user's email-hash bucket instead of the pre-link UID-hash bucket.
+            // SubscriptionService caches the result; openCheckout reads it.
+            Task { await SubscriptionService.shared.fetchVariantPrice() }
+        }
 
         saveAuthState()
         updateAuthState()
@@ -1004,6 +953,7 @@ class AuthService: NSObject {
         defaults.removeObject(forKey: Self.kGivenName)
         defaults.removeObject(forKey: Self.kFamilyName)
         defaults.removeObject(forKey: Self.kDisplayName)
+        defaults.removeObject(forKey: Self.kIsAnonymous)
 
         // Clear cached subscription state so the next user doesn't inherit
         // the previous user's `isActive` flag if refreshStatus() fails on
