@@ -135,10 +135,12 @@ struct OnboardingView: View {
                         )
                     }
                 }
-        // Floating "Stuck? Chat with us" escape hatch — bottom-leading over the
-        // chat pane. Always visible during onboarding so a struggling user has a
-        // direct line to the founder without hunting for settings.
-        .overlay(alignment: .bottomLeading) {
+        // Floating "Stuck? Chat with us" escape hatch — bottom-trailing over
+        // the empty graph pane corner so it never collides with the chat input
+        // (left pane) or the graph hints (bottom-center) or Privacy Policy
+        // (top-trailing). Always visible during onboarding so a struggling user
+        // has a direct line to the founder without hunting for settings.
+        .overlay(alignment: .bottomTrailing) {
             Button(action: {
                 PostHogManager.shared.track("onboarding_founder_chat_opened", properties: [:])
                 showFounderChat = true
