@@ -207,6 +207,26 @@ class AuthService: NSObject {
         AnalyticsManager.shared.signInStarted(provider: "google")
         log("AuthService: Starting Google Sign-In (Desktop OAuth)")
 
+        let googleIdToken: String
+        do {
+            googleIdToken = try await acquireGoogleIdTokenViaDesktopOAuth(analyticsProvider: "google")
+        } catch {
+            throw error
+        }
+
+        // Exchange Google id_token with Firebase signInWithIdp
+        try await signInWithGoogleIdToken(googleIdToken)
+
+        AnalyticsManager.shared.signInCompleted(provider: "google")
+        log("AuthService: Google Sign-In completed successfully")
+    }
+
+    /// Run the Google Desktop-OAuth dance (PKCE + localhost callback + token
+    /// exchange) and return the resulting Google id_token. Extracted so both
+    /// `signInWithGoogle()` and `linkWithGoogle()` can reuse the same flow.
+    /// `analyticsProvider` is used to tag `signInFailed` events so the link
+    /// path's failures appear separately from sign-in failures.
+    private func acquireGoogleIdTokenViaDesktopOAuth(analyticsProvider: String) async throws -> String {
         // 1. Generate PKCE code verifier + challenge
         let codeVerifier = generateCodeVerifier()
         let codeChallenge = generateCodeChallenge(from: codeVerifier)
@@ -247,20 +267,70 @@ class AuthService: NSObject {
         do {
             authCode = try await waitForOAuthCallback(socketFD: socketFD)
         } catch {
-            AnalyticsManager.shared.signInFailed(provider: "google", error: error.localizedDescription)
+            AnalyticsManager.shared.signInFailed(provider: analyticsProvider, error: error.localizedDescription)
             throw error
         }
 
         log("AuthService: Received auth code from Google OAuth callback")
 
         // 5. Exchange the code with Google's token endpoint for an id_token
-        let googleIdToken = try await exchangeGoogleCode(authCode, codeVerifier: codeVerifier, redirectURI: redirectURI)
+        return try await exchangeGoogleCode(authCode, codeVerifier: codeVerifier, redirectURI: redirectURI)
+    }
 
-        // 6. Exchange Google id_token with Firebase signInWithIdp
-        try await signInWithGoogleIdToken(googleIdToken)
+    /// Upgrade the currently-signed-in anonymous user to a named Google user
+    /// by linking a Google credential. Preserves the Firebase UID so all
+    /// backend data, chat history, trial state, Stripe customer, and PostHog
+    /// person carry over unchanged — only the user's `email` field gets
+    /// populated and `isAnonymous` flips to false.
+    ///
+    /// Used by the paywall ("Sign in to subscribe") and Settings ("Save your
+    /// account") upgrade flows for variant-B users from the `signin-optional`
+    /// experiment.
+    func linkWithGoogle() async throws {
+        guard let currentUser = Auth.auth().currentUser, currentUser.isAnonymous else {
+            log("AuthService: linkWithGoogle called without an anonymous current user")
+            throw AuthError.notSignedIn
+        }
+        AnalyticsManager.shared.signInStarted(provider: "google_link")
+        log("AuthService: Starting Google link (Desktop OAuth)")
 
-        AnalyticsManager.shared.signInCompleted(provider: "google")
-        log("AuthService: Google Sign-In completed successfully")
+        let googleIdToken = try await acquireGoogleIdTokenViaDesktopOAuth(analyticsProvider: "google_link")
+
+        let credential = GoogleAuthProvider.credential(withIDToken: googleIdToken, accessToken: "")
+        do {
+            let result = try await currentUser.link(with: credential)
+            log("AuthService: Linked Google credential to UID \(result.user.uid) (email: \(result.user.email ?? "nil"))")
+
+            // Refresh local state from the now-named user. The Firebase auth
+            // state listener also fires, but we update synchronously so the
+            // paywall sees the email immediately for the checkout call.
+            let idToken = try await result.user.getIDToken()
+            self.idToken = idToken
+            self.userId = result.user.uid
+            self.userEmail = result.user.email
+            self.tokenExpiry = Date().addingTimeInterval(3600)
+            saveAuthState()
+            updateAuthState()
+            setSentryUserContext()
+            setPostHogUserContext()
+
+            // The UID-hash and email-hash pricing buckets are independent, so
+            // the variant may differ after linking. Refresh the cached variant
+            // now; the paywall sheet that triggered this link will read the
+            // new value and pass it to /api/stripe/create-checkout-session via
+            // the body.variant field. Without this, the user pays whatever
+            // variant their UID-hash assigned pre-link.
+            await SubscriptionService.shared.fetchVariantPrice()
+
+            AnalyticsManager.shared.signInCompleted(provider: "google_link")
+            PostHogManager.shared.track("anonymous_account_upgraded", properties: [
+                "provider": "google"
+            ])
+        } catch {
+            AnalyticsManager.shared.signInFailed(provider: "google_link", error: error.localizedDescription)
+            logError("AuthService: Google link failed", error: error)
+            throw error
+        }
     }
 
     /// Cancel an in-flight Google sign-in by shutting down the localhost listener.
