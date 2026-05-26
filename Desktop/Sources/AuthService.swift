@@ -203,7 +203,17 @@ class AuthService: NSObject {
     // MARK: - Google Sign-In (Desktop OAuth + Firebase)
 
     /// Start Google Sign-In using Desktop OAuth flow with localhost redirect.
+    /// When the current user is anonymous (variant B of the `signin-optional`
+    /// experiment), this routes to `linkWithGoogle()` instead of creating a
+    /// new Firebase user — that preserves the anon UID and all its data
+    /// (trial start, Stripe customer, chat history, PostHog person).
     func signInWithGoogle() async throws {
+        if Auth.auth().currentUser?.isAnonymous == true {
+            log("AuthService: Current user is anonymous — routing Google sign-in to link path")
+            try await linkWithGoogle()
+            return
+        }
+
         AnalyticsManager.shared.signInStarted(provider: "google")
         log("AuthService: Starting Google Sign-In (Desktop OAuth)")
 
