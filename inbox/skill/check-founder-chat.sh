@@ -147,6 +147,8 @@ for i in $(seq 0 $((NUM_CHATS - 1))); do
     EMAIL=$(echo "$CHATS" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['email'])")
     NAME=$(echo "$CHATS" | python3 -c "import json,sys; d=json.load(sys.stdin)[$i]; print(d.get('name') or d['email'])")
     UNREAD=$(echo "$CHATS" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['unread'])")
+    PRICING_VARIANT=$(echo "$CHATS" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i].get('pricingVariant',''))")
+    PRICE_USD=$(echo "$CHATS" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i].get('priceUsd',''))")
 
     PID_FILE="/tmp/fazm-chat-${UID_VAL}.pid"
 
@@ -199,6 +201,10 @@ User UID: $UID_VAL
 User Email: $EMAIL
 User Name: $NAME
 Unread messages: $UNREAD
+
+This user's Fazm Pro price: \$${PRICE_USD}/mo (A/B variant: ${PRICING_VARIANT}).
+This is the ONLY price you may quote to this user. Do NOT say \$49,
+do NOT convert to euros, do NOT mention any other arm of the A/B test.
 
 Full conversation data (all messages in order):
 $USER_DATA
