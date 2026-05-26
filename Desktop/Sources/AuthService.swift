@@ -765,6 +765,15 @@ class AuthService: NSObject {
     func signInAnonymously() async throws {
         AnalyticsManager.shared.signInStarted(provider: "anonymous")
         log("AuthService: Starting anonymous sign-in via REST signUp")
+        // Trial start is keyed in UserDefaults per-device, not per-user. If a
+        // previous (named) user was signed in on this device, their stored
+        // `fazm_trial_start_date` would carry over to the new anon user —
+        // making the trial already-expired and firing the paywall immediately
+        // even though this is effectively a fresh signup. Reset before sign-up
+        // so fetchAccountCreationDate, called later, sets it from the new
+        // anon user's Firebase creation timestamp (= now).
+        UserDefaults.standard.removeObject(forKey: "fazm_trial_start_date")
+        UserDefaults.standard.removeObject(forKey: "fazm_firebase_creation_date")
 
         let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=\(Self.firebaseAPIKey)")!
         var request = URLRequest(url: url)
