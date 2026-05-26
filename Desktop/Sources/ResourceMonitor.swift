@@ -206,6 +206,10 @@ class ResourceMonitor {
         // Thread count is already in snapshot
         components["threadCount"] = snapshot.threadCount
 
+        // Refresh the accessibility-cursor amplifier reading so it rides along in the
+        // same COMPONENTS line / Sentry context as the rest of the per-subsystem counters.
+        updateCursorAmplifierCounters()
+
         // Per-subsystem counters published via ResourceCounters.shared.
         // Each subsystem owns its own keys (e.g. sessionRecording_active,
         // geminiAnalysis_bufferedChunks). Merging here means new counters
@@ -231,6 +235,23 @@ class ResourceMonitor {
                 SentrySDK.addBreadcrumb(breadcrumb)
             }
         }
+    }
+
+    /// Detect a macOS accessibility pointer customization (enlarged and/or recolored cursor).
+    /// This is a CPU *amplifier*, not a cause: when a window redraws every display cycle,
+    /// AppKit re-sets the cursor each cycle, and a custom pointer makes each set regenerate a
+    /// scaled, recolored bitmap and IPC it to the WindowServer (_AXFMouseCursorGenerator →
+    /// SLSRegisterCursorWithImages). A redraw loop that is nearly free on a default cursor can
+    /// pin the main thread at ~100% here. Publishing this lets "high idle CPU" field reports
+    /// auto-correlate with a custom pointer instead of looking like an unexplained hot thread.
+    /// `mouseDriverCursorSize` is unset (read as 0) on a default install; 1.0 = normal size.
+    private func updateCursorAmplifierCounters() {
+        let ua = UserDefaults(suiteName: "com.apple.universalaccess")
+        let size = ua?.double(forKey: "mouseDriverCursorSize") ?? 0
+        let scaledX100 = size >= 1.0 ? Int((size * 100).rounded()) : 100
+        let customColor = ua?.object(forKey: "cursorFill") != nil
+        ResourceCounters.shared.set("cursor_sizeX100", scaledX100)
+        ResourceCounters.shared.set("cursor_customColor", customColor)
     }
 
     private func updateSentryContext(_ snapshot: ResourceSnapshot) {
