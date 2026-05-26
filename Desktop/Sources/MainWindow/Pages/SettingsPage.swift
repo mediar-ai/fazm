@@ -995,7 +995,7 @@ struct SettingsContentView: View {
                         // start the OAuth flow if that window didn't appear.
                         Button(action: {
                             if let cp = chatProvider {
-                                ClaudeAuthWindowController.shared.show(chatProvider: cp)
+                                PersonalAccountChooserWindowController.shared.show(chatProvider: cp, source: "settings")
                             }
                         }) {
                             Text("Sign In with Claude")
