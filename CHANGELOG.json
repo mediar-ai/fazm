@@ -8,7 +8,8 @@
     "Fixed Memory settings page spinning forever when the knowledge graph was empty; now shows an empty state with a Try again button",
     "Fixed Claude account connect failing with a 400 \"Custom expires_in not allowed for scope\" error; the OAuth flow no longer requests a custom token lifetime so Anthropic's new server-side policy is honored",
     "Internal: Chat Message Sent and chat_agent_query_failed analytics now carry the user prompt and any partial AI response so failed queries are no longer invisible in support investigations",
-    "Removed the 10-minute inactivity cap on AI replies \u2014 slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button"
+    "Removed the 10-minute inactivity cap on AI replies \u2014 slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button",
+    "Internal: signin-optional experiment plumbing \u2014 anonymous Firebase sign-in on launch when the signin-optional PostHog flag is on; paywall and Settings present the existing sign-in window when an anonymous user wants to subscribe, and Google sign-in links to the same Firebase UID so trial state and Stripe customer carry over"
   ],
   "releases": [
     {
