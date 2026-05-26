@@ -69,30 +69,40 @@ class AuthState: ObservableObject {
     private static let kAuthUserEmail = "auth_userEmail"
     private static let kAuthUserId = "auth_tokenUserId"
     private static let kAuthIsSignedIn = "auth_isSignedIn"
+    private static let kAuthIsAnonymous = "auth_isAnonymous"
 
     @Published var isSignedIn: Bool = false
     @Published var isLoading: Bool = false
     @Published var error: String?
     @Published var userEmail: String?
+    /// True when the current Firebase user was created via signInAnonymously.
+    /// Drives UI branches: the paywall shows a "Sign in to subscribe" step
+    /// instead of going straight to Stripe, and Settings shows a "Save your
+    /// account" row so anon users can upgrade outside the paywall.
+    @Published var isAnonymous: Bool = false
 
     private init() {
         // Restore from UserDefaults — AuthService.configure() will update these
         let savedSignedIn = UserDefaults.standard.bool(forKey: Self.kAuthIsSignedIn)
         self.isSignedIn = savedSignedIn
         self.userEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
+        self.isAnonymous = UserDefaults.standard.bool(forKey: Self.kAuthIsAnonymous)
 
-        NSLog("FazmApp AuthState: Initialized, savedSignedIn=%@, email=%@, userId=%@",
+        NSLog("FazmApp AuthState: Initialized, savedSignedIn=%@, isAnonymous=%@, email=%@, userId=%@",
               savedSignedIn ? "true" : "false",
+              self.isAnonymous ? "true" : "false",
               self.userEmail ?? "nil",
               UserDefaults.standard.string(forKey: Self.kAuthUserId) ?? "nil")
     }
 
-    func update(isSignedIn: Bool, userEmail: String? = nil) {
+    func update(isSignedIn: Bool, userEmail: String? = nil, isAnonymous: Bool = false) {
         self.isSignedIn = isSignedIn
         UserDefaults.standard.set(isSignedIn, forKey: Self.kAuthIsSignedIn)
         if let email = userEmail {
             self.userEmail = email
         }
+        self.isAnonymous = isAnonymous
+        UserDefaults.standard.set(isAnonymous, forKey: Self.kAuthIsAnonymous)
     }
 
     /// Get the user's UID from UserDefaults (set by AuthService on sign-in)
