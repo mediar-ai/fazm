@@ -435,6 +435,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             SessionRecordingPermissionWindowController.shared.showForTesting()
         }
 
+        // Test trigger: re-enter onboarding without signing out or resetting permissions.
+        // Lightweight reset — keeps sign-in + permissions, just flips hasCompletedOnboarding
+        // and clears persisted onboarding chat state so the user sees OnboardingView again.
+        // Legacy: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testOnboarding"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testOnboarding` with `com.fazm.desktop-dev.testOnboarding` (dev) or `com.fazm.app.testOnboarding` (prod).
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testOnboarding"
+        ) { _ in
+            Task { @MainActor in
+                log("FazmApp: testOnboarding triggered — resetting hasCompletedOnboarding")
+                UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+                UserDefaults.standard.removeObject(forKey: "onboardingWasSkipped")
+                OnboardingChatPersistence.clear()
+                // Bring the main Fazm window to the front so the user actually sees it.
+                NSApp.activate(ignoringOtherApps: true)
+                for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+        }
+
+        // Test trigger: open the founder chat sheet inside onboarding.
+        // The distributed notification is registered here once at launch; it
+        // rebroadcasts as a local NotificationCenter event that OnboardingView
+        // observes via .onReceive (avoids leaking an observer per OnboardingView mount).
+        // Legacy: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.openFounderChatInOnboarding"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.openFounderChatInOnboarding` with `com.fazm.desktop-dev.openFounderChatInOnboarding` (dev) or `com.fazm.app.openFounderChatInOnboarding` (prod).
+        DistributedNotificationCenter.default().addFazmObserver(
+            "openFounderChatInOnboarding"
+        ) { _ in
+            Task { @MainActor in
+                log("FazmApp: openFounderChatInOnboarding triggered")
+                NotificationCenter.default.post(name: .openFounderChatInOnboarding, object: nil)
+            }
+        }
+
         // One-time migration: Switch existing users from personal OAuth to bundled built-in
         migrateBridgeModeToBuiltin()
 
