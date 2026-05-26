@@ -648,6 +648,12 @@ interface InFlightTool {
   sessionId: string | undefined;
   sessionKey: string | undefined;
   startedAt: number;
+  /// Wall time of the most recent tool_call_update from the SDK for this tool.
+  /// Initialized to startedAt; refreshed on every status update. Surfaced in
+  /// the heartbeat (as `MCP_SILENT_FOR=Xs`) for `mcp__`-prefixed tools so a
+  /// wedged SDK→MCP subprocess forward is visible in logs minutes before the
+  /// 600s ask_followup safety-net timer fires.
+  lastUpdateAt: number;
   rawInput: Record<string, unknown> | undefined;
   lastStatus: string;
   lastLoggedInputFingerprint: string;
@@ -5057,12 +5063,14 @@ function handleSessionUpdate(
         });
 
         // Track this tool so we can dump what's stuck when an interrupt fires
+        const startedAt = Date.now();
         inFlightTools.set(toolCallId, {
           title,
           kind,
           sessionId: sid,
           sessionKey: sessionKeyForLog,
-          startedAt: Date.now(),
+          startedAt,
+          lastUpdateAt: startedAt,
           rawInput,
           lastStatus: status,
           lastLoggedInputFingerprint: fingerprintInput(rawInput),
@@ -5090,6 +5098,14 @@ function handleSessionUpdate(
 
       // ToolSearch is hidden from UI (see tool_call case)
       const isInternalTool = title === "ToolSearch";
+
+      // Refresh the silence tracker on every update (any status). The heartbeat
+      // reads `lastUpdateAt` to surface MCP tools that have stopped emitting
+      // updates — a strong signal the SDK↔MCP-subprocess forward is wedged.
+      {
+        const tracked = inFlightTools.get(toolCallId);
+        if (tracked) tracked.lastUpdateAt = Date.now();
+      }
 
       // Pending/in_progress updates often carry the *populated* rawInput that
       // was empty at tool_call time (Claude streams arguments). Record the
@@ -5712,10 +5728,21 @@ async function main(): Promise<void> {
         type: "status_change",
         status: `working:${tool.title}@${(elapsedMs / 1000).toFixed(0)}s`,
       });
+      // Highlight stuck MCP tools: when an `mcp__*` tool's status updates dry
+      // up for more than 5s, the SDK→MCP-subprocess forward is the most likely
+      // wedge (vs. genuine slow work, which keeps emitting in_progress updates
+      // and rawInput changes). Pair this with the MCP server's [liveness] log
+      // to localize: bytes flowing = JSON-parse stall, no bytes = SDK silent.
+      const silenceMs = now - tool.lastUpdateAt;
+      const mcpSilenceTag =
+        tool.title.startsWith("mcp__") && silenceMs > 5_000
+          ? ` MCP_SILENT_FOR=${(silenceMs / 1000).toFixed(1)}s`
+          : "";
       logErr(
         `Tool heartbeat: ${tool.title} (id=${toolCallId}, kind=${tool.kind}, ` +
           `session=${tool.sessionKey ?? tool.sessionId ?? "?"}) ` +
-          `still running, elapsed=${(elapsedMs / 1000).toFixed(1)}s`,
+          `still running, elapsed=${(elapsedMs / 1000).toFixed(1)}s` +
+          mcpSilenceTag,
       );
     }
     // Drop heartbeat timestamps for tools that have completed
