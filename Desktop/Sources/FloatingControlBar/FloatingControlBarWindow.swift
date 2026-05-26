@@ -1584,7 +1584,7 @@ class FloatingControlBarManager {
                     provider.claudeAuthRetryCooldownEnd = Date().addingTimeInterval(30)
                 }
                 provider.isClaudeAuthRequired = true
-                ClaudeAuthWindowController.shared.show(chatProvider: provider)
+                PersonalAccountChooserWindowController.shared.show(chatProvider: provider, source: "debug_claude_auth")
             }
         }
 
