@@ -353,6 +353,13 @@ class AuthService: NSObject {
     /// give them their real account back rather than blocking them.
     private func signInWithGoogleIdToken(_ googleIdToken: String) async throws {
         let attemptingLink = isAnonymous && self.idToken != nil
+        // Capture the anon user's identity BEFORE the call. If the link fails
+        // and we fall back to plain sign-in, we'll use these to self-delete
+        // the orphan from Firebase Auth so the analytics dashboard doesn't
+        // accumulate ghost rows.
+        let orphanCandidateUid = attemptingLink ? self.userId : nil
+        let orphanCandidateIdToken = attemptingLink ? self.idToken : nil
+
         var json = try await callFirebaseSignInWithIdp(
             googleIdToken: googleIdToken,
             linkToExistingIdToken: attemptingLink ? self.idToken : nil
@@ -361,15 +368,17 @@ class AuthService: NSObject {
         // If a link attempt failed because the credential is already in use
         // by another Firebase user, retry as a fresh sign-in (no idToken).
         // The anon UID gets orphaned but the user lands in their real account.
+        var didFallBack = false
         if attemptingLink, let errorCode = json["__errorCode__"] as? String,
            errorCode.contains("FEDERATED_USER_ID_ALREADY_LINKED") ||
            errorCode.contains("EMAIL_EXISTS") ||
            errorCode.contains("CREDENTIAL_ALREADY_IN_USE") {
-            log("AuthService: link rejected (\(errorCode)) — Google account already on another Firebase user; falling back to plain sign-in (anon UID will be abandoned)")
+            log("AuthService: link rejected (\(errorCode)) — Google account already on another Firebase user; falling back to plain sign-in (anon UID will be deleted)")
             json = try await callFirebaseSignInWithIdp(
                 googleIdToken: googleIdToken,
                 linkToExistingIdToken: nil
             )
+            didFallBack = true
         }
 
         if let errorCode = json["__errorCode__"] as? String {
@@ -378,6 +387,21 @@ class AuthService: NSObject {
         }
 
         try processFirebaseAuthResponse(json, provider: "google")
+
+        // Fallback succeeded: delete the orphaned anon Firebase user so it
+        // doesn't sit in Auth forever cluttering the analytics dashboard with
+        // ghost rows. Uses the anon user's OWN idToken to authorize the
+        // self-delete (REST /accounts:delete acts on the token bearer's UID),
+        // so we don't need any backend or Firebase Admin SDK changes. Fire and
+        // forget — if it fails we just have one stale row, not a real problem.
+        if didFallBack,
+           let anonUid = orphanCandidateUid,
+           let anonIdToken = orphanCandidateIdToken,
+           anonUid != self.userId {
+            Task.detached { [weak self] in
+                await self?.deleteOrphanedAnonymousUser(anonUid: anonUid, anonIdToken: anonIdToken)
+            }
+        }
 
         // Also sign in via Firebase SDK for auth state listener
         if let credential = GoogleAuthProvider.credential(withIDToken: googleIdToken, accessToken: "") as AuthCredential? {
@@ -392,6 +416,45 @@ class AuthService: NSObject {
                 // Non-fatal — the REST API token is sufficient
                 log("AuthService: Firebase SDK sign-in failed (non-fatal): \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// Self-delete a Firebase user via REST `/v1/accounts:delete`. The
+    /// endpoint deletes the user identified by the supplied idToken — so we
+    /// can clean up an orphaned anonymous account without any backend or
+    /// Firebase Admin SDK plumbing. Called after the link-conflict fallback
+    /// signs the user into their existing named account, to keep the dashboard
+    /// clean of "ghost" anon UIDs from variant-B users who already had an
+    /// account. Errors are logged but never thrown — a stale row is better
+    /// than a broken sign-in.
+    private func deleteOrphanedAnonymousUser(anonUid: String, anonIdToken: String) async {
+        let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:delete?key=\(Self.firebaseAPIKey)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = ["idToken": anonIdToken]
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            log("AuthService: deleteOrphanedAnonymousUser body encode failed: \(error.localizedDescription)")
+            return
+        }
+        request.timeoutInterval = 15
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if statusCode == 200 {
+                log("AuthService: deleted orphaned anon UID \(anonUid)")
+                PostHogManager.shared.track("anonymous_account_orphan_deleted", properties: [
+                    "uid": anonUid
+                ])
+            } else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                log("AuthService: orphan-delete returned HTTP \(statusCode) for \(anonUid): \(body)")
+            }
+        } catch {
+            log("AuthService: orphan-delete network error for \(anonUid): \(error.localizedDescription)")
         }
     }
 
