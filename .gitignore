@@ -50,7 +50,7 @@ local/
 scripts/
 !scripts/generate-appcast.sh
 !scripts/deploy-appcast.sh
-!scripts/macstadium/
+!scripts/macstadium/install-fazm.sh
 !acp-bridge/scripts/
 
 # Swift compiler diagnostics cache
