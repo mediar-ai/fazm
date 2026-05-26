@@ -186,8 +186,7 @@ private struct CodexAuthWindowContent: View {
     }
 }
 
-/// Manages a single floating window for the Codex OAuth flow. Mirrors
-/// `ClaudeAuthWindowController` so the two flows feel similar.
+/// Manages a single floating window for the Codex OAuth flow.
 @MainActor
 final class CodexAuthWindowController {
     static let shared = CodexAuthWindowController()
