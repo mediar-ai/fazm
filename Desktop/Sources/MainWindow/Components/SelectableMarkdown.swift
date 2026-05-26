@@ -371,7 +371,7 @@ struct SelectableMarkdown: View {
                 )
                 : highlightedCode(code, language: language, fontSize: codeFontSize)
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal, showsIndicators: true) {
                 PlainCopyText(attributedString: codeAttr, noWrap: true)
             }
             .padding(12)
@@ -605,7 +605,7 @@ struct CollapsibleCodeBlockView: View {
                     ]
                 )
                 : highlightedCode(displayedCode, language: language, fontSize: codeFontSize)
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal, showsIndicators: true) {
                 PlainCopyText(attributedString: codeAttr, noWrap: true)
             }
             .padding(.top, 12)
