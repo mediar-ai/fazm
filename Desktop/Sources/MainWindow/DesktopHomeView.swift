@@ -132,20 +132,6 @@ struct DesktopHomeView: View {
                 )
             }
         }
-        // When the bridge asks for Claude OAuth (token expired, never authed,
-        // etc.) surface the three-model chooser. This trigger was deleted on
-        // 2026-05-26 (commit 1e0a711b) during the standalone-window→chooser
-        // merge without being repointed at the new chooser controller, which
-        // left v2.9.40 with no auto-show path for `isClaudeAuthRequired` and
-        // stranded users on a hanging "thinking" spinner. Restore parity.
-        .onReceive(viewModelContainer.chatProvider.$isClaudeAuthRequired) { needs in
-            if needs {
-                PersonalAccountChooserWindowController.shared.show(
-                    chatProvider: viewModelContainer.chatProvider,
-                    source: "auth_required"
-                )
-            }
-        }
         // Paywall window is now triggered directly in ChatProvider.sendMessage()
         // so it works from all surfaces (floating bar, detached window, main window)
         .onAppear {
