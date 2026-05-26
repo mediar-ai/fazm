@@ -3909,10 +3909,22 @@ class ChatProvider: ObservableObject {
         let currentModel = ShortcutSettings.shared.selectedModel
         let isGeminiRouted = Self.isGeminiModelId(currentModel)
         if bridgeMode == "builtin" && isOverBuiltinCap && !isGeminiRouted {
-            log("ChatProvider: Builtin cost cap reached ($\(String(format: "%.2f", builtinCumulativeCostUsd))/$\(String(format: "%.0f", Self.builtinCostCapUsd))) — switching to personal mode")
             showCreditExhaustedAlert = true
-            await switchBridgeMode(to: "personal")
-            // Don't return — let the query proceed on the personal account
+            if isClaudeConnected {
+                // Existing Claude creds — flip to personal and proceed seamlessly.
+                log("ChatProvider: Builtin cost cap reached ($\(String(format: "%.2f", builtinCumulativeCostUsd))/$\(String(format: "%.0f", Self.builtinCostCapUsd))) — switching to personal Claude")
+                await switchBridgeMode(to: "personal")
+                // Don't return — let the query proceed on the personal account
+            } else {
+                // Capped and no personal creds. We can't bill the built-in key and
+                // can't silently OAuth, so let the user pick a provider (Gemini is
+                // free, no sign-in). Block this query; they re-send after choosing.
+                log("ChatProvider: Builtin cost cap reached ($\(String(format: "%.2f", builtinCumulativeCostUsd))/$\(String(format: "%.0f", Self.builtinCostCapUsd))) — opening account chooser")
+                PersonalAccountChooserWindowController.shared.show(chatProvider: self, source: "credit_exhausted")
+                sendingSessionKeys.remove(effectiveKey)
+                isSending = !sendingSessionKeys.isEmpty
+                return
+            }
         }
 
         // Ensure bridge is running
@@ -4867,10 +4879,17 @@ class ChatProvider: ObservableObject {
             if isBuiltinMode && !queryWasGemini {
                 builtinCumulativeCostUsd += queryResult.costUsd
                 if isOverBuiltinCap {
-                    log("ChatProvider: Builtin cost cap reached after query ($\(String(format: "%.2f", builtinCumulativeCostUsd))) — switching to personal mode")
                     showCreditExhaustedAlert = true
                     AnalyticsManager.shared.creditExhausted(previousMode: bridgeMode)
-                    await switchBridgeMode(to: "personal")
+                    if isClaudeConnected {
+                        log("ChatProvider: Builtin cost cap reached after query ($\(String(format: "%.2f", builtinCumulativeCostUsd))) — switching to personal Claude for next query")
+                        await switchBridgeMode(to: "personal")
+                    } else {
+                        // No personal creds — surface the 3-model chooser so the
+                        // next query has a provider (Gemini is free, no sign-in).
+                        log("ChatProvider: Builtin cost cap reached after query ($\(String(format: "%.2f", builtinCumulativeCostUsd))) — opening account chooser")
+                        PersonalAccountChooserWindowController.shared.show(chatProvider: self, source: "credit_exhausted_postquery")
+                    }
                 }
             }
 
