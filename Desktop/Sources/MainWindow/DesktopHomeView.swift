@@ -122,11 +122,6 @@ struct DesktopHomeView: View {
                 )
             }
         }
-        .onReceive(viewModelContainer.chatProvider.$isClaudeAuthRequired) { needs in
-            if needs {
-                ClaudeAuthWindowController.shared.show(chatProvider: viewModelContainer.chatProvider)
-            }
-        }
         // Paywall window is now triggered directly in ChatProvider.sendMessage()
         // so it works from all surfaces (floating bar, detached window, main window)
         .onAppear {
