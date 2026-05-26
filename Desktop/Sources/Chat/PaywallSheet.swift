@@ -494,11 +494,34 @@ struct PaywallSheet: View {
 
 private struct PaywallWindowContent: View {
     @ObservedObject var chatProvider: ChatProvider
+    @ObservedObject private var authState = AuthState.shared
     let onDismiss: () -> Void
+
+    /// Whether the embedded SignInView sheet is showing. Used for the
+    /// `signin-optional` experiment's variant-B upgrade path: anonymous user
+    /// taps Subscribe → SignInView appears → on success (Google linked or
+    /// magic-link sign-in), we auto-continue to Stripe checkout.
+    @State private var showingSignIn = false
+    /// User tapped Subscribe and we're waiting for sign-in to complete so we
+    /// can open checkout. Cleared if they cancel the sheet without signing in.
+    @State private var checkoutPendingAfterSignIn = false
 
     var body: some View {
         PaywallSheet(
             onSubscribe: {
+                if authState.isAnonymous {
+                    // Variant B: route through SignInView first so the anon
+                    // user becomes a named user before Stripe charges them.
+                    // Google credential flow runs link(with:) inside
+                    // signInWithGoogle and preserves the UID + trial state.
+                    // Magic-link signs in fresh (anon UID is abandoned); the
+                    // new Firebase user gets a fresh Stripe trial — fine for
+                    // the experiment, can be improved in a follow-up.
+                    log("PaywallSheet: anon user tapped Subscribe — presenting SignInView")
+                    checkoutPendingAfterSignIn = true
+                    showingSignIn = true
+                    return
+                }
                 Task { @MainActor in
                     do {
                         try await SubscriptionService.shared.openCheckout()
@@ -525,6 +548,31 @@ private struct PaywallWindowContent: View {
                 onDismiss()
             }
         )
+        .sheet(isPresented: $showingSignIn, onDismiss: {
+            // If user dismissed without signing in (cancelled), clear the
+            // pending flag so re-tapping Subscribe starts the flow fresh.
+            checkoutPendingAfterSignIn = false
+        }) {
+            SignInView(authState: authState)
+                .frame(width: 480, height: 600)
+        }
+        .onReceive(authState.$isAnonymous) { isAnon in
+            // Sign-in succeeded (anon → named via Google link, or fresh
+            // sign-in via magic link). Dismiss the sheet and continue to
+            // checkout so the user lands where they intended.
+            if !isAnon && checkoutPendingAfterSignIn {
+                log("PaywallSheet: anon→named transition detected — continuing to checkout")
+                showingSignIn = false
+                checkoutPendingAfterSignIn = false
+                Task { @MainActor in
+                    do {
+                        try await SubscriptionService.shared.openCheckout()
+                    } catch {
+                        log("PaywallSheet: post-link checkout failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
         .onReceive(chatProvider.$showPaywall.removeDuplicates().dropFirst()) { show in
             if !show {
                 onDismiss()
