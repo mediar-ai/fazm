@@ -229,7 +229,10 @@ final class PersonalAccountChooserWindowController {
         let content = ChooserWindowContent(
             chatProvider: chatProvider,
             codexBackend: CodexBackendManager.shared,
-            onDismiss: { controller.close() }
+            onDismiss: { controller.close() },
+            onHeightChange: { [weak self] height in
+                self?.resize(toContentHeight: height)
+            }
         )
 
         // Size the window to match whichever sheet variant will render. Sheet
@@ -275,6 +278,17 @@ final class PersonalAccountChooserWindowController {
         self.hostingView = hostingView
     }
 
+    private func resize(toContentHeight height: CGFloat) {
+        guard let window = window, abs(window.frame.size.height - height) > 0.5 else { return }
+        var frame = window.frame
+        let delta = height - frame.size.height
+        frame.size.height = height
+        // Keep the top edge of the window in place so content doesn't appear to jump down.
+        frame.origin.y -= delta
+        window.setFrame(frame, display: true, animate: true)
+        hostingView?.setFrameSize(NSSize(width: 440, height: height))
+    }
+
     func close() {
         window?.orderOut(nil)
         window = nil
@@ -288,6 +302,11 @@ private struct ChooserWindowContent: View {
     @ObservedObject var codexBackend: CodexBackendManager
     @ObservedObject var shortcutSettings: ShortcutSettings = .shared
     let onDismiss: () -> Void
+    let onHeightChange: (CGFloat) -> Void
+
+    /// When the user picks Claude without existing creds, the OAuth flow renders
+    /// inline (reusing `ClaudeAuthSheet`) instead of in a separate window.
+    @State private var showingClaudeAuth = false
 
     /// Gemini is offered as a free-no-cap fallback only when the bridge has
     /// confirmed it's reachable (FAZM_GEMINI_ENABLED on + probe succeeded).
@@ -310,6 +329,54 @@ private struct ChooserWindowContent: View {
     }
 
     var body: some View {
+        Group {
+            if showingClaudeAuth {
+                claudeAuthView
+            } else {
+                pickerView
+            }
+        }
+        .onAppear {
+            // Refresh detection in case the user installed claude or codex CLI
+            // mid-session (the startup probe wouldn't have seen them).
+            chatProvider.checkClaudeConnectionStatus(autoSwitchToPersonal: false)
+            reportPickerHeight()
+        }
+        .onChange(of: geminiAvailable) { reportPickerHeight() }
+        .onReceive(chatProvider.$isClaudeConnected.dropFirst()) { connected in
+            // OAuth completed successfully — close the chooser entirely.
+            if connected && showingClaudeAuth {
+                onDismiss()
+            }
+        }
+    }
+
+    /// Inline Claude OAuth, reusing the same view the standalone window used to host.
+    private var claudeAuthView: some View {
+        ClaudeAuthSheet(
+            onConnect: { chatProvider.startClaudeAuth() },
+            onCancel: {
+                // Return to the picker rather than closing the whole chooser, so
+                // the user can still choose Gemini or ChatGPT.
+                chatProvider.cancelClaudeAuth()
+                showingClaudeAuth = false
+                reportPickerHeight()
+            },
+            hasTimedOut: chatProvider.claudeAuthTimedOut,
+            hasFailed: chatProvider.claudeAuthFailed,
+            retryCooldownEnd: chatProvider.claudeAuthRetryCooldownEnd,
+            onRetry: { chatProvider.retryClaudeAuth() }
+        )
+        .onPreferenceChange(ClaudeAuthSheetHeightKey.self) { height in
+            onHeightChange(height)
+        }
+    }
+
+    private func reportPickerHeight() {
+        onHeightChange(geminiAvailable ? 600 : 460)
+    }
+
+    private var pickerView: some View {
         PersonalAccountChooserSheet(
             isClaudeConnected: chatProvider.isClaudeConnected,
             codexAuthMode: codexBackend.authMode,
@@ -319,14 +386,16 @@ private struct ChooserWindowContent: View {
                 AnalyticsManager.shared.personalAccountChooserPicked(
                     provider: "claude", alreadyAuthed: alreadyAuthed
                 )
-                onDismiss()
                 if alreadyAuthed {
                     // Creds already in keychain — just flip to personal; the
                     // bridge adopts them on the next session/new. No OAuth.
+                    onDismiss()
                     Task { await chatProvider.switchBridgeMode(to: "personal") }
                 } else {
-                    // No creds — run the existing Claude OAuth flow as-is.
-                    ClaudeAuthWindowController.shared.show(chatProvider: chatProvider)
+                    // No creds — run the Claude OAuth flow inline within this
+                    // same window (no separate auth window).
+                    showingClaudeAuth = true
+                    chatProvider.startClaudeAuth()
                 }
             },
             onPickCodex: {
@@ -374,10 +443,5 @@ private struct ChooserWindowContent: View {
                 onDismiss()
             }
         )
-        .onAppear {
-            // Refresh detection in case the user installed claude or codex CLI
-            // mid-session (the startup probe wouldn't have seen them).
-            chatProvider.checkClaudeConnectionStatus(autoSwitchToPersonal: false)
-        }
     }
 }
