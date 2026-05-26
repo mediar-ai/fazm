@@ -53,6 +53,17 @@ class ResourceMonitor {
     private var lastSampleHeapCapture: Date?
     private let sampleHeapCooldown: TimeInterval = 60
 
+    // CPU-triggered hot-thread attribution. Memory thresholds miss CPU-only
+    // pathologies (e.g. the session-recording capture loop pinning a core at
+    // ~100% with no memory spike). When summed per-thread CPU stays above this
+    // for several consecutive samples, we log which threads are hot. The walk is
+    // the same cheap mach calls as getCPUUsage(), so no sample/heap is taken.
+    private let cpuHotThreshold: Double = 80          // summed across threads; >100 possible
+    private let cpuHotConsecutiveSamples = 2
+    private let cpuDiagnosticCooldown: TimeInterval = 120
+    private var highCPUStreak = 0
+    private var lastCPUDiagnostic: Date?
+
     // How often to run system-health pollers (kernel panic, fseventsd RSS, iCloud, disk)
     private let systemHealthInterval: TimeInterval = 3600 // 1 hour
 
@@ -163,6 +174,7 @@ class ResourceMonitor {
         // Check for issues
         checkMemoryThresholds(snapshot)
         checkMemoryGrowthRate()
+        checkCPUUsage(snapshot)
 
         // Log periodically (every 5th sample = ~2.5 min)
         if memorySamples.count % 5 == 0 {
@@ -346,6 +358,41 @@ class ResourceMonitor {
                     "start_memory_mb": first.memoryMB,
                     "end_memory_mb": last.memoryMB
                 ]
+                SentrySDK.addBreadcrumb(breadcrumb)
+            }
+        }
+    }
+
+    /// Attribute sustained high CPU to specific threads. Unlike the memory
+    /// thresholds, this fires on CPU alone, so a busy capture/encode/analysis
+    /// loop gets logged even when memory is flat. Requires the load to persist
+    /// for `cpuHotConsecutiveSamples` ticks (avoids flagging transient spikes)
+    /// and is rate-limited by `cpuDiagnosticCooldown`.
+    private func checkCPUUsage(_ snapshot: ResourceSnapshot) {
+        guard snapshot.cpuUsage >= cpuHotThreshold else {
+            highCPUStreak = 0
+            return
+        }
+
+        highCPUStreak += 1
+        guard highCPUStreak >= cpuHotConsecutiveSamples else { return }
+
+        let now = Date()
+        guard lastCPUDiagnostic == nil || now.timeIntervalSince(lastCPUDiagnostic!) > cpuDiagnosticCooldown else { return }
+        lastCPUDiagnostic = now
+
+        log("ResourceMonitor: HIGH CPU \(String(format: "%.0f", snapshot.cpuUsage))% sustained over \(highCPUStreak) samples — attributing to threads")
+
+        let isDevBuild = self.isDevBuild
+        Task.detached(priority: .utility) { [self] in
+            let threadDiag = self.collectPerThreadCPUDiagnostics()
+            if !isDevBuild {
+                SentrySDK.configureScope { scope in
+                    scope.setContext(value: threadDiag, key: "hot_threads_cpu")
+                }
+                let breadcrumb = Breadcrumb(level: .warning, category: "cpu_diagnostics")
+                breadcrumb.message = "High CPU \(String(format: "%.0f", snapshot.cpuUsage))% — hot threads captured"
+                breadcrumb.data = ["cpu_percent": snapshot.cpuUsage, "hot_threads": threadDiag]
                 SentrySDK.addBreadcrumb(breadcrumb)
             }
         }
