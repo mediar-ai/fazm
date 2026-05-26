@@ -448,8 +448,9 @@ actor ACPBridge {
   /// when an inbound message (typically a cancellation `result`) arrives
   /// without a sessionKey field — usually because the bridge unregistered the
   /// session before emitting the catch-block result. Without this fallback the
-  /// per-pop-out continuation never resumes and the loading spinner spins for
-  /// the full inactivity timeout (currently 600s, up to 6× deferred while tools run).
+  /// per-pop-out continuation never resumes and the loading spinner spins
+  /// indefinitely (the steady-state query loop has no inactivity timeout —
+  /// cancellation is user-initiated via the stop button).
   private var sessionIdToKey: [String: String] = [:]
 
   /// Aliases that redirect lookups on an OLD session key to a NEW one. Set by
@@ -465,16 +466,17 @@ actor ACPBridge {
   /// Set when interrupt() is called so query() can skip remaining tool calls (legacy, for non-session queries)
   private var isInterrupted = false
   /// Counts ACP tools currently running (incremented on "Tool started", decremented on "Tool completed").
-  /// Used by waitForMessage to avoid timing out while ACP tools are actively executing. (legacy)
+  /// Kept for any future timeout-bounded callers of waitForMessage(timeout:) that
+  /// want to defer their cap while tools are active. The steady-state query loop
+  /// no longer enforces an inactivity timeout. (legacy)
   private var acpToolsRunning: Int = 0
   /// Timestamp of the most recent Tool started/completed event from ACP stderr.
-  /// The deferral logic in waitForMessage uses a sliding activity window (toolActivityWindow)
-  /// in addition to the instantaneous count, so a brief gap between two tool calls
-  /// (count momentarily 0) doesn't trip a premature timeout.
+  /// Paired with toolActivityWindow by the deferral logic in waitForMessage so
+  /// brief gaps between two tool calls don't trip a premature timeout when a
+  /// caller does pass a timeout.
   private var lastToolActivityAt: Date?
-  /// How recently a tool start/complete must have happened to keep deferring the timeout.
-  /// 60s is comfortably longer than the typical inter-tool gap but well short of the 600s
-  /// inactivity timeout, so genuine stalls still terminate.
+  /// Sliding activity window for the (timeout-bounded) deferral path in
+  /// waitForMessage. 60s is comfortably longer than the typical inter-tool gap.
   private let toolActivityWindow: TimeInterval = 60
 
   /// Whether the bridge subprocess is alive and ready
@@ -1203,23 +1205,22 @@ actor ACPBridge {
       }
     }
 
-    // Inactivity timeout: if no message arrives from the bridge for 10 minutes,
-    // consider the query stuck. The bridge has its own per-tool watchdog
-    // (TOOL_TIMEOUT_DEFAULT_MS = 5min for non-MCP, 2min for MCP) which fires
-    // first and synthesizes a failure to unblock the agent loop. The deferral
-    // logic in waitForMessage extends this further while ACP tools are still
-    // actively running (up to 6× = 1 hour total budget for legitimate long work
-    // like deep research, large refactors, multi-step Task sub-agents).
-    // Previously 180s caused legitimate long-running queries to be killed;
-    // see logs/fazm.log timeouts on 2026-04-30 (Task sub-agent kind=think
-    // hangs were the dominant offender).
-    let inactivityTimeout: TimeInterval = 600
+    // No inactivity timeout on the steady-state query loop. ACP itself defines
+    // no timeout (StopReason has no Timeout variant — only EndTurn/MaxTokens/
+    // MaxTurnRequests/Refusal/Cancelled) and Zed's reference client awaits the
+    // prompt response indefinitely. Cancellation is user-initiated via the
+    // stop button. Real stuck-process protection lives elsewhere: the Claude
+    // SDK's per-tool watchdog (TOOL_TIMEOUT_DEFAULT_MS = 5min non-MCP / 2min
+    // MCP) synthesizes a tool failure to unblock the agent loop, and if the
+    // bridge subprocess dies the JSON-RPC pipe closes and we see processExited.
+    // The previous 600s cap was hurting slow models (Gemini Pro queries hit
+    // exactly 600s with no output activity even when the model was working).
     var messageCount = 0
     var lastMessageTime = Date()
     while true {
       let message = try await (sessionKey != nil
-        ? waitForMessage(sessionKey: sessionKey!, timeout: inactivityTimeout)
-        : waitForMessage(timeout: inactivityTimeout))
+        ? waitForMessage(sessionKey: sessionKey!)
+        : waitForMessage())
       messageCount += 1
       let gapMs = Int(Date().timeIntervalSince(lastMessageTime) * 1000)
       lastMessageTime = Date()
