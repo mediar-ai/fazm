@@ -71,6 +71,12 @@ class AuthService: NSObject {
     private static let kGivenName = "user_givenName"
     private static let kFamilyName = "user_familyName"
     private static let kDisplayName = "user_displayName"
+    /// Persisted flag set by `signInAnonymously` and cleared by a successful
+    /// linkWithIdp upgrade or signOut. Used because Firebase's SDK
+    /// `Auth.auth().currentUser` is unreliable in this app's signing
+    /// configuration (the app lacks `keychain-access-groups` entitlements, so
+    /// SDK keychain writes fail). Authoritative source for `isAnonymous`.
+    private static let kIsAnonymous = "auth_isAnonymous"
 
     // MARK: - Published Properties
 
@@ -96,13 +102,16 @@ class AuthService: NSObject {
         return idToken != nil && userId != nil
     }
 
-    /// Whether the current Firebase user is anonymous (created via
-    /// `signInAnonymously` rather than Google/Apple/magic-link). Reads
-    /// directly from the Firebase SDK so the value always reflects reality,
-    /// including after a `linkWith…Credential` upgrade flips the user from
-    /// anonymous to named without changing the UID.
+    /// Whether the current user was created via `signInAnonymously` (the
+    /// `signin-optional` experiment's variant-B path) and hasn't yet upgraded
+    /// to a named account via REST link. Persisted in UserDefaults rather
+    /// than read from `Auth.auth().currentUser?.isAnonymous` because the
+    /// Firebase SDK can't reliably keep `currentUser` in this app's signing
+    /// configuration (no `keychain-access-groups` entitlement → SDK keychain
+    /// writes fail). The REST flow drives the app's notion of auth state, so
+    /// we track anon-ness alongside it.
     var isAnonymous: Bool {
-        return Auth.auth().currentUser?.isAnonymous ?? false
+        return UserDefaults.standard.bool(forKey: Self.kIsAnonymous)
     }
 
     // MARK: - Private State
@@ -392,17 +401,30 @@ class AuthService: NSObject {
     }
 
     /// Exchange Google id_token with Firebase signInWithIdp REST API.
+    /// When the current user is anonymous (variant B of the `signin-optional`
+    /// experiment), we pass the existing idToken in the request body so the
+    /// server LINKS the Google credential to that anon UID instead of
+    /// creating a brand-new user — preserves trial state, Stripe customer,
+    /// chat history, PostHog person, everything.
     private func signInWithGoogleIdToken(_ googleIdToken: String) async throws {
         let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=\(Self.firebaseAPIKey)")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "postBody": "id_token=\(googleIdToken)&providerId=google.com",
             "requestUri": "http://localhost",
             "returnSecureToken": true,
         ]
+        if isAnonymous, let existingIdToken = self.idToken {
+            // Server-side link: REST signInWithIdp treats `idToken` in the
+            // body as "link this credential to this existing user." Same
+            // localId comes back in the response so processFirebaseAuthResponse
+            // updates email/displayName but keeps the UID.
+            body["idToken"] = existingIdToken
+            log("AuthService: anon user — passing existing idToken for server-side Google link")
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -729,43 +751,51 @@ class AuthService: NSObject {
 
     // MARK: - Anonymous Sign-In
 
-    /// Sign in anonymously via Firebase — no UI, no browser, no user input.
-    /// Gives the device a real Firebase UID + idToken so backend calls work
-    /// without forcing the user through Google/Apple sign-in.
+    /// Sign in anonymously via the Firebase REST API — no UI, no browser, no
+    /// user input. Gives the device a real Firebase UID + idToken so backend
+    /// calls work without forcing the user through Google/Apple sign-in.
     ///
-    /// Used by the `signin-optional` PostHog experiment: variant B treats
-    /// new users with an anonymous account on first launch. If they later
-    /// want a real account (to pay, recover across devices), one of the
-    /// `linkWith…Credential` methods upgrades the anon user to named while
-    /// preserving the same UID and all backend data.
+    /// Uses REST `/accounts:signUp` (without email/password = anonymous)
+    /// instead of the Firebase SDK's `signInAnonymously()` because the SDK
+    /// writes tokens to the Keychain and this app lacks the
+    /// `keychain-access-groups` entitlement → SDK keychain writes throw and
+    /// the sign-in fails. The REST flow mirrors how Google/Apple sign-in
+    /// already work in this codebase.
+    ///
+    /// Used by the `signin-optional` PostHog experiment: variant B starts new
+    /// users with an anonymous account on first launch. If they later upgrade
+    /// (via `signInWithGoogle()` while anon), the REST link path preserves
+    /// the same UID and all backend data.
     func signInAnonymously() async throws {
         AnalyticsManager.shared.signInStarted(provider: "anonymous")
-        log("AuthService: Starting anonymous sign-in")
+        log("AuthService: Starting anonymous sign-in via REST signUp")
+
+        let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=\(Self.firebaseAPIKey)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Empty body with returnSecureToken: true creates an anonymous user.
+        let body: [String: Any] = ["returnSecureToken": true]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 15
 
         do {
-            let result = try await Auth.auth().signInAnonymously()
-            let user = result.user
-            let idToken = try await user.getIDToken()
-            // Firebase's User.refreshToken is `nullable` in the ObjC header and
-            // can also be present-but-empty for a broken session. Reject both
-            // so processFirebaseAuthResponse never persists a useless token.
-            guard let refreshToken = user.refreshToken, !refreshToken.isEmpty else {
-                logError("AuthService: anonymous sign-in returned empty refreshToken")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let responseBody = String(data: data, encoding: .utf8) ?? ""
+                logError("AuthService: anonymous sign-up REST failed (status \(statusCode)): \(responseBody)")
+                AnalyticsManager.shared.signInFailed(provider: "anonymous", error: "HTTP \(statusCode): \(responseBody)")
+                throw AuthError.serverError("Anonymous sign-up failed (status \(statusCode))")
+            }
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw AuthError.invalidResponse
             }
 
-            // Reuse the same post-auth cascade as Google/Apple/magic-link:
-            // token persistence, Sentry + PostHog identity, KeyService.fetchKeys,
-            // session-recording flag re-check. processFirebaseAuthResponse
-            // tolerates a missing email field — anon users don't have one.
-            let json: [String: Any] = [
-                "idToken": idToken,
-                "refreshToken": refreshToken,
-                "localId": user.uid,
-            ]
             try processFirebaseAuthResponse(json, provider: "anonymous")
             AnalyticsManager.shared.signInCompleted(provider: "anonymous")
-            log("AuthService: anonymous sign-in completed (uid: \(user.uid))")
+            log("AuthService: anonymous sign-in completed (uid: \(self.userId ?? "?"))")
         } catch {
             AnalyticsManager.shared.signInFailed(provider: "anonymous", error: error.localizedDescription)
             logError("AuthService: anonymous sign-in failed", error: error)
@@ -814,6 +844,13 @@ class AuthService: NSObject {
                 }
             }
         }
+
+        // Track anon state. Set when this is the initial anonymous sign-up;
+        // CLEARED on any other provider (google/apple/magic_link), which is
+        // how anon→named upgrades flip the flag — REST signInWithIdp with an
+        // existing idToken does a server-side link that keeps the UID stable
+        // but reports back as the upgraded provider, not "anonymous".
+        UserDefaults.standard.set(provider == "anonymous", forKey: Self.kIsAnonymous)
 
         saveAuthState()
         updateAuthState()
