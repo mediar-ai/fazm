@@ -121,8 +121,7 @@ enum KoahContextRedactor {
 ///    everything. ONLY for local smoke testing — never ship a build with this enabled
 ///    for end users. Toggle with `defaults write com.fazm.desktop-dev fazm_koah_force_show -bool true`.
 /// 2. Subscription active → never. Paid users see zero ads. Ever.
-/// 3. Completed onboarding → must be true. Serve to all free users once they are onboarded.
-/// 4. (Future) per-conversation user opt-out from in-app settings.
+/// 3. (Future) per-conversation user opt-out from in-app settings.
 @MainActor
 enum KoahAdGate {
     static let devForceShowKey = "fazm_koah_force_show"
@@ -130,7 +129,7 @@ enum KoahAdGate {
     static func shouldShowAd() -> Bool {
         if UserDefaults.standard.bool(forKey: devForceShowKey) { return true }
         if SubscriptionService.shared.isActive { return false }
-        return UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        return true
     }
 }
 
@@ -181,7 +180,7 @@ struct KoahAdView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: 8))
-                            Text("Remove Ads")
+                            Text("Go Ad-Free")
                                 .font(.system(size: 10, weight: .semibold))
                         }
                         .foregroundColor(FazmColors.purplePrimary)
