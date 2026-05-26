@@ -344,38 +344,37 @@ class AuthService: NSObject {
     /// server LINKS the Google credential to that anon UID instead of
     /// creating a brand-new user — preserves trial state, Stripe customer,
     /// chat history, PostHog person, everything.
+    ///
+    /// If the link fails because the Google account is already bound to
+    /// another Firebase user (`FEDERATED_USER_ID_ALREADY_LINKED` /
+    /// `EMAIL_EXISTS`), we retry without the `idToken` field — that signs the
+    /// user into their existing account, abandoning the anon UID. This is
+    /// the right UX: the user picked that Google identity on purpose, so
+    /// give them their real account back rather than blocking them.
     private func signInWithGoogleIdToken(_ googleIdToken: String) async throws {
-        let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=\(Self.firebaseAPIKey)")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let attemptingLink = isAnonymous && self.idToken != nil
+        var json = try await callFirebaseSignInWithIdp(
+            googleIdToken: googleIdToken,
+            linkToExistingIdToken: attemptingLink ? self.idToken : nil
+        )
 
-        var body: [String: Any] = [
-            "postBody": "id_token=\(googleIdToken)&providerId=google.com",
-            "requestUri": "http://localhost",
-            "returnSecureToken": true,
-        ]
-        if isAnonymous, let existingIdToken = self.idToken {
-            // Server-side link: REST signInWithIdp treats `idToken` in the
-            // body as "link this credential to this existing user." Same
-            // localId comes back in the response so processFirebaseAuthResponse
-            // updates email/displayName but keeps the UID.
-            body["idToken"] = existingIdToken
-            log("AuthService: anon user — passing existing idToken for server-side Google link")
-        }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            logError("AuthService: Firebase signInWithIdp failed (status \(statusCode)): \(responseBody)")
-            throw AuthError.serverError("Firebase signInWithIdp failed (status \(statusCode))")
+        // If a link attempt failed because the credential is already in use
+        // by another Firebase user, retry as a fresh sign-in (no idToken).
+        // The anon UID gets orphaned but the user lands in their real account.
+        if attemptingLink, let errorCode = json["__errorCode__"] as? String,
+           errorCode.contains("FEDERATED_USER_ID_ALREADY_LINKED") ||
+           errorCode.contains("EMAIL_EXISTS") ||
+           errorCode.contains("CREDENTIAL_ALREADY_IN_USE") {
+            log("AuthService: link rejected (\(errorCode)) — Google account already on another Firebase user; falling back to plain sign-in (anon UID will be abandoned)")
+            json = try await callFirebaseSignInWithIdp(
+                googleIdToken: googleIdToken,
+                linkToExistingIdToken: nil
+            )
         }
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AuthError.invalidResponse
+        if let errorCode = json["__errorCode__"] as? String {
+            // Either a non-recoverable link error or a plain-sign-in error.
+            throw AuthError.serverError("Firebase signInWithIdp failed: \(errorCode)")
         }
 
         try processFirebaseAuthResponse(json, provider: "google")
@@ -394,6 +393,65 @@ class AuthService: NSObject {
                 log("AuthService: Firebase SDK sign-in failed (non-fatal): \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Single REST call to `/accounts:signInWithIdp`. Returns the parsed JSON
+    /// on success; on a 400 error, returns a dict with `__errorCode__` set to
+    /// the Firebase error code so the caller can decide whether to retry
+    /// (e.g. fall back from link to plain sign-in when the credential is
+    /// already in use). Throws only on transport / parse / non-400 server
+    /// failures.
+    private func callFirebaseSignInWithIdp(
+        googleIdToken: String,
+        linkToExistingIdToken: String?
+    ) async throws -> [String: Any] {
+        let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=\(Self.firebaseAPIKey)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var body: [String: Any] = [
+            "postBody": "id_token=\(googleIdToken)&providerId=google.com",
+            "requestUri": "http://localhost",
+            "returnSecureToken": true,
+        ]
+        if let existingIdToken = linkToExistingIdToken {
+            body["idToken"] = existingIdToken
+            log("AuthService: signInWithIdp — link mode (anon UID will be upgraded if Google account is free)")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 400 {
+            // Surface the Firebase error code to the caller instead of
+            // throwing, so the caller can decide whether to retry. Firebase
+            // returns { "error": { "message": "FEDERATED_USER_ID_ALREADY_LINKED", … } }.
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            log("AuthService: signInWithIdp returned 400: \(responseBody)")
+            if let errJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let errObj = errJson["error"] as? [String: Any],
+               let message = errObj["message"] as? String {
+                return ["__errorCode__": message]
+            }
+            return ["__errorCode__": "UNKNOWN_400"]
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let statusCode = httpResponse.statusCode
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            logError("AuthService: Firebase signInWithIdp failed (status \(statusCode)): \(responseBody)")
+            throw AuthError.serverError("Firebase signInWithIdp failed (status \(statusCode))")
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AuthError.invalidResponse
+        }
+        return json
     }
 
     // MARK: - Magic Link (Email OTP) Sign-In
