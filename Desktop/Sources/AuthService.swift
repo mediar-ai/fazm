@@ -666,8 +666,10 @@ class AuthService: NSObject {
             let result = try await Auth.auth().signInAnonymously()
             let user = result.user
             let idToken = try await user.getIDToken()
-            let refreshToken = user.refreshToken ?? ""
-            guard !refreshToken.isEmpty else {
+            // Firebase's User.refreshToken is `nullable` in the ObjC header and
+            // can also be present-but-empty for a broken session. Reject both
+            // so processFirebaseAuthResponse never persists a useless token.
+            guard let refreshToken = user.refreshToken, !refreshToken.isEmpty else {
                 logError("AuthService: anonymous sign-in returned empty refreshToken")
                 throw AuthError.invalidResponse
             }
