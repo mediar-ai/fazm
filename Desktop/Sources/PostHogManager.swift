@@ -412,12 +412,22 @@ extension PostHogManager {
 
     // MARK: - Chat Events
 
-    func chatMessageSent(messageLength: Int, hasContext: Bool = false, source: String) {
-        track("Chat Message Sent", properties: [
+    /// Tracks every user-sent message across every surface (floating bar, onboarding
+    /// chat, conversation view, popouts). Fires BEFORE the ACP query runs, so this
+    /// is the only event guaranteed to capture user text even when the chat agent
+    /// later fails at warmup or mid-stream. `message_text` is capped to 1000 chars
+    /// to match the other text-bearing events (`chat_agent_query_completed`,
+    /// `floating_bar_query_sent`).
+    func chatMessageSent(messageLength: Int, hasContext: Bool = false, source: String, messageText: String = "") {
+        var props: [String: Any] = [
             "message_length": messageLength,
             "has_context": hasContext,
             "source": source
-        ])
+        ]
+        if !messageText.isEmpty {
+            props["message_text"] = String(messageText.prefix(1000))
+        }
+        track("Chat Message Sent", properties: props)
     }
 
     // MARK: - Search Events
