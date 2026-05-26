@@ -3951,11 +3951,17 @@ class ChatProvider: ObservableObject {
         pendingRetrySessionKey = sessionKey
         pendingRetryIsOnboarding = isOnboarding
 
-        // Track user message sent
+        // Track user message sent. We include the message text (capped to 1000
+        // chars in PostHogManager) so user queries are captured even when the
+        // ACP query later fails at warmup or mid-stream. Without this, failed
+        // queries leave us blind to what the user was actually trying to ask;
+        // `chat_agent_query_completed` (the other text-bearing event) only fires
+        // on the success path.
         AnalyticsManager.shared.chatMessageSent(
             messageLength: trimmedText.count,
             hasContext: systemPromptSuffix != nil || systemPromptPrefix != nil,
-            source: sessionKey ?? "default"
+            source: sessionKey ?? "default",
+            messageText: trimmedText
         )
 
         // Save user message to backend and add to UI.
@@ -4935,6 +4941,7 @@ class ChatProvider: ObservableObject {
             // ⚠️ error suffix is appended) so the saved text always includes the warning
             // and the backend stays consistent with the local DB.
             var hadPartialContent = false
+            var partialResponseText = ""
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                 messages[index].isStreaming = false
                 completeRemainingToolCalls(messageId: aiMessageId)
@@ -4947,6 +4954,7 @@ class ChatProvider: ObservableObject {
                 if let freshIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
                     hadPartialContent = !messages[freshIndex].text.isEmpty
                     if hadPartialContent {
+                        partialResponseText = messages[freshIndex].text
                         log("Bridge error after partial response — keeping \(messages[freshIndex].text.count) chars of streamed text")
                     }
                 }
@@ -5005,6 +5013,7 @@ class ChatProvider: ObservableObject {
                 model: ShortcutSettings.shared.selectedModel,
                 bridgeWasStartedAtQueryStart: bridgeWasStartedAtQueryStart,
                 hadPartialContent: hadPartialContent,
+                partialResponseText: partialResponseText,
                 toolsRunning: toolsRunning,
                 toolsUsed: toolNames,
                 sessionKey: effectiveKey
