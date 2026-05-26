@@ -1039,27 +1039,98 @@ async function handleJsonRpc(
   }
 }
 
+// --- Stdin liveness instrumentation ---
+//
+// Diagnoses the wedge where Claude SDK announces "Tool started" for an MCP
+// tool but this process never logs "Tool call received" — i.e. stdin sat
+// silent for minutes while the bridge's safety-net timer ticked toward the
+// 600s ask_followup timeout (`TOOL_TIMEOUTS_MS.ask_followup`). The
+// per-tick heartbeat tells us which layer wedged:
+//   (a) stdin byte_idle climbs alongside line_idle → SDK never wrote to our
+//       stdin; the gap is inside Claude SDK's MCP forwarding.
+//   (b) byte_idle stays low but line_idle climbs → bytes arrived without
+//       completing a JSON line (partial-line stall, no trailing newline).
+//   (c) line_idle resets but activeHandlers stays >0 → handleJsonRpc started
+//       and never finished; in-process deadlock.
+let lastStdinByteAt = Date.now();
+let lastStdinLineAt = Date.now();
+let totalStdinBytes = 0;
+let totalStdinLines = 0;
+let activeHandlers = 0;
+
+function startStdinLivenessHeartbeat(): void {
+  const TICK_MS = 30_000;
+  setInterval(() => {
+    const now = Date.now();
+    const byteIdleS = ((now - lastStdinByteAt) / 1000).toFixed(1);
+    const lineIdleS = ((now - lastStdinLineAt) / 1000).toFixed(1);
+    const pending = pendingToolCalls.size;
+    const handlers = activeHandlers;
+    // Emit only when something is in flight OR stdin has been quiet >2 min.
+    // Keeps the log clean for healthy short-lived sessions while still
+    // surfacing wedges (which always have pending work or long quiet).
+    if (pending === 0 && handlers === 0 && now - lastStdinLineAt < 120_000) {
+      return;
+    }
+    logErr(
+      `[liveness] stdin byte_idle=${byteIdleS}s line_idle=${lineIdleS}s ` +
+        `lines=${totalStdinLines} bytes=${totalStdinBytes} ` +
+        `pendingToolCalls=${pending} activeHandlers=${handlers}`,
+    );
+  }, TICK_MS).unref();
+}
+
 // --- Main ---
 
 async function main(): Promise<void> {
   // Connect to parent bridge pipe for tool forwarding
   await connectToPipe();
 
-  // Read JSON-RPC from stdin
-  const rl = createInterface({ input: process.stdin, terminal: false });
+  // Tap raw stdin bytes BEFORE readline so we can distinguish "no bytes
+  // arriving" from "bytes arriving but no line emitted". A Transform stream
+  // sits between stdin and readline; every chunk updates lastStdinByteAt
+  // before being forwarded into readline's line buffer.
+  const stdinTap = new Transform({
+    transform(chunk, _enc, cb) {
+      lastStdinByteAt = Date.now();
+      totalStdinBytes += chunk.length;
+      cb(null, chunk);
+    },
+  });
+  process.stdin.pipe(stdinTap);
+
+  // Read JSON-RPC from stdin (via the byte-counting tap)
+  const rl = createInterface({ input: stdinTap, terminal: false });
 
   rl.on("line", (line: string) => {
+    lastStdinLineAt = Date.now();
+    totalStdinLines += 1;
     if (!line.trim()) return;
     try {
       const msg = JSON.parse(line) as Record<string, unknown>;
-      handleJsonRpc(msg).catch((err) => {
-        logErr(`Error handling request: ${err}`);
-        // Send error response so ACP doesn't hang waiting
-        const id = msg.id;
-        if (id !== undefined && id !== null) {
-          sendErrorResponse(id, -32603, `Internal error: ${err}`);
-        }
-      });
+      // Per-line trace: pairs with the bridge's "Tool started" log so we can
+      // diff the SDK's claim of forwarding against what stdin actually saw.
+      const method = (msg.method as string | undefined) ?? "?";
+      const id = msg.id as string | number | undefined;
+      const params = msg.params as { name?: string } | undefined;
+      const toolName = params?.name;
+      logErr(
+        `[stdin] line method=${method} id=${id ?? "-"}` +
+          (toolName ? ` tool=${toolName}` : "") +
+          ` size=${line.length}`,
+      );
+      activeHandlers += 1;
+      handleJsonRpc(msg)
+        .catch((err) => {
+          logErr(`Error handling request: ${err}`);
+          // Send error response so ACP doesn't hang waiting
+          if (id !== undefined && id !== null) {
+            sendErrorResponse(id, -32603, `Internal error: ${err}`);
+          }
+        })
+        .finally(() => {
+          activeHandlers -= 1;
+        });
     } catch {
       logErr(`Invalid JSON: ${line.slice(0, 200)}`);
     }
@@ -1069,6 +1140,7 @@ async function main(): Promise<void> {
     process.exit(0);
   });
 
+  startStdinLivenessHeartbeat();
   logErr("fazm-tools stdio MCP server started");
 }
 
