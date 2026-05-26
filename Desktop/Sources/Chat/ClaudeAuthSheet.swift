@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-private struct ClaudeAuthSheetHeightKey: PreferenceKey {
+struct ClaudeAuthSheetHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 380
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
