@@ -560,8 +560,19 @@ class AuthService: NSObject {
     /// Verify a magic-link OTP and complete sign-in.
     /// Exchanges the code with the backend for a Firebase custom token, then exchanges
     /// that for an ID/refresh token via Firebase REST `signInWithCustomToken`.
+    ///
+    /// When the user is currently anonymous (variant-B of the `signin-optional`
+    /// experiment), magic-link can't preserve the anon UID — Firebase has no
+    /// "link via custom token" path, so the new sign-in necessarily creates or
+    /// signs into a different Firebase user. We capture the anon UID + idToken
+    /// before the new sign-in and self-delete the orphan once it lands, so the
+    /// analytics dashboard doesn't accumulate ghost rows.
     func verifyMagicLinkCode(email: String, code: String) async throws {
-        log("AuthService: Verifying magic-link code")
+        log("AuthService: Verifying magic-link code\(isAnonymous ? " (anon UID will be deleted after upgrade)" : "")")
+
+        // Snapshot anon identity before the new sign-in overwrites self.idToken.
+        let orphanCandidateUid = isAnonymous ? self.userId : nil
+        let orphanCandidateIdToken = isAnonymous ? self.idToken : nil
 
         let backendUrl = Self.backendBaseURL()
         guard !backendUrl.isEmpty else {
@@ -599,6 +610,18 @@ class AuthService: NSObject {
 
         AnalyticsManager.shared.signInCompleted(provider: "magic_link")
         log("AuthService: Magic-link sign-in completed successfully")
+
+        // Anon UID was abandoned by the new sign-in (different localId). Fire
+        // the self-delete via the anon's own idToken so the orphan doesn't
+        // sit in Firebase Auth. Same pattern as the Google link-conflict
+        // fallback; non-fatal if it fails.
+        if let anonUid = orphanCandidateUid,
+           let anonIdToken = orphanCandidateIdToken,
+           anonUid != self.userId {
+            Task.detached { [weak self] in
+                await self?.deleteOrphanedAnonymousUser(anonUid: anonUid, anonIdToken: anonIdToken)
+            }
+        }
     }
 
     /// Exchange a Firebase custom token for an ID/refresh token pair via the
