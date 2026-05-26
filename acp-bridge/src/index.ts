@@ -773,6 +773,30 @@ function logErr(msg: string): void {
   }
 }
 
+const MCP_AUDIT_LOG_PATH = "/tmp/fazm-mcp-audit.jsonl";
+
+type McpAuditEntry = {
+  ts: string;
+  event: "start" | "end";
+  session_id?: string;
+  session_key?: string;
+  tool_call_id: string;
+  tool: string;
+  status?: string;
+  input?: string | null;
+  output?: string | null;
+  duration_ms?: number | null;
+  is_error?: boolean | null;
+};
+
+function writeMcpAuditEntry(entry: McpAuditEntry): void {
+  try {
+    appendFileSync(MCP_AUDIT_LOG_PATH, JSON.stringify(entry) + "\n");
+  } catch {
+    // Audit logging must never break the actual tool flow.
+  }
+}
+
 // --- OMI tools relay via Unix socket ---
 
 let fazmToolsPipePath = "";
@@ -5021,6 +5045,17 @@ function handleSessionUpdate(
             (inputSummary ? ` [${inputSummary}]` : " [no input yet]"),
         );
 
+        writeMcpAuditEntry({
+          ts: new Date().toISOString(),
+          event: "start",
+          session_id: sid ? sid.slice(0, 8) : undefined,
+          session_key: sessionKeyForLog,
+          tool_call_id: toolCallId,
+          tool: title,
+          status,
+          input: inputSummary || null,
+        });
+
         // Track this tool so we can dump what's stuck when an interrupt fires
         inFlightTools.set(toolCallId, {
           title,
@@ -5179,6 +5214,20 @@ function handleSessionUpdate(
         const sessionTag = tracked
           ? ` session=${tracked.sessionKey ?? tracked.sessionId ?? "?"}`
           : "";
+
+        writeMcpAuditEntry({
+          ts: new Date().toISOString(),
+          event: "end",
+          session_id: tracked?.sessionId ? tracked.sessionId.slice(0, 8) : (sid ? sid.slice(0, 8) : undefined),
+          session_key: tracked?.sessionKey,
+          tool_call_id: toolCallId,
+          tool: title,
+          status,
+          input: summary || null,
+          output: output ? output.replace(/\s+/g, " ").slice(0, 500) : null,
+          duration_ms: tracked ? Date.now() - tracked.startedAt : null,
+          is_error: isError || status === "failed",
+        });
         // Record a compact summary of this completed tool for the interrupt-
         // recovery preamble. Skip ToolSearch (internal) and pure tool_search
         // discovery, which would only clutter the preamble. `tracked.sessionId`
