@@ -442,8 +442,8 @@ class AnalyticsManager {
 
     // MARK: - Chat Events
 
-    func chatMessageSent(messageLength: Int, hasContext: Bool = false, source: String) {
-        PostHogManager.shared.chatMessageSent(messageLength: messageLength, hasContext: hasContext, source: source)
+    func chatMessageSent(messageLength: Int, hasContext: Bool = false, source: String, messageText: String = "") {
+        PostHogManager.shared.chatMessageSent(messageLength: messageLength, hasContext: hasContext, source: source, messageText: messageText)
     }
 
     // MARK: - Search Events
