@@ -9,6 +9,7 @@
 
 import { createInterface } from "readline";
 import { createConnection } from "net";
+import { Transform } from "node:stream";
 // @ts-ignore — sibling .mjs without types
 import { computeNextRun, validateSchedule } from "./schedule.mjs";
 import { randomUUID } from "node:crypto";
