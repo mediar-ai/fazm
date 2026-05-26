@@ -1889,6 +1889,11 @@ actor ACPBridge {
     // Debug: log routing for text/thinking/tool messages
     switch message {
     case .textDelta(let text):
+      // Per-window streaming attribution. Each delta grows the message and forces a
+      // scroll-view reflow on the shared main thread; the ResourceMonitor HOT THREAD log
+      // can only see "thread-0", not which pop-out window owns the churn. Counting deltas
+      // per sessionKey lets the COMPONENTS line attribute render load to a specific window.
+      ResourceCounters.shared.increment("streamDeltas_\(sessionKey ?? "floating")")
       log("ACPBridge: deliverMessage textDelta sessionKey=\(sessionKey ?? "nil") text='\(text.prefix(30))'")
     case .thinkingDelta(let text):
       if text.count > 20 { // skip tiny deltas to reduce noise
@@ -1897,6 +1902,9 @@ actor ACPBridge {
     case .toolUse(_, let name, _):
       log("ACPBridge: deliverMessage toolUse sessionKey=\(sessionKey ?? "nil") name=\(name)")
     case .result(let text, let sid, _, _, _, _, _, let interrupted):
+      // Stream finished for this window — drop its per-window delta counter so the
+      // COMPONENTS line lists only windows that are actively streaming right now.
+      ResourceCounters.shared.clear("streamDeltas_\(sessionKey ?? "floating")")
       log("ACPBridge: deliverMessage result sessionKey=\(sessionKey ?? "nil") sessionId=\(sid) text='\(text.prefix(40))' interrupted=\(interrupted)")
     default:
       break
