@@ -712,75 +712,14 @@ struct AIResponseView: View {
 
     /// Renders a ChatMessage's content blocks using the shared components from ChatPage.
     @ViewBuilder
-    private func contentBlocksView(for message: ChatMessage) -> some View {
-        if !message.contentBlocks.isEmpty {
-            let grouped = ContentBlockGroup.group(message.contentBlocks)
-            let chatObserverCards = grouped.compactMap { group -> (id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String?)? in
-                if case .observerCard(let id, let activityId, let type, let content, let buttons, let actedAction) = group {
-                    return (id, activityId, type, content, buttons, actedAction)
-                }
-                return nil
+    private func contentBlocksView(for message: ChatMessage) -> MessageContentBlocks {
+        MessageContentBlocks(
+            message: message,
+            isChatObserverRunning: streaming.isChatObserverRunning,
+            onChatObserverCardAction: { [self] activityId, action in
+                handleChatObserverCardAction(activityId: activityId, action: action)
             }
-            let nonChatObserverGroups = grouped.filter {
-                if case .observerCard = $0 { return false }
-                return true
-            }
-
-            // Render non-chat-observer blocks normally
-            ForEach(nonChatObserverGroups) { group in
-                switch group {
-                case .text(_, let text):
-                    SelectableMarkdown(text: text, sender: .ai)
-                        .environment(\.compactCodeBlocks, true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .toolCalls(_, let calls):
-                    ToolCallsGroup(calls: calls)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .thinking(_, let text):
-                    ThinkingBlock(text: text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .discoveryCard(_, let title, let summary, let fullText):
-                    DiscoveryCard(title: title, summary: summary, fullText: fullText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .observerCard:
-                    EmptyView() // handled below
-                case .systemEvent(_, let event):
-                    SystemEventCardView(event: event)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .browserActivity(_, _, let toolName, let action, let mode, let url, let status):
-                    BrowserActivityCard(
-                        toolName: toolName, action: action, mode: mode,
-                        url: url, status: status
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-
-            // Render chat observer cards as a compact stack (thinking-only state shown near input)
-            if !chatObserverCards.isEmpty {
-                ObserverCardStackView(
-                    cards: chatObserverCards.map { card in
-                        ObserverCardItem(
-                            id: card.id,
-                            activityId: card.activityId,
-                            type: card.type,
-                            content: card.content,
-                            buttons: card.buttons,
-                            actedAction: card.actedAction
-                        )
-                    },
-                    isChatObserverRunning: streaming.isChatObserverRunning,
-                    onAction: { id, action in
-                        handleChatObserverCardAction(activityId: id, action: action)
-                    }
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        } else if !message.text.isEmpty {
-            SelectableMarkdown(text: message.text, sender: .ai)
-                .environment(\.compactCodeBlocks, true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        )
     }
 
     private func handleChatObserverCardAction(activityId: Int64, action: String) {
