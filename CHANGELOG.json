@@ -10,7 +10,8 @@
     "Internal: Chat Message Sent and chat_agent_query_failed analytics now carry the user prompt and any partial AI response so failed queries are no longer invisible in support investigations",
     "Removed the 10-minute inactivity cap on AI replies \u2014 slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button",
     "Internal: signin-optional experiment plumbing \u2014 anonymous Firebase sign-in on first launch when the signin-optional PostHog flag picks treatment; goes through the REST signUp endpoint so it works without keychain-access-groups entitlement. Paywall and Settings present the existing sign-in window when an anonymous user wants to subscribe; Google sign-in then links to the same Firebase UID via REST signInWithIdp so trial date, Stripe customer, and chat history carry over",
-    "Fixed Claude OAuth re-auth not appearing when token expired (chat would hang on thinking)"
+    "Fixed Claude OAuth re-auth not appearing when token expired (chat would hang on thinking)",
+    "Added \"Stuck? Chat with us\" button on onboarding so new users can message the founder without finishing setup first"
   ],
   "releases": [
     {
