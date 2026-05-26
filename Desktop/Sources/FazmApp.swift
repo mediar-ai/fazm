@@ -373,6 +373,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         AnalyticsManager.shared.trackFirstLaunchIfNeeded()
 
+        // Download A/B test attribution: the website writes "fazm:vid=<id>" to
+        // the clipboard when the user clicks the direct-download CTA (treatment
+        // arm). Read it exactly once per install so PostHog can stitch this
+        // anonymous device to the signup that follows. Treatment-arm users
+        // never give their email on the site, so without this handoff the
+        // paid-conversion attribution for that arm is blind.
+        if !UserDefaults.standard.bool(forKey: "didCaptureVisitorIdFromClipboard") {
+            UserDefaults.standard.set(true, forKey: "didCaptureVisitorIdFromClipboard")
+            if let pasted = NSPasteboard.general.string(forType: .string),
+               pasted.hasPrefix("fazm:vid=") {
+                let vid = String(pasted.dropFirst("fazm:vid=".count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let isValid = vid.count >= 8 && vid.count <= 64 &&
+                    vid.allSatisfy { $0.isLetter || $0.isNumber }
+                if isValid {
+                    log("FazmApp: Captured visitor_id=\(vid) from clipboard")
+                    PostHogManager.shared.setUserProperty(key: "visitor_id", value: vid)
+                    NSPasteboard.general.clearContents()
+                }
+            }
+        }
+
         // Set per-user database path before any async tasks can trigger DB initialization.
         // This is synchronous and must happen before TierManager / TranscriptionRetryService.
         let userId = UserDefaults.standard.string(forKey: "auth_tokenUserId")
