@@ -722,6 +722,99 @@ struct AIResponseView: View {
         )
     }
 
+    /// Renders one message's content blocks. Conforms to `Equatable` so completed
+    /// (history) exchanges can be wrapped with `.equatable()` at the call site —
+    /// while a new turn streams, SwiftUI then skips re-rendering every prior
+    /// bubble's markdown instead of reflowing the whole VStack per token. The
+    /// message list is a plain VStack (not LazyVStack — `.defaultScrollAnchor(.bottom)`
+    /// needs the full content height), so before this every streamed token forced an
+    /// O(history) markdown re-render + re-layout. History exchanges are immutable, so
+    /// (id + block count + text length) uniquely identifies the rendered content; the
+    /// streaming bubble is rendered without `.equatable()` and keeps updating live.
+    struct MessageContentBlocks: View, Equatable {
+        let message: ChatMessage
+        let isChatObserverRunning: Bool
+        let onChatObserverCardAction: (Int64, String) -> Void
+
+        static func == (lhs: MessageContentBlocks, rhs: MessageContentBlocks) -> Bool {
+            lhs.message.id == rhs.message.id
+                && lhs.message.contentBlocks.count == rhs.message.contentBlocks.count
+                && lhs.message.text.count == rhs.message.text.count
+                && lhs.isChatObserverRunning == rhs.isChatObserverRunning
+        }
+
+        var body: some View {
+            if !message.contentBlocks.isEmpty {
+                let grouped = ContentBlockGroup.group(message.contentBlocks)
+                let chatObserverCards = grouped.compactMap { group -> (id: String, activityId: Int64, type: String, content: String, buttons: [ObserverCardButton], actedAction: String?)? in
+                    if case .observerCard(let id, let activityId, let type, let content, let buttons, let actedAction) = group {
+                        return (id, activityId, type, content, buttons, actedAction)
+                    }
+                    return nil
+                }
+                let nonChatObserverGroups = grouped.filter {
+                    if case .observerCard = $0 { return false }
+                    return true
+                }
+
+                // Render non-chat-observer blocks normally
+                ForEach(nonChatObserverGroups) { group in
+                    switch group {
+                    case .text(_, let text):
+                        SelectableMarkdown(text: text, sender: .ai)
+                            .environment(\.compactCodeBlocks, true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .toolCalls(_, let calls):
+                        ToolCallsGroup(calls: calls)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .thinking(_, let text):
+                        ThinkingBlock(text: text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .discoveryCard(_, let title, let summary, let fullText):
+                        DiscoveryCard(title: title, summary: summary, fullText: fullText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .observerCard:
+                        EmptyView() // handled below
+                    case .systemEvent(_, let event):
+                        SystemEventCardView(event: event)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    case .browserActivity(_, _, let toolName, let action, let mode, let url, let status):
+                        BrowserActivityCard(
+                            toolName: toolName, action: action, mode: mode,
+                            url: url, status: status
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // Render chat observer cards as a compact stack (thinking-only state shown near input)
+                if !chatObserverCards.isEmpty {
+                    ObserverCardStackView(
+                        cards: chatObserverCards.map { card in
+                            ObserverCardItem(
+                                id: card.id,
+                                activityId: card.activityId,
+                                type: card.type,
+                                content: card.content,
+                                buttons: card.buttons,
+                                actedAction: card.actedAction
+                            )
+                        },
+                        isChatObserverRunning: isChatObserverRunning,
+                        onAction: { id, action in
+                            onChatObserverCardAction(id, action)
+                        }
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else if !message.text.isEmpty {
+                SelectableMarkdown(text: message.text, sender: .ai)
+                    .environment(\.compactCodeBlocks, true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     private func handleChatObserverCardAction(activityId: Int64, action: String) {
         onChatObserverCardAction?(activityId, action)
         // Persist the action in the content block so it survives view recreation
@@ -835,7 +928,10 @@ struct AIResponseView: View {
                     NSPasteboard.general.setString(exchange.aiMessage.copyableText, forType: .string)
                 } content: {
                     VStack(alignment: .leading, spacing: 4) {
+                        // Completed history exchange: memoize so a streaming turn doesn't
+                        // re-render this bubble's markdown every token. See MessageContentBlocks.
                         contentBlocksView(for: exchange.aiMessage)
+                            .equatable()
                     }
                     .padding(.horizontal, 4)
                 }
