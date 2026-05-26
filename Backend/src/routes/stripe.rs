@@ -18,22 +18,45 @@ use crate::config::Config;
 // from the user's email so the same address always gets the same arm whether
 // they check out via the website or the desktop app.
 //
-// Algorithm (must stay byte-identical to the TS version):
+// Algorithm (must stay byte-identical to the TS version for email-keyed users):
 //   variant = sha256(email.lower().trim()).digest()[0] % 2 == 0
 //           ? "control_999"
 //           : "treatment_1999"
+//
+// Anonymous-auth users have no email; we hash the Firebase UID instead so they
+// still participate in the A/B test 50/50 instead of pinning to control. The
+// website has no anon path, so it stays email-only.
 
-fn pricing_variant_for_email(email: &str, config: &Config) -> &'static str {
+fn pricing_variant_for_user(email: &str, uid: &str, config: &Config) -> &'static str {
     if !config.pricing_ab_enabled || config.stripe_price_id_treatment.is_empty() {
         return "control_999";
     }
     use sha2::{Digest, Sha256};
-    let normalized = email.trim().to_lowercase();
-    let digest = Sha256::digest(normalized.as_bytes());
+    let key = if !email.trim().is_empty() {
+        email.trim().to_lowercase()
+    } else if !uid.is_empty() {
+        uid.to_string()
+    } else {
+        return "control_999";
+    };
+    let digest = Sha256::digest(key.as_bytes());
     if digest[0] % 2 == 0 {
         "control_999"
     } else {
         "treatment_1999"
+    }
+}
+
+/// Validate a client-supplied variant string. Returns Some(static str) if known,
+/// None otherwise. Used to honor the variant the desktop paywall already showed
+/// the user so the checkout price matches what they saw, even if their email
+/// hash bucket would differ (e.g. anon user linked Google between paywall view
+/// and checkout).
+fn validate_client_variant(s: &str) -> Option<&'static str> {
+    match s {
+        "control_999" => Some("control_999"),
+        "treatment_1999" => Some("treatment_1999"),
+        _ => None,
     }
 }
 
@@ -74,11 +97,8 @@ pub async fn variant_price(
     Extension(auth): Extension<AuthDevice>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let firebase_email = auth.firebase_email.clone().unwrap_or_default();
-    let variant = if firebase_email.is_empty() {
-        "control_999"
-    } else {
-        pricing_variant_for_email(&firebase_email, &config)
-    };
+    let firebase_uid = auth.firebase_uid.clone().unwrap_or_default();
+    let variant = pricing_variant_for_user(&firebase_email, &firebase_uid, &config);
     let price_id = price_id_for_variant(variant, &config).to_string();
     let price_cents = price_cents_for_variant(variant);
     Ok(Json(VariantPriceResponse {
@@ -97,6 +117,13 @@ pub struct CreateCheckoutRequest {
     pub success_url: Option<String>,
     /// Where to redirect if user cancels
     pub cancel_url: Option<String>,
+    /// Optional client-supplied pricing variant. The desktop paywall calls
+    /// `/api/stripe/variant-price` first to render the price, then echoes the
+    /// returned variant here so the checkout charges what was shown, even if
+    /// the user's email-hash bucket changes between paywall view and checkout
+    /// (e.g. anonymous user linked Google credentials after seeing the price).
+    /// Unknown values are ignored; server recomputes from email/UID hash.
+    pub variant: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -149,20 +176,24 @@ pub async fn create_checkout_session(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    // Pricing A/B test: pick variant deterministically from the Firebase email.
-    // Falls back to control when the user has no email on file (rare, but the
-    // website also gates on `email.includes("@")`).
-    let variant = if firebase_email.is_empty() {
-        "control_999"
-    } else {
-        pricing_variant_for_email(&firebase_email, &config)
-    };
+    // Pricing A/B test: prefer the client-supplied variant (echoed back from the
+    // paywall's earlier `/api/stripe/variant-price` call) so the price the user
+    // saw matches the price they're charged. If the client didn't send one (or
+    // sent something unknown), recompute from email hash, falling back to UID
+    // hash for anon users without an email on file.
+    let client_variant = body
+        .variant
+        .as_deref()
+        .and_then(validate_client_variant);
+    let variant = client_variant
+        .unwrap_or_else(|| pricing_variant_for_user(&firebase_email, &firebase_uid, &config));
     let price_id = price_id_for_variant(variant, &config).to_string();
     tracing::info!(
         firebase_uid = %firebase_uid,
         firebase_email = %firebase_email,
         variant,
         price_id = %price_id,
+        client_supplied = client_variant.is_some(),
         "Pricing variant assigned"
     );
 
