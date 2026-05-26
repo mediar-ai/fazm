@@ -1190,6 +1190,12 @@ class ChatProvider: ObservableObject {
     init() {
         log("ChatProvider initialized, will start Claude bridge on first use")
 
+        // Wire up the centralized Claude-auth-required → chooser subscription
+        // BEFORE any code path that might flip the flag. setupBridgeAuthHandlers
+        // is also called from switchBridgeMode and from the auth-error handler,
+        // but those run later and we don't want to miss an early flip.
+        setupBridgeAuthHandlers()
+
         // Check if user has an active Claude Code CLI session and auto-switch to personal mode.
         // The keychain check is async (runs in Task.detached), so we must trigger the mode
         // switch from within the completion — not from a synchronous read of isClaudeConnected.
