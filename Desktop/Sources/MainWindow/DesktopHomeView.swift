@@ -10,9 +10,19 @@ struct DesktopHomeView: View {
     @State private var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection? = nil
     @State private var highlightedSettingId: String? = nil
 
+    // `signin-optional` experiment gate. While false, suppresses rendering of
+    // SignInView so we have a chance to evaluate the PostHog feature flag and
+    // (for variant B) sign the user in anonymously without ever showing the
+    // wall. Flips to true once the gate has been decided — either anonymous
+    // sign-in succeeded, failed, or the user is in the control cohort.
+    @State private var signInGateDecided = false
+
     var body: some View {
         Group {
-            if !authState.isSignedIn {
+            if !signInGateDecided && !authState.isSignedIn {
+                signInGateLoadingView
+                    .task { await evaluateSignInGate() }
+            } else if !authState.isSignedIn {
                 SignInView(authState: authState)
             } else if !appState.hasCompletedOnboarding {
                 if shouldSkipOnboarding() {
@@ -134,6 +144,61 @@ struct DesktopHomeView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Sign-In Gate (signin-optional experiment)
+
+    /// Brief placeholder shown while the `signin-optional` PostHog flag is
+    /// evaluated and (for variant B) anonymous sign-in completes. Avoids a
+    /// flash of SignInView before we know which cohort the user is in.
+    private var signInGateLoadingView: some View {
+        ZStack {
+            FazmColors.backgroundPrimary
+            ProgressView()
+                .controlSize(.large)
+                .tint(FazmColors.purplePrimary)
+        }
+    }
+
+    /// Read the `signin-optional` PostHog flag, emit an exposure event, and
+    /// for the treatment cohort sign the user in anonymously so the rest of
+    /// the app sees an authenticated UID without a wall. Sets
+    /// `signInGateDecided = true` exactly once per launch so the body falls
+    /// through to either onboarding (sign-in succeeded) or SignInView (control
+    /// cohort, or anonymous sign-in failed).
+    @MainActor
+    private func evaluateSignInGate() async {
+        guard !signInGateDecided else { return }
+
+        // Give PostHog's `preloadFeatureFlags = true` fetch a moment to complete.
+        // On first launch the SDK is still loading flags when the view appears;
+        // querying immediately would return false and incorrectly bucket every
+        // first-launch user into control. 600ms is enough for the cached
+        // initial fetch on a typical network without making the launch feel
+        // slow. Subsequent launches read from local cache and resolve instantly.
+        try? await Task.sleep(nanoseconds: 600_000_000)
+
+        let flagEnabled = PostHogManager.shared.isFeatureEnabled("signin-optional")
+        let variant = flagEnabled ? "treatment" : "control"
+        let deviceId = UserDefaults.standard.string(forKey: "analytics_device_id") ?? ""
+        PostHogManager.shared.track("signin_optional_exposed", properties: [
+            "variant": variant,
+            "device_id": deviceId
+        ])
+        log("DesktopHomeView: signin-optional gate evaluated — variant=\(variant)")
+
+        if flagEnabled {
+            do {
+                try await AuthService.shared.signInAnonymously()
+                // AuthState.isSignedIn flips to true via the post-auth cascade;
+                // the next render passes through to onboarding/settings.
+                UserDefaults.standard.set(true, forKey: "signInJustCompleted")
+            } catch {
+                log("DesktopHomeView: anonymous sign-in failed (\(error.localizedDescription)) — falling back to SignInView")
+            }
+        }
+
+        signInGateDecided = true
     }
 
     private var settingsContent: some View {
