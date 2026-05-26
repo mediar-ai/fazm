@@ -12,6 +12,7 @@ struct OnboardingView: View {
     @State private var showGraphHints = false
     @State private var hintsHovered = false
     @State private var showPrivacySheet = false
+    @State private var showFounderChat = false
 
     var body: some View {
         ZStack {
@@ -134,6 +135,45 @@ struct OnboardingView: View {
                         )
                     }
                 }
+        // Floating "Stuck? Chat with us" escape hatch — bottom-leading over the
+        // chat pane. Always visible during onboarding so a struggling user has a
+        // direct line to the founder without hunting for settings.
+        .overlay(alignment: .bottomLeading) {
+            Button(action: {
+                PostHogManager.shared.track("onboarding_founder_chat_opened", properties: [:])
+                showFounderChat = true
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .scaledFont(size: 11)
+                    Text("Stuck? Chat with us")
+                        .scaledFont(size: 12, weight: .medium)
+                }
+                .foregroundColor(FazmColors.textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(FazmColors.backgroundSecondary.opacity(0.85))
+                        .overlay(
+                            Capsule()
+                                .stroke(FazmColors.backgroundTertiary.opacity(0.6), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+        }
+        .sheet(isPresented: $showFounderChat) {
+            OnboardingFounderChatSheet(isPresented: $showFounderChat)
+        }
+        // Programmatic test hook — distributed observer is registered once at
+        // app launch in FazmApp (see `openFounderChatInOnboarding` handler),
+        // which rebroadcasts as a local NotificationCenter event we observe here.
+        .onReceive(NotificationCenter.default.publisher(for: .openFounderChatInOnboarding)) { _ in
+            log("OnboardingView: openFounderChatInOnboarding received")
+            showFounderChat = true
+        }
     }
 
     private func graphHintItem(icon: String, label: String) -> some View {
@@ -193,6 +233,54 @@ struct OnboardingView: View {
             onComplete()
         }
     }
+}
+
+// MARK: - Founder Chat Sheet (onboarding escape hatch)
+
+/// Wraps `FounderChatPage` in a sheet-sized frame with a header and close button.
+/// Reuses the existing `FounderChatService` so messages flow through Firestore
+/// exactly as they do from Settings — no duplicate state.
+struct OnboardingFounderChatSheet: View {
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Chat with the founder")
+                        .scaledFont(size: 15, weight: .semibold)
+                        .foregroundColor(FazmColors.textPrimary)
+                    Text("Stuck? Send us a message and we'll reply.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textSecondary)
+                }
+
+                Spacer()
+
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .scaledFont(size: 18)
+                        .foregroundColor(FazmColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            FounderChatPage()
+        }
+        .frame(width: 560, height: 640)
+        .background(FazmColors.backgroundPrimary)
+    }
+}
+
+extension Notification.Name {
+    /// Posted (locally) when the `openFounderChatInOnboarding` distributed
+    /// notification fires. OnboardingView observes this to surface the sheet.
+    static let openFounderChatInOnboarding = Notification.Name("com.fazm.local.openFounderChatInOnboarding")
 }
 
 // MARK: - Onboarding Video View
