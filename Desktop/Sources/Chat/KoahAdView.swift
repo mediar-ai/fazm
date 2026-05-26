@@ -45,7 +45,16 @@ enum KoahIDs {
     /// fazm-website/src/app/privacy/page.tsx; section "Advertising and Free Tier"
     /// describes the Koah data flow). Order Form with Koah still TBD; pre-Order-Form
     /// traffic is allowed under the signed Publisher Agreement and Demo billing rules.
-    static let activePublisherID = productionPublisherID
+    static var activePublisherID: String {
+        #if DEBUG
+        return demoPublisherID
+        #else
+        if UserDefaults.standard.bool(forKey: "fazm_koah_force_show") {
+            return demoPublisherID
+        }
+        return productionPublisherID
+        #endif
+    }
 }
 
 // MARK: - Redactor
