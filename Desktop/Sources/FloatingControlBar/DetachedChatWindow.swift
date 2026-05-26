@@ -397,18 +397,53 @@ class DetachedChatWindowController {
     }
 
     /// Serializable snapshot of a detached window for persistence.
+    /// Custom `init(from:)` is required: Swift's synthesized Codable does not
+    /// honor stored-property defaults when a key is missing — it throws
+    /// `keyNotFound`. Without `decodeIfPresent` here, the v2.9.37→v2.9.38
+    /// upgrade wiped every restored pop-out because `draftInput` was absent
+    /// from registries saved by older builds. Same trap was latent for
+    /// `workspace` and `selectedModel`. Any future additive field MUST be
+    /// added to this initializer with `decodeIfPresent`.
     private struct WindowSnapshot: Codable {
         let sessionKey: String
         let x: Double
         let y: Double
         let width: Double
         let height: Double
-        /// Per-window workspace directory (empty = global default). Added in v0.3+; older snapshots decode as "".
-        var workspace: String = ""
-        /// Per-window model selection. Added in a later version; older snapshots decode as the current global model.
-        var selectedModel: String = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-sonnet-4-6"
-        /// Unsent draft input text. Lets a brand-new pop-out window (no messages yet) survive a quit/relaunch if the user typed something but never sent it. Older snapshots decode as "".
-        var draftInput: String = ""
+        var workspace: String
+        var selectedModel: String
+        var draftInput: String
+
+        init(
+            sessionKey: String,
+            x: Double, y: Double, width: Double, height: Double,
+            workspace: String = "",
+            selectedModel: String = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-sonnet-4-6",
+            draftInput: String = ""
+        ) {
+            self.sessionKey = sessionKey
+            self.x = x
+            self.y = y
+            self.width = width
+            self.height = height
+            self.workspace = workspace
+            self.selectedModel = selectedModel
+            self.draftInput = draftInput
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sessionKey = try c.decode(String.self, forKey: .sessionKey)
+            x = try c.decode(Double.self, forKey: .x)
+            y = try c.decode(Double.self, forKey: .y)
+            width = try c.decode(Double.self, forKey: .width)
+            height = try c.decode(Double.self, forKey: .height)
+            workspace = try c.decodeIfPresent(String.self, forKey: .workspace) ?? ""
+            selectedModel = try c.decodeIfPresent(String.self, forKey: .selectedModel)
+                ?? UserDefaults.standard.string(forKey: "shortcut_selectedModel")
+                ?? "claude-sonnet-4-6"
+            draftInput = try c.decodeIfPresent(String.self, forKey: .draftInput) ?? ""
+        }
     }
 
     private var entries: [ObjectIdentifier: WindowEntry] = [:]
