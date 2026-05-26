@@ -659,6 +659,7 @@ class AnalyticsManager {
         model: String,
         bridgeWasStartedAtQueryStart: Bool,
         hadPartialContent: Bool,
+        partialResponseText: String = "",
         toolsRunning: [String]? = nil,
         toolsUsed: [String]? = nil,
         sessionKey: String? = nil
@@ -673,6 +674,15 @@ class AnalyticsManager {
             "bridge_was_started_at_query_start": bridgeWasStartedAtQueryStart,
             "had_partial_content": hadPartialContent,
         ]
+        // Capture the AI's partial output when a `mid_stream` failure dropped a
+        // partially-streamed response, so support investigations can see what
+        // the model said before the error. Capped to match
+        // `chat_agent_query_completed.response_text` (5000 chars). The user's
+        // prompt is already on the preceding `Chat Message Sent` event
+        // (`message_text` property), so we don't duplicate it here.
+        if !partialResponseText.isEmpty {
+            props["partial_response_text"] = String(partialResponseText.prefix(5000))
+        }
         if let toolsRunning = toolsRunning, !toolsRunning.isEmpty {
             props["tools_running"] = toolsRunning.joined(separator: ",")
             props["tools_running_count"] = toolsRunning.count
