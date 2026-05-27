@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed onboarding chat going silent (stuck spinner, lost reply, tool timeouts) after a restart by keeping the resumed session on its own key instead of resuming a poisoned main/floating session id"
+    "Fixed onboarding chat going silent (stuck spinner, lost reply, tool timeouts) after a restart by keeping the resumed session on its own key instead of resuming a poisoned main/floating session id",
+    "Fixed pop-out chat windows becoming laggy and pegging the CPU when a response finished but the typing animation never stopped, by re-adding a safe per-window watchdog that stops the stuck animation without interrupting any live query"
   ],
   "releases": [
     {
