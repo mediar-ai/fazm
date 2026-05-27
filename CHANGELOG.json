@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed pop-out chat sometimes staying stuck on the loading spinner after a reply finished, blocking new messages, by detecting stalled turns and completing them"
+    "Fixed pop-out chat sometimes staying stuck on the loading spinner after a reply finished, blocking new messages, by detecting stalled turns and completing them",
+    "Ensure final session-recording chunk flushes cleanly on app quit"
   ],
   "releases": [
     {
