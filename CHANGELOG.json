@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-out chat sometimes staying stuck on the loading spinner after a reply finished, blocking new messages, by detecting stalled turns and completing them"
+  ],
   "releases": [
     {
       "version": "2.9.44",
