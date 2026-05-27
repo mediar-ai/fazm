@@ -1701,6 +1701,9 @@ class ChatProvider: ObservableObject {
                         self.isSending = !self.sendingSessionKeys.isEmpty
                         log("ChatProvider: released stale sending lock for orphaned session \(key)")
                     }
+                    // Drop the stuck-session pill if this orphan was a late
+                    // result for a session the user previously stopped.
+                    self.clearStoppedSession(key)
                     log("ChatProvider: onOrphanedResult cleared \(cleared) streaming flags for sessionKey=\(key)")
                 }
             }
@@ -3392,25 +3395,111 @@ class ChatProvider: ObservableObject {
         Task { await acpBridge.stop() }
     }
 
-    /// Stop the running agent, keeping partial response
+    /// Stop the running agent, keeping partial response.
+    /// Eagerly clears local streaming state so Stop feels instant: the bridge's
+    /// interrupt is fire-and-forget and can take seconds to minutes when the
+    /// upstream Claude/Codex call is hung. Without this, the next user prompt
+    /// would queue behind a zombie turn (root cause of the 6-minute freeze
+    /// reported 2026-05-27, session detached-E57439A6 hung on Claude OAuth).
     func stopAgent() {
         guard isSending else { return }
         isStopping = true
         pendingCountAtStop = pendingMessages.count
-        log("ChatProvider: user stopped agent, sending interrupt (pendingCountAtStop=\(pendingCountAtStop))")
+        // Snapshot the keys we're stopping BEFORE we mutate sendingSessionKeys,
+        // so eagerClearForStop can walk them all.
+        let keysToStop = Array(sendingSessionKeys)
+        log("ChatProvider: user stopped agent, sending interrupt (pendingCountAtStop=\(pendingCountAtStop), sessions=\(keysToStop.sorted()))")
+        for key in keysToStop {
+            eagerClearForStop(sessionKey: key)
+        }
         Task {
             await acpBridge.interrupt()
         }
-        // Result flows back normally through the bridge with partial text
     }
 
     /// Stop the running agent for a specific session only. Other concurrent sessions continue.
+    /// Same eager-clear as the global `stopAgent()` so per-window Stop also
+    /// feels instant. Pre-fix this method was a pure no-op locally and only
+    /// fired the bridge interrupt — Stop felt dead and next prompt queued.
     func stopAgent(sessionKey: String) {
         guard sendingSessionKeys.contains(sessionKey) else { return }
         log("ChatProvider: user stopped agent for session=\(sessionKey)")
+        eagerClearForStop(sessionKey: sessionKey)
         Task {
             await acpBridge.interrupt(sessionKey: sessionKey)
         }
+    }
+
+    /// Sessions the user has stopped that the bridge hasn't yet ack'd with a
+    /// `result`. Maps sessionKey → Date the user clicked Stop. UI observes
+    /// this to render the "still cleaning up" pill when an entry has aged
+    /// past `stuckSessionWarnThreshold`. Cleared when the bridge result for
+    /// that session arrives (handled in `clearStoppedSession`).
+    @Published private(set) var stoppedSessions: [String: Date] = [:]
+
+    /// Seconds after Stop click before the UI shows the "cleaning up / reset"
+    /// affordance. Picked to feel snappy (typical bridge ack is < 200ms) while
+    /// not flashing on normal-slow interrupts.
+    let stuckSessionWarnThreshold: TimeInterval = 3.0
+
+    /// Shared eager-clear for both Stop entrypoints. Flips per-window streaming
+    /// flags off, removes the session from `sendingSessionKeys`, drops any
+    /// queued messages tagged to this session, and records the stop time so
+    /// the UI watchdog can surface a Reset affordance if the bridge stays
+    /// silent past `stuckSessionWarnThreshold`.
+    @MainActor
+    private func eagerClearForStop(sessionKey: String) {
+        // 1. Per-window streaming state. Floating bar lives on FloatingControlBarManager;
+        //    detached pop-outs each carry their own state on DetachedChatWindowController.
+        if let streaming = streamingState(for: sessionKey) {
+            streaming.currentAIMessage?.isStreaming = false
+            streaming.isAILoading = false
+        }
+        // 2. Flip any streaming AI messages in the global `messages` array for
+        //    this session. Mirrors the orphan-result cleanup at line 1670.
+        for i in messages.indices where messages[i].sessionKey == sessionKey && messages[i].isStreaming {
+            messages[i].isStreaming = false
+        }
+        // 3. Release the session lock so the next user prompt sends fresh
+        //    instead of queueing behind the zombie turn. The bridge's late
+        //    `result` for this session will still flow through normal handlers
+        //    (which are idempotent — see lines 4574 / 4639 ID-guarded clears).
+        if sendingSessionKeys.contains(sessionKey) {
+            sendingSessionKeys.remove(sessionKey)
+            isSending = !sendingSessionKeys.isEmpty
+        }
+        // 4. Drop queued messages tagged to this session. Stop should mean stop
+        //    for the whole turn, including anything the user typed before
+        //    realizing the agent was stuck. If they want to retry, they retype.
+        let droppedQueue = pendingMessages.filter { $0.sessionKey == sessionKey }.count
+        pendingMessages.removeAll { $0.sessionKey == sessionKey }
+        // 5. Track the stop so the UI watchdog can show "still cleaning up".
+        stoppedSessions[sessionKey] = Date()
+        log("ChatProvider: eager-clear for stopped session=\(sessionKey) droppedQueue=\(droppedQueue) remainingSending=\(sendingSessionKeys.sorted())")
+    }
+
+    /// Clear a session's stopped marker. Called when the bridge finally emits
+    /// a `result` for the stopped session, so subsequent legitimate queries
+    /// don't show the stuck-session pill.
+    @MainActor
+    func clearStoppedSession(_ sessionKey: String) {
+        if stoppedSessions.removeValue(forKey: sessionKey) != nil {
+            log("ChatProvider: cleared stopped marker for session=\(sessionKey) (bridge ack'd)")
+        }
+    }
+
+    /// Resolve the per-window streaming state for a session key. Mirrors the
+    /// lookup pattern used by `truncateForEdit` (line 2033).
+    @MainActor
+    private func streamingState(for sessionKey: String) -> StreamingResponseState? {
+        if sessionKey == "floating" {
+            return FloatingControlBarManager.shared.barState?.streaming
+        }
+        if sessionKey.hasPrefix("detached-") {
+            return DetachedChatWindowController.shared.entriesSnapshot()
+                .first(where: { $0.sessionKey == sessionKey })?.window.state.streaming
+        }
+        return nil
     }
 
     /// Fully tear down a session's bridge state (so the underlying `claude`
@@ -4810,6 +4899,12 @@ class ChatProvider: ObservableObject {
             let totalMs = Int(Date().timeIntervalSince(queryStartTime) * 1000)
             let ttftMs = firstTokenTime.map { Int($0.timeIntervalSince(queryStartTime) * 1000) }
             log("Chat response complete (total=\(totalMs)ms, ttft=\(ttftMs.map { "\($0)ms" } ?? "none"), tools=\(toolNames.count), session=\(sessionKey ?? "main"), mode=\(bridgeMode))")
+            // If the user clicked Stop on this session, drop the stuck-session
+            // marker now that the bridge has finally ack'd. The "cleaning up"
+            // pill in the UI keys off `stoppedSessions[sessionKey]`.
+            if let key = sessionKey {
+                clearStoppedSession(key)
+            }
 
             // Persist the ACP session ID so we can resume after app restart.
             // Also append to the per-window chain — the chain spans every sessionId
