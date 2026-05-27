@@ -1109,6 +1109,15 @@ class DetachedChatWindowController {
             }
         }
 
+        win.onResetStuckSession = { [weak self, weak win, weak chatProvider] in
+            guard let win, let key = self?.entries[ObjectIdentifier(win)]?.sessionKey else { return }
+            // Nuclear option: kill the upstream claude subprocess for this
+            // session. Used when the bridge has gone silent after a Stop and
+            // the user wants to escape a hung Claude/Codex call. Chat history
+            // stays put; next prompt spawns a fresh session.
+            chatProvider?.endSession(sessionKey: key)
+        }
+
         win.onConnectClaude = { [weak chatProvider] in
             // Mirrors the Codex flow: kick off OAuth directly when the user
             // picks a Claude model from the dropdown while unconnected.
