@@ -278,8 +278,11 @@ class FloatingControlBarState: NSObject, ObservableObject {
     // Send button hint (pulsating animation during tutorial)
     @Published var showSendButtonHint: Bool = false
 
-    // Claude account connection prompt (shown when auth is needed or credits exhausted)
-    @Published var showConnectClaudeButton: Bool = false
+    // Mirror of `ChatProvider.isClaudeConnected` — true when Claude OAuth
+    // credentials are present. Drives the "— Connect…" affordance on Claude
+    // entries in the model picker (mirrors Codex pattern). Defaults to true so
+    // the picker doesn't flash a Connect indicator before state syncs.
+    @Published var isClaudeConnected: Bool = true
     // Show "Upgrade" button when user hits personal Claude rate limit
     @Published var showUpgradeClaudeButton: Bool = false
 
