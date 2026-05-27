@@ -132,6 +132,69 @@ setInterval(() => {
   }
 }, 5000).unref();
 
+/**
+ * Walks the process tree below `parentPid` and returns every descendant
+ * whose `ps command=` line matches `cmdPattern`. Used by force-stop to
+ * find a session's wedged Playwright MCP subprocess (spawned by codex-acp
+ * at `session/new`). The SDK doesn't expose per-session MCP PIDs, so the
+ * caller filters by command match and accepts the broader blast radius.
+ */
+function findDescendantsMatching(parentPid: number, cmdPattern: RegExp): Array<{ pid: number; command: string }> {
+  const results: Array<{ pid: number; command: string }> = [];
+  const visited = new Set<number>();
+  function walk(pid: number) {
+    if (visited.has(pid)) return;
+    visited.add(pid);
+    let children: number[] = [];
+    try {
+      const out = execSync(`pgrep -P ${pid}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      children = out ? out.split("\n").filter(Boolean).map(Number) : [];
+    } catch {
+      /* pgrep rc=1 means no children */
+    }
+    for (const c of children) {
+      let cmd = "";
+      try {
+        cmd = execSync(`ps -p ${c} -o command=`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+      } catch {
+        /* child died between pgrep and ps */
+      }
+      if (cmdPattern.test(cmd)) results.push({ pid: c, command: cmd });
+      walk(c);
+    }
+  }
+  walk(parentPid);
+  return results;
+}
+
+/**
+ * Force-stop V1 implementation: SIGKILL every Playwright MCP subprocess
+ * spawned under codex-acp. This is the only escape hatch that actually ends
+ * a wedged `mcp__playwright__browser_*` call — ACP's `session/cancel` is
+ * cooperative and the wedged call ignores it. After kill, the SDK's MCP
+ * client sees the transport drop and the in-flight tool errors instead of
+ * hanging, freeing the turn for real. Per-session targeting isn't possible
+ * (the SDK doesn't expose which playwright PID belongs to which session)
+ * so this kills ALL playwright children — accepted V1 trade-off; a stalled
+ * browser is shared between sessions anyway via the extension's single
+ * Chrome.
+ */
+function forceStopBrowserMcps(reason: string): { killedPids: number[] } {
+  if (!acpProcess?.pid) return { killedPids: [] };
+  const matches = findDescendantsMatching(acpProcess.pid, /playwright/);
+  const killedPids: number[] = [];
+  for (const { pid, command } of matches) {
+    try {
+      process.kill(pid, "SIGKILL");
+      killedPids.push(pid);
+      logErr(`force-stop: SIGKILL playwright MCP pid=${pid} cmd=${command.slice(0, 80)} (${reason})`);
+    } catch (err) {
+      logErr(`force-stop: failed to kill pid=${pid}: ${err}`);
+    }
+  }
+  return { killedPids };
+}
+
 // Resolve paths to bundled tools
 const playwrightCli = join(
   __dirname,
@@ -6106,6 +6169,58 @@ async function main(): Promise<void> {
             const n = interruptAllGeminiSessions(geminiProvider);
             logErr(`Interrupted ${n} gemini session(s)`);
           }
+        }
+        break;
+      }
+
+      case "force_interrupt": {
+        // Force-stop: ACP's session/cancel is cooperative and a wedged
+        // playwright tool ignores it (the 296s "Tool STUCK on user interrupt"
+        // path that prompted this whole feature). Here we do the normal
+        // session/cancel + abort AND then SIGKILL the Playwright MCP
+        // subprocess(es) so the in-flight call dies with a transport error
+        // instead of hanging. The session cache is kept so the conversation
+        // continues — that's piece 1's whole point.
+        const targetKey = (msg as { sessionKey?: string }).sessionKey;
+        const ctx = targetKey ? activeQueries.get(targetKey) : undefined;
+        // Snapshot the stalled tool's title BEFORE we abort, so the
+        // tool_force_stopped event can name it for the canvas card.
+        let stalledToolName = "";
+        let stalledToolUseId = "";
+        if (ctx) {
+          for (const [callId, tool] of inFlightTools) {
+            if (tool.sessionId === ctx.sessionId && tool.title.startsWith("mcp__")) {
+              stalledToolName = tool.title;
+              stalledToolUseId = callId;
+              break;
+            }
+          }
+          logErr(`Force-interrupt requested for session key=${targetKey} (sessionId=${ctx.sessionId})`);
+          logStuckToolsOnInterrupt(`force interrupt (key=${targetKey})`, ctx.sessionId);
+          ctx.interruptRequested = true;
+          ctx.abortController.abort();
+          acpNotify("session/cancel", { sessionId: ctx.sessionId });
+          logErr(`Session ${ctx.sessionId} force-cancelled (cached entry kept)`);
+        } else {
+          logErr(`Force-interrupt requested for session key=${targetKey ?? "?"} but no active query found — killing browser MCPs anyway`);
+        }
+        const { killedPids } = forceStopBrowserMcps(`force interrupt key=${targetKey ?? "?"}`);
+        sendWithSession(ctx?.sessionId, {
+          type: "tool_force_stopped",
+          toolName: stalledToolName,
+          toolUseId: stalledToolUseId,
+          killedPids,
+          reason: stalledToolName
+            ? `Force-stopped an unresponsive ${stalledToolName} and reset the browser. Your conversation is intact; retry when ready.`
+            : `Force-stopped and reset the browser. Your conversation is intact; retry when ready.`,
+        });
+        // Stalled-state map is cleared on the next stall-detector tick
+        // (the tool leaves inFlightTools when its tool_call_update terminal
+        // branch fires, or the per-tool watchdog reaps it). Defensive:
+        // proactively drop matching entries so we don't emit a leftover
+        // `stalled:false` for an already-dead toolUseId.
+        if (stalledToolUseId) {
+          stalledTools.delete(stalledToolUseId);
         }
         break;
       }
