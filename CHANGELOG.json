@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed Claude account picker hanging when re-auth was needed but expired credentials were still in the keychain"
+  ],
   "releases": [
     {
       "version": "2.9.41",
