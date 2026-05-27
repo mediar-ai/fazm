@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed onboarding chat going silent (stuck spinner, lost reply, tool timeouts) after a restart by keeping the resumed session on its own key instead of resuming a poisoned main/floating session id"
+  ],
   "releases": [
     {
       "version": "2.9.42",
