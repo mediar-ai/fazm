@@ -524,6 +524,19 @@ struct OnboardingChatView: View {
                 }
             } else if let errorText = chatProvider.errorMessage {
                 withAnimation { onboardingError = .general(errorText) }
+            } else if let lastAI = chatProvider.messages.last(where: { $0.sender == .ai }),
+                      lastAI.text.contains("no text returned") {
+                // Empty AI turn (no text, no tools). Common on low-RAM Macs
+                // where the Claude subprocess gets interrupted mid-reply under
+                // memory pressure. The marker bubble (stamped in ChatProvider)
+                // is a dead end during onboarding: no auth/credit/error flag
+                // fires, so without this the user only gets the Skip button
+                // after the 120s inactivity timer. Surface the general error
+                // banner immediately so Retry + Skip Setup are one tap away.
+                // (founder-chat report, 715877392@qq.com, 2026-05-27)
+                withAnimation {
+                    onboardingError = .general("The response got cut off (your Mac may be low on memory). Close a few other apps and tap Retry, or skip setup to jump into the app.")
+                }
             } else {
                 // Successful response, clear any previous error
                 if onboardingError != nil {
