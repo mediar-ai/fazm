@@ -292,6 +292,29 @@ struct AIResponseView: View {
                         for info in value { byId[info.id] = info }
                         bubbleInfos = byId.values.sorted { $0.topY < $1.topY }
                     }
+                    .onPreferenceChange(ExchangeExtentPreferenceKey.self) { value in
+                        // Latest extent per exchange (document coords) for the
+                        // virtualization visibility window.
+                        var next = exchangeExtents
+                        for info in value where info.maxY >= info.minY {
+                            next[info.id] = info.minY...info.maxY
+                        }
+                        if next != exchangeExtents { exchangeExtents = next }
+                    }
+                    .onPreferenceChange(ResponseHeightPreferenceKey.self) { value in
+                        // Cache each expanded response's height so its collapsed
+                        // spacer is the same size (no scroll jump on toggle).
+                        var next = responseHeights
+                        for info in value where info.height > 0 {
+                            next[info.id] = info.height
+                        }
+                        if next != responseHeights { responseHeights = next }
+                    }
+                    .onChange(of: fontScale) {
+                        // Cached response heights are in points at the old scale;
+                        // drop them so spacers re-measure at the new font size.
+                        responseHeights.removeAll()
+                    }
                     .overlay(alignment: .top) {
                         StackedBubblesOverlay(
                             bubbles: stackedBubbles,
@@ -2393,6 +2416,35 @@ struct StackedBubbleInfo: Equatable {
 private struct StackedBubblesPreferenceKey: PreferenceKey {
     static var defaultValue: [StackedBubbleInfo] = []
     static func reduce(value: inout [StackedBubbleInfo], nextValue: () -> [StackedBubbleInfo]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+// MARK: - Response virtualization preferences
+
+/// Vertical extent of one archived exchange row in chat-content (document) coords.
+struct ExchangeExtentInfo: Equatable {
+    let id: UUID
+    let minY: CGFloat
+    let maxY: CGFloat
+}
+
+private struct ExchangeExtentPreferenceKey: PreferenceKey {
+    static var defaultValue: [ExchangeExtentInfo] = []
+    static func reduce(value: inout [ExchangeExtentInfo], nextValue: () -> [ExchangeExtentInfo]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Measured rendered height of one expanded AI response block.
+struct ResponseHeightInfo: Equatable {
+    let id: UUID
+    let height: CGFloat
+}
+
+private struct ResponseHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: [ResponseHeightInfo] = []
+    static func reduce(value: inout [ResponseHeightInfo], nextValue: () -> [ResponseHeightInfo]) {
         value.append(contentsOf: nextValue())
     }
 }
