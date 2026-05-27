@@ -3514,11 +3514,18 @@ class ChatProvider: ObservableObject {
     /// Captures the in-flight user prompt as `lastForceStoppedPrompt` so the
     /// Retry button on the card can re-send it.
     func forceStopAgent(sessionKey: String) {
-        guard sendingSessionKeys.contains(sessionKey) else {
-            log("ChatProvider: forceStopAgent called but session=\(sessionKey) is not sending")
+        // Allow Force stop when EITHER actively sending OR the live "not
+        // responding" indicator is showing for this session. The button is
+        // only rendered when stalled (so the "not sending" case here is
+        // either a stale-stall race or the debug `simulateToolStalled` hook),
+        // and in both situations the user pressing Force stop intentionally
+        // is the right action — kill the wedged MCP, drop any cached state.
+        let isStalled = streamingState(for: sessionKey)?.stalledToolName != nil
+        guard sendingSessionKeys.contains(sessionKey) || isStalled else {
+            log("ChatProvider: forceStopAgent called but session=\(sessionKey) is neither sending nor stalled — ignoring")
             return
         }
-        log("ChatProvider: user FORCE-stopped agent for session=\(sessionKey)")
+        log("ChatProvider: user FORCE-stopped agent for session=\(sessionKey) (sending=\(sendingSessionKeys.contains(sessionKey)), stalled=\(isStalled))")
         // Capture the in-flight prompt so the card's Retry can re-send it.
         if let streaming = streamingState(for: sessionKey) {
             let prompt = streaming.displayedQuery
