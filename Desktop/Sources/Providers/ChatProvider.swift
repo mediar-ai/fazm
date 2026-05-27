@@ -2252,6 +2252,14 @@ class ChatProvider: ObservableObject {
             // GPT and Gemini models don't bill the built-in Anthropic key, so
             // the lifetime cap doesn't apply — let the user keep chatting.
             showCreditExhaustedAlert = false
+            // Stale Claude-auth flags must also clear: picking GPT/Gemini means
+            // "I don't need Claude right now." Otherwise a prior 401 leaves
+            // `isClaudeAuthRequired = true`, and `ChatQueryLifecycle.handlePostQuery`
+            // overwrites the successful Codex/Gemini response with the
+            // "Switch to Gemini or connect Claude/ChatGPT" auth-required bubble.
+            isClaudeAuthRequired = false
+            claudeAuthFailed = false
+            claudeAuthFailedReason = nil
         }
         log("ChatProvider: selectModel \(modelId) (isCodex=\(Self.isCodexModelId(modelId)) isGemini=\(Self.isGeminiModelId(modelId)))")
     }
