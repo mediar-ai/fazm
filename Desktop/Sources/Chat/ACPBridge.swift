@@ -188,6 +188,11 @@ actor ACPBridge {
     /// UI surfaces a "<tool> is not responding… Ns" indicator and escalates
     /// Stop to a Force stop affordance. The turn is NOT canceled by this.
     case toolStalled(toolName: String, toolUseId: String, stalled: Bool, elapsedSeconds: Double)
+    /// Bridge force-stop completed: `session/cancel` was sent AND the
+    /// Playwright MCP subprocess(es) were SIGKILLed so the in-flight tool
+    /// died instead of hanging. UI renders a system card explaining the
+    /// reset and offering Retry. `killedPids` is informational.
+    case toolForceStopped(toolName: String, toolUseId: String, killedPids: [Int], reason: String)
     /// New ACP session was created (`isResume == false`) or resumed (`isResume == true`).
     /// Fires BEFORE the first prompt notification, so the client can persist the
     /// sessionId immediately. Without this, errors mid-stream (rate limit, credit
@@ -242,6 +247,7 @@ actor ACPBridge {
     case toolHangCanceled(toolName: String, toolUseId: String, durationSeconds: Double, reason: String, sessionKey: String?)
     case taskHangCanceled(taskId: String, description: String, durationSeconds: Double, reason: String, sessionKey: String?)
     case toolStalled(toolName: String, toolUseId: String, stalled: Bool, elapsedSeconds: Double, sessionKey: String?)
+    case toolForceStopped(toolName: String, toolUseId: String, killedPids: [Int], reason: String, sessionKey: String?)
     case sessionStarted(sessionId: String, sessionKey: String?, isResume: Bool)
     /// Emitted by the bridge once `preWarmSession` resolves (success or failure).
     /// Pairs with `bridge_warmup_started` (fired in Swift right before `ensureBridgeStarted()`)
@@ -1478,6 +1484,10 @@ actor ACPBridge {
         log("ACPBridge: tool_stalled tool=\(toolName) stalled=\(stalled) elapsed=\(elapsedSeconds)s")
         onStatusEvent(.toolStalled(toolName: toolName, toolUseId: toolUseId, stalled: stalled, elapsedSeconds: elapsedSeconds))
 
+      case .toolForceStopped(let toolName, let toolUseId, let killedPids, let reason, _):
+        log("ACPBridge: tool_force_stopped tool=\(toolName) killedPids=\(killedPids) reason=\(reason)")
+        onStatusEvent(.toolForceStopped(toolName: toolName, toolUseId: toolUseId, killedPids: killedPids, reason: reason))
+
       case .sessionStarted(let sid, let evtKey, let isResume):
         log("ACPBridge: session_started \(isResume ? "(resumed)" : "(new)") sessionId=\(sid) key=\(evtKey ?? "nil")")
         onStatusEvent(.sessionStarted(sessionId: sid, sessionKey: evtKey, isResume: isResume))
@@ -1835,6 +1845,14 @@ actor ACPBridge {
       let elapsedSeconds = dict["elapsedSeconds"] as? Double ?? 0
       let sessionKey = dict["sessionKey"] as? String
       return .toolStalled(toolName: toolName, toolUseId: toolUseId, stalled: stalled, elapsedSeconds: elapsedSeconds, sessionKey: sessionKey)
+
+    case "tool_force_stopped":
+      let toolName = dict["toolName"] as? String ?? ""
+      let toolUseId = dict["toolUseId"] as? String ?? ""
+      let killedPids = (dict["killedPids"] as? [Any] ?? []).compactMap { $0 as? Int }
+      let reason = dict["reason"] as? String ?? "Force-stopped an unresponsive tool and reset the browser. Your conversation is intact."
+      let sessionKey = dict["sessionKey"] as? String
+      return .toolForceStopped(toolName: toolName, toolUseId: toolUseId, killedPids: killedPids, reason: reason, sessionKey: sessionKey)
 
     case "session_started":
       let sessionId = dict["sessionId"] as? String ?? ""
