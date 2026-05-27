@@ -3981,8 +3981,18 @@ class ChatProvider: ObservableObject {
                 log("ChatProvider: Using saved detached session ID for resume: \(savedId)")
             }
         }
-        // Auto-resume main chat session after ACP restart (e.g. OAuth re-login)
-        if (sessionKey == nil || sessionKey == "main"), resume == nil {
+        // Auto-resume main chat session after ACP restart (e.g. OAuth re-login).
+        // NEVER for onboarding: onboarding intentionally starts a FRESH ACP session
+        // (its conversation context is replayed via the system prompt), and it shares
+        // the sessionKey==nil path with the main chat. Without the !isOnboarding guard,
+        // the onboarding resume query picks up the main chat's saved session id and
+        // resumes it — but that id is often the onboarding session's own id leaked into
+        // main storage, and the bridge's persisted reverse-map then tags the stream
+        // under "main"/"floating" instead of "onboarding". The Swift continuation waits
+        // on "onboarding", the result orphans, and the turn silently drops (stuck
+        // spinner, lost message, complete_onboarding routed to the wrong session →
+        // 30s relay timeout). Hit live on every ./run.sh onboarding resume, 2026-05-27.
+        if (sessionKey == nil || sessionKey == "main"), resume == nil, !isOnboarding {
             if let savedId = UserDefaults.standard.string(forKey: mainSessionIdKey), !savedId.isEmpty {
                 resume = savedId
                 log("ChatProvider: Using saved main session ID for resume: \(savedId)")
@@ -4486,14 +4496,20 @@ class ChatProvider: ObservableObject {
                             guard !startedSessionId.isEmpty else { break }
                             let routingKey = evtSessionKey ?? sessionKey
                             log("ChatProvider: session_started \(isResume ? "resumed" : "new") sessionId=\(startedSessionId) key=\(routingKey ?? "nil") (eager-persisting)")
-                            if self.isOnboarding {
+                            // Route by the most specific signal available. An onboarding
+                            // session must ONLY ever land in OnboardingChatPersistence —
+                            // if it leaks into mainSessionIdKey/floatingSessionIdKey, the
+                            // next restart's main/floating auto-resume grabs it and the
+                            // bridge tags the stream under the wrong key (orphan). The
+                            // main branch is now gated to nil/"main" so an unrecognized
+                            // key never silently falls through to main storage.
+                            if self.isOnboarding || routingKey == "onboarding" {
                                 OnboardingChatPersistence.saveSessionId(startedSessionId)
                             } else if routingKey == "floating" {
                                 Self.persistSessionId(startedSessionId, storageKey: self.floatingSessionIdKey)
                             } else if let key = routingKey, key.hasPrefix("detached-") {
                                 Self.persistSessionId(startedSessionId, storageKey: "acpSessionId_\(key)_\(self.bridgeMode)")
-                            } else {
-                                // nil or "main" — main session
+                            } else if routingKey == nil || routingKey == "main" {
                                 Self.persistSessionId(startedSessionId, storageKey: self.mainSessionIdKey)
                             }
                         case .sessionExpired(let oldSessionId, let newSessionId, let contextRestored, let restoredMessageCount, let reason):
@@ -4973,14 +4989,14 @@ class ChatProvider: ObservableObject {
             // load (which filters by the chain) can surface history saved under any
             // prior sessionId, not just the current head.
             if !queryResult.sessionId.isEmpty {
-                if isOnboarding {
+                if isOnboarding || sessionKey == "onboarding" {
+                    // Onboarding session id stays isolated in OnboardingChatPersistence.
                     OnboardingChatPersistence.saveSessionId(queryResult.sessionId)
-                }
-                if sessionKey == "floating" {
+                } else if sessionKey == "floating" {
                     Self.persistSessionId(queryResult.sessionId, storageKey: floatingSessionIdKey)
                 } else if let key = sessionKey, key.hasPrefix("detached-") {
                     Self.persistSessionId(queryResult.sessionId, storageKey: "acpSessionId_\(key)_\(bridgeMode)")
-                } else if !isOnboarding && (sessionKey == nil || sessionKey == "main") {
+                } else if sessionKey == nil || sessionKey == "main" {
                     Self.persistSessionId(queryResult.sessionId, storageKey: mainSessionIdKey)
                 }
             }
