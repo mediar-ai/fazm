@@ -288,6 +288,20 @@ struct AIResponseView: View {
                         shouldFollowContent = true
                         scrollToBottom(proxy: proxy)
                     }
+                    // Active re-pin while streaming: when a new content block
+                    // appears (tool call, thinking block, new text segment) and
+                    // we're still following, programmatically scroll to the
+                    // bottom instead of relying solely on .defaultScrollAnchor,
+                    // which can lag a frame behind a large block insertion. This
+                    // is gated on shouldFollowContent, so once the user scrolls
+                    // up (detector sets it false) we stop yanking them down and
+                    // the scroll-down button stays visible — no "stuck detached
+                    // with no button" state.
+                    .onChange(of: currentMessage?.contentBlocks.count ?? 0) {
+                        if shouldFollowContent {
+                            scrollToBottom(proxy: proxy)
+                        }
+                    }
                     .onChange(of: isLoading) {
                         if !isLoading {
                             state.flushPendingChatObserverExchanges()
