@@ -52,7 +52,9 @@ enum ChatQueryLifecycle {
         guard state.streaming.showingAIConversation else { return }
 
         if provider.isClaudeAuthRequired {
-            state.showConnectClaudeButton = true
+            // Claude OAuth is no longer connected. The model picker surfaces a
+            // "Claude — Connect…" affordance (mirrors the Codex flow); we just
+            // explain what happened in the AI bubble.
             let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
             let body = AccountErrorCopy.message(reason: .authRequired, surface: .chat, geminiAvailable: geminiAvailable)
             state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
@@ -63,7 +65,6 @@ enum ChatQueryLifecycle {
                 log("ChatQueryLifecycle: credits exhausted but Claude already connected, skipping connect prompt")
                 state.streaming.currentAIMessage = ChatMessage(text: "Switched to your Claude account. You can keep chatting.", sender: .ai)
             } else {
-                state.showConnectClaudeButton = true
                 let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
                 let body = AccountErrorCopy.message(reason: .creditExhausted, surface: .chat, geminiAvailable: geminiAvailable)
                 state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
@@ -164,7 +165,8 @@ enum ChatQueryLifecycle {
     /// Returns an array of cancellables that the caller must retain.
     ///
     /// Covers:
-    /// - `$isClaudeConnected` / `$isClaudeAuthRequired`: auto-dismiss "Connect Claude" button
+    /// - `$isClaudeConnected`: mirrors to `state.isClaudeConnected` so the model
+    ///   picker can surface the "Claude — Connect…" affordance.
     /// - `$queryStartedCount`: clear stale suggested replies on new queries
     /// - `$isCompacting` / `$compactingSessionKey`: sync compaction indicator (scoped to session)
     static func subscribeToProviderState(
@@ -175,32 +177,14 @@ enum ChatQueryLifecycle {
     ) -> [AnyCancellable] {
         var cancellables: [AnyCancellable] = []
 
-        // Clear "Connect Claude" button when auth succeeds
+        // Mirror Claude connection state into the bar so ModelToggleButton
+        // can render the "— Connect…" suffix without needing chatProvider
+        // plumbed into every leaf view.
         cancellables.append(
             provider.$isClaudeConnected
                 .receive(on: DispatchQueue.main)
                 .sink { [weak state] connected in
-                    guard let state else { return }
-                    if connected {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            state.showConnectClaudeButton = false
-                        }
-                    }
-                }
-        )
-
-        // Also watch isClaudeAuthRequired going false (covers the case where
-        // isClaudeConnected was already true and doesn't emit a new value)
-        cancellables.append(
-            provider.$isClaudeAuthRequired
-                .receive(on: DispatchQueue.main)
-                .sink { [weak state] authRequired in
-                    guard let state else { return }
-                    if !authRequired {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            state.showConnectClaudeButton = false
-                        }
-                    }
+                    state?.isClaudeConnected = connected
                 }
         )
 
