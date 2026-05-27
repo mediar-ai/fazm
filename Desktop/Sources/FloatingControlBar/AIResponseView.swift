@@ -844,7 +844,8 @@ struct AIResponseView: View {
             isChatObserverRunning: streaming.isChatObserverRunning,
             onChatObserverCardAction: { [self] activityId, action in
                 handleChatObserverCardAction(activityId: activityId, action: action)
-            }
+            },
+            onRetryAfterForceStop: onRetryAfterForceStop
         )
     }
 
@@ -861,6 +862,11 @@ struct AIResponseView: View {
         let message: ChatMessage
         let isChatObserverRunning: Bool
         let onChatObserverCardAction: (Int64, String) -> Void
+        /// Threaded to `.systemEvent` rendering so the `.toolForceStopped`
+        /// card can show a Retry button. Excluded from Equatable comparison
+        /// (closures aren't equatable); SwiftUI still re-renders because the
+        /// struct is recreated on each parent body invocation.
+        var onRetryAfterForceStop: ((String) -> Void)? = nil
 
         static func == (lhs: MessageContentBlocks, rhs: MessageContentBlocks) -> Bool {
             lhs.message.id == rhs.message.id
@@ -902,7 +908,12 @@ struct AIResponseView: View {
                     case .observerCard:
                         EmptyView() // handled below
                     case .systemEvent(_, let event):
-                        SystemEventCardView(event: event)
+                        SystemEventCardView(
+                            event: event,
+                            onRetry: event.kind == .toolForceStopped
+                                ? { onRetryAfterForceStop?(message.sessionKey ?? "floating") }
+                                : nil
+                        )
                             .frame(maxWidth: .infinity, alignment: .leading)
                     case .browserActivity(_, _, let toolName, let action, let mode, let url, let status):
                         BrowserActivityCard(
