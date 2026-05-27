@@ -155,6 +155,16 @@ struct AIResponseView: View {
     var onClearQueue: (() -> Void)?
     var onReorderQueue: ((IndexSet, Int) -> Void)?
     var onStopAgent: (() -> Void)?
+    /// Force-stop: invoked from the "Force stop" button shown next to the
+    /// `streaming.stalledToolName` indicator when a tool has gone silent.
+    /// Wired to `ChatProvider.forceStopAgent(sessionKey:)`; bridge SIGKILLs
+    /// the wedged Playwright MCP so the in-flight call dies for real.
+    var onForceStopAgent: (() -> Void)?
+    /// Retry action for the `.toolForceStopped` system card. Closure takes
+    /// the sessionKey of the message containing the card (so the card view
+    /// can stay sessionKey-agnostic). Wired to
+    /// `ChatProvider.retryAfterForceStop(sessionKey:)`.
+    var onRetryAfterForceStop: ((String) -> Void)?
     /// Tear down the upstream session — wired to `ChatProvider.endSession(sessionKey:)`.
     /// Called from the "Reset session" button in the still-cleaning-up pill when
     /// the bridge hasn't ack'd a Stop within `stuckSessionWarnThreshold`.
@@ -558,6 +568,32 @@ struct AIResponseView: View {
                         Text("\(friendlyToolLabel(stalledName)) is not responding · \(Int(ctx.date.timeIntervalSince(stalledSince)))s")
                             .scaledFont(size: 14)
                             .foregroundColor(.orange)
+                    }
+                    // Force stop affordance. Cooperative Stop (red square in
+                    // the composer) tells the agent to halt and frees the UI
+                    // but the wedged MCP tool keeps running underneath. This
+                    // escalation actually SIGKILLs the Playwright MCP so the
+                    // browser call dies for real. Hidden until the parent
+                    // wires `onForceStopAgent` (Force stop is only meaningful
+                    // in the bar / pop-out surfaces that own a session).
+                    if let action = onForceStopAgent {
+                        Button(action: action) {
+                            Text("Force stop")
+                                .scaledFont(size: 11, weight: .semibold)
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.orange.opacity(0.12))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(Color.orange.opacity(0.45), lineWidth: 0.5)
+                                        )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Kill the unresponsive browser tool and reset the connection. Your conversation is intact.")
                     }
                 } else if isHanging {
                     Image(systemName: "exclamationmark.triangle.fill")
