@@ -1565,7 +1565,18 @@ struct ModelToggleButton: View {
     }
 
     private func isClaudeModel(_ id: String) -> Bool {
-        id.hasPrefix("claude-")
+        // Claude IDs come in several shapes in the picker:
+        //   - Canonical: "claude-opus-4-7", "claude-sonnet-4-6"
+        //   - Plain aliases: "haiku", "sonnet", "opus"
+        //   - Bracketed variants: "sonnet[1m]"
+        // Gemini IDs always start with "gemini-"; Codex IDs with "gpt-".
+        // Neither contains "haiku", "sonnet", or "opus" as substrings, so the
+        // substring check below safely scopes to the Claude family.
+        if id.hasPrefix("claude-") { return true }
+        if id.contains("haiku") { return true }
+        if id.contains("sonnet") { return true }
+        if id.contains("opus") { return true }
+        return false
     }
 
     var body: some View {
