@@ -831,6 +831,15 @@ interface QueryContext {
   // and strip those before forwarding to the UI / persistence.
   prefixStripDone: boolean;
   prefixBuffer: string;
+  // Tracks whether the last forwarded assistant text ended a sentence
+  // (last non-whitespace char is .!?…: or trailing newline). Used to decide
+  // whether a subsequent HIDDEN tool call (ToolSearch — see tool_call case)
+  // should still set pendingBoundary so the next text starts a new bubble.
+  // Without this, the model emitting `messageA → ToolSearch → messageB` for
+  // a deferred tool merges both messages into one bubble. Onboarding's
+  // "1 sentence per message + message before every tool" rule + 200+
+  // deferred MCP tools hammered this exact pattern.
+  lastEmittedTextEndsSentence: boolean;
 }
 
 /**
@@ -3722,6 +3731,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       mode,
       prefixStripDone: false,
       prefixBuffer: "",
+      lastEmittedTextEndsSentence: false,
     };
     activeQueries.set(sessionKey, queryCtx);
 
@@ -4981,6 +4991,16 @@ function handleSessionUpdate(
 
         onText(outText);
         sendWithSession(sid, { type: "text_delta", text: outText });
+        // Remember whether this chunk ended a sentence (or contained one).
+        // Used downstream when a HIDDEN ToolSearch arrives — if the prior
+        // text ended a sentence, the next text is a NEW logical message and
+        // must start a new bubble; otherwise it's a mid-sentence continuation
+        // and should merge.
+        if (ctx) {
+          const lastChar = outText.replace(/\s+$/, "").slice(-1);
+          ctx.lastEmittedTextEndsSentence =
+            outText.endsWith("\n") || /[.!?…:]/.test(lastChar);
+        }
       }
       break;
     }
@@ -5016,11 +5036,32 @@ function handleSessionUpdate(
       }
 
       // ToolSearch is an internal ACP tool for loading deferred tool schemas.
-      // Hide it from the UI: don't set pendingBoundary (which would split
-      // the text into separate bubbles) and don't send tool_activity events.
+      // Hide it from the UI: don't send tool_activity events.
+      //
+      // Boundary handling for ToolSearch is the subtle part:
+      //  - Visible tools always get pendingBoundary=true; the visible activity
+      //    chip itself is a natural break and text after it is a new message.
+      //  - Hidden ToolSearch: ALSO set pendingBoundary, BUT only when the
+      //    prior emitted text ended a sentence (.!?…: or newline). Otherwise
+      //    we merge — the model sometimes emits `text → ToolSearch → text`
+      //    where the second text is the SAME sentence resumed (Claude
+      //    occasionally repeats/continues text after loading a deferred tool
+      //    schema). Splitting those would break a sentence mid-thought, which
+      //    is the exact regression the original "don't split for ToolSearch"
+      //    guard was protecting against.
+      //  - The Swift flush path (ChatProvider.flushStreamingBuffer) already
+      //    dedups identical text re-emitted across a ToolSearch, so even when
+      //    we DO set the boundary, the "Claude re-emits identical text" case
+      //    skips the duplicate cleanly.
+      //
+      // This fixes the onboarding bubble-concatenation bug
+      // (`messageA → ToolSearch(load ask_followup) → messageB → ask_followup`
+      // was merging messageA and messageB into one bubble) without
+      // re-introducing mid-sentence splits.
       const isInternalTool = title === "ToolSearch";
-      if (!isInternalTool) {
-        // Mark that text after tool use should get a boundary separator
+      const priorTextEndsSentence = ctx ? ctx.lastEmittedTextEndsSentence : false;
+      const shouldSetBoundary = !isInternalTool || priorTextEndsSentence;
+      if (shouldSetBoundary) {
         if (ctx) ctx.pendingBoundary = true; else pendingBoundary = true;
       }
 
