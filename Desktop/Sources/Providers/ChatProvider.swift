@@ -3475,8 +3475,13 @@ class ChatProvider: ObservableObject {
         // 4. Drop queued messages tagged to this session. Stop should mean stop
         //    for the whole turn, including anything the user typed before
         //    realizing the agent was stuck. If they want to retry, they retype.
-        let droppedQueue = pendingMessages.filter { $0.sessionKey == sessionKey }.count
-        pendingMessages.removeAll { $0.sessionKey == sessionKey }
+        //    Floating-bar legacy paths leave `sessionKey = nil` and treat it as
+        //    "floating", so normalize the comparison.
+        let matches: (QueuedChatMessage) -> Bool = { entry in
+            (entry.sessionKey ?? "floating") == sessionKey
+        }
+        let droppedQueue = pendingMessages.filter(matches).count
+        pendingMessages.removeAll(where: matches)
         // 5. Track the stop so the UI watchdog can show "still cleaning up".
         stoppedSessions[sessionKey] = Date()
         log("ChatProvider: eager-clear for stopped session=\(sessionKey) droppedQueue=\(droppedQueue) remainingSending=\(sendingSessionKeys.sorted())")
