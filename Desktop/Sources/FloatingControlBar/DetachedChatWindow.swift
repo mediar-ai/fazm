@@ -599,6 +599,31 @@ class DetachedChatWindowController {
         return true
     }
 
+    /// Test hook (driven by the `simulateStuckPopoutStream` control command).
+    /// Reproduces the stuck-pop-out bug without a real query: flips every open
+    /// pop-out that has a completed AI bubble back into `isStreaming = true`
+    /// (re-starting its `TypingIndicator` `repeatForever` animation) and arms
+    /// the safety watchdog. Because no query is in flight, `isSending` is false,
+    /// so the watchdog should heal it after `safetyWatchdogIntervalSeconds`.
+    /// Verify: watch `/private/tmp/fazm-dev.log` for
+    /// "safety watchdog: clearing stuck isStreaming".
+    /// - Returns: the number of pop-outs forced into the stuck state.
+    @discardableResult
+    func debugForceStuckStreaming() -> Int {
+        var forced = 0
+        for (winId, entry) in entries {
+            let state = entry.window.state
+            guard let msg = state.streaming.currentAIMessage else { continue }
+            state.streaming.currentAIMessage?.isStreaming = true
+            state.streaming.isAILoading = true
+            scheduleSafetyWatchdog(winId: winId, isStreaming: true, messageId: msg.id)
+            forced += 1
+            log("[DetachedChat] debugForceStuckStreaming: forced session=\(entry.sessionKey) msg=\(msg.id) into stuck-streaming state")
+        }
+        log("[DetachedChat] debugForceStuckStreaming: forced \(forced) pop-out(s)")
+        return forced
+    }
+
     /// Post a notification on the main queue so SwiftUI views can refresh their
     /// open-window count. Call this after every mutation of `entries`.
     private func notifyWindowsChanged() {
