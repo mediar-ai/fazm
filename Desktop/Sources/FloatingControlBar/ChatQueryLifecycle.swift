@@ -51,16 +51,35 @@ enum ChatQueryLifecycle {
         // Don't update state if the conversation was closed while the query was in flight.
         guard state.streaming.showingAIConversation else { return }
 
+        // Whether the just-completed query actually produced visible content.
+        // `isClaudeAuthRequired` and `showCreditExhaustedAlert` are GLOBAL flags
+        // on ChatProvider, so a 401 in a sibling session (e.g. the keychain
+        // shared with `~/claude-account-rotator/` getting rotated underneath an
+        // in-flight query in another pop-out) can flip them while THIS session
+        // streamed an answer just fine. Don't stomp a real response with the
+        // error bubble — the model picker's "Claude — Connect…" affordance
+        // already surfaces the auth requirement globally.
+        let hasStreamedContent: Bool = {
+            guard let msg = state.streaming.currentAIMessage else { return false }
+            return !msg.text.isEmpty || !msg.contentBlocks.isEmpty
+        }()
+
         if provider.isClaudeAuthRequired {
-            // Claude OAuth is no longer connected. The model picker surfaces a
-            // "Claude — Connect…" affordance (mirrors the Codex flow); we just
-            // explain what happened in the AI bubble.
-            let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
-            let body = AccountErrorCopy.message(reason: .authRequired, surface: .chat, geminiAvailable: geminiAvailable)
-            state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
+            if hasStreamedContent {
+                log("ChatQueryLifecycle: skipping auth-required overwrite — \(state.streaming.aiResponseText.count) chars / \(state.streaming.currentAIMessage?.contentBlocks.count ?? 0) blocks already streamed")
+            } else {
+                // Claude OAuth is no longer connected. The model picker surfaces a
+                // "Claude — Connect…" affordance (mirrors the Codex flow); we just
+                // explain what happened in the AI bubble.
+                let geminiAvailable = ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
+                let body = AccountErrorCopy.message(reason: .authRequired, surface: .chat, geminiAvailable: geminiAvailable)
+                state.streaming.currentAIMessage = ChatMessage(text: body, sender: .ai)
+            }
         } else if provider.showCreditExhaustedAlert {
             provider.showCreditExhaustedAlert = false
-            if provider.isClaudeConnected {
+            if hasStreamedContent {
+                log("ChatQueryLifecycle: skipping credit-exhausted overwrite — content already streamed")
+            } else if provider.isClaudeConnected {
                 // User already has valid Claude credentials; just inform them the switch happened
                 log("ChatQueryLifecycle: credits exhausted but Claude already connected, skipping connect prompt")
                 state.streaming.currentAIMessage = ChatMessage(text: "Switched to your Claude account. You can keep chatting.", sender: .ai)
