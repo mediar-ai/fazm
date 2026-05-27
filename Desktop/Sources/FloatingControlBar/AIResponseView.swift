@@ -2506,6 +2506,7 @@ private struct ScrollPositionDetector: NSViewRepresentable {
         private var coalesceWorkItem: DispatchWorkItem?
         private var lastReportedValue: Bool?
         private var lastOriginY: CGFloat?
+        private var lastViewportHeight: CGFloat?
 
         init(onScrollPositionChange: @escaping (Bool) -> Void) {
             self.onScrollPositionChange = onScrollPositionChange
@@ -2538,31 +2539,51 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             let clipBounds = sv.contentView.bounds
             let documentHeight = docView.frame.height
             let originY = clipBounds.origin.y
-            let visibleMaxY = originY + clipBounds.height
+            let viewportHeight = clipBounds.height
+            let visibleMaxY = originY + viewportHeight
             let threshold: CGFloat = 80
             let atBottom = visibleMaxY >= documentHeight - threshold
 
-            defer { lastOriginY = originY }
+            defer {
+                lastOriginY = originY
+                lastViewportHeight = viewportHeight
+            }
 
-            // Distinguish user scroll from content growth. A growing tool-call
-            // block or streamed text chunk can briefly leave visibleMaxY behind
-            // documentHeight, in the same bounds notification where document
-            // height already grew but .defaultScrollAnchor(.bottom) has not yet
-            // advanced origin.y to catch up. If we naively flipped to false in
-            // that frame nothing would re-pin and the rest of the stream would
-            // render below the viewport. Rule: if origin.y did not decrease
-            // since the last check, the user did not scroll up — any apparent
-            // "not at bottom" is mid-layout content growth. Skip the flip and
-            // wait for the next bounds notification (origin.y settled). A real
-            // user scroll-up always lowers origin.y, so this never blocks the
-            // intentional detach the user wants while streaming.
+            // Distinguish user scroll from layout churn. There are two layout
+            // events that look like "scroll up" to a naive at-bottom check but
+            // are not user-initiated:
+            //
+            //   1. Content growth: a tool-call block, thinking block, or
+            //      streamed text delta enlarges documentHeight before SwiftUI's
+            //      .defaultScrollAnchor(.bottom) advances origin.y to match. In
+            //      that frame visibleMaxY trails documentHeight even though
+            //      origin.y is unchanged.
+            //
+            //   2. Viewport resize: the floating bar expands from compact to
+            //      conversation mode (and the pop-out window animates open) by
+            //      growing/shrinking the host window. origin.y can shift wildly
+            //      across multiple frames as the clip view re-clamps against a
+            //      changing viewport height even though the user never touched
+            //      the scrollwheel.
+            //
+            // Without this guard, either event would flip shouldFollowContent
+            // false, briefly flash the scroll-down button and (in the worst
+            // case) leave it stuck until the next user action. Rule: if
+            // origin.y didn't decrease *or* the viewport height changed between
+            // checks, treat it as layout churn and don't flip. A real
+            // user-scroll-up always lowers origin.y while the viewport height
+            // stays constant, so this never blocks the intentional mid-stream
+            // detach the user wants when they scroll back to read history.
             if atBottom == false,
                lastReportedValue == true,
                let prevOrigin = lastOriginY,
-               originY >= prevOrigin - 0.5 {
-                log("[ScrollDetect] suppressed content-growth flip docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(Int(prevOrigin)) visibleMaxY=\(Int(visibleMaxY))")
-                coalesceWorkItem?.cancel()
-                return
+               let prevHeight = lastViewportHeight {
+                let originStable = originY >= prevOrigin - 0.5
+                let viewportChanged = abs(viewportHeight - prevHeight) > 0.5
+                if originStable || viewportChanged {
+                    coalesceWorkItem?.cancel()
+                    return
+                }
             }
 
             guard atBottom != lastReportedValue else { return }
@@ -2573,11 +2594,9 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             coalesceWorkItem = work
             // Eagerly record the intended value so a follow-up check inside the
             // 60ms coalesce window sees the new "true" state and the suppress
-            // rule above can recognize true→false content-growth transients
-            // even before the work item fires.
+            // rule above can recognize true→false transients even before the
+            // work item fires.
             lastReportedValue = atBottom
-            let prevOriginStr = lastOriginY.map { "\(Int($0))" } ?? "nil"
-            log("[ScrollDetect] flip \(atBottom ? "->true" : "->false") docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(prevOriginStr) visibleMaxY=\(Int(visibleMaxY))")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
         }
 
