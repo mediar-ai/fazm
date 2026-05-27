@@ -268,6 +268,13 @@ export interface AuthRequiredMessage {
   type: "auth_required";
   methods: AuthMethod[];
   authUrl?: string;
+  /**
+   * The session key whose query triggered this auth flow, when known.
+   * Pre-warm and bridge-init paths leave this undefined (no user-visible
+   * session is "responsible"). Consumers can use it to scope error UI so a
+   * 401 in one pop-out doesn't stomp a successful stream in another.
+   */
+  triggerSessionKey?: string;
 }
 
 export interface AuthMethod {
