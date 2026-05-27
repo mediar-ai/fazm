@@ -613,13 +613,26 @@ struct OnboardingChatView: View {
 
     /// User has completed enough mandatory onboarding steps to safely skip the rest.
     /// Shows "Skip the rest" button so they aren't trapped waiting for complete_onboarding.
+    ///
+    /// Surfaces the escape when ANY of these signals fires (with a >= 6 message
+    /// floor so the button doesn't appear on a healthy first turn):
+    ///   1. `user_preferences` step marked — the original signal; narrow because
+    ///      it only fires when the agent calls `set_user_preferences` (Step 1.5).
+    ///   2. Exploration pipeline completed independently — the case that left
+    ///      `completedSteps` empty and trapped users who had file pre-indexing
+    ///      from a prior session (background exploration runs without driving
+    ///      any of the chat tools that mark steps).
+    ///   3. Substantial conversation history (>= 12 messages) — the agent has
+    ///      clearly walked the user through enough that abandoning here is safe,
+    ///      even if `user_preferences` was somehow never marked.
     private var canSkipRemainingSteps: Bool {
         let steps = OnboardingChatPersistence.completedSteps
-        // Minimum: user_preferences (name/language set) + at least 6 messages exchanged
-        // (welcome + user reply + name + language + source = ~6 messages minimum)
         let hasMinimumSteps = steps.contains("user_preferences")
+        let explorationDone = OnboardingChatPersistence.isExplorationCompleted
+        let lotsOfMessages = chatProvider.messages.count >= 12
+        let progressed = hasMinimumSteps || explorationDone || lotsOfMessages
         let hasEnoughMessages = chatProvider.messages.count >= 6
-        return hasMinimumSteps && hasEnoughMessages
+        return progressed && hasEnoughMessages
     }
 
     /// Show skip after 120s of no progress. Fires whether the chat is idle
@@ -742,9 +755,28 @@ struct OnboardingChatView: View {
                 // cause the AI to go off-rails and stop following the onboarding flow)
                 let conversationContext = buildConversationContext(from: chatProvider.messages)
                 let completedSteps = OnboardingChatPersistence.completedSteps
-                let stepsNote = completedSteps.isEmpty
-                    ? "\n\nNo onboarding steps were completed before the restart — you must do all steps."
-                    : "\n\n<completed_steps_before_restart>\n\(completedSteps.sorted().joined(separator: ", "))\n</completed_steps_before_restart>\nSkip only these completed steps. Do all other steps that are NOT listed here."
+                let explorationDone = OnboardingChatPersistence.isExplorationCompleted
+                // Decide what to instruct the resumed agent. Three cases:
+                //
+                //   1. Exploration already completed in a prior session — the
+                //      heavy work (profile generation + knowledge graph) is
+                //      done, so drive straight to `complete_onboarding`. This
+                //      breaks the trap where every restart bounced returning
+                //      users back to Step 0's "ready to get started?" gate
+                //      because `completedSteps` was empty (the step-marking
+                //      tools live in Steps 1-3 and never ran in a single
+                //      session that survived a restart).
+                //   2. No steps recorded — fall back to "do all steps" (the
+                //      genuine first-run-after-quit case).
+                //   3. Some steps recorded — resume from the next incomplete.
+                let stepsNote: String
+                if explorationDone {
+                    stepsNote = "\n\nThe user's profile and knowledge graph are already complete from a prior session — the heavy onboarding work is finished. DO NOT re-present Step 0, DO NOT re-walk the welcome / safety / name / language / web research / file scan / browser steps. Send ONE short welcome-back message (1 sentence, max 20 words), then IMMEDIATELY call `complete_onboarding`. The user wants to get into the app; everything else is already done."
+                } else if completedSteps.isEmpty {
+                    stepsNote = "\n\nNo onboarding steps were completed before the restart — you must do all steps."
+                } else {
+                    stepsNote = "\n\n<completed_steps_before_restart>\n\(completedSteps.sorted().joined(separator: ", "))\n</completed_steps_before_restart>\nSkip only these completed steps. Do all other steps that are NOT listed here."
+                }
                 let resumeSystemPrompt = systemPrompt + "\n\n<conversation_so_far>\n" + conversationContext + "\n</conversation_so_far>" + stepsNote + "\n\nThe user's app just restarted after granting a macOS permission. Continue the onboarding from where you left off. CRITICAL: Do NOT re-ask for the user's name or any other information already visible in the conversation above. If you previously addressed the user by name, that name is confirmed. Jump straight to the next incomplete step."
 
                 // Wait for bridge warmup before sending
