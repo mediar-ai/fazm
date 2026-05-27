@@ -77,6 +77,13 @@ final class StreamingResponseState: ObservableObject {
     @Published var pendingChatObserverExchanges: [FloatingChatExchange] = []
     @Published var suggestedReplies: [String] = []
     @Published var suggestedReplyQuestion: String = ""
+    /// Set to `Date()` when the user clicks Stop and the bridge hasn't yet
+    /// emitted its `result` for the interrupted turn. Cleared when the bridge
+    /// finally acks (or when the user resets the session). AIResponseView
+    /// renders a "still cleaning up — Reset" pill once this has aged past
+    /// `ChatProvider.stuckSessionWarnThreshold`. Per-window so siblings stay
+    /// quiet.
+    @Published var pendingInterruptStartedAt: Date? = nil
 
     /// Convenience accessor for plain-text response (used by window geometry and error handling).
     var aiResponseText: String {
