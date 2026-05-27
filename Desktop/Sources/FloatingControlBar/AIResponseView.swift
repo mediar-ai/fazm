@@ -2505,6 +2505,7 @@ private struct ScrollPositionDetector: NSViewRepresentable {
         private var observation: NSObjectProtocol?
         private var coalesceWorkItem: DispatchWorkItem?
         private var lastReportedValue: Bool?
+        private var lastOriginY: CGFloat?
 
         init(onScrollPositionChange: @escaping (Bool) -> Void) {
             self.onScrollPositionChange = onScrollPositionChange
@@ -2536,17 +2537,44 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             guard let sv = scrollView, let docView = sv.documentView else { return }
             let clipBounds = sv.contentView.bounds
             let documentHeight = docView.frame.height
-            let visibleMaxY = clipBounds.origin.y + clipBounds.height
+            let originY = clipBounds.origin.y
+            let visibleMaxY = originY + clipBounds.height
             let threshold: CGFloat = 80
             let atBottom = visibleMaxY >= documentHeight - threshold
+
+            defer { lastOriginY = originY }
+
+            // Distinguish user scroll from content growth. A growing tool-call
+            // block or streamed text chunk can briefly leave visibleMaxY behind
+            // documentHeight, in the same bounds notification where document
+            // height already grew but .defaultScrollAnchor(.bottom) has not yet
+            // advanced origin.y to catch up. If we naively flipped to false in
+            // that frame nothing would re-pin and the rest of the stream would
+            // render below the viewport. Rule: if origin.y did not decrease
+            // since the last check, the user did not scroll up — any apparent
+            // "not at bottom" is mid-layout content growth. Skip the flip and
+            // wait for the next bounds notification (origin.y settled). A real
+            // user scroll-up always lowers origin.y, so this never blocks the
+            // intentional detach the user wants while streaming.
+            if atBottom == false,
+               lastReportedValue == true,
+               let prevOrigin = lastOriginY,
+               originY >= prevOrigin - 0.5 {
+                coalesceWorkItem?.cancel()
+                return
+            }
 
             guard atBottom != lastReportedValue else { return }
             coalesceWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
-                self?.lastReportedValue = atBottom
                 self?.onScrollPositionChange(atBottom)
             }
             coalesceWorkItem = work
+            // Eagerly record the intended value so a follow-up check inside the
+            // 60ms coalesce window sees the new "true" state and the suppress
+            // rule above can recognize true→false content-growth transients
+            // even before the work item fires.
+            lastReportedValue = atBottom
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
         }
 
