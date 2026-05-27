@@ -2560,7 +2560,7 @@ private struct ScrollPositionDetector: NSViewRepresentable {
                lastReportedValue == true,
                let prevOrigin = lastOriginY,
                originY >= prevOrigin - 0.5 {
-                NSLog("[ScrollDetect] suppressed content-growth flip docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(Int(prevOrigin)) visibleMaxY=\(Int(visibleMaxY))")
+                log("[ScrollDetect] suppressed content-growth flip docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(Int(prevOrigin)) visibleMaxY=\(Int(visibleMaxY))")
                 coalesceWorkItem?.cancel()
                 return
             }
@@ -2577,7 +2577,7 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             // even before the work item fires.
             lastReportedValue = atBottom
             let prevOriginStr = lastOriginY.map { "\(Int($0))" } ?? "nil"
-            NSLog("[ScrollDetect] flip \(atBottom ? "→true" : "→false") docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(prevOriginStr) visibleMaxY=\(Int(visibleMaxY))")
+            log("[ScrollDetect] flip \(atBottom ? "->true" : "->false") docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(prevOriginStr) visibleMaxY=\(Int(visibleMaxY))")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
         }
 
