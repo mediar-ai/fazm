@@ -26,6 +26,13 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     var onClearQueue: (() -> Void)?
     var onReorderQueue: ((IndexSet, Int) -> Void)?
     var onStopAgent: (() -> Void)?
+    /// Force-stop for this pop-out: SIGKILLs the wedged browser MCP so a
+    /// hung playwright tool dies for real. Wired by DetachedChatWindowController
+    /// to `ChatProvider.forceStopAgent(sessionKey:)` with this pop-out's key.
+    var onForceStopAgent: (() -> Void)?
+    /// Retry the prompt that was in flight when Force stop fired. Closure
+    /// takes the message's sessionKey (always this pop-out's key here).
+    var onRetryAfterForceStop: ((String) -> Void)?
     /// Fired by the "Reset session" button in the stuck-after-stop pill.
     /// Wired by `DetachedChatWindowController` to `ChatProvider.endSession(sessionKey:)`,
     /// which kills the upstream `claude` subprocess for this window's session.
@@ -98,6 +105,8 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             onClearQueue: { [weak self] in self?.onClearQueue?() },
             onReorderQueue: { [weak self] src, dst in self?.onReorderQueue?(src, dst) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
+            onForceStopAgent: { [weak self] in self?.onForceStopAgent?() },
+            onRetryAfterForceStop: { [weak self] key in self?.onRetryAfterForceStop?(key) },
             onResetStuckSession: { [weak self] in self?.onResetStuckSession?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
             onCodexLogin: { [weak self] in self?.onCodexLogin?() },
@@ -210,6 +219,8 @@ struct DetachedChatView: View {
     var onClearQueue: () -> Void
     var onReorderQueue: (IndexSet, Int) -> Void
     var onStopAgent: () -> Void
+    var onForceStopAgent: (() -> Void)?
+    var onRetryAfterForceStop: ((String) -> Void)?
     /// Fired by the "Reset session" button in the stuck-after-stop pill.
     /// See DetachedChatWindow's outer `onResetStuckSession`.
     var onResetStuckSession: () -> Void
@@ -303,6 +314,8 @@ struct DetachedChatView: View {
                 onReorderQueue(source, dest)
             },
             onStopAgent: onStopAgent,
+            onForceStopAgent: onForceStopAgent,
+            onRetryAfterForceStop: onRetryAfterForceStop,
             onResetStuckSession: onResetStuckSession,
             onConnectClaude: onConnectClaude,
             onCodexLogin: onCodexLogin,
@@ -1145,6 +1158,20 @@ class DetachedChatWindowController {
             // the user wants to escape a hung Claude/Codex call. Chat history
             // stays put; next prompt spawns a fresh session.
             chatProvider?.endSession(sessionKey: key)
+        }
+
+        win.onForceStopAgent = { [weak self, weak win, weak chatProvider] in
+            guard let win, let key = self?.entries[ObjectIdentifier(win)]?.sessionKey else { return }
+            // Force-stop: bridge SIGKILLs the wedged Playwright MCP so the
+            // hung browser tool actually dies. Wired from the "Force stop"
+            // button in the header next to the not-responding indicator.
+            chatProvider?.forceStopAgent(sessionKey: key)
+        }
+
+        win.onRetryAfterForceStop = { [weak chatProvider] key in
+            // Retry the prompt that was in flight when Force stop fired.
+            // Triggered by the Retry button on the tool_force_stopped card.
+            _ = chatProvider?.retryAfterForceStop(sessionKey: key)
         }
 
         win.onConnectClaude = { [weak chatProvider] in
