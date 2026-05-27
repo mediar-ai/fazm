@@ -209,10 +209,11 @@ struct AIResponseView: View {
                                 currentContentView
                             }
 
-                            // Koah contextual ad slot — PoC, gated by `koah_enabled` PostHog
-                            // flag (default off) AND no active subscription. Renders below the
-                            // assistant's completed response. Uses Demo publisher ID until
-                            // explicitly promoted to production. See KoahAdView.swift.
+                            // Koah contextual ad slot. Gated by `KoahAdGate.shouldShowAd()`,
+                            // which requires no active subscription AND the `koah_enabled`
+                            // PostHog feature flag to be true (default false → off for
+                            // everyone). Floating bar + pop-out only; not used in onboarding.
+                            // See KoahAdView.swift.
                             if !isLoading,
                                let msg = currentMessage,
                                !userInput.isEmpty,
