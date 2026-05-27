@@ -127,6 +127,10 @@ struct AIResponseView: View {
     var onClearQueue: (() -> Void)?
     var onReorderQueue: ((IndexSet, Int) -> Void)?
     var onStopAgent: (() -> Void)?
+    /// Tear down the upstream session — wired to `ChatProvider.endSession(sessionKey:)`.
+    /// Called from the "Reset session" button in the still-cleaning-up pill when
+    /// the bridge hasn't ack'd a Stop within `stuckSessionWarnThreshold`.
+    var onResetSession: (() -> Void)?
     var onPopOut: (() -> Void)?
     var onConnectClaude: (() -> Void)?
     var onCodexLogin: (() -> Void)?
@@ -1094,6 +1098,14 @@ struct AIResponseView: View {
 
     private var followUpInputView: some View {
         VStack(spacing: 0) {
+            // Stuck-after-stop pill: appears when the user clicked Stop but the
+            // bridge hasn't emitted its result within ~3s (typical ack is sub-second).
+            // Surfaces a Reset that fully tears down the upstream session — the
+            // only escape hatch from a hung Claude/Codex call. Wrapped in
+            // TimelineView so the elapsed check refreshes once a second
+            // without an explicit timer.
+            stuckAfterStopPill
+
             // Editing-message pill: appears above the input when the user
             // clicks the pencil on a past bubble. The same input field is
             // reused for editing so voice / select-all / paste all just work.
@@ -1227,6 +1239,58 @@ struct AIResponseView: View {
             return "Type next question (queued)..."
         }
         return "Ask follow up..."
+    }
+
+    /// Pill above the follow-up input that surfaces when the bridge hasn't
+    /// honored a Stop within `ChatProvider.stuckSessionWarnThreshold` seconds.
+    /// Wraps in a `TimelineView` so the elapsed check refreshes ~1× / sec
+    /// without us owning a timer. Hidden once `pendingInterruptStartedAt` is
+    /// cleared by ChatProvider (bridge ack'd or session reset).
+    @ViewBuilder
+    private var stuckAfterStopPill: some View {
+        TimelineView(.periodic(from: .now, by: 1.0)) { context in
+            if let startedAt = streaming.pendingInterruptStartedAt,
+               context.date.timeIntervalSince(startedAt) >= 3.0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundColor(.orange)
+
+                    Text("Previous request is still cleaning up")
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundColor(FazmColors.overlayForeground.opacity(0.85))
+
+                    Spacer(minLength: 4)
+
+                    Button(action: { onResetSession?() }) {
+                        Text("Reset session")
+                            .scaledFont(size: 11, weight: .semibold)
+                            .foregroundColor(FazmColors.overlayForeground)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(FazmColors.overlayForeground.opacity(0.15))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Tear down the stuck session and start fresh")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.orange.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.orange.opacity(0.30), lineWidth: 0.5)
+                        )
+                )
+                .padding(.bottom, 6)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: streaming.pendingInterruptStartedAt)
     }
 
     /// Pill above the follow-up input that signals "you are editing a past
