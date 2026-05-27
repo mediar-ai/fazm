@@ -300,8 +300,14 @@ struct AIResponseView: View {
                         }
                     }
 
-                    // Scroll-to-bottom overlay button
-                    if !shouldFollowContent && !chatHistory.isEmpty {
+                    // Scroll-to-bottom overlay button — show whenever the view
+                    // is detached and there is anything scrollable. Gating on
+                    // chatHistory alone hid the button during the very first
+                    // exchange (the live question/response lives in
+                    // currentMessage and isn't archived into chatHistory until
+                    // the next query), so scrolling up mid-first-stream left no
+                    // way back to the bottom.
+                    if !shouldFollowContent && (currentMessage != nil || !userInput.isEmpty || !chatHistory.isEmpty) {
                         Button {
                             shouldFollowContent = true
                             scrollToBottom(proxy: proxy)
