@@ -894,20 +894,31 @@ struct AIResponseView: View {
                     }
                 )
                     .opacity(stackedBubbleIDs.contains(exchange.id) ? 0 : 1)
-                    .background(
-                        GeometryReader { geo in
-                            let frame = geo.frame(in: .named(Self.chatScrollSpace))
-                            Color.clear.preference(
-                                key: StackedBubblesPreferenceKey.self,
-                                value: [StackedBubbleInfo(
-                                    id: exchange.id,
-                                    question: exchange.question,
-                                    topY: frame.minY,
-                                    height: frame.height
-                                )]
-                            )
+                    .background {
+                        // Per-bubble geometry probe feeding the stacked-bubble
+                        // peek overlay. Suspended while a turn is active: it
+                        // otherwise re-measures every history bubble on every
+                        // layout pass — an O(history) cost paid at the streaming
+                        // refresh rate. With it gone, bubbleInfos clears (the
+                        // preference defaults to []), so every bubble renders at
+                        // full opacity and the peek overlay hides until the turn
+                        // ends — fine, since the user is pinned to the bottom
+                        // while a response streams.
+                        if !isTurnActive {
+                            GeometryReader { geo in
+                                let frame = geo.frame(in: .named(Self.chatScrollSpace))
+                                Color.clear.preference(
+                                    key: StackedBubblesPreferenceKey.self,
+                                    value: [StackedBubbleInfo(
+                                        id: exchange.id,
+                                        question: exchange.question,
+                                        topY: frame.minY,
+                                        height: frame.height
+                                    )]
+                                )
+                            }
                         }
-                    )
+                    }
             }
 
             // Response with content blocks
@@ -1252,6 +1263,17 @@ struct AIResponseView: View {
 
     private var isThisSessionStreaming: Bool {
         currentMessage?.isStreaming == true
+    }
+
+    /// True while a turn is in flight for this window (streaming tokens or
+    /// running tools). Used to suspend the per-history-bubble geometry probes
+    /// that feed the stacked-bubble peek overlay — see `chatExchangeView`.
+    /// Those probes re-measure every history bubble on every layout pass, an
+    /// O(history) cost paid at the streaming refresh rate; the peek overlay
+    /// simply doesn't update mid-turn (the user is pinned to the bottom while
+    /// a response streams).
+    private var isTurnActive: Bool {
+        isLoading || currentMessage?.isStreaming == true
     }
 
     private var followUpPlaceholder: String {
