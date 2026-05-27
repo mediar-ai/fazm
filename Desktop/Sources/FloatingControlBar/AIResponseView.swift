@@ -399,7 +399,6 @@ struct AIResponseView: View {
     }
 
     @AppStorage("aiChatWorkingDirectory") private var globalWorkspaceDirectory: String = ""
-    @State private var connectClaudePulse = false
     @State private var showWorkspaceInfo = false
 
     /// The effective workspace for this view: per-window state if set, otherwise global default.
@@ -472,17 +471,18 @@ struct AIResponseView: View {
                 workspaceLabel
             }
 
-            if state.showConnectClaudeButton {
-                connectClaudeButton
-            }
-
             if state.showUpgradeClaudeButton {
                 upgradeClaudeButton
             }
 
             Spacer()
 
-            ModelToggleButton(localModel: localModel, onCodexLogin: onCodexLogin)
+            ModelToggleButton(
+                localModel: localModel,
+                isClaudeConnected: state.isClaudeConnected,
+                onConnectClaude: onConnectClaude,
+                onCodexLogin: onCodexLogin
+            )
 
             VoiceMuteButton()
 
@@ -601,44 +601,6 @@ struct AIResponseView: View {
             Text("Fazm says")
                 .scaledFont(size: 14)
                 .foregroundColor(.secondary)
-        }
-    }
-
-    private var connectClaudeButton: some View {
-        Button(action: { onConnectClaude?() }) {
-            HStack(spacing: 5) {
-                Image(systemName: "person.badge.key")
-                    .scaledFont(size: 10)
-                Text("Connect Claude")
-                    .scaledFont(size: 11, weight: .medium)
-            }
-            .foregroundColor(FazmColors.overlayForeground)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(FazmColors.purplePrimary)
-                    .shadow(color: FazmColors.purplePrimary.opacity(connectClaudePulse ? 0.6 : 0.2), radius: connectClaudePulse ? 8 : 2)
-            )
-        }
-        .buttonStyle(.plain)
-        .onAppear { startConnectClaudePulseIfVisible() }
-        .onChange(of: windowIsVisible) { _, visible in
-            if visible {
-                startConnectClaudePulseIfVisible()
-            } else {
-                // Snap to the static value without an animation so the
-                // repeatForever loop releases the display cycle.
-                withAnimation(.default) { connectClaudePulse = false }
-            }
-        }
-        .transition(.scale.combined(with: .opacity))
-    }
-
-    private func startConnectClaudePulseIfVisible() {
-        guard windowIsVisible else { return }
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-            connectClaudePulse = true
         }
     }
 
@@ -1575,6 +1537,16 @@ struct ModelToggleButton: View {
     @ObservedObject private var codexBackend = CodexBackendManager.shared
     /// When provided, reads and writes model selection to this binding instead of the global setting.
     var localModel: Binding<String>?
+    /// Whether the user has a cached Claude OAuth token. Mirrored from
+    /// `ChatProvider.isClaudeConnected` via `FloatingControlBarState` so we don't
+    /// have to plumb `ChatProvider` into this leaf view. Default is `true` so
+    /// surfaces that don't mirror the state (none today) don't accidentally
+    /// surface a "Connect…" affordance.
+    var isClaudeConnected: Bool = true
+    /// Triggered when the user picks a Claude model while Claude is unconnected.
+    /// The bar window wires this to `chatProvider.startClaudeAuth()`, mirroring
+    /// the Codex pattern (kick off OAuth directly from the picker, no chooser sheet).
+    var onConnectClaude: (() -> Void)?
     /// Triggered when the user picks a GPT model while Codex is unauthenticated.
     /// The bar window wires this to `chatProvider.startCodexLogin()`. After OAuth
     /// completes, ChatProvider applies `pendingPickerModelId` to actually switch
@@ -1592,6 +1564,10 @@ struct ModelToggleButton: View {
         return shortcutSettings.shortLabel(for: selectedModelId) ?? "Fast"
     }
 
+    private func isClaudeModel(_ id: String) -> Bool {
+        id.hasPrefix("claude-")
+    }
+
     var body: some View {
         Menu {
             ForEach(shortcutSettings.availableModels) { model in
@@ -1600,6 +1576,15 @@ struct ModelToggleButton: View {
                     if needsCodexAuth {
                         codexBackend.pendingPickerModelId = model.id
                         onCodexLogin?()
+                        return
+                    }
+                    let needsClaudeAuth = isClaudeModel(model.id) && !isClaudeConnected
+                    if needsClaudeAuth {
+                        if let localModel {
+                            localModel.wrappedValue = model.id
+                        }
+                        shortcutSettings.selectedModel = model.id
+                        onConnectClaude?()
                         return
                     }
                     if let localModel {
@@ -1612,6 +1597,8 @@ struct ModelToggleButton: View {
                     if selectedModelId == model.id {
                         Label(model.label, systemImage: "checkmark")
                     } else if model.id.hasPrefix("gpt-") && codexBackend.authMode == "none" {
+                        Label(model.label + " — Connect…", systemImage: "person.badge.key")
+                    } else if isClaudeModel(model.id) && !isClaudeConnected {
                         Label(model.label + " — Connect…", systemImage: "person.badge.key")
                     } else {
                         Text(model.label)
