@@ -522,7 +522,25 @@ struct AIResponseView: View {
                     .scaledFont(size: 14)
                     .foregroundColor(.orange)
             } else if isLoading {
-                if isHanging {
+                if let stalledName = streaming.stalledToolName,
+                   let stalledSince = streaming.stalledSince {
+                    // Live "tool not responding" indicator. Driven by the
+                    // bridge stall detector (`tool_stalled`) when an in-flight
+                    // mcp__ tool has gone silent past the threshold (typical
+                    // case: Playwright on a dead Chrome extension). The turn
+                    // is NOT canceled — this is purely a "stop is the move"
+                    // signal so the window doesn't sit there looking frozen
+                    // with no animation. Takes precedence over the crash-only
+                    // `isHanging` path; both shouldn't render at once.
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .scaledFont(size: 12)
+                        .foregroundColor(.orange)
+                    TimelineView(.periodic(from: stalledSince, by: 1.0)) { ctx in
+                        Text("\(friendlyToolLabel(stalledName)) is not responding · \(Int(ctx.date.timeIntervalSince(stalledSince)))s")
+                            .scaledFont(size: 14)
+                            .foregroundColor(.orange)
+                    }
+                } else if isHanging {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .scaledFont(size: 12)
                         .foregroundColor(.orange)
