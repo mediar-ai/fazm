@@ -5889,6 +5889,62 @@ async function main(): Promise<void> {
     }
   }, HEARTBEAT_INTERVAL_MS).unref();
 
+  // --- Stall detector -------------------------------------------------------
+  // Surface (but do NOT cancel) an in-flight `mcp__*` tool that has stopped
+  // emitting status updates for more than STALL_THRESHOLD_MS. A healthy slow
+  // tool keeps emitting `in_progress` / rawInput updates (`lastUpdateAt`
+  // advances); a wedged SDK→MCP forward goes silent (Playwright on a dead
+  // Chrome extension is the canonical case). We emit `tool_stalled` so the UI
+  // can show a live "not responding… Ns" indicator and escalate Stop to a
+  // Force stop affordance, long before the 300s tool watchdog fires. This is
+  // informational only — the turn stays alive and the tool may still respond.
+  //
+  // We track sessionId alongside each stalled toolCallId so we can still
+  // route the `stalled: false` clear AFTER the tool has been removed from
+  // `inFlightTools` (completion / cancel deletes it, but the UI still needs
+  // the clear).
+  const STALL_THRESHOLD_MS = 15_000;
+  const STALL_CHECK_INTERVAL_MS = 5_000;
+  const stalledTools = new Map<string, { sessionId: string | undefined }>();
+  setInterval(() => {
+    const now = Date.now();
+    // Flag newly-stalled tools.
+    for (const [toolCallId, tool] of inFlightTools) {
+      if (!tool.title.startsWith("mcp__")) continue;
+      const silentMs = now - tool.lastUpdateAt;
+      if (silentMs > STALL_THRESHOLD_MS && !stalledTools.has(toolCallId)) {
+        stalledTools.set(toolCallId, { sessionId: tool.sessionId });
+        sendWithSession(tool.sessionId, {
+          type: "tool_stalled",
+          stalled: true,
+          toolName: tool.title,
+          toolUseId: toolCallId,
+          elapsedSeconds: (now - tool.startedAt) / 1000,
+        });
+        logErr(
+          `Tool stalled: ${tool.title} (id=${toolCallId}, session=${tool.sessionKey ?? tool.sessionId ?? "?"}) ` +
+            `silent ${(silentMs / 1000).toFixed(1)}s — surfacing not-responding to UI`,
+        );
+      }
+    }
+    // Clear tools that resumed (updates flowing again) or that left
+    // `inFlightTools` entirely (completed/failed/turn ended).
+    for (const [toolCallId, meta] of [...stalledTools]) {
+      const tool = inFlightTools.get(toolCallId);
+      const resumed = tool ? now - tool.lastUpdateAt <= STALL_THRESHOLD_MS : true;
+      if (resumed) {
+        stalledTools.delete(toolCallId);
+        sendWithSession(meta.sessionId, {
+          type: "tool_stalled",
+          stalled: false,
+          toolName: tool?.title ?? "",
+          toolUseId: toolCallId,
+          elapsedSeconds: tool ? (now - tool.startedAt) / 1000 : 0,
+        });
+      }
+    }
+  }, STALL_CHECK_INTERVAL_MS).unref();
+
   // 3. Signal readiness
   send({ type: "init", sessionId: "" });
   logErr("ACP Bridge started, waiting for queries...");
