@@ -2155,7 +2155,7 @@ function sendAuthCancelledResult(sessionId: string, err: unknown): void {
  *
  * Idempotent: if a flow is already running, returns the same promise.
  */
-async function startAuthFlow(): Promise<void> {
+async function startAuthFlow(triggerSessionKey?: string): Promise<void> {
   if (activeAuthPromise) {
     logErr("Auth flow already in progress, waiting for it...");
     return activeAuthPromise;
@@ -2163,12 +2163,14 @@ async function startAuthFlow(): Promise<void> {
 
   activeAuthPromise = (async () => {
     try {
-      logErr("Starting OAuth flow...");
+      logErr(`Starting OAuth flow${triggerSessionKey ? ` (trigger=${triggerSessionKey})` : ""}...`);
       const flow = await startOAuthFlow(logErr);
       activeOAuthFlow = flow;
 
-      // Send auth URL to Swift so it can open the browser
-      send({ type: "auth_required", methods: authMethods, authUrl: flow.authUrl });
+      // Send auth URL to Swift so it can open the browser. Include the
+      // triggering session key so Swift can scope per-session error UI and
+      // avoid clobbering successful streams in sibling pop-outs.
+      send({ type: "auth_required", methods: authMethods, authUrl: flow.authUrl, triggerSessionKey });
 
       // Wait for OAuth callback + token exchange + credential storage
       await flow.complete;
@@ -4546,7 +4548,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         activeSessionId = "";
         msg.resume = undefined;
         try {
-          await startAuthFlow();
+          await startAuthFlow(sessionKey);
         } catch (authErr) {
           if (isUserAbortedAuth(authErr)) {
             logErr(`session/prompt OAuth flow ${authErr instanceof Error ? authErr.message : String(authErr)} — surfacing as assistant result`);
@@ -4750,7 +4752,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       authRetryCount++;
       logErr(`Query failed with auth error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
       try {
-        await startAuthFlow();
+        await startAuthFlow(sessionKey);
       } catch (authErr) {
         if (isUserAbortedAuth(authErr)) {
           logErr(`Query OAuth flow ${authErr instanceof Error ? authErr.message : String(authErr)} — surfacing as assistant result`);
