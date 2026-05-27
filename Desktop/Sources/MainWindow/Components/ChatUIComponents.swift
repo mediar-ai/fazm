@@ -402,7 +402,12 @@ struct DiscoveryCard: View {
 /// thin border, muted icon-led header, optional collapsible details.
 struct SystemEventCardView: View {
     let event: SystemEvent
+    /// Optional Retry action shown on `.toolForceStopped` cards. Wired by
+    /// AIResponseView when ChatProvider has a captured `lastForceStoppedPrompt`
+    /// for this session. Nil on every other surface; the button hides.
+    var onRetry: (() -> Void)? = nil
     @State private var detailsExpanded: Bool = false
+    @State private var retried: Bool = false
 
     private var iconName: String {
         switch event.kind {
@@ -410,6 +415,7 @@ struct SystemEventCardView: View {
         case .sessionRecoveryEmpty:    return "exclamationmark.triangle"
         case .toolHangCanceled:        return "xmark.octagon"
         case .taskHangCanceled:        return "person.crop.circle.badge.exclamationmark"
+        case .toolForceStopped:        return "bolt.slash.fill"
         case .userInterrupted:         return "stop.circle"
         case .browserExtensionResumed: return "puzzlepiece.extension.fill"
         }
@@ -421,6 +427,7 @@ struct SystemEventCardView: View {
         case .sessionRecoveryEmpty:    return .orange
         case .toolHangCanceled:        return .orange
         case .taskHangCanceled:        return .orange
+        case .toolForceStopped:        return .orange
         case .userInterrupted:         return .gray
         case .browserExtensionResumed: return .green
         }
@@ -442,6 +449,38 @@ struct SystemEventCardView: View {
                 .scaledFont(size: 12)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Retry affordance on `.toolForceStopped` cards. The action is
+            // wired by AIResponseView from ChatProvider.retryAfterForceStop;
+            // a successful click pops the captured prompt and re-enqueues
+            // it on the now-idle session, so the user doesn't have to retype.
+            // Disabled after one click (the prompt is consumed; clicking
+            // again would do nothing).
+            if event.kind == .toolForceStopped, let action = onRetry {
+                Button {
+                    if !retried {
+                        retried = true
+                        action()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: retried ? "checkmark" : "arrow.clockwise")
+                            .scaledFont(size: 11, weight: .semibold)
+                        Text(retried ? "Resent" : "Retry")
+                            .scaledFont(size: 11, weight: .semibold)
+                    }
+                    .foregroundColor(retried ? .secondary : accentColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(accentColor.opacity(retried ? 0.05 : 0.15))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(retried)
+                .padding(.top, 2)
+            }
 
             if !event.details.isEmpty {
                 Button {
