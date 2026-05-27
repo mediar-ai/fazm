@@ -1,10 +1,15 @@
 {
-  "unreleased": [
-    "Fixed Claude account picker hanging when re-auth was needed but expired credentials were still in the keychain",
-    "Fixed chat response being replaced with a Claude reconnect prompt right after switching to a GPT or Gemini model",
-    "Replaced the pulsing \"Connect Claude\" peel with an inline \"Claude \u2014 Connect\u2026\" entry in the model picker (mirrors how Codex/ChatGPT shows up when not connected)"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.42",
+      "date": "2026-05-27",
+      "changes": [
+        "Fixed Claude account picker hanging when re-auth was needed but expired credentials were still in the keychain",
+        "Fixed chat response being replaced with a Claude reconnect prompt right after switching to a GPT or Gemini model",
+        "Replaced the pulsing \"Connect Claude\" peel with an inline \"Claude \u2014 Connect\u2026\" entry in the model picker (mirrors how Codex/ChatGPT shows up when not connected)"
+      ]
+    },
     {
       "version": "2.9.41",
       "date": "2026-05-27",
