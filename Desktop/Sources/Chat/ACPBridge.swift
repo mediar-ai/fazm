@@ -631,8 +631,22 @@ actor ACPBridge {
     }
 
     // Custom API endpoint (allows proxying through Copilot, corporate gateways, etc.)
-    if let customEndpoint = defaults.string(forKey: "customApiEndpoint"), !customEndpoint.isEmpty {
-      env["ANTHROPIC_BASE_URL"] = customEndpoint
+    // Only forward it when it's an absolute http(s) URL with a host. A malformed value
+    // (missing scheme, "localhost:8766", stray text) otherwise lands in ANTHROPIC_BASE_URL
+    // and makes the Anthropic SDK throw "API Error: Invalid URL" on every query, silently
+    // bricking built-in chat — the retry-with-resume path can even swallow it into an empty
+    // turn so the user sees no error at all. Falling back to the default keeps chat working.
+    if let customEndpoint = defaults.string(forKey: "customApiEndpoint")?
+      .trimmingCharacters(in: .whitespacesAndNewlines), !customEndpoint.isEmpty {
+      if let url = URL(string: customEndpoint),
+        let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+        let host = url.host, !host.isEmpty {
+        env["ANTHROPIC_BASE_URL"] = customEndpoint
+      } else {
+        log(
+          "ACPBridge: ignoring malformed customApiEndpoint '\(customEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
+        )
+      }
     }
 
     // Tool timeout override (user-configurable in Settings > Advanced)
