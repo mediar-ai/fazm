@@ -1632,6 +1632,11 @@ class FloatingControlBarManager {
         //   getBridgeState                      — signal SIGUSR2 to the bridge so it dumps sessions / activeQueries / PID to /tmp/fazm-bridge-state.json (legacy) and /tmp/fazm-bridge-state-<scope>.json
         //   restartBridge                       — terminate the running bridge subprocess and let ChatProvider relaunch it (clears leaked claude subprocesses)
         //   testBrowserSetupRetry:<key>:<ob>:<text> — simulate the post-browser-extension-setup retry (key empty = main/nil, "floating", or "detached-<uuid>"; ob=0|1 = was onboarding; text = pending message)
+        //   simulateCreditExhausted              — flip showCreditExhaustedAlert=true to drive the post-cap UI without spending $10
+        //   clearCreditExhausted                 — clear showCreditExhaustedAlert (undo the simulate above)
+        //   openConnectPersonalSheet             — open the PersonalAccountChooserSheet directly (Claude/Codex/Gemini chooser used by Settings + credit-exhausted path)
+        //   connectClaude                        — kick off Claude OAuth (same path as tapping "Claude — Connect…" in the model picker)
+        //   disconnectClaude                     — clear Claude OAuth creds + flip to builtin (NUKES ~/Library/Application Support/Claude/config.json and "Claude Code-credentials" keychain entry; reversible by re-OAuth, but disruptive)
         DistributedNotificationCenter.default().addFazmObserver(
             "control"
         ) { [weak self] notification in
@@ -1748,6 +1753,23 @@ class FloatingControlBarManager {
                         PersonalAccountChooserWindowController.shared.show(chatProvider: cp, source: "debug_trigger")
                     }
                     log("FloatingControlBarManager: openConnectPersonalSheet invoked")
+                } else if command == "connectClaude" {
+                    // Mirrors the dropdown "Claude — Connect…" tap path: kick
+                    // off OAuth directly. Opens the cached auth URL when one
+                    // exists, otherwise restarts the bridge to trigger a fresh
+                    // auth_required event.
+                    self.chatProvider?.startClaudeAuth()
+                    log("FloatingControlBarManager: connectClaude invoked")
+                } else if command == "disconnectClaude" {
+                    // Test hook so callers can flip Claude into the unconnected
+                    // state without manual Settings clicks. Clears OAuth creds,
+                    // flips `isClaudeConnected` to false, and surfaces the
+                    // "Claude — Connect…" affordance in the model picker.
+                    Task { @MainActor in
+                        await self.chatProvider?.disconnectClaude()
+                        self.writeControlState()
+                    }
+                    log("FloatingControlBarManager: disconnectClaude invoked")
                 } else if command.hasPrefix("testBrowserSetupRetry:") {
                     // Test hook for `ChatProvider.retryAfterBrowserSetup()` dispatch.
                     // Format: testBrowserSetupRetry:<sessionKey>:<onboarding>:<text>
@@ -1788,6 +1810,33 @@ class FloatingControlBarManager {
         let voiceEnabled = UserDefaults.standard.bool(forKey: "voiceResponseEnabled")
         let workspace = UserDefaults.standard.string(forKey: "aiChatWorkingDirectory") ?? ""
         let browserMode = UserDefaults.standard.string(forKey: "browserMode") ?? "extension"
+        let isClaudeConnected = chatProvider?.isClaudeConnected ?? true
+        let isClaudeAuthRequired = chatProvider?.isClaudeAuthRequired ?? false
+        let codexAuthMode = CodexBackendManager.shared.authMode
+
+        // Picker labels exactly as `ModelToggleButton` renders them, so callers
+        // can verify "— Connect…" affordances without driving the SwiftUI menu.
+        // Keep the suffix logic here in sync with `ModelToggleButton.body`.
+        let pickerOptions: [[String: Any]] = ShortcutSettings.shared.availableModels.map { model in
+            let id = model.id
+            let needsClaudeAuth: Bool = {
+                if !isClaudeConnected {
+                    if id.hasPrefix("claude-") || id.contains("haiku") || id.contains("sonnet") || id.contains("opus") {
+                        return true
+                    }
+                }
+                return false
+            }()
+            let needsCodexAuth = id.hasPrefix("gpt-") && codexAuthMode == "none"
+            let suffix = (needsClaudeAuth || needsCodexAuth) ? " — Connect…" : ""
+            return [
+                "id": id,
+                "label": model.label + suffix,
+                "shortLabel": model.shortLabel,
+                "needsClaudeAuth": needsClaudeAuth,
+                "needsCodexAuth": needsCodexAuth,
+            ]
+        }
 
         var dict: [String: Any] = [
             "model": ShortcutSettings.shared.selectedModel,
@@ -1804,7 +1853,11 @@ class FloatingControlBarManager {
             "displayedQuery": state?.streaming.displayedQuery ?? "",
             "queueCount": state?.input.messageQueue.count ?? 0,
             "isTutorialActive": state?.tutorial.isTutorialChatActive ?? false,
-            "availableModels": ShortcutSettings.shared.availableModels.map { ["id": $0.id, "label": $0.label, "shortLabel": $0.shortLabel] }
+            "isClaudeConnected": isClaudeConnected,
+            "isClaudeAuthRequired": isClaudeAuthRequired,
+            "codexAuthMode": codexAuthMode,
+            "availableModels": ShortcutSettings.shared.availableModels.map { ["id": $0.id, "label": $0.label, "shortLabel": $0.shortLabel] },
+            "pickerOptions": pickerOptions
         ]
 
         if let currentMessage = state?.streaming.currentAIMessage {
