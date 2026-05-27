@@ -47,6 +47,14 @@ Requires macOS 14.0+, Xcode, and code signing with an Apple Developer ID.
 ./reset-and-run.sh
 ```
 
+## Self-Hosting Notes
+
+`./run.sh` builds against the hosted Fazm backend by default. The bootstrap config (`.env.app`) is checked in and contains only public identifiers (Firebase API key, OAuth client ID, Cloud Run URL, GCP project metadata), no credentials. See the file's header for details.
+
+The actual billable model API keys (Anthropic, Gemini, Deepgram, ElevenLabs) are fetched from the backend at runtime via `KeyService`, gated by Firebase auth and a $10 lifetime cap per user. They never ship in any binary.
+
+To run against your own backend, override `FAZM_BACKEND_URL` (and the Firebase / OAuth values) in a local `.env.app.dev` file, which `run.sh` prefers when present. The backend implementation (auth, billing, key vending) is not currently open source.
+
 ## License
 
 MIT
