@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "Fixed chat scroll detaching mid-stream (tool calls, thinking blocks) and right after sending; the view now stays pinned to the latest content while following, and the scroll-to-bottom button always shows once you scroll up, including during your first message",
-    "Reduced CPU usage and improved smoothness of chat and pop-out windows while a response streams, especially in long conversations or after a large prompt"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.44",
+      "date": "2026-05-27",
+      "changes": [
+        "Fixed chat scroll detaching mid-stream (tool calls, thinking blocks) and right after sending; the view now stays pinned to the latest content while following, and the scroll-to-bottom button always shows once you scroll up, including during your first message",
+        "Reduced CPU usage and improved smoothness of chat and pop-out windows while a response streams, especially in long conversations or after a large prompt"
+      ]
+    },
     {
       "version": "2.9.43",
       "date": "2026-05-27",
