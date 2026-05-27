@@ -73,6 +73,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onSendQuery: ((String, [ChatAttachment]) -> Void)?
     var onInterruptAndFollowUp: ((String) -> Void)?
     var onStopAgent: (() -> Void)?
+    /// Fired by the "Reset session" button in the stuck-after-stop pill.
+    /// Wired to `ChatProvider.endSession(sessionKey:)`, which kills the
+    /// upstream `claude` subprocess for that session and lets the next
+    /// prompt spawn a fresh one. Distinct from `onResetSession`, which is
+    /// "New Chat" (clears history + new conversation).
+    var onResetStuckSession: (() -> Void)?
     var onPopOut: (() -> Void)?
     var onResetSession: (() -> Void)?
     /// Fired when the user clicks the fork button in the chat header. The
@@ -248,6 +254,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onClearQueue: { [weak self] in self?.onClearQueue?() },
             onReorderQueue: { [weak self] source, dest in self?.onReorderQueue?(source, dest) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
+            onResetStuckSession: { [weak self] in self?.onResetStuckSession?() },
             onPopOut: { [weak self] in self?.onPopOut?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
             onCodexLogin: { [weak self] in self?.onCodexLogin?() },
@@ -1245,6 +1252,10 @@ class FloatingControlBarManager {
 
         barWindow.onStopAgent = { [weak chatProvider] in
             chatProvider?.stopAgent()
+        }
+
+        barWindow.onResetStuckSession = { [weak chatProvider] in
+            chatProvider?.endSession(sessionKey: "floating")
         }
 
         barWindow.onPopOut = { [weak self] in
