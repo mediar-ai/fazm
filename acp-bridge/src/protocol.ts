@@ -493,6 +493,24 @@ export interface TaskHangCanceledMessage {
 }
 
 /**
+ * Emitted by the force-stop handler after the user (or a watchdog) escalated
+ * from cooperative Stop to a hard kill: the bridge sent `session/cancel` AND
+ * SIGKILLed the Playwright MCP subprocesses spawned under codex-acp so the
+ * in-flight tool call actually dies (instead of riding out the 300s tool
+ * watchdog). UI renders a card explaining the action and offering Retry.
+ * `killedPids` is informational (used for log/debug, not shown to the user).
+ */
+export interface ToolForceStoppedMessage {
+  type: "tool_force_stopped";
+  toolName: string;     // raw mcp__* title, or "" if no in-flight tool when invoked
+  toolUseId: string;
+  killedPids: number[];
+  reason: string;       // human-readable explanation for the card
+  sessionId?: string;
+  sessionKey?: string;
+}
+
+/**
  * Emitted by the stall detector when an in-flight `mcp__*` tool stops emitting
  * status updates for longer than the stall threshold (the SDK→MCP-subprocess
  * forward is wedged — e.g. a Playwright browser call blocked on an
@@ -696,6 +714,7 @@ export type OutboundMessage =
   | ToolHangCanceledMessage
   | TaskHangCanceledMessage
   | ToolStalledMessage
+  | ToolForceStoppedMessage
   | SessionStartedMessage
   | CodexProbeResultMessage
   | CodexLoginUrlMessage
