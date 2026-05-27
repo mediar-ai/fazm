@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed Claude account picker hanging when re-auth was needed but expired credentials were still in the keychain"
+    "Fixed Claude account picker hanging when re-auth was needed but expired credentials were still in the keychain",
+    "Fixed chat response being replaced with a Claude reconnect prompt right after switching to a GPT or Gemini model"
   ],
   "releases": [
     {
