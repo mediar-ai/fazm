@@ -75,6 +75,34 @@ struct AIResponseView: View {
     /// When true, the stacked past-prompts overlay is collapsed to a single show button.
     @State private var isStackHidden = false
 
+    // MARK: - Response-body virtualization (large conversations)
+    // In a long conversation the message list is a plain (non-lazy) VStack, so
+    // every AI response — markdown, code blocks, tool/observer cards — stays in
+    // the display list and is re-walked on every layout pass, an O(history) cost
+    // paid at the streaming refresh rate (profiled 2026-05-27). We can't switch
+    // to LazyVStack (`.defaultScrollAnchor(.bottom)` needs full synchronous
+    // content height — reverted in 9585586e). Instead we keep every PROMPT bubble
+    // mounted (so the stacked-prompt overlay + `scrollTo` jump-back are untouched)
+    // and swap each off-viewport AI RESPONSE for a fixed-height spacer matching
+    // its last-measured height, rematerializing it when scrolled near. Responses
+    // are the bulk of the per-frame cost; prompts are one line each.
+    /// Last-measured rendered height of each archived exchange's response block,
+    /// keyed by exchange id. Drives the collapsed spacer so expand/collapse never
+    /// shifts layout. Cleared on font-scale change (heights become stale).
+    @State private var responseHeights: [UUID: CGFloat] = [:]
+    /// Vertical extent (minY...maxY in `chatScrollSpace` document coords) of each
+    /// archived exchange row. Document coords don't move when scrolling, so these
+    /// only update on real layout changes; visibility is recomputed cheaply when
+    /// `scrollBounds` moves. Used to decide which responses fall inside the
+    /// keep-rendered window.
+    @State private var exchangeExtents: [UUID: ClosedRange<CGFloat>] = [:]
+    /// Only virtualize once the conversation is large enough to matter; shorter
+    /// chats render in full (zero behavior change for the common case).
+    private static let virtualizationMinExchanges = 12
+    /// Height assumed for a response we have not measured yet (older turns on
+    /// first open). Real heights replace it as they scroll into view.
+    private static let estimatedResponseHeight: CGFloat = 220
+
     /// Named coordinate space for the chat content; user-bubble frames are reported here.
     static let chatScrollSpace = "fazmChatScrollContent"
     /// Visible height of one peeked bubble in the sticky stack at the top.
@@ -878,7 +906,30 @@ struct AIResponseView: View {
 
     // MARK: - Chat History
 
-    private func chatExchangeView(_ exchange: FloatingChatExchange) -> some View {
+    /// Virtualization is on only for long conversations.
+    private var virtualizationActive: Bool {
+        regularExchanges.count >= Self.virtualizationMinExchanges
+    }
+
+    /// Whether the AI response for the exchange at `index` should render in full
+    /// now, vs. a height-preserving spacer. The keep-rendered window is the
+    /// viewport plus one extra screen of margin in each direction, so content
+    /// rematerializes before it scrolls into view. Until an exchange's extent has
+    /// been measured (first open), only the last few render — older unmeasured
+    /// ones stay collapsed at the estimate until scrolled to.
+    private func shouldExpandResponse(id: UUID, index: Int) -> Bool {
+        guard virtualizationActive else { return true }
+        guard scrollBounds.viewportHeight > 0 else { return true }
+        let margin = max(scrollBounds.viewportHeight, 600)
+        let windowLo = scrollBounds.offsetY - margin
+        let windowHi = scrollBounds.offsetY + scrollBounds.viewportHeight + margin
+        if let extent = exchangeExtents[id] {
+            return extent.lowerBound <= windowHi && extent.upperBound >= windowLo
+        }
+        return index >= regularExchanges.count - 4
+    }
+
+    private func chatExchangeView(_ exchange: FloatingChatExchange, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // Question bubble (hidden for observer-only entries with no user question)
             if !exchange.question.isEmpty {
