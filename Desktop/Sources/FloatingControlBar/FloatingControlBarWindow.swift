@@ -1758,13 +1758,15 @@ class FloatingControlBarManager {
                     self.restartBridgeSubprocess()
                 } else if command == "simulateToolStalled" {
                     // Test hook for the live "not responding" indicator: inject
-                    // a stalled state on every open pop-out + the floating bar
-                    // (whatever is currently showing the loading UI). The bridge
-                    // emits `tool_stalled` for real wedged mcp__* tools; this
-                    // command short-circuits that signal so the visual can be
-                    // verified without a wedged Chrome extension. `clearToolStalled`
-                    // resets it. Pairs with the 15s real-tool threshold; this
-                    // injects an immediate stall as if 0s had already elapsed.
+                    // a stalled state on every open pop-out + the floating bar.
+                    // Also flips `isAILoading = true` so the header renders the
+                    // indicator without needing a real in-flight turn — the
+                    // bridge's real `tool_stalled` event only fires while a
+                    // turn is alive, so the visual would otherwise need a slow
+                    // query to verify. `clearToolStalled` restores both fields.
+                    // The bridge emits this signal organically when an mcp__*
+                    // tool goes silent past STALL_THRESHOLD_MS (15s); this
+                    // command short-circuits that path for visual verification.
                     var n = 0
                     let now = Date()
                     let label = "mcp__playwright__browser_evaluate"
@@ -1772,30 +1774,34 @@ class FloatingControlBarManager {
                         bar.streaming.stalledToolName = label
                         bar.streaming.stalledToolUseId = "simulated"
                         bar.streaming.stalledSince = now
+                        bar.streaming.isAILoading = true
                         n += 1
                     }
                     for entry in DetachedChatWindowController.shared.entriesSnapshot() {
                         entry.window.state.streaming.stalledToolName = label
                         entry.window.state.streaming.stalledToolUseId = "simulated"
                         entry.window.state.streaming.stalledSince = now
+                        entry.window.state.streaming.isAILoading = true
                         n += 1
                     }
-                    log("FloatingControlBarManager: simulateToolStalled set stall on \(n) state(s)")
+                    log("FloatingControlBarManager: simulateToolStalled set stall+loading on \(n) state(s)")
                 } else if command == "clearToolStalled" {
                     var n = 0
                     if let bar = FloatingControlBarManager.shared.barState {
                         bar.streaming.stalledToolName = nil
                         bar.streaming.stalledToolUseId = nil
                         bar.streaming.stalledSince = nil
+                        bar.streaming.isAILoading = false
                         n += 1
                     }
                     for entry in DetachedChatWindowController.shared.entriesSnapshot() {
                         entry.window.state.streaming.stalledToolName = nil
                         entry.window.state.streaming.stalledToolUseId = nil
                         entry.window.state.streaming.stalledSince = nil
+                        entry.window.state.streaming.isAILoading = false
                         n += 1
                     }
-                    log("FloatingControlBarManager: clearToolStalled cleared stall on \(n) state(s)")
+                    log("FloatingControlBarManager: clearToolStalled cleared stall+loading on \(n) state(s)")
                 } else if command == "simulateCreditExhausted" {
                     // Test hook: flip the same flag the cap-hit path sets so the
                     // onboarding banner + Settings copy go into "out of credits"
