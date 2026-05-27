@@ -512,6 +512,24 @@ struct AIResponseView: View {
         return aiChatWorkingDirectory.isEmpty || aiChatWorkingDirectory == home
     }
 
+    /// Maps a raw MCP tool title like `mcp__playwright__browser_evaluate` to
+    /// a short human label for the "not responding" indicator. Playwright /
+    /// browser tools all collapse to "Browser" (the user doesn't care which
+    /// browser method wedged, only that the browser is); other servers show
+    /// their capitalized server name.
+    private func friendlyToolLabel(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        if lower.contains("playwright") || lower.contains("browser_") || lower.contains("browser-harness") {
+            return "Browser"
+        }
+        let parts = raw.components(separatedBy: "__").filter { !$0.isEmpty }
+        if parts.count >= 2 {
+            let server = parts[1]
+            return server.prefix(1).uppercased() + server.dropFirst()
+        }
+        return raw
+    }
+
     private var headerView: some View {
         HStack(spacing: 12) {
             if streaming.isCompacting {
