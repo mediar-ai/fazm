@@ -1745,6 +1745,18 @@ class FloatingControlBarManager {
                 } else if command == "clearCreditExhausted" {
                     self.chatProvider?.showCreditExhaustedAlert = false
                     log("FloatingControlBarManager: clearCreditExhausted set showCreditExhaustedAlert=false")
+                } else if command == "simulateAuthRequired" {
+                    // Test hook: flip the global isClaudeAuthRequired flag without
+                    // actually breaking OAuth state. Used to reproduce the
+                    // "sibling 401 stomps successful stream" bug: send a Gemini
+                    // query, fire this command mid-flight, verify the streamed
+                    // answer is NOT overwritten by handlePostQuery.
+                    // Non-destructive — `clearAuthRequired` restores the flag.
+                    self.chatProvider?.isClaudeAuthRequired = true
+                    log("FloatingControlBarManager: simulateAuthRequired set isClaudeAuthRequired=true")
+                } else if command == "clearAuthRequired" {
+                    self.chatProvider?.isClaudeAuthRequired = false
+                    log("FloatingControlBarManager: clearAuthRequired set isClaudeAuthRequired=false")
                 } else if command == "openConnectPersonalSheet" {
                     // Test hook: open the thin chooser sheet directly so we
                     // can verify Claude/Codex detection badges + routing
