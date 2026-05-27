@@ -486,8 +486,21 @@ struct AIResponseView: View {
 
     private func scrollToBottom(proxy: ScrollViewProxy, anchor: String = "bottom") {
         isProgrammaticScroll = true
-        withAnimation(.easeOut(duration: 0.15)) {
+        // While a turn is in flight, snap instantly instead of animating. Each
+        // re-pin (fired on every new content block — frequent in tool-heavy
+        // turns) otherwise starts a 150ms scroll animation; because blocks/tokens
+        // arrive faster than the animation finishes, the window keeps re-rendering
+        // at display-cycle rate (60Hz) between the 50ms drip ticks instead of
+        // settling once per tick. A hard snap lets layout settle immediately and
+        // collapses the streaming re-render rate to the mutation rate. The smooth
+        // 150ms glide is kept for idle/user-initiated scrolls (scroll-to-bottom
+        // button, jump-back, voice follow-up, a newly-sent exchange).
+        if isTurnActive {
             proxy.scrollTo(anchor, anchor: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.15)) {
+                proxy.scrollTo(anchor, anchor: .bottom)
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             isProgrammaticScroll = false
