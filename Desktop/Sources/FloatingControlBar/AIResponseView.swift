@@ -193,8 +193,8 @@ struct AIResponseView: View {
                         // viewport appears empty until tokens arrive. Reverted from 9585586e.
                         VStack(alignment: .leading, spacing: 16) {
                             // Previous chat exchanges — regular ones rendered individually
-                            ForEach(regularExchanges) { exchange in
-                                chatExchangeView(exchange)
+                            ForEach(Array(regularExchanges.enumerated()), id: \.element.id) { index, exchange in
+                                chatExchangeView(exchange, index: index)
                             }
                             // Chat observer-only exchanges consolidated into one stack
                             consolidatedHistoryChatObserverCards
@@ -972,24 +972,63 @@ struct AIResponseView: View {
                     }
             }
 
-            // Response with content blocks
+            // Response with content blocks. In long conversations the response
+            // is virtualized (see the virtualization notes on `responseHeights`):
+            // rendered in full only when near the viewport, otherwise a
+            // fixed-height spacer matching its last-measured height, so the heavy
+            // markdown/code/tool display list isn't re-walked every frame while a
+            // later turn streams. The prompt bubble above always stays mounted, so
+            // the stacked-prompt overlay and jump-back are unaffected.
             if !exchange.aiMessage.contentBlocks.isEmpty || !exchange.aiMessage.text.isEmpty {
-                MessageWithCopyButton(alignment: .topTrailing) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(exchange.aiMessage.copyableText, forType: .string)
-                } content: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        // Completed history exchange: memoize so a streaming turn doesn't
-                        // re-render this bubble's markdown every token. See MessageContentBlocks.
-                        contentBlocksView(for: exchange.aiMessage)
-                            .equatable()
+                if shouldExpandResponse(id: exchange.id, index: index) {
+                    MessageWithCopyButton(alignment: .topTrailing) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(exchange.aiMessage.copyableText, forType: .string)
+                    } content: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            // Completed history exchange: memoize so a streaming turn doesn't
+                            // re-render this bubble's markdown every token. See MessageContentBlocks.
+                            contentBlocksView(for: exchange.aiMessage)
+                                .equatable()
+                        }
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.horizontal, 4)
+                    .background {
+                        // Measure the rendered response height so the collapsed
+                        // spacer is identical and expand/collapse never shifts
+                        // layout. Only present while expanded (few at a time).
+                        if virtualizationActive {
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: ResponseHeightPreferenceKey.self,
+                                    value: [ResponseHeightInfo(id: exchange.id, height: geo.size.height)]
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Color.clear
+                        .frame(height: responseHeights[exchange.id] ?? Self.estimatedResponseHeight)
                 }
             }
 
             Divider()
                 .background(FazmColors.overlayForeground.opacity(0.1))
+        }
+        .background {
+            // Probe the whole exchange row's vertical extent (document coords) so
+            // `shouldExpandResponse` knows which rows fall inside the keep-rendered
+            // window. Document coords are scroll-invariant, so this only fires on
+            // real layout changes, not while scrolling.
+            if virtualizationActive {
+                GeometryReader { geo in
+                    let f = geo.frame(in: .named(Self.chatScrollSpace))
+                    Color.clear.preference(
+                        key: ExchangeExtentPreferenceKey.self,
+                        value: [ExchangeExtentInfo(id: exchange.id, minY: f.minY, maxY: f.maxY)]
+                    )
+                }
+            }
         }
         .id(exchange.id)
     }
