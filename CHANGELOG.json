@@ -4,7 +4,9 @@
     "Ensure final session-recording chunk flushes cleanly on app quit",
     "Added a live \"Browser is not responding \u00b7 Ns\" indicator that surfaces when an in-flight MCP tool (Playwright, etc.) stops emitting status updates, so the window no longer looks frozen during a silent tool hang",
     "Added a Force stop affordance next to the \"not responding\" indicator that hard-kills the wedged Playwright MCP subprocess so a hung browser tool actually dies, instead of just hiding the spinner while the work keeps running underneath",
-    "Added a \"Browser reset\" canvas card after Force stop with a Retry button that re-sends the prompt that was in flight, so the user does not have to retype what they just asked"
+    "Added a \"Browser reset\" canvas card after Force stop with a Retry button that re-sends the prompt that was in flight, so the user does not have to retype what they just asked",
+    "Sponsored ads are no longer shown to anyone by default; gated behind a remote feature flag so we can roll out gradually",
+    "Fixed the \"Go Ad-Free\" button next to sponsored slots not responding to hover or showing a clickable cursor"
   ],
   "releases": [
     {
