@@ -3048,6 +3048,23 @@ class ChatProvider: ObservableObject {
         messages = savedMessages
         log("ChatProvider: Restored \(savedMessages.count) floating chat messages from local DB")
 
+        // De-poison: if the onboarding session id leaked into floating/main storage
+        // (pre-2026-05-27 builds did this when isOnboarding raced false during the
+        // session_started eager-persist), drop those entries so neither the floating
+        // nor the main auto-resume grabs the onboarding session — which the bridge
+        // reverse-maps to the wrong key and orphans. The onboarding id lives only in
+        // OnboardingChatPersistence; it must never be a floating/main resume target.
+        if let onboardingSid = OnboardingChatPersistence.loadSessionId(), !onboardingSid.isEmpty {
+            if UserDefaults.standard.string(forKey: floatingSessionIdKey) == onboardingSid {
+                UserDefaults.standard.removeObject(forKey: floatingSessionIdKey)
+                log("ChatProvider: de-poisoned floating session storage (was onboarding id \(onboardingSid))")
+            }
+            if UserDefaults.standard.string(forKey: mainSessionIdKey) == onboardingSid {
+                UserDefaults.standard.removeObject(forKey: mainSessionIdKey)
+                log("ChatProvider: de-poisoned main session storage (was onboarding id \(onboardingSid))")
+            }
+        }
+
         // Load saved ACP session ID for resume
         if let savedSessionId = UserDefaults.standard.string(forKey: floatingSessionIdKey) {
             pendingFloatingResume = savedSessionId
