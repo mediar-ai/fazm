@@ -2542,7 +2542,16 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             let viewportHeight = clipBounds.height
             let visibleMaxY = originY + viewportHeight
             let threshold: CGFloat = 80
-            let atBottom = visibleMaxY >= documentHeight - threshold
+            // If the whole document fits inside the viewport, there is nothing
+            // to scroll and the user is by definition seeing the bottom — even
+            // if NSScrollView happens to be holding a transient origin.y from a
+            // mid-animation reflow (e.g. the floating bar growing from compact
+            // to conversation mode leaves origin.y way below the small initial
+            // doc until layout settles). Without this short-circuit a fresh
+            // chat would briefly flash the scroll-down button.
+            let atBottom = documentHeight <= viewportHeight
+                ? true
+                : visibleMaxY >= documentHeight - threshold
 
             defer {
                 lastOriginY = originY
@@ -2597,11 +2606,6 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             // rule above can recognize true→false transients even before the
             // work item fires.
             lastReportedValue = atBottom
-            if atBottom == false {
-                let prevOriginStr = lastOriginY.map { "\(Int($0))" } ?? "nil"
-                let prevHeightStr = lastViewportHeight.map { "\(Int($0))" } ?? "nil"
-                log("[ScrollDetect] ->false docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(prevOriginStr) viewport=\(Int(viewportHeight)) prevViewport=\(prevHeightStr)")
-            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
         }
 
