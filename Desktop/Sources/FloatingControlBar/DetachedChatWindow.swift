@@ -391,11 +391,15 @@ class DetachedChatWindowController {
         var safetyWatchdog: Task<Void, Never>?
     }
 
-    /// Inactivity ceiling for the per-pop-out safety watchdog. The Playwright MCP
-    /// tool watchdog auto-interrupts at 120s; this gives a 10s grace window for the
-    /// cancel to propagate and the message to mutate (system card, isStreaming flip)
-    /// before we conclude the pipeline is dead and clear the spinner ourselves.
-    private static let safetyWatchdogIntervalSeconds: UInt64 = 130
+    /// Inactivity ceiling for the per-pop-out safety watchdog. After this many
+    /// seconds with no message mutation while the bubble still claims to be
+    /// streaming, the watchdog re-checks `isSending` and, only if the session is
+    /// genuinely no longer sending, flips the bubble out of streaming (visual
+    /// only — never interrupts the bridge). Short interval is safe because the
+    /// `isSending` guard, not the timeout, is what protects healthy-but-quiet
+    /// streams; the timeout only needs to give the normal completion path a fair
+    /// chance to win the race first.
+    private static let safetyWatchdogIntervalSeconds: UInt64 = 12
 
     /// Read-only snapshot of open pop-out entries. Exposed so ChatProvider can route
     /// tool-hang cancel events to the right window state without exposing the mutable
@@ -1542,17 +1546,62 @@ class DetachedChatWindowController {
         entries[winId]?.sharedProviderCancellables.append(sendingSub)
     }
 
-    /// Reset the per-window safety watchdog.
+    /// Reset (and, while streaming, re-arm) the per-window safety watchdog.
     ///
-    /// Disabled May 12 2026: the 130s timer interrupted healthy streams when
-    /// the bridge had been quiet for natural reasons (long tool calls, session
-    /// resumes), force-clearing the spinner and firing a bridge interrupt that
-    /// killed in-flight queries. Re-enable by restoring the timer body.
+    /// Any message mutation cancels and reschedules this timer, so it only ever
+    /// fires after `safetyWatchdogIntervalSeconds` of complete inactivity while
+    /// the bubble still believes it is streaming. That is the stuck-pop-out
+    /// signature: the normal completion / orphan paths failed to flip
+    /// `isStreaming = false`, so the `TypingIndicator`'s `repeatForever`
+    /// animation never stops. A perpetual `repeatForever` keeps a SwiftUI
+    /// animation transaction open, which forces the window's entire display list
+    /// (including the now-large completed markdown) to be re-interpolated every
+    /// display cycle — `InterpolatedDisplayList` → `ResolvedStyledText` →
+    /// re-encoding the whole string ~60×/sec — pegging the pop-out's main thread
+    /// with nothing actually streaming.
+    ///
+    /// History: this watchdog was disabled May 12 2026 because the old version
+    /// (a) fired on inactivity alone, ignoring whether the session was still
+    /// genuinely sending, and (b) *interrupted the bridge*, killing healthy
+    /// streams that were merely quiet (long tool calls, session resumes). This
+    /// re-enabled version fixes both: it is gated on `isSending == false` (a
+    /// quiet-but-live stream keeps its key in `sendingSessionKeys`, so it is
+    /// never touched) and it is **visual-only** — it flips the local bubble's
+    /// `isStreaming`/`isAILoading` to stop the animation but never interrupts or
+    /// cancels the underlying query.
     fileprivate func scheduleSafetyWatchdog(winId: ObjectIdentifier, isStreaming: Bool, messageId: String) {
+        // Any mutation resets the inactivity window.
         entries[winId]?.safetyWatchdog?.cancel()
         entries[winId]?.safetyWatchdog = nil
-        _ = isStreaming
-        _ = messageId
+
+        // Only arm while the message still claims to be streaming.
+        guard isStreaming else { return }
+
+        let interval = Self.safetyWatchdogIntervalSeconds
+        entries[winId]?.safetyWatchdog = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            // @MainActor controller: this resumes on the main actor.
+            guard let entry = self.entries[winId] else { return }
+            let state = entry.window.state
+            // Re-check on the live state: bail if the bubble already cleared.
+            guard state.streaming.currentAIMessage?.id == messageId,
+                  state.streaming.currentAIMessage?.isStreaming == true else { return }
+            // CRITICAL guard — the reason the old watchdog was harmful. A healthy
+            // stream that is merely quiet still holds its key in
+            // `sendingSessionKeys`; never clear that.
+            let key = entry.sessionKey
+            let stillSending = FloatingControlBarManager.shared.chatProvider?.isSending(sessionKey: key) ?? false
+            guard !stillSending else {
+                log("[DetachedChat] safety watchdog: session=\(key) still sending after \(interval)s quiet — NOT clearing (healthy stream)")
+                return
+            }
+            // Visual-only heal: stop the stuck repeatForever animation by flipping
+            // the bubble out of streaming. Does NOT interrupt/cancel the query.
+            log("[DetachedChat] safety watchdog: clearing stuck isStreaming msg=\(messageId) session=\(key) after \(interval)s quiet, session not sending")
+            state.streaming.currentAIMessage?.isStreaming = false
+            state.streaming.isAILoading = false
+        }
     }
 
     /// Handle `chatProviderDidDequeue` for any detached session.
