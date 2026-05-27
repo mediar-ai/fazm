@@ -2227,6 +2227,10 @@ class FloatingControlBarManager {
             provider?.stopAgent()
         }
 
+        window.onResetStuckSession = { [weak provider] in
+            provider?.endSession(sessionKey: "floating")
+        }
+
         window.onChatObserverCardAction = { [weak provider] activityId, action in
             provider?.handleChatObserverCardAction(activityId: activityId, action: action)
         }
