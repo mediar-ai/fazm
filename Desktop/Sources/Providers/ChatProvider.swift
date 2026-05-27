@@ -3531,6 +3531,14 @@ class ChatProvider: ObservableObject {
             // uses a TimelineView to flip to the stuck affordance once this
             // has aged past `stuckSessionWarnThreshold`.
             streaming.pendingInterruptStartedAt = Date()
+            // Clear any live "tool not responding" indicator — the user has
+            // already acted. The bridge will emit `tool_stalled stalled:false`
+            // when the tool actually leaves the in-flight set, but clearing
+            // here keeps the UI honest immediately (the user just hit Stop;
+            // showing "not responding" alongside "cleaning up" is noisy).
+            streaming.stalledToolName = nil
+            streaming.stalledToolUseId = nil
+            streaming.stalledSince = nil
         }
         // 2. Flip any streaming AI messages in the global `messages` array for
         //    this session. Mirrors the orphan-result cleanup at line 1670.
@@ -4505,6 +4513,35 @@ class ChatProvider: ObservableObject {
                             )
                         case .toolProgress(let toolUseId, let toolName, let elapsed):
                             self.logToolProgress(toolUseId: toolUseId, toolName: toolName, elapsed: elapsed)
+                        case .toolStalled(let toolName, let toolUseId, let stalled, let elapsedSeconds):
+                            // The bridge stall detector flagged (or cleared) an `mcp__*`
+                            // tool that stopped emitting updates. This does NOT cancel
+                            // the turn — it's a live "not responding" signal so the UI
+                            // can show a counter and escalate Stop to Force stop, long
+                            // before the 300s tool watchdog fires. Route to the right
+                            // window's StreamingResponseState; AIResponseView reads
+                            // `stalledToolName` / `stalledSince`.
+                            log("ChatProvider: tool_stalled tool=\(toolName) stalled=\(stalled) elapsed=\(String(format: "%.1fs", elapsedSeconds)) session=\(sessionKey ?? "main")")
+                            let applyStall: (StreamingResponseState) -> Void = { st in
+                                if stalled {
+                                    st.stalledToolName = toolName
+                                    st.stalledToolUseId = toolUseId
+                                    st.stalledSince = Date()
+                                } else {
+                                    st.stalledToolName = nil
+                                    st.stalledToolUseId = nil
+                                    st.stalledSince = nil
+                                }
+                            }
+                            if let key = sessionKey, key.hasPrefix("detached-") {
+                                for entry in DetachedChatWindowController.shared.entriesSnapshot()
+                                    where entry.sessionKey == key {
+                                    applyStall(entry.window.state.streaming)
+                                }
+                            } else if sessionKey == "floating" || sessionKey == nil,
+                                      let barState = FloatingControlBarManager.shared.barState {
+                                applyStall(barState.streaming)
+                            }
                         case .toolUseSummary(let summary):
                             log("ChatProvider: Tool summary — \(summary.prefix(100))")
                         case .rateLimit(let status, let resetsAt, let rateLimitType, let utilization):
