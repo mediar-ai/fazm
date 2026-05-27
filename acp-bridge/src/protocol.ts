@@ -493,6 +493,31 @@ export interface TaskHangCanceledMessage {
 }
 
 /**
+ * Emitted by the stall detector when an in-flight `mcp__*` tool stops emitting
+ * status updates for longer than the stall threshold (the SDK→MCP-subprocess
+ * forward is wedged — e.g. a Playwright browser call blocked on an
+ * unresponsive Chrome extension). Unlike `tool_hang_canceled`, NOTHING has
+ * been canceled here: the turn is still alive and the tool may yet respond.
+ * This is purely a "live, not responding" signal so the UI can surface a
+ * "<tool> is not responding… Ns" indicator and escalate Stop to a Force stop
+ * affordance, instead of the window looking frozen with no explanation until
+ * the 300s watchdog fires.
+ *
+ * `stalled: true` is sent once when the tool crosses the threshold;
+ * `stalled: false` is sent when status updates resume or the tool leaves the
+ * in-flight set (completed/failed/turn ended), so the UI can clear the state.
+ */
+export interface ToolStalledMessage {
+  type: "tool_stalled";
+  stalled: boolean;
+  toolName: string;        // raw title, e.g. "mcp__playwright__browser_evaluate"
+  toolUseId: string;
+  elapsedSeconds: number;  // wall time since the tool started
+  sessionId?: string;
+  sessionKey?: string;
+}
+
+/**
  * Emitted immediately after `session/new` or `session/resume` succeeds, BEFORE
  * the prompt is sent to the SDK. Lets the Swift client persist the resumable
  * sessionId early, so that any error path (rate limit, credit exhausted,
@@ -670,6 +695,7 @@ export type OutboundMessage =
   | SessionExpiredMessage
   | ToolHangCanceledMessage
   | TaskHangCanceledMessage
+  | ToolStalledMessage
   | SessionStartedMessage
   | CodexProbeResultMessage
   | CodexLoginUrlMessage
