@@ -85,6 +85,17 @@ final class StreamingResponseState: ObservableObject {
     /// quiet.
     @Published var pendingInterruptStartedAt: Date? = nil
 
+    /// Set when the bridge emits `tool_stalled stalled:true` for this session
+    /// — an in-flight `mcp__*` tool has stopped emitting status updates past
+    /// the stall threshold (the SDK→MCP forward is wedged; canonical case:
+    /// Playwright on a dead Chrome extension). Cleared on `stalled:false`,
+    /// on Stop, or on turn end. Per-window. AIResponseView reads
+    /// `stalledToolName` + `stalledSince` to render a live "not responding…
+    /// Ns" indicator and escalate Stop to a Force stop affordance.
+    @Published var stalledToolName: String? = nil
+    @Published var stalledToolUseId: String? = nil
+    @Published var stalledSince: Date? = nil
+
     /// Convenience accessor for plain-text response (used by window geometry and error handling).
     var aiResponseText: String {
         get { currentAIMessage?.text ?? "" }
