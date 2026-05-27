@@ -26,6 +26,10 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
     var onClearQueue: (() -> Void)?
     var onReorderQueue: ((IndexSet, Int) -> Void)?
     var onStopAgent: (() -> Void)?
+    /// Fired by the "Reset session" button in the stuck-after-stop pill.
+    /// Wired by `DetachedChatWindowController` to `ChatProvider.endSession(sessionKey:)`,
+    /// which kills the upstream `claude` subprocess for this window's session.
+    var onResetStuckSession: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onFork: (() -> Void)?
     var onConnectClaude: (() -> Void)?
@@ -94,6 +98,7 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             onClearQueue: { [weak self] in self?.onClearQueue?() },
             onReorderQueue: { [weak self] src, dst in self?.onReorderQueue?(src, dst) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
+            onResetStuckSession: { [weak self] in self?.onResetStuckSession?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
             onCodexLogin: { [weak self] in self?.onCodexLogin?() },
             onChatObserverCardAction: { [weak self] id, action in self?.onChatObserverCardAction?(id, action) },
@@ -205,6 +210,9 @@ struct DetachedChatView: View {
     var onClearQueue: () -> Void
     var onReorderQueue: (IndexSet, Int) -> Void
     var onStopAgent: () -> Void
+    /// Fired by the "Reset session" button in the stuck-after-stop pill.
+    /// See DetachedChatWindow's outer `onResetStuckSession`.
+    var onResetStuckSession: () -> Void
     var onConnectClaude: () -> Void
     var onCodexLogin: (() -> Void)?
     var onChatObserverCardAction: (Int64, String) -> Void
@@ -295,6 +303,7 @@ struct DetachedChatView: View {
                 onReorderQueue(source, dest)
             },
             onStopAgent: onStopAgent,
+            onResetStuckSession: onResetStuckSession,
             onConnectClaude: onConnectClaude,
             onCodexLogin: onCodexLogin,
             onChatObserverCardAction: onChatObserverCardAction,
