@@ -516,6 +516,16 @@ class SessionRecordingManager {
     }
 
     /// Stop recording and polling (call on app termination).
+    ///
+    /// Blocks the calling thread for up to 2 seconds so `recorder.stop()` can
+    /// flush the in-progress chunk and finalize the encoder. Without this wait,
+    /// the fire-and-forget `Task {}` in `stop()` / `stopScreenObserver()` is
+    /// killed mid-flush by macOS after `applicationWillTerminate` returns, which
+    /// loses the trailing 0-60s of video and can leave a corrupt MP4 on disk.
+    ///
+    /// Uses `Task.detached` instead of inheriting the MainActor so the actor
+    /// hop inside `SessionRecorder.stop()` doesn't deadlock against the
+    /// `DispatchGroup.wait()` blocking this same main thread.
     func shutdown() {
         pollTimer?.invalidate()
         pollTimer = nil
@@ -524,8 +534,37 @@ class SessionRecordingManager {
         activityCancellables.removeAll()
         if let obs = appActiveObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = appResignObserver { NotificationCenter.default.removeObserver(obs) }
-        stop()
-        stopScreenObserver()
+
+        let mainRecorder = self.recorder
+        let observerRecorder = self.screenObserverRecorder
+        isStarted = false
+        isScreenObserverStarted = false
+        ResourceCounters.shared.set("sessionRecording_active", false)
+        ResourceCounters.shared.set("sessionRecording_observerActive", false)
+        self.recorder = nil
+        self.screenObserverRecorder = nil
+
+        let group = DispatchGroup()
+        if let recorder = mainRecorder {
+            group.enter()
+            Task.detached {
+                await recorder.stop()
+                log("SessionRecording: stopped (shutdown)")
+                group.leave()
+            }
+        }
+        if let recorder = observerRecorder {
+            group.enter()
+            Task.detached {
+                await recorder.stop()
+                log("Screen observer: stopped (shutdown)")
+                group.leave()
+            }
+        }
+        let result = group.wait(timeout: .now() + 2.0)
+        if result == .timedOut {
+            log("SessionRecording: shutdown timed out after 2s; final chunk may be incomplete")
+        }
     }
 
     // MARK: - Auto-enrollment
