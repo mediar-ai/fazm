@@ -1112,11 +1112,18 @@ class ChatProvider: ObservableObject {
     /// "headed" because that's also the bundled MCP server's default. Updated when
     /// the agent calls `bh_set_mode(...)`. Used to label every browserActivity card.
     private var currentBrowserMode: String = "headed"
-    /// Tick interval for the streaming drip-flush. 25ms = 40 Hz; combined with
-    /// the floor in `streamingSliceSize`, this gives a smooth typewriter cadence
-    /// while keeping main-thread mutation rate well under what the UI can
-    /// repaint without dropping frames.
-    private let streamingFlushInterval: TimeInterval = 0.025
+    /// Tick interval for the streaming drip-flush. 50ms = 20 Hz. Each tick
+    /// mutates `@Published messages`, which forces the observing pop-out window
+    /// to rebuild its entire SwiftUI display list (a plain, non-lazy VStack of
+    /// every bubble) — an O(conversation-size) walk. Halving the tick rate from
+    /// the old 40 Hz halves those full-window re-renders, the dominant CPU cost
+    /// when a long conversation (or a large user prompt) streams (profiled
+    /// 2026-05-27: ~50% CPU with concurrent streaming pop-outs, hot path
+    /// `render(updateDisplayList:)` → `discardContainingClips`). The per-tick
+    /// slice in `streamingSliceSize` was doubled in lockstep so chars/sec — the
+    /// perceived typewriter speed — is unchanged; text just lands in slightly
+    /// larger chunks per tick.
+    private let streamingFlushInterval: TimeInterval = 0.05
 
     // MARK: - Cached Context for Prompts
     private var cachedAIProfile: String = ""
@@ -5581,21 +5588,23 @@ class ChatProvider: ObservableObject {
     /// keeps trickling for a short tail after the stream closes.
     private func streamingSliceSize(for bufferLen: Int) -> Int {
         // Adaptive drain so the renderer keeps up with the model.
-        // At 40Hz tick rate (25ms interval):
-        //   2 char/tick =  80 chars/s  (smooth typewriter, small buffer)
-        //   4 char/tick = 160 chars/s
-        //   8 char/tick = 320 chars/s  (typical Claude streaming speed)
-        //  16 char/tick = 640 chars/s  (catching up after a burst)
-        //  32 char/tick = 1280 chars/s (large backlog, dump faster)
-        // Floor of 2 keeps the visual feel of a typewriter without paying the
-        // per-char overhead of mutating messages[] + re-rendering at 40Hz.
+        // At the 20Hz tick rate (50ms interval) the slice is double the old
+        // 40Hz values, so chars/sec — the perceived typewriter speed — is
+        // unchanged while the UI re-renders half as often:
+        //   4 char/tick =  80 chars/s  (smooth typewriter, small buffer)
+        //   8 char/tick = 160 chars/s
+        //  16 char/tick = 320 chars/s  (typical Claude streaming speed)
+        //  32 char/tick = 640 chars/s  (catching up after a burst)
+        //  64 char/tick = 1280 chars/s (large backlog, dump faster)
+        // Floor of 4 keeps the visual feel of a typewriter without paying the
+        // per-tick overhead of mutating messages[] + a full window re-render.
         switch bufferLen {
         case 0:           return 0
-        case 1...40:      return 2
-        case 41...120:    return 4
-        case 121...300:   return 8
-        case 301...800:   return 16
-        default:          return 32
+        case 1...80:      return 4
+        case 81...240:    return 8
+        case 241...600:   return 16
+        case 601...1600:  return 32
+        default:          return 64
         }
     }
 
