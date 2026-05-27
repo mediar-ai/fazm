@@ -155,6 +155,7 @@ struct KoahAdView: View {
 
     @State private var measuredHeight: CGFloat = 0
     @State private var didFail: Bool = false
+    @State private var isHoveringAdFree: Bool = false
 
     init(question: String, answer: String, publisherID: String = KoahIDs.activePublisherID) {
         self.question = question
@@ -192,15 +193,25 @@ struct KoahAdView: View {
                         .foregroundColor(FazmColors.purplePrimary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(FazmColors.purplePrimary.opacity(0.1))
+                        .background(FazmColors.purplePrimary.opacity(isHoveringAdFree ? 0.2 : 0.1))
                         .cornerRadius(4)
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(FazmColors.purplePrimary.opacity(0.2), lineWidth: 0.5)
+                                .stroke(FazmColors.purplePrimary.opacity(isHoveringAdFree ? 0.45 : 0.2), lineWidth: 0.5)
                         )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help("Upgrade to Fazm Pro for an ad-free experience")
+                    .onHover { hovering in
+                        isHoveringAdFree = hovering
+                        if hovering {
+                            NSCursor.pointingHand.set()
+                        } else {
+                            NSCursor.arrow.set()
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.12), value: isHoveringAdFree)
                 }
                 .padding(.horizontal, 4)
             }
