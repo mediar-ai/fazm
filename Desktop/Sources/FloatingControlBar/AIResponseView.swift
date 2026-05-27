@@ -130,7 +130,10 @@ struct AIResponseView: View {
     /// Tear down the upstream session — wired to `ChatProvider.endSession(sessionKey:)`.
     /// Called from the "Reset session" button in the still-cleaning-up pill when
     /// the bridge hasn't ack'd a Stop within `stuckSessionWarnThreshold`.
-    var onResetSession: (() -> Void)?
+    /// Distinct from the bar window's `onResetSession` (which is "New Chat" /
+    /// `resetSession`): this preserves local history and only kills the upstream
+    /// subprocess, used to escape a hung Claude/Codex call.
+    var onResetStuckSession: (() -> Void)?
     var onPopOut: (() -> Void)?
     var onConnectClaude: (() -> Void)?
     var onCodexLogin: (() -> Void)?
@@ -1262,7 +1265,7 @@ struct AIResponseView: View {
 
                     Spacer(minLength: 4)
 
-                    Button(action: { onResetSession?() }) {
+                    Button(action: { onResetStuckSession?() }) {
                         Text("Reset session")
                             .scaledFont(size: 11, weight: .semibold)
                             .foregroundColor(FazmColors.overlayForeground)
