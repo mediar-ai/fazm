@@ -1639,6 +1639,7 @@ class FloatingControlBarManager {
         //   listPopOuts                         — writes /tmp/fazm-control-popouts.json (legacy) and /tmp/fazm-control-popouts-<scope>.json with every detached window's sessionKey, workspace, model, frame, busy/visible state
         //   closePopOut:<sessionKey>            — close a specific detached window by sessionKey (tears down its ACP subprocess)
         //   closeAllPopOuts                     — close every detached window (full test cleanup)
+        //   simulateStuckPopoutStream           — force every open pop-out with a completed bubble back into isStreaming=true (no query in flight) to reproduce the pop-out-lag bug; the per-window safety watchdog should heal it after ~12s ("safety watchdog: clearing stuck isStreaming" in the log)
         //   sendQueryToWindow:<sessionKey>:<t>  — deliver text `<t>` to the pop-out matching `<sessionKey>` (drives the same path as a user typing into that window)
         //   getBridgeState                      — signal SIGUSR2 to the bridge so it dumps sessions / activeQueries / PID to /tmp/fazm-bridge-state.json (legacy) and /tmp/fazm-bridge-state-<scope>.json
         //   restartBridge                       — terminate the running bridge subprocess and let ChatProvider relaunch it (clears leaked claude subprocesses)
@@ -1743,6 +1744,14 @@ class FloatingControlBarManager {
                     } else {
                         log("FloatingControlBarManager: sendQueryToWindow malformed — expected sessionKey:text, got '\(rest)'")
                     }
+                } else if command == "simulateStuckPopoutStream" {
+                    // Test hook for the pop-out lag fix: force every open pop-out
+                    // with a completed bubble back into isStreaming=true (restarting
+                    // its TypingIndicator repeatForever) with no query in flight, so
+                    // the per-window safety watchdog should heal it after ~12s. Watch
+                    // the log for "safety watchdog: clearing stuck isStreaming".
+                    let n = DetachedChatWindowController.shared.debugForceStuckStreaming()
+                    log("FloatingControlBarManager: simulateStuckPopoutStream forced \(n) pop-out(s)")
                 } else if command == "getBridgeState" {
                     self.dumpBridgeState()
                 } else if command == "restartBridge" {
