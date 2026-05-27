@@ -1389,6 +1389,16 @@ function getNotificationSessionId(params: unknown): string | undefined {
 }
 let nextRpcId = 1;
 
+// One-shot test hook to reproduce upstream claude-agent-acp #630 (the
+// session/prompt request never resolves even though all content streamed).
+// When the file /tmp/fazm-debug-drop-prompt-result exists, the NEXT
+// session/prompt response is swallowed — deleted without resolving — so
+// promptPromise hangs forever and the finalization-idle arm (see handleQuery)
+// must rescue the turn. The flag file is consumed when armed, so exactly one
+// turn is affected. Never present in production.
+const debugDropPromptResultIds = new Set<number>();
+const DEBUG_DROP_FLAG_FILE = "/tmp/fazm-debug-drop-prompt-result";
+
 /** Send a JSON-RPC request to the ACP subprocess and wait for the response */
 async function acpRequest(
   method: string,
@@ -1399,6 +1409,15 @@ async function acpRequest(
 
   return new Promise((resolve, reject) => {
     acpResponseHandlers.set(id, { resolve, reject });
+    if (method === "session/prompt") {
+      try {
+        if (existsSync(DEBUG_DROP_FLAG_FILE)) {
+          unlinkSync(DEBUG_DROP_FLAG_FILE);
+          debugDropPromptResultIds.add(id);
+          logErr(`[DEBUG-DROP] Armed: will swallow session/prompt response id=${id} to simulate finalization stall (#630)`);
+        }
+      } catch { /* ignore test-hook errors */ }
+    }
     if (acpStdinWriter) {
       acpStdinWriter(msg);
     } else {
@@ -1504,6 +1523,12 @@ function startAcpProcess(): void {
       } else if ("id" in msg && msg.id !== null && msg.id !== undefined) {
         // JSON-RPC response (has id but no method)
         const id = msg.id as number;
+        if (debugDropPromptResultIds.has(id)) {
+          debugDropPromptResultIds.delete(id);
+          acpResponseHandlers.delete(id);
+          logErr(`[DEBUG-DROP] Swallowed session/prompt response id=${id} — promptPromise will hang (simulating #630)`);
+          return;
+        }
         const handler = acpResponseHandlers.get(id);
         if (handler) {
           acpResponseHandlers.delete(id);
@@ -4148,6 +4173,29 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
       let watchdogReject: ((err: Error) => void) | null = null;
 
+      // Finalization-idle arm — rescues a turn that streamed its content and then
+      // went silent without the adapter ever resolving session/prompt (upstream
+      // claude-agent-acp #630: the model stream ends without a terminal/stop-reason
+      // frame, so the adapter's `session.query.next()` blocks forever, our
+      // `await acpRequest("session/prompt")` never returns, the `result` is never
+      // emitted, and Swift's sendingSessionKeys never clears → pop-out spinner
+      // forever). Unlike the flat hang-timers we removed twice (the 60s Swift hang
+      // detector, the per-tool auto-cancel) this never fires on stream-silence
+      // alone — it requires positive evidence the turn's work is actually done:
+      // no tool executing AND no live subagent. Legitimate slow work keeps
+      // lastNotificationTime fresh (a long Bash/browser tool holds pendingTools>0;
+      // a 90-min Task subagent holds an activeTaskTimers entry; context compaction
+      // streams compaction_delta notifications), so none of it trips this.
+      // Override with FAZM_IDLE_FINALIZATION_SECONDS (>0 sets the threshold,
+      // <0 disables the arm entirely).
+      const idleSecOverride = process.env.FAZM_IDLE_FINALIZATION_SECONDS
+        ? parseInt(process.env.FAZM_IDLE_FINALIZATION_SECONDS, 10)
+        : 0;
+      const idleFinalizationDisabled = idleSecOverride < 0;
+      const IDLE_FINALIZATION_MS = idleSecOverride > 0 ? idleSecOverride * 1000 : 20_000;
+      const IDLE_CHECK_INTERVAL_MS = 3_000;
+      let inactivityInterval: ReturnType<typeof setInterval> | null = null;
+
       const promptPromise = acpRequest("session/prompt", sessionPromptPayload);
 
       // Abort race: when the user clicks Stop, the interrupt handler calls
@@ -4182,6 +4230,25 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         );
       });
 
+      // See the block comment above. Polls inactivity; only rejects once the turn
+      // has produced output and then gone fully quiet with nothing left running.
+      const inactivityPromise = new Promise<never>((_, reject) => {
+        if (idleFinalizationDisabled) return; // inert arm — never settles
+        inactivityInterval = setInterval(() => {
+          const idleMs = Date.now() - lastNotificationTime;
+          if (idleMs < IDLE_FINALIZATION_MS) return;       // still active recently
+          if (notificationCount === 0) return;             // never streamed — cold-start case, not ours
+          if (pendingTools.length > 0) return;             // a tool is mid-execution
+          const liveSubagent = Array.from(activeTaskTimers.values())
+            .some((t) => t.sessionKey === sessionKey);
+          if (liveSubagent) return;                        // a Task subagent is still running
+          reject(new Error(
+            `FINALIZATION_IDLE: streamed ${fullText.length} chars then silent ${Math.round(idleMs / 1000)}s ` +
+            `(pendingTools=0, no live subagent) — session/prompt never resolved`
+          ));
+        }, IDLE_CHECK_INTERVAL_MS);
+      });
+
       let racePromise: Promise<unknown>;
       if (wasInterrupted && !isNewSession) {
         const watchdogPromise = new Promise<never>((_, reject) => {
@@ -4195,9 +4262,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             }
           }, TTFT_WATCHDOG_MS);
         });
-        racePromise = Promise.race([promptPromise, watchdogPromise, abortPromise]);
+        racePromise = Promise.race([promptPromise, watchdogPromise, abortPromise, inactivityPromise]);
       } else {
-        racePromise = Promise.race([promptPromise, abortPromise]);
+        racePromise = Promise.race([promptPromise, abortPromise, inactivityPromise]);
       }
 
       try {
@@ -4489,6 +4556,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
       } finally {
         if (watchdogTimer) clearTimeout(watchdogTimer);
+        if (inactivityInterval) clearInterval(inactivityInterval);
       }
     };
 
