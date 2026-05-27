@@ -803,12 +803,6 @@ class ChatProvider: ObservableObject {
     /// When true, auto-open the next auth URL that arrives from the bridge
     /// (set when startClaudeAuth restarts the bridge because no URL was available)
     private var pendingAutoOpenAuth = false
-    /// Subscription that surfaces the three-model chooser whenever the bridge
-    /// flips `isClaudeAuthRequired` to true (post-onboarding). Centralized here
-    /// so every surface (main window, floating bar, pop-out, settings, …) gets
-    /// the same auto-show behavior. Was previously a `.onReceive` only inside
-    /// `DesktopHomeView`, which broke floating-bar-only users.
-    private var claudeAuthRequiredObserver: AnyCancellable?
     /// Whether the user has a cached Claude OAuth token
     @Published var isClaudeConnected = false
     /// Cumulative tokens used in the current session
@@ -1039,27 +1033,13 @@ class ChatProvider: ObservableObject {
     }
 
     private func setupBridgeAuthHandlers() {
-        // Surface the three-model chooser whenever isClaudeAuthRequired flips
-        // to true. Skips while onboarding is still active because OnboardingChatView
-        // has its own inline error overlay for the same flag.
-        if claudeAuthRequiredObserver == nil {
-            claudeAuthRequiredObserver = $isClaudeAuthRequired
-                .removeDuplicates()
-                .sink { [weak self] required in
-                    guard required, let self else { return }
-                    guard UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else {
-                        log("ChatProvider: isClaudeAuthRequired=true but onboarding still active, deferring to OnboardingChatView")
-                        return
-                    }
-                    Task { @MainActor in
-                        log("ChatProvider: isClaudeAuthRequired=true, presenting PersonalAccountChooser")
-                        PersonalAccountChooserWindowController.shared.show(
-                            chatProvider: self,
-                            source: "auth_required"
-                        )
-                    }
-                }
-        }
+        // Previously this method also installed `claudeAuthRequiredObserver`,
+        // which auto-presented `PersonalAccountChooserSheet` the moment the
+        // bridge flipped `isClaudeAuthRequired` to true. That "Connect Claude"
+        // peel was replaced by the dropdown "Claude — Connect…" affordance in
+        // ModelToggleButton (mirrors the Codex flow). Onboarding still has its
+        // own inline overlay; settings and credit-exhausted code paths still
+        // call PersonalAccountChooserWindowController.shared.show(...) directly.
         Task {
             await acpBridge.setGlobalAuthHandlers(
                 onAuthRequired: { [weak self] methods, authUrl in
