@@ -180,6 +180,14 @@ actor ACPBridge {
     /// file is 0 bytes and untouched for the stale threshold). Distinct from
     /// `toolHangCanceled` because the trigger and UX explanation differ.
     case taskHangCanceled(taskId: String, description: String, durationSeconds: Double, reason: String)
+    /// Live, non-canceling signal that an in-flight `mcp__*` tool stopped
+    /// emitting status updates past the stall threshold (the SDK→MCP forward
+    /// is wedged — typical case: Playwright on a dead Chrome extension).
+    /// `stalled: true` fires once on entering the silence; `stalled: false`
+    /// fires when updates resume or the tool leaves the in-flight set. The
+    /// UI surfaces a "<tool> is not responding… Ns" indicator and escalates
+    /// Stop to a Force stop affordance. The turn is NOT canceled by this.
+    case toolStalled(toolName: String, toolUseId: String, stalled: Bool, elapsedSeconds: Double)
     /// New ACP session was created (`isResume == false`) or resumed (`isResume == true`).
     /// Fires BEFORE the first prompt notification, so the client can persist the
     /// sessionId immediately. Without this, errors mid-stream (rate limit, credit
@@ -233,6 +241,7 @@ actor ACPBridge {
     case sessionExpired(oldSessionId: String, newSessionId: String, contextRestored: Bool, restoredMessageCount: Int, reason: String, sessionKey: String?)
     case toolHangCanceled(toolName: String, toolUseId: String, durationSeconds: Double, reason: String, sessionKey: String?)
     case taskHangCanceled(taskId: String, description: String, durationSeconds: Double, reason: String, sessionKey: String?)
+    case toolStalled(toolName: String, toolUseId: String, stalled: Bool, elapsedSeconds: Double, sessionKey: String?)
     case sessionStarted(sessionId: String, sessionKey: String?, isResume: Bool)
     /// Emitted by the bridge once `preWarmSession` resolves (success or failure).
     /// Pairs with `bridge_warmup_started` (fired in Swift right before `ensureBridgeStarted()`)
@@ -1465,6 +1474,10 @@ actor ACPBridge {
         log("ACPBridge: task_hang_canceled task=\(taskId) duration=\(durationSeconds)s reason=\(reason)")
         onStatusEvent(.taskHangCanceled(taskId: taskId, description: description, durationSeconds: durationSeconds, reason: reason))
 
+      case .toolStalled(let toolName, let toolUseId, let stalled, let elapsedSeconds, _):
+        log("ACPBridge: tool_stalled tool=\(toolName) stalled=\(stalled) elapsed=\(elapsedSeconds)s")
+        onStatusEvent(.toolStalled(toolName: toolName, toolUseId: toolUseId, stalled: stalled, elapsedSeconds: elapsedSeconds))
+
       case .sessionStarted(let sid, let evtKey, let isResume):
         log("ACPBridge: session_started \(isResume ? "(resumed)" : "(new)") sessionId=\(sid) key=\(evtKey ?? "nil")")
         onStatusEvent(.sessionStarted(sessionId: sid, sessionKey: evtKey, isResume: isResume))
@@ -1798,6 +1811,14 @@ actor ACPBridge {
       let reason = dict["reason"] as? String ?? "Background subagent appeared to die silently and the turn was canceled."
       let sessionKey = dict["sessionKey"] as? String
       return .taskHangCanceled(taskId: taskId, description: description, durationSeconds: durationSeconds, reason: reason, sessionKey: sessionKey)
+
+    case "tool_stalled":
+      let toolName = dict["toolName"] as? String ?? ""
+      let toolUseId = dict["toolUseId"] as? String ?? ""
+      let stalled = dict["stalled"] as? Bool ?? false
+      let elapsedSeconds = dict["elapsedSeconds"] as? Double ?? 0
+      let sessionKey = dict["sessionKey"] as? String
+      return .toolStalled(toolName: toolName, toolUseId: toolUseId, stalled: stalled, elapsedSeconds: elapsedSeconds, sessionKey: sessionKey)
 
     case "session_started":
       let sessionId = dict["sessionId"] as? String ?? ""
