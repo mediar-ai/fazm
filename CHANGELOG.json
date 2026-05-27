@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Fixed pop-out chat sometimes staying stuck on the loading spinner after a reply finished, blocking new messages, by detecting stalled turns and completing them",
-    "Ensure final session-recording chunk flushes cleanly on app quit"
+    "Ensure final session-recording chunk flushes cleanly on app quit",
+    "Added a live \"Browser is not responding \u00b7 Ns\" indicator that surfaces when an in-flight MCP tool (Playwright, etc.) stops emitting status updates, so the window no longer looks frozen during a silent tool hang"
   ],
   "releases": [
     {
