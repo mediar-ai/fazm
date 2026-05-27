@@ -3454,6 +3454,10 @@ class ChatProvider: ObservableObject {
         if let streaming = streamingState(for: sessionKey) {
             streaming.currentAIMessage?.isStreaming = false
             streaming.isAILoading = false
+            // Drive the "still cleaning up" pill in AIResponseView. The view
+            // uses a TimelineView to flip to the stuck affordance once this
+            // has aged past `stuckSessionWarnThreshold`.
+            streaming.pendingInterruptStartedAt = Date()
         }
         // 2. Flip any streaming AI messages in the global `messages` array for
         //    this session. Mirrors the orphan-result cleanup at line 1670.
@@ -3485,6 +3489,9 @@ class ChatProvider: ObservableObject {
     func clearStoppedSession(_ sessionKey: String) {
         if stoppedSessions.removeValue(forKey: sessionKey) != nil {
             log("ChatProvider: cleared stopped marker for session=\(sessionKey) (bridge ack'd)")
+        }
+        if let streaming = streamingState(for: sessionKey) {
+            streaming.pendingInterruptStartedAt = nil
         }
     }
 
