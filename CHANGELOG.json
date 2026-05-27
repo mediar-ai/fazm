@@ -1,19 +1,24 @@
 {
-  "unreleased": [
-    "Fixed the menu bar icon and dock click doing nothing after launch-at-login on reboot; the floating bar is now guaranteed to appear even when the main window scene hasn't bound its open-window action yet, so you no longer have to Cmd-Q and reopen to recover",
-    "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)",
-    "Added a verification-codes skill so Fazm can pull 2FA codes from Messages, WhatsApp, or Notification Center instead of asking you to read them out",
-    "Fixed ask_followup chips staying hidden while the AI turn was still streaming \u2014 quick-reply buttons now appear as soon as the model emits them, so the chat no longer looks frozen when the model keeps working after ask_followup",
-    "Fixed model switches into Claude from Gemini or ChatGPT failing with a session error; the floating bar now starts a fresh session instead of getting stuck",
-    "Fixed Memory settings page spinning forever when the knowledge graph was empty; now shows an empty state with a Try again button",
-    "Fixed Claude account connect failing with a 400 \"Custom expires_in not allowed for scope\" error; the OAuth flow no longer requests a custom token lifetime so Anthropic's new server-side policy is honored",
-    "Internal: Chat Message Sent and chat_agent_query_failed analytics now carry the user prompt and any partial AI response so failed queries are no longer invisible in support investigations",
-    "Removed the 10-minute inactivity cap on AI replies \u2014 slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button",
-    "Internal: signin-optional experiment plumbing \u2014 anonymous Firebase sign-in on first launch when the signin-optional PostHog flag picks treatment; goes through the REST signUp endpoint so it works without keychain-access-groups entitlement. Paywall and Settings present the existing sign-in window when an anonymous user wants to subscribe; Google sign-in then links to the same Firebase UID via REST signInWithIdp so trial date, Stripe customer, and chat history carry over",
-    "Fixed Claude OAuth re-auth not appearing when token expired (chat would hang on thinking)",
-    "Added \"Stuck? Chat with the founder\" button on onboarding so new users can message the founder without finishing setup first"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.41",
+      "date": "2026-05-27",
+      "changes": [
+        "Fixed the menu bar icon and dock click doing nothing after launch-at-login on reboot; the floating bar is now guaranteed to appear even when the main window scene hasn't bound its open-window action yet, so you no longer have to Cmd-Q and reopen to recover",
+        "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)",
+        "Added a verification-codes skill so Fazm can pull 2FA codes from Messages, WhatsApp, or Notification Center instead of asking you to read them out",
+        "Fixed ask_followup chips staying hidden while the AI turn was still streaming \u2014 quick-reply buttons now appear as soon as the model emits them, so the chat no longer looks frozen when the model keeps working after ask_followup",
+        "Fixed model switches into Claude from Gemini or ChatGPT failing with a session error; the floating bar now starts a fresh session instead of getting stuck",
+        "Fixed Memory settings page spinning forever when the knowledge graph was empty; now shows an empty state with a Try again button",
+        "Fixed Claude account connect failing with a 400 \"Custom expires_in not allowed for scope\" error; the OAuth flow no longer requests a custom token lifetime so Anthropic's new server-side policy is honored",
+        "Internal: Chat Message Sent and chat_agent_query_failed analytics now carry the user prompt and any partial AI response so failed queries are no longer invisible in support investigations",
+        "Removed the 10-minute inactivity cap on AI replies \u2014 slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button",
+        "Internal: signin-optional experiment plumbing \u2014 anonymous Firebase sign-in on first launch when the signin-optional PostHog flag picks treatment; goes through the REST signUp endpoint so it works without keychain-access-groups entitlement. Paywall and Settings present the existing sign-in window when an anonymous user wants to subscribe; Google sign-in then links to the same Firebase UID via REST signInWithIdp so trial date, Stripe customer, and chat history carry over",
+        "Fixed Claude OAuth re-auth not appearing when token expired (chat would hang on thinking)",
+        "Added \"Stuck? Chat with the founder\" button on onboarding so new users can message the founder without finishing setup first"
+      ]
+    },
     {
       "version": "2.9.37",
       "date": "2026-05-25",
