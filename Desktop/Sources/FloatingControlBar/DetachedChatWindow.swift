@@ -1618,7 +1618,18 @@ class DetachedChatWindowController {
             let key = entry.sessionKey
             let stillSending = FloatingControlBarManager.shared.chatProvider?.isSending(sessionKey: key) ?? false
             guard !stillSending else {
-                log("[DetachedChat] safety watchdog: session=\(key) still sending after \(interval)s quiet — NOT clearing (healthy stream)")
+                // Quiet-but-live stream: don't clear (that would kill a healthy
+                // long tool call). But DON'T give up either — the old code
+                // returned here and was never rescheduled (it only re-arms on a
+                // message mutation), so a turn that streamed, went silent, and
+                // stayed stuck in `sendingSessionKeys` (bridge finalization-idle
+                // / upstream #630) pinned the spinner forever. Re-arm so we keep
+                // re-checking; this is bounded because the bridge now emits a
+                // terminal `result` for that case (clearing `sendingSessionKeys`
+                // and flipping isStreaming off), after which the guard above
+                // bails. Visual-only backstop to the real bridge-side fix.
+                log("[DetachedChat] safety watchdog: session=\(key) still sending after \(interval)s quiet — re-arming (bridge should deliver a terminal result; see finalization-idle / #630)")
+                self.scheduleSafetyWatchdog(winId: winId, isStreaming: true, messageId: messageId)
                 return
             }
             // Visual-only heal: stop the stuck repeatForever animation by flipping
