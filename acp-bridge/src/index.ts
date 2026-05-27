@@ -4565,6 +4565,29 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     } catch (err) {
       const elapsedMs = Date.now() - promptStartTime;
       logErr(`[TIMING] Query failed after ${elapsedMs}ms, notifications received: ${notificationCount}, fullText: ${fullText.length} chars, error: ${err instanceof Error ? err.message : String(err)}`);
+
+      // Finalization-idle rescue (upstream #630). The turn streamed its content
+      // but session/prompt never resolved. Deliver what streamed as a normal
+      // COMPLETED result (not `interrupted` — the answer is whole, so it must not
+      // get a misleading "(interrupted)" marker), cancel the zombie turn upstream
+      // (cancel ends the turn, keeps the session cached so the next prompt resumes
+      // cleanly — verified: the same session ran fine on the very next turn), and
+      // do NOT route into the stuck-session retry/replay paths (those re-run and
+      // double-bill a turn that already finished). abort() first to silence any
+      // late stragglers the abandoned prompt may still emit.
+      if (err instanceof Error && err.message.startsWith("FINALIZATION_IDLE")) {
+        abortController.abort();
+        acpNotify("session/cancel", { sessionId });
+        for (const name of pendingTools) {
+          sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
+        }
+        pendingTools.length = 0;
+        clearToolTimersForSession(sessionId);
+        logErr(`[FINALIZATION-IDLE] Rescued stalled turn for session ${sessionId.slice(0, 8)} (${err.message}); delivering ${fullText.length} chars as a completed result`);
+        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        return;
+      }
+
       if (abortController.signal.aborted) {
         if (queryCtx?.interruptRequested ?? interruptRequested) {
           for (const name of pendingTools) {
