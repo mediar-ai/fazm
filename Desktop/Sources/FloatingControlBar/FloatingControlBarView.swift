@@ -23,6 +23,7 @@ struct FloatingControlBarView: View {
     var onClearQueue: (() -> Void)?
     var onReorderQueue: ((IndexSet, Int) -> Void)?
     var onStopAgent: (() -> Void)?
+    var onResetStuckSession: (() -> Void)?
     var onPopOut: (() -> Void)?
     var onConnectClaude: (() -> Void)?
     var onCodexLogin: (() -> Void)?
@@ -518,6 +519,7 @@ struct FloatingControlBarView: View {
                 onReorderQueue?(source, dest)
             },
             onStopAgent: onStopAgent,
+            onResetStuckSession: onResetStuckSession,
             onPopOut: onPopOut,
             onConnectClaude: onConnectClaude,
             onCodexLogin: onCodexLogin,
