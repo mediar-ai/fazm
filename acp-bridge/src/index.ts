@@ -4751,8 +4751,12 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       }
       authRetryCount++;
       logErr(`Query failed with auth error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
+      // `sessionKey` (declared inside the inner try at ~3457) is out of scope
+      // here in the outer catch — recompute from msg with the same fallback so
+      // the auth_required event still carries the triggering session.
+      const outerSessionKey = msg.sessionKey ?? (msg.model || DEFAULT_MODEL);
       try {
-        await startAuthFlow(sessionKey);
+        await startAuthFlow(outerSessionKey);
       } catch (authErr) {
         if (isUserAbortedAuth(authErr)) {
           logErr(`Query OAuth flow ${authErr instanceof Error ? authErr.message : String(authErr)} — surfacing as assistant result`);
