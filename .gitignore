@@ -9,10 +9,13 @@ DerivedData/
 *.o
 *.swiftdeps
 
-# Environment (both contain secrets)
-.env
-.env.app
-.env.app.dev
+# Environment
+.env             # release/dev tooling secrets (Sentry, Sparkle, Notarization, etc.)
+.env.app.dev     # local dev overrides for runtime env (real GEMINI_API_KEY, etc.)
+# .env.app is intentionally tracked — see the file's header. It contains only
+# public bootstrap identifiers (Firebase API key, OAuth client ID, Cloud Run
+# URL, GCP project metadata). Real billable model API keys are fetched at
+# runtime via KeyService and never ship in the binary.
 
 # Credentials
 **/google-credentials.json
