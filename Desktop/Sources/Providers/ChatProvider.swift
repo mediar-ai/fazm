@@ -58,6 +58,7 @@ struct SystemEvent: Equatable, Codable {
         case sessionRecoveryEmpty // upstream session expired, no local history available to replay
         case toolHangCanceled     // a tool call exceeded its timeout, ACP session was canceled
         case taskHangCanceled     // a Task subagent appeared to die silently, ACP session was canceled
+        case toolForceStopped     // user (or watchdog) hit Force stop: bridge SIGKILLed the wedged MCP, conversation continues; card has Retry
         case userInterrupted      // user manually interrupted, surfaced as a card so it's visible later
         case browserExtensionResumed // browser extension setup finished and the interrupted task is being resumed
     }
@@ -3502,6 +3503,40 @@ class ChatProvider: ObservableObject {
             await acpBridge.interrupt(sessionKey: sessionKey)
         }
     }
+
+    /// FORCE stop for a specific session: same eager-clear as Stop, plus the
+    /// bridge SIGKILLs the Playwright MCP subprocess(es) so the in-flight
+    /// browser tool actually dies (cooperative `session/cancel` doesn't
+    /// unstick a wedged extension connection). Used when the live
+    /// `streaming.stalledToolName` indicator has been showing and the user
+    /// escalates from Stop. Bridge emits `tool_force_stopped` back, which
+    /// renders an explanatory card with a Retry action.
+    /// Captures the in-flight user prompt as `lastForceStoppedPrompt` so the
+    /// Retry button on the card can re-send it.
+    func forceStopAgent(sessionKey: String) {
+        guard sendingSessionKeys.contains(sessionKey) else {
+            log("ChatProvider: forceStopAgent called but session=\(sessionKey) is not sending")
+            return
+        }
+        log("ChatProvider: user FORCE-stopped agent for session=\(sessionKey)")
+        // Capture the in-flight prompt so the card's Retry can re-send it.
+        if let streaming = streamingState(for: sessionKey) {
+            let prompt = streaming.displayedQuery
+            if !prompt.isEmpty {
+                lastForceStoppedPrompt[sessionKey] = prompt
+            }
+        }
+        eagerClearForStop(sessionKey: sessionKey)
+        Task {
+            await acpBridge.forceInterrupt(sessionKey: sessionKey)
+        }
+    }
+
+    /// Per-session capture of the prompt that was in flight when the user
+    /// hit Force stop. Read by the tool_force_stopped card's Retry action to
+    /// re-send the same request on the (now-idle, MCP-reset) session.
+    /// Cleared once Retry fires or the session is reset.
+    private var lastForceStoppedPrompt: [String: String] = [:]
 
     /// Sessions the user has stopped that the bridge hasn't yet ack'd with a
     /// `result`. Maps sessionKey → Date the user clicked Stop. UI observes
