@@ -477,11 +477,17 @@ struct OnboardingChatView: View {
                 resetSkipTimer()
             }
         }
-        // Hide skip when AI starts responding
+        // Hide skip when AI starts responding, but keep a stall-escape timer
+        // running. If a turn hangs (ACP status stuck at `requesting`, never
+        // completing), isSending stays true forever and EVERY escape (Skip,
+        // "Skip the rest", typing) is suppressed, trapping the user in the
+        // setup chat. Restarting the timer here surfaces Skip after 120s even
+        // while still "sending" so a hung onboarding resume turn is escapable.
+        // (founder-chat report, pillaholins@gmail.com, 2026-05-27)
         .onChange(of: chatProvider.isSending) { _, isSending in
             if isSending {
                 withAnimation { skipButtonVisible = false }
-                skipButtonTimer?.invalidate()
+                resetSkipTimer()
             }
         }
         // Reset timer when a new message arrives
@@ -603,13 +609,16 @@ struct OnboardingChatView: View {
         return hasMinimumSteps && hasEnoughMessages
     }
 
-    /// Only show skip after 120s of inactivity (no messages, no quick-reply options, no AI responding).
+    /// Show skip after 120s of no progress. Fires whether the chat is idle
+    /// (inactivity) OR stuck "sending" on a hung turn — the latter is the
+    /// onboarding-stall trap (status stuck at `requesting`, isSending never
+    /// clears). The only gate is that the user has no clearer pending action
+    /// (quick-reply options), since those represent an explicit next step.
     private func resetSkipTimer() {
         skipButtonTimer?.invalidate()
         withAnimation { skipButtonVisible = false }
         skipButtonTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { _ in
-            // Only show if user has no pending actions
-            if self.quickReplyOptions.isEmpty && !self.chatProvider.isSending {
+            if self.quickReplyOptions.isEmpty {
                 withAnimation { self.skipButtonVisible = true }
             }
         }
