@@ -1101,8 +1101,9 @@ class DetachedChatWindowController {
         }
 
         win.onConnectClaude = { [weak chatProvider] in
-            guard let provider = chatProvider else { return }
-            PersonalAccountChooserWindowController.shared.show(chatProvider: provider, source: "popout")
+            // Mirrors the Codex flow: kick off OAuth directly when the user
+            // picks a Claude model from the dropdown while unconnected.
+            chatProvider?.startClaudeAuth()
         }
 
         win.onCodexLogin = { [weak chatProvider] in
