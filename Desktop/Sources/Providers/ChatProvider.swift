@@ -3535,8 +3535,27 @@ class ChatProvider: ObservableObject {
     /// Per-session capture of the prompt that was in flight when the user
     /// hit Force stop. Read by the tool_force_stopped card's Retry action to
     /// re-send the same request on the (now-idle, MCP-reset) session.
-    /// Cleared once Retry fires or the session is reset.
-    private var lastForceStoppedPrompt: [String: String] = [:]
+    /// Cleared once Retry fires or the session is reset. Published so the
+    /// card view can disable Retry once the prompt has been consumed (a
+    /// second click should be a no-op rather than re-sending a stale prompt).
+    @Published private(set) var lastForceStoppedPrompt: [String: String] = [:]
+
+    /// Public Retry action invoked from the tool_force_stopped system card.
+    /// Pops the captured prompt for `sessionKey` and enqueues it onto the
+    /// now-idle session; the existing dequeue path sends it as a fresh turn.
+    /// Returns true if a prompt was found and the enqueue fired.
+    @MainActor
+    @discardableResult
+    func retryAfterForceStop(sessionKey: String) -> Bool {
+        guard let prompt = lastForceStoppedPrompt.removeValue(forKey: sessionKey),
+              !prompt.isEmpty else {
+            log("ChatProvider: retryAfterForceStop — no captured prompt for session=\(sessionKey)")
+            return false
+        }
+        log("ChatProvider: retryAfterForceStop session=\(sessionKey) promptLen=\(prompt.count)")
+        enqueueMessage(prompt, sessionKey: sessionKey)
+        return true
+    }
 
     /// Sessions the user has stopped that the bridge hasn't yet ack'd with a
     /// `result`. Maps sessionKey → Date the user clicked Stop. UI observes
@@ -4902,6 +4921,57 @@ class ChatProvider: ObservableObject {
                                     barState.streaming.currentAIMessage?.isStreaming = false
                                 }
                                 barState.streaming.isAILoading = false
+                            }
+                        case .toolForceStopped(let toolName, _, let killedPids, let reason):
+                            log("ChatProvider: tool_force_stopped tool=\(toolName) killedPids=\(killedPids.count) — surfacing system card")
+                            // Bridge SIGKILLed the wedged Playwright MCP(s) and
+                            // session/cancel'd the turn. UI flags were already
+                            // flipped by forceStopAgent → eagerClearForStop, so
+                            // here we just emit the card. The Retry button on
+                            // the card calls ChatProvider.retryAfterForceStop
+                            // which pulls the captured `lastForceStoppedPrompt`
+                            // and enqueues it on the now-idle session.
+                            let cleanToolName: String = {
+                                if toolName.hasPrefix("mcp__") {
+                                    return String(toolName.split(separator: "__").last ?? Substring(toolName))
+                                }
+                                return toolName
+                            }()
+                            var details: [String: String] = [
+                                "scope": sessionKey ?? "main",
+                            ]
+                            if !cleanToolName.isEmpty {
+                                details["tool"] = cleanToolName
+                            }
+                            if !killedPids.isEmpty {
+                                details["killed_pids"] = killedPids.map(String.init).joined(separator: ", ")
+                            }
+                            let event = SystemEvent(
+                                kind: .toolForceStopped,
+                                title: "Browser reset — turn force-stopped",
+                                body: reason,
+                                details: details
+                            )
+                            let cardId = UUID().uuidString
+                            let cardNotice = ChatMessage(
+                                id: cardId,
+                                text: "",
+                                sender: .ai,
+                                isStreaming: false,
+                                isSynced: false,
+                                contentBlocks: [.systemEvent(id: cardId, event: event)],
+                                sessionKey: sessionKey
+                            )
+                            if let liveIdx = self.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                self.messages.insert(cardNotice, at: liveIdx)
+                            } else {
+                                self.messages.append(cardNotice)
+                            }
+                            if let key = sessionKey, !key.isEmpty {
+                                let persistContext = key == "floating" ? "__floating__" : "__\(key)__"
+                                Task {
+                                    await ChatMessageStore.saveMessage(cardNotice, context: persistContext, sessionId: nil)
+                                }
                             }
                         }
                     }
