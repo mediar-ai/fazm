@@ -1665,10 +1665,10 @@ class ChatProvider: ObservableObject {
             // the result routes to the detached key via sessionIdToKey, and
             // nobody is left to flip the streaming bubble to !isStreaming.
             // Walk popouts that match the orphaned sessionKey and clear them.
-            await acpBridge.setOrphanedResultHandler { [weak self] sessionKey, sessionId, interrupted in
+            await acpBridge.setOrphanedResultHandler { [weak self] sessionKey, sessionId, interrupted, text in
                 Task { @MainActor in
                     guard let self = self, let key = sessionKey else { return }
-                    log("ChatProvider: onOrphanedResult sessionKey=\(key) sessionId=\(sessionId) interrupted=\(interrupted) — clearing popout streaming state")
+                    log("ChatProvider: onOrphanedResult sessionKey=\(key) sessionId=\(sessionId) interrupted=\(interrupted) textLen=\(text.count) — clearing popout streaming state")
                     var cleared = 0
                     // Flip every streaming AI message belonging to this session off.
                     for i in self.messages.indices where self.messages[i].sessionKey == key && self.messages[i].isStreaming {
@@ -1705,6 +1705,55 @@ class ChatProvider: ObservableObject {
                     // result for a session the user previously stopped.
                     self.clearStoppedSession(key)
                     log("ChatProvider: onOrphanedResult cleared \(cleared) streaming flags for sessionKey=\(key)")
+
+                    // Salvage the message body. Without this, an orphaned `.result` with
+                    // assistant text gets logged and dropped — the user sees nothing in
+                    // chat. Hit live 2026-05-27 on onboarding resume after ./run.sh: the
+                    // agent emitted the resumed turn under sessionKey=floating while the
+                    // onboarding view subscribed via sessionKey=onboarding, so deltas were
+                    // queued in sessionPendingMessages and never reached the UI. We append
+                    // the final text to the shared chat history (onboarding + floating
+                    // both render `self.messages`) so the salvage is visible regardless of
+                    // which surface is active. Skip if interrupted (user-cancelled, no
+                    // value in resurrecting a stop) or if a matching message already
+                    // exists (real-cleared > 0 means the normal path posted the text).
+                    let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !interrupted && !normalizedText.isEmpty && cleared == 0 {
+                        let onboardingSid = OnboardingChatPersistence.loadSessionId()
+                        let floatingSid = UserDefaults.standard.string(forKey: self.floatingSessionIdKey)
+                        let mainSid = UserDefaults.standard.string(forKey: self.mainSessionIdKey)
+                        let belongsToOnboarding = (onboardingSid == sessionId) || self.isOnboarding
+                        let belongsToFloating = (floatingSid == sessionId) || key == "floating"
+                        let belongsToMain = (mainSid == sessionId)
+
+                        // Skip if the existing tail already contains this text (de-dup
+                        // when a late-arriving normal path stamped the same body).
+                        let textHead = String(normalizedText.prefix(120))
+                        let alreadyPresent = self.messages.reversed().prefix(3).contains {
+                            $0.sender == .ai && $0.text.contains(textHead)
+                        }
+                        if alreadyPresent {
+                            log("ChatProvider: orphan salvage skipped — chat tail already contains text head")
+                        } else if belongsToOnboarding || belongsToFloating || belongsToMain {
+                            let salvaged = ChatMessage(
+                                text: text,
+                                sender: .ai,
+                                isStreaming: false,
+                                isSynced: false,
+                                sessionKey: key
+                            )
+                            self.messages.append(salvaged)
+                            if belongsToOnboarding {
+                                Task { await OnboardingChatPersistence.saveMessage(salvaged) }
+                                log("ChatProvider: salvaged orphan result into onboarding chat (\(text.count) chars, sessionId=\(sessionId))")
+                            } else {
+                                Task { await ChatMessageStore.saveMessage(salvaged, context: "__floating__") }
+                                log("ChatProvider: salvaged orphan result into floating chat (\(text.count) chars, sessionId=\(sessionId))")
+                            }
+                        } else {
+                            log("ChatProvider: orphan salvage skipped — sessionId \(sessionId) does not match any known surface")
+                        }
+                    }
                 }
             }
             // Gemini probe result — feeds ShortcutSettings.updateGeminiModels.
