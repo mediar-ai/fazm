@@ -1594,12 +1594,16 @@ struct ModelToggleButton: View {
                     // and the floating bar inherit the most recent model choice.
                     shortcutSettings.selectedModel = model.id
                 } label: {
-                    if selectedModelId == model.id {
-                        Label(model.label, systemImage: "checkmark")
+                    // Surface the "— Connect…" affordance even for the currently-
+                    // selected model. Claude is the default model in this app, so
+                    // a checkmark-only state would hide the only re-auth handle
+                    // when the user's Claude credentials lapse.
+                    if isClaudeModel(model.id) && !isClaudeConnected {
+                        Label(model.label + " — Connect…", systemImage: "person.badge.key")
                     } else if model.id.hasPrefix("gpt-") && codexBackend.authMode == "none" {
                         Label(model.label + " — Connect…", systemImage: "person.badge.key")
-                    } else if isClaudeModel(model.id) && !isClaudeConnected {
-                        Label(model.label + " — Connect…", systemImage: "person.badge.key")
+                    } else if selectedModelId == model.id {
+                        Label(model.label, systemImage: "checkmark")
                     } else {
                         Text(model.label)
                     }
