@@ -73,6 +73,13 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onSendQuery: ((String, [ChatAttachment]) -> Void)?
     var onInterruptAndFollowUp: ((String) -> Void)?
     var onStopAgent: (() -> Void)?
+    /// Force-stop: SIGKILLs the wedged browser MCP so a hung playwright tool
+    /// dies for real (cooperative Stop is ignored by a wedged Chrome extension).
+    /// Wired to `ChatProvider.forceStopAgent(sessionKey:)`.
+    var onForceStopAgent: (() -> Void)?
+    /// Retry the prompt that was in flight when Force stop fired. Wired to
+    /// `ChatProvider.retryAfterForceStop(sessionKey:)`.
+    var onRetryAfterForceStop: ((String) -> Void)?
     /// Fired by the "Reset session" button in the stuck-after-stop pill.
     /// Wired to `ChatProvider.endSession(sessionKey:)`, which kills the
     /// upstream `claude` subprocess for that session and lets the next
@@ -254,6 +261,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onClearQueue: { [weak self] in self?.onClearQueue?() },
             onReorderQueue: { [weak self] source, dest in self?.onReorderQueue?(source, dest) },
             onStopAgent: { [weak self] in self?.onStopAgent?() },
+            onForceStopAgent: { [weak self] in self?.onForceStopAgent?() },
+            onRetryAfterForceStop: { [weak self] key in self?.onRetryAfterForceStop?(key) },
             onResetStuckSession: { [weak self] in self?.onResetStuckSession?() },
             onPopOut: { [weak self] in self?.onPopOut?() },
             onConnectClaude: { [weak self] in self?.onConnectClaude?() },
@@ -1252,6 +1261,14 @@ class FloatingControlBarManager {
 
         barWindow.onStopAgent = { [weak chatProvider] in
             chatProvider?.stopAgent()
+        }
+
+        barWindow.onForceStopAgent = { [weak chatProvider] in
+            chatProvider?.forceStopAgent(sessionKey: "floating")
+        }
+
+        barWindow.onRetryAfterForceStop = { [weak chatProvider] key in
+            _ = chatProvider?.retryAfterForceStop(sessionKey: key)
         }
 
         barWindow.onResetStuckSession = { [weak chatProvider] in
@@ -2280,6 +2297,14 @@ class FloatingControlBarManager {
 
         window.onStopAgent = { [weak provider] in
             provider?.stopAgent()
+        }
+
+        window.onForceStopAgent = { [weak provider] in
+            provider?.forceStopAgent(sessionKey: "floating")
+        }
+
+        window.onRetryAfterForceStop = { [weak provider] key in
+            _ = provider?.retryAfterForceStop(sessionKey: key)
         }
 
         window.onResetStuckSession = { [weak provider] in
