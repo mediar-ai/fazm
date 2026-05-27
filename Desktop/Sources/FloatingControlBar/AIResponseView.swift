@@ -2597,6 +2597,11 @@ private struct ScrollPositionDetector: NSViewRepresentable {
             // rule above can recognize true→false transients even before the
             // work item fires.
             lastReportedValue = atBottom
+            if atBottom == false {
+                let prevOriginStr = lastOriginY.map { "\(Int($0))" } ?? "nil"
+                let prevHeightStr = lastViewportHeight.map { "\(Int($0))" } ?? "nil"
+                log("[ScrollDetect] ->false docH=\(Int(documentHeight)) originY=\(Int(originY)) prevOrigin=\(prevOriginStr) viewport=\(Int(viewportHeight)) prevViewport=\(prevHeightStr)")
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
         }
 
