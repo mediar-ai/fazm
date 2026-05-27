@@ -318,13 +318,19 @@ actor ACPBridge {
   var onSessionForked: ((_ fromSessionId: String, _ toSessionId: String, _ fromSessionKey: String, _ toSessionKey: String) -> Void)?
 
   /// Safety-net: called when a `.result` arrives for a sessionKey that has no
-  /// active continuation AND no live-transfer alias pointing to it. This is
-  /// the "popOut mid-turn + interrupt orphaned the stream" failure mode —
-  /// without this hook a streaming AI bubble in a popout window would spin
-  /// forever because the in-flight `submitQuery` task that would normally
-  /// finalize it is keyed under a stale, untouched name. The handler walks
-  /// popouts that match `sessionKey` and force-clears their streaming flags.
-  var onOrphanedResult: ((_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool) -> Void)?
+  /// active continuation AND no live-transfer alias pointing to it. Two
+  /// known failure modes feed this:
+  ///   1. popOut mid-turn + interrupt — a streaming bubble in a detached
+  ///      window would spin forever because the in-flight `submitQuery`
+  ///      that would normally finalize it is keyed under a stale name.
+  ///   2. Session resume after `./run.sh` rebuild — the agent emits the
+  ///      resumed turn's deltas + result under a sessionKey that doesn't
+  ///      match the surface currently subscribed to that sessionId
+  ///      (e.g. agent says `floating`, onboarding view subscribes via
+  ///      `onboarding`). The message body would be silently dropped.
+  /// `text` carries the final assistant payload so the handler can salvage
+  /// it into the matching chat surface rather than just clearing flags.
+  var onOrphanedResult: ((_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool, _ text: String) -> Void)?
 
   /// A slash command advertised by the agent. Mirrors ACP's `AvailableCommand`
   /// schema. Rendered in the input-field popover when the user types `/`.
@@ -386,7 +392,7 @@ actor ACPBridge {
     self.onSessionForked = handler
   }
 
-  func setOrphanedResultHandler(_ handler: @escaping @Sendable (_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool) -> Void) {
+  func setOrphanedResultHandler(_ handler: @escaping @Sendable (_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool, _ text: String) -> Void) {
     self.onOrphanedResult = handler
   }
 
@@ -2057,12 +2063,12 @@ actor ACPBridge {
       // supposed to finalize it has either ended or is keyed under a stale name.
       // Without this notification, the popout's streaming bubble would spin
       // forever. Fire the orphan handler so ChatProvider can clear UI state.
-      if case .result(_, let sid, _, _, _, _, _, let interrupted) = message {
+      if case .result(let text, let sid, _, _, _, _, _, let interrupted) = message {
         let hasIncomingAlias = sessionKeyAliases.values.contains(key)
         let hasGen = sessionMessageGenerations[key] != nil
         if !hasIncomingAlias && !hasGen {
-          log("ACPBridge: ORPHANED result sessionKey=\(key) sessionId=\(sid) interrupted=\(interrupted) — no continuation, no incoming alias, no waiter generation. Firing onOrphanedResult safety net.")
-          onOrphanedResult?(key, sid, interrupted)
+          log("ACPBridge: ORPHANED result sessionKey=\(key) sessionId=\(sid) interrupted=\(interrupted) textLen=\(text.count) — no continuation, no incoming alias, no waiter generation. Firing onOrphanedResult safety net.")
+          onOrphanedResult?(key, sid, interrupted, text)
           // Still queue it in case a late waiter shows up, but don't block on it.
         }
       }
