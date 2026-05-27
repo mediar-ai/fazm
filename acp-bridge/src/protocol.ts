@@ -63,6 +63,19 @@ export interface InterruptMessage {
 }
 
 /**
+ * Swift escalation from cooperative Stop to a hard kill. Bridge sends
+ * `session/cancel` AND SIGKILLs the Playwright MCP subprocess(es) so the
+ * wedged browser tool actually dies (cooperative ACP cancel is ignored by
+ * a wedged Chrome extension — the whole reason the live "not responding"
+ * indicator exists). Replies with `tool_force_stopped` so the UI can render
+ * an explanatory card with a Retry button.
+ */
+export interface ForceInterruptMessage {
+  type: "force_interrupt";
+  sessionKey: string;
+}
+
+/**
  * Swift tells the bridge to fully tear down a specific session: send `session/close`
  * upstream so the SDK kills its claude subprocess, then drop the entry from the
  * `sessions` Map so a future warmup spawns a fresh one. Used when a pop-out window
@@ -177,6 +190,7 @@ export type InboundMessage =
   | ToolResultMessage
   | StopMessage
   | InterruptMessage
+  | ForceInterruptMessage
   | CloseSessionMessage
   | AuthenticateMessage
   | WarmupMessage
