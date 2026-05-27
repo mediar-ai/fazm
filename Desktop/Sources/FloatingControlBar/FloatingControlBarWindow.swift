@@ -1299,8 +1299,9 @@ class FloatingControlBarManager {
         }
 
         barWindow.onConnectClaude = { [weak chatProvider] in
-            guard let provider = chatProvider else { return }
-            PersonalAccountChooserWindowController.shared.show(chatProvider: provider, source: "floating_bar")
+            // Mirrors the Codex flow: kick off OAuth directly when the user
+            // picks a Claude model from the dropdown while unconnected.
+            chatProvider?.startClaudeAuth()
         }
 
         barWindow.onCodexLogin = { [weak chatProvider] in
