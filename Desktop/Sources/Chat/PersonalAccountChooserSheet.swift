@@ -392,7 +392,14 @@ private struct ChooserWindowContent: View {
             codexAuthMode: codexBackend.authMode,
             geminiAvailable: geminiAvailable,
             onPickClaude: {
+                // `isClaudeConnected` only reflects keychain *presence*, not token
+                // validity. When the chooser opened because of a 401
+                // (`isClaudeAuthRequired == true`), the stored creds are dead —
+                // re-routing into `switchBridgeMode("personal")` no-ops if we're
+                // already in personal mode and the spinner stalls until the OAuth
+                // callback server times out at 10 min. Require both signals.
                 let alreadyAuthed = chatProvider.isClaudeConnected
+                    && !chatProvider.isClaudeAuthRequired
                 AnalyticsManager.shared.personalAccountChooserPicked(
                     provider: "claude", alreadyAuthed: alreadyAuthed
                 )
@@ -402,9 +409,10 @@ private struct ChooserWindowContent: View {
                     onDismiss()
                     Task { await chatProvider.switchBridgeMode(to: "personal") }
                 } else {
-                    // No creds — show the Claude OAuth flow inline within this
-                    // same window (no separate auth window). The sheet's
-                    // "Connect Claude Account" button starts the actual flow.
+                    // No creds (or expired) — show the Claude OAuth flow inline
+                    // within this same window (no separate auth window). The
+                    // sheet's "Connect Claude Account" button starts the actual
+                    // flow.
                     showingClaudeAuth = true
                     reportAuthHeight()
                 }
