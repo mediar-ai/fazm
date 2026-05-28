@@ -1,10 +1,15 @@
 {
-  "unreleased": [
-    "Fixed an idle chat-window layout storm that pegged the main thread and made the input field laggy (a stuck animation re-pinning the scroll view every frame); added a [ScrollStorm] diagnostic log and auto-expiry for the crash-recovery indicator",
-    "Fixed the actual scroll-storm root cause: four withAnimation(.repeatForever) animation patterns (update-available pulse, update-button pulse, upgrade-Claude pulse, hang-flash) that kept a SwiftUI animation transaction open forever and made the chat scroll view recompute every display cycle, pegging the main thread and lagging the composer",
-    "Added automatic stack-sampling: when the top thread sustains over 85 percent CPU for a minute, the app shells out to /usr/bin/sample and writes the hot-stack trace to the log, so the next storm is diagnosable from logs alone"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.47",
+      "date": "2026-05-28",
+      "changes": [
+        "Fixed an idle chat-window layout storm that pegged the main thread and made the input field laggy (a stuck animation re-pinning the scroll view every frame); added a [ScrollStorm] diagnostic log and auto-expiry for the crash-recovery indicator",
+        "Fixed the actual scroll-storm root cause: four withAnimation(.repeatForever) animation patterns (update-available pulse, update-button pulse, upgrade-Claude pulse, hang-flash) that kept a SwiftUI animation transaction open forever and made the chat scroll view recompute every display cycle, pegging the main thread and lagging the composer",
+        "Added automatic stack-sampling: when the top thread sustains over 85 percent CPU for a minute, the app shells out to /usr/bin/sample and writes the hot-stack trace to the log, so the next storm is diagnosable from logs alone"
+      ]
+    },
     {
       "version": "2.9.46",
       "date": "2026-05-27",
