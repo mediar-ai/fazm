@@ -1550,14 +1550,36 @@ workflows:
 
           gcloud storage cp /tmp/fazm-latest.json "gs://$BUCKET/$PREFIX/latest.json"
 
-          # Intentionally NOT writing the global gs://$BUCKET/desktop/latest.json here.
-          # Every -macos tag registers as the "staging" channel in Firestore (see the
-          # next step), and the global manifest is what new website installs read via
-          # the stub installer; writing it on every build silently ships unpromoted
-          # staging builds to every new signup. Only scripts/promote_release.sh
-          # updates the global manifest, gated on a promotion to beta or stable.
-          # Reverts the regression from commit 404836cc (2026-03-20) that undid the
-          # original fix in e7741d9f (2026-03-19).
+          # ============================================================
+          # DO NOT ADD A WRITE TO gs://$BUCKET/desktop/latest.json HERE.
+          # ============================================================
+          # This has been re-introduced as a "fix" twice already and silently
+          # leaks every staging build straight to every new website install,
+          # bypassing the staging -> beta -> stable promotion gate.
+          #
+          # Architecture (read this before "fixing"):
+          #   - Each -macos tag triggers this build. The "Register release in
+          #     Firestore" step (further down) registers the build on the
+          #     STAGING channel, no exceptions.
+          #   - Existing users on the staging Sparkle channel pick up the new
+          #     build via the appcast. That's how staging delivery works.
+          #   - NEW website installs read gs://$BUCKET/desktop/latest.json via
+          #     the stub installer DMG. If THIS step writes that file, every
+          #     new signup downloads the just-built staging artifact, which is
+          #     exactly the leak we are not having.
+          #   - The ONLY writer of gs://$BUCKET/desktop/latest.json is
+          #     scripts/promote_release.sh, which runs on explicit promotion
+          #     to beta or stable.
+          #
+          # History:
+          #   Mar 19 2026 e7741d9f  fix: remove CI write of global manifest
+          #   Mar 20 2026 404836cc  REGRESSION: re-added it, gated on IS_STAGING
+          #   May 28 2026 b43e16c0  re-fix: removed it again; this comment block
+          #
+          # If you think this needs to change, READ scripts/promote_release.sh,
+          # READ Desktop/Sources/UpdaterViewModel.swift (channel selection),
+          # and READ verify-release.sh (which now hard-fails on this regression).
+          # Then talk to the user before doing anything.
 
           echo "Uploaded arch-specific ZIPs and manifest to GCS"
           echo "  arm64:  $BASE_URL/$PREFIX/Fazm-arm64.zip ($ARM64_SIZE bytes)"
