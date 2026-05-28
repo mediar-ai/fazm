@@ -5246,6 +5246,23 @@ class ChatProvider: ObservableObject {
             let isBuiltinMode = bridgeMode == "builtin"
             let accountType = isBuiltinMode ? "builtin" : "personal"
             let r = queryResult
+
+            // Forward to MediarWeb only for turns Fazm actually pays for:
+            // builtin Claude (bundled Anthropic key) and Gemini (Fazm's Vertex
+            // project). Personal Claude OAuth and Codex/ChatGPT OAuth bill the
+            // user, so we skip them to keep the dashboard focused on Fazm cost.
+            let modelAtTurnEnd = r.model.isEmpty ? ShortcutSettings.shared.selectedModel : r.model
+            let externalSource: String?
+            if Self.isGeminiModelId(modelAtTurnEnd) {
+                externalSource = "fazm_chat_gemini"
+            } else if Self.isCodexModelId(modelAtTurnEnd) {
+                externalSource = nil
+            } else if isBuiltinMode {
+                externalSource = "fazm_chat_builtin"
+            } else {
+                externalSource = nil
+            }
+
             Task.detached(priority: .background) {
                 await APIClient.shared.recordLlmUsage(
                     inputTokens: r.inputTokens,
@@ -5256,6 +5273,15 @@ class ChatProvider: ObservableObject {
                     costUsd: r.costUsd,
                     account: accountType
                 )
+                if let source = externalSource {
+                    await APIClient.shared.recordExternalLlmTrace(
+                        model: modelAtTurnEnd,
+                        inputTokens: r.inputTokens,
+                        outputTokens: r.outputTokens,
+                        totalTokens: r.inputTokens + r.outputTokens,
+                        source: source
+                    )
+                }
             }
             sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
 
