@@ -229,6 +229,11 @@ export interface ResultMessage {
   type: "result";
   text: string;
   sessionId: string;
+  /** Model id the bridge actually used for this turn (e.g.
+   *  "claude-sonnet-4-6", "gemini-2.5-pro", "gpt-5.4/high"). Lets Swift
+   *  attribute usage to the right provider for MediarWeb LLM-trace
+   *  reporting without re-reading the picker (which can drift mid-turn). */
+  model?: string;
   costUsd?: number;
   inputTokens?: number;
   outputTokens?: number;
