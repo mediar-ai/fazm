@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed chat stutter and CPU spikes from scroll and layout storms during long streaming responses, by rate-limiting auto-scroll and guarding repeated layout updates"
+    "Fixed chat stutter and CPU spikes from scroll and layout storms during long streaming responses, by rate-limiting auto-scroll and guarding repeated layout updates",
+    "Fixed an idle chat-window layout storm that pegged the main thread and made the input field laggy (a stuck animation re-pinning the scroll view every frame); added a [ScrollStorm] diagnostic log and auto-expiry for the crash-recovery indicator"
   ],
   "releases": [
     {
