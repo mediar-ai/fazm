@@ -7,6 +7,12 @@ import PostHog
 class PostHogManager {
     static let shared = PostHogManager()
 
+    struct FeatureFlagEvaluation {
+        let enabled: Bool
+        let resolved: Bool
+        let valueDescription: String
+    }
+
     private var isInitialized = false
 
     // PostHog configuration
@@ -201,10 +207,89 @@ class PostHogManager {
         return PostHogSDK.shared.getFeatureFlag(flag)
     }
 
+    /// Reload feature flags and then evaluate a specific flag.
+    ///
+    /// The sign-in gate runs on first launch, when PostHog's preload request is
+    /// often still in flight. A direct `isFeatureEnabled` call can therefore
+    /// read nil and accidentally treat a treatment user as control. This helper
+    /// waits for an explicit reload, with a bounded fallback to the current
+    /// cached value so the UI never hangs behind analytics.
+    func evaluateFeatureFlagAfterReload(_ flag: String, timeout: TimeInterval = 3.0) async -> FeatureFlagEvaluation {
+        guard isInitialized else {
+            return FeatureFlagEvaluation(enabled: false, resolved: false, valueDescription: "uninitialized")
+        }
+
+        return await withCheckedContinuation { continuation in
+            let resumeOnce = FeatureFlagEvaluationContinuation(continuation)
+
+            func resolveFromCache() {
+                let value = PostHogSDK.shared.getFeatureFlag(flag)
+                resumeOnce.resume(returning: Self.evaluation(from: value))
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                Task { @MainActor in
+                    resolveFromCache()
+                }
+            }
+
+            PostHogSDK.shared.reloadFeatureFlags {
+                Task { @MainActor in
+                    resolveFromCache()
+                }
+            }
+        }
+    }
+
+    private static func evaluation(from value: Any?) -> FeatureFlagEvaluation {
+        switch value {
+        case let enabled as Bool:
+            return FeatureFlagEvaluation(
+                enabled: enabled,
+                resolved: true,
+                valueDescription: enabled ? "true" : "false"
+            )
+        case let variant as String:
+            return FeatureFlagEvaluation(
+                enabled: !variant.isEmpty,
+                resolved: true,
+                valueDescription: variant
+            )
+        case .some(let value):
+            return FeatureFlagEvaluation(
+                enabled: false,
+                resolved: true,
+                valueDescription: String(describing: value)
+            )
+        case nil:
+            return FeatureFlagEvaluation(
+                enabled: false,
+                resolved: false,
+                valueDescription: "nil"
+            )
+        }
+    }
+
     /// Reload feature flags
     func reloadFeatureFlags() {
         guard isInitialized else { return }
         PostHogSDK.shared.reloadFeatureFlags()
+    }
+}
+
+@MainActor
+private final class FeatureFlagEvaluationContinuation {
+    private var didResume = false
+    private let continuation: CheckedContinuation<PostHogManager.FeatureFlagEvaluation, Never>
+
+    init(_ continuation: CheckedContinuation<PostHogManager.FeatureFlagEvaluation, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning value: PostHogManager.FeatureFlagEvaluation) {
+        guard !didResume else { return }
+        didResume = true
+        continuation.resume(returning: value)
     }
 }
 
