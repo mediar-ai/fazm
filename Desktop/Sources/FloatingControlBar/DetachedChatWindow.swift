@@ -947,7 +947,7 @@ class DetachedChatWindowController {
                 // explicit, sticky cwd instead of silently following the global
                 // (which flaps and tears down the ACP session between turns).
                 // Normalize the stored model id so legacy "default" / older opus
-                // pins migrate to the canonical claude-opus-4-7 — without this,
+                // pins migrate to the canonical claude-opus-4-8 — without this,
                 // existing pop-outs keep sending the dead alias forever.
                 detachedState.workspace.selectedModel = ShortcutSettings.normalizeModelId(snapshot.selectedModel)
                 let restoredWorkspace = snapshot.workspace.isEmpty ? NSHomeDirectory() : snapshot.workspace
