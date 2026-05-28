@@ -188,22 +188,17 @@ struct DesktopHomeView: View {
     private func evaluateSignInGate() async {
         guard !signInGateDecided else { return }
 
-        // Give PostHog's `preloadFeatureFlags = true` fetch a moment to complete.
-        // On first launch the SDK is still loading flags when the view appears;
-        // querying immediately would return false and incorrectly bucket every
-        // first-launch user into control. 600ms is enough for the cached
-        // initial fetch on a typical network without making the launch feel
-        // slow. Subsequent launches read from local cache and resolve instantly.
-        try? await Task.sleep(nanoseconds: 600_000_000)
-
-        let flagEnabled = PostHogManager.shared.isFeatureEnabled("signin-optional")
+        let flag = await PostHogManager.shared.evaluateFeatureFlagAfterReload("signin-optional")
+        let flagEnabled = flag.enabled
         let variant = flagEnabled ? "treatment" : "control"
         let deviceId = UserDefaults.standard.string(forKey: "analytics_device_id") ?? ""
         PostHogManager.shared.track("signin_optional_exposed", properties: [
             "variant": variant,
-            "device_id": deviceId
+            "device_id": deviceId,
+            "flag_resolved": flag.resolved,
+            "flag_value": flag.valueDescription
         ])
-        log("DesktopHomeView: signin-optional gate evaluated — variant=\(variant)")
+        log("DesktopHomeView: signin-optional gate evaluated — variant=\(variant), flag_resolved=\(flag.resolved), flag_value=\(flag.valueDescription)")
 
         if flagEnabled {
             do {
