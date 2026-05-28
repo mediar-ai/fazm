@@ -309,6 +309,18 @@ struct AIResponseView: View {
                     // no scrollbar thumb jumping. If the user scrolls up manually,
                     // their offset-from-bottom stays stable, so they aren't yanked.
                     .defaultScrollAnchor(.bottom)
+                    // EXPERIMENT 2026-05-28: nullify any ambient SwiftUI
+                    // animation transaction at the ScrollView boundary. Prod
+                    // sample shows `InterpolatedDisplayList.updateValue() →
+                    // ResolvedStyledText.modifyTransition` running every
+                    // display cycle on idle windows — i.e. an animation
+                    // transaction kept alive by SOMETHING (still unidentified)
+                    // is making SwiftUI interpolate the whole markdown
+                    // display list at 60Hz. `.transaction { $0.animation =
+                    // nil }` strips the inherited animation from this subtree,
+                    // so even if an ambient transaction is alive elsewhere,
+                    // the message list won't re-interpolate.
+                    .transaction { $0.animation = nil }
                     .onPreferenceChange(StackedBubblesPreferenceKey.self) { value in
                         // Dedupe by id (preferences accumulate across updates) and
                         // sort once so consumers can binary-search later if needed.
