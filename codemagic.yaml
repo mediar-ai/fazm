@@ -1436,29 +1436,60 @@ workflows:
             ASSETS="$ASSETS $DMG_PATH"
           fi
 
-          # Create release and upload assets with retry.
-          # Use perl alarm for a cross-platform 1800s timeout (works on macOS + Linux).
+          # Step A: create the release shell WITHOUT assets (fast, atomic, ~1s).
+          # This used to be combined with the asset upload in a single gh release create,
+          # but a single hung 660MB upload would burn the entire 1800s per-attempt budget
+          # and trigger the workflow timeout (v2.9.49/v2.9.50, 2026-05-28). Splitting
+          # create from upload lets each asset retry independently with --clobber.
           RELEASE_CREATED=false
           for attempt in 1 2 3; do
-            if perl -e 'alarm 1800; exec @ARGV' -- \
+            if perl -e 'alarm 120; exec @ARGV' -- \
               gh release create "$CM_TAG" \
               --repo "$GITHUB_REPO" \
               --title "Fazm Desktop v${VERSION}" \
               --notes "$RELEASE_NOTES" \
-              $PRERELEASE_FLAG \
-              $ASSETS; then
+              $PRERELEASE_FLAG; then
               RELEASE_CREATED=true
               break
             fi
-            echo "Attempt $attempt failed, retrying..."
+            echo "Release shell attempt $attempt failed, retrying..."
             gh release delete "$CM_TAG" --repo "$GITHUB_REPO" --yes 2>/dev/null || true
             sleep 10
           done
 
           if [ "$RELEASE_CREATED" != "true" ]; then
-            echo "ERROR: Failed to create GitHub release after 3 attempts"
+            echo "ERROR: Failed to create GitHub release shell after 3 attempts"
             exit 1
           fi
+
+          # Step B: upload each asset with per-file retry. --clobber lets a retry
+          # overwrite a partial upload from a previous attempt. 600s per attempt;
+          # 3 attempts per asset; 2 assets max → upper bound 60 min, well under
+          # the Codemagic workflow timeout. If GitHub asset upload is flaking,
+          # this will surface the error in minutes, not hours.
+          for ASSET in $ASSETS; do
+            ASSET_NAME=$(basename "$ASSET")
+            ASSET_SIZE=$(stat -f%z "$ASSET" 2>/dev/null || stat -c%s "$ASSET" 2>/dev/null)
+            echo "Uploading $ASSET_NAME ($((ASSET_SIZE / 1024 / 1024)) MB)..."
+            UPLOAD_OK=false
+            for attempt in 1 2 3; do
+              if perl -e 'alarm 600; exec @ARGV' -- \
+                gh release upload "$CM_TAG" "$ASSET" \
+                --repo "$GITHUB_REPO" \
+                --clobber; then
+                UPLOAD_OK=true
+                echo "  ✓ $ASSET_NAME uploaded on attempt $attempt"
+                break
+              fi
+              echo "  Attempt $attempt failed for $ASSET_NAME, retrying..."
+              sleep 15
+            done
+            if [ "$UPLOAD_OK" != "true" ]; then
+              echo "ERROR: Failed to upload $ASSET_NAME after 3 attempts"
+              gh release delete "$CM_TAG" --repo "$GITHUB_REPO" --yes 2>/dev/null || true
+              exit 1
+            fi
+          done
 
           echo "GitHub release created: $CM_TAG (staging=$IS_STAGING)"
 
