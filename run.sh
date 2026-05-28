@@ -590,7 +590,17 @@ if [ -f ".env.app.dev" ]; then
 elif [ -f ".env.app" ]; then
     cp -f .env.app "$APP_BUNDLE/Contents/Resources/.env"
 else
-    touch "$APP_BUNDLE/Contents/Resources/.env"
+    # Fresh open-source clone: no local bootstrap config. Fetch the public,
+    # non-secret bootstrap config from fazm.ai at build time so that
+    # `git clone && ./run.sh` produces a working app pointed at hosted Fazm
+    # infra. Nothing fetched is a credential (see https://fazm.ai/api/bootstrap);
+    # real model keys are fetched at runtime via the backend, gated by auth.
+    substep "No local .env.app — fetching bootstrap config from fazm.ai"
+    if ! curl -fsSL https://fazm.ai/api/bootstrap -o "$APP_BUNDLE/Contents/Resources/.env"; then
+        echo "WARNING: could not fetch bootstrap config from fazm.ai. Sign-in will not work." >&2
+        echo "         Provide your own .env.app (see README -> Development) and re-run." >&2
+        touch "$APP_BUNDLE/Contents/Resources/.env"
+    fi
 fi
 
 substep "Copying app icon"
