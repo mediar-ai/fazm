@@ -851,25 +851,29 @@ struct AIResponseView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(FazmColors.purplePrimary)
                     .shadow(color: FazmColors.purplePrimary.opacity(upgradePulse ? 0.6 : 0.2), radius: upgradePulse ? 8 : 2)
+                    // Value-based animation per Extensions/WindowVisibility.swift.
+                    // When the window hides, the modifier becomes `.default` and
+                    // snaps the in-flight repeatForever to a static value, closing
+                    // the SwiftUI animation transaction. The previous
+                    // `withAnimation(.repeatForever) { upgradePulse = true }`
+                    // kept the transaction open forever — the root cause of the
+                    // ResolvedStyledText storm + composer lag (2026-05-27).
+                    .animation(
+                        windowIsVisible
+                            ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true)
+                            : .default,
+                        value: upgradePulse
+                    )
             )
         }
         .buttonStyle(.plain)
         .onAppear { startUpgradePulseIfVisible() }
-        .onChange(of: windowIsVisible) { _, visible in
-            if visible {
-                startUpgradePulseIfVisible()
-            } else {
-                withAnimation(.default) { upgradePulse = false }
-            }
-        }
+        .onChange(of: windowIsVisible) { _, _ in startUpgradePulseIfVisible() }
         .transition(.scale.combined(with: .opacity))
     }
 
     private func startUpgradePulseIfVisible() {
-        guard windowIsVisible else { return }
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-            upgradePulse = true
-        }
+        upgradePulse = windowIsVisible
     }
 
     // MARK: - Tutorial Banner
@@ -2426,6 +2430,22 @@ struct ReportIssueButton: View {
                     .opacity(flashOpacity)
                     .scaleEffect(flashScale)
                     .shadow(color: isHanging ? .orange.opacity(flashOpacity * 0.9) : .clear, radius: 6)
+                    // Value-based animation: gates auto-close the transaction
+                    // when isHanging or visibility flips. Replaces the previous
+                    // `withAnimation(.repeatForever) { flashOpacity = 0.05 }` —
+                    // see Extensions/WindowVisibility.swift.
+                    .animation(
+                        isHanging && windowIsVisible
+                            ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true)
+                            : .default,
+                        value: flashOpacity
+                    )
+                    .animation(
+                        isHanging && windowIsVisible
+                            ? .easeInOut(duration: 0.55).repeatForever(autoreverses: true)
+                            : .default,
+                        value: flashScale
+                    )
             }
             .buttonStyle(.plain)
             .disabled(showSent)
@@ -2456,20 +2476,19 @@ struct ReportIssueButton: View {
         .onChange(of: windowIsVisible) { _, _ in syncFlash() }
     }
 
-    /// Starts/stops the orange flash animation. Only runs the repeatForever
-    /// pulse while the host window is on screen — otherwise SwiftUI keeps the
-    /// display cycle alive every frame and burns CPU re-rendering the chat.
+    /// Sets the target values; the value-based `.animation(...)` modifiers on
+    /// the Image decide whether to repeat-forever (gates open) or snap to
+    /// default (gates closed). No `withAnimation` blocks — those leak the
+    /// animation transaction across the whole subtree, which forces every
+    /// `.defaultScrollAnchor` re-pin to animate and the completed markdown's
+    /// `ResolvedStyledText` to re-encode every display cycle.
     private func syncFlash() {
         if isHanging && windowIsVisible {
-            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
-                flashOpacity = 0.05
-                flashScale = 1.15
-            }
+            flashOpacity = 0.05
+            flashScale = 1.15
         } else {
-            withAnimation(.default) {
-                flashOpacity = 1.0
-                flashScale = 1.0
-            }
+            flashOpacity = 1.0
+            flashScale = 1.0
         }
     }
 
