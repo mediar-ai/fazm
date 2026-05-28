@@ -22,9 +22,13 @@
  *     session/load so the Swift client banks the resumable id even if the
  *     prompt later errors.
  *
+ * Token tracking: best-effort extraction from the standard ACP
+ * `promptResult.usage` field (PromptResponse.usage, `@experimental` in the
+ * ACP spec) and from gemini-cli's `_meta.quota.token_count` fallback. If
+ * codex-acp doesn't populate either today, the bridge reports 0; MediarWeb
+ * still receives the row so the gap is visible in the dashboard.
+ *
  * Still NOT yet handled (deferred to Phase 2.5):
- *   - Cost / token tracking (codex-acp doesn't surface usage in the same
- *     shape; will need adapter-specific extraction once we know the schema).
  *   - Image / file attachments (msg.attachments is silently ignored).
  *   - Stuck-session / poisoned-session recovery (Claude has elaborate
  *     priorContext-replay logic; codex gets a single retry on resume
@@ -232,20 +236,45 @@ export async function handleCodexQuery(msg: QueryMessage, deps: CodexQueryDeps):
     const promptResult = (await provider.request("session/prompt", {
       sessionId,
       prompt: promptBlocks,
-    })) as { stopReason: string };
+    })) as {
+      stopReason: string;
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedReadTokens?: number | null;
+        cachedWriteTokens?: number | null;
+        totalTokens?: number;
+      } | null;
+      _meta?: {
+        quota?: {
+          token_count?: { input_tokens?: number; output_tokens?: number };
+        };
+      };
+    };
+
+    // Read standard ACP PromptResponse.usage first; fall back to the
+    // gemini-cli-style `_meta.quota.token_count` in case codex-acp ever
+    // switches to that shape. Returns 0 when codex-acp surfaces nothing
+    // (current behavior at codex-acp@0.12.0) so the row still records.
+    const quotaTokens = promptResult._meta?.quota?.token_count;
+    const inputTokens = promptResult.usage?.inputTokens ?? quotaTokens?.input_tokens ?? 0;
+    const outputTokens = promptResult.usage?.outputTokens ?? quotaTokens?.output_tokens ?? 0;
+    const cacheReadTokens = promptResult.usage?.cachedReadTokens ?? 0;
+    const cacheWriteTokens = promptResult.usage?.cachedWriteTokens ?? 0;
 
     sendWithSession(sessionId, {
       type: "result",
       text: translator.collectedText,
       sessionId,
+      model: modelId,
       costUsd: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
     });
     if (isNewSession) {
-      logErr(`[codex-query] new session ${sessionId.slice(0, 8)} stop=${promptResult.stopReason} chars=${translator.collectedText.length}`);
+      logErr(`[codex-query] new session ${sessionId.slice(0, 8)} stop=${promptResult.stopReason} chars=${translator.collectedText.length} input=${inputTokens} output=${outputTokens}`);
     }
   } catch (err) {
     const rawMsg = err instanceof Error ? err.message : String(err);
