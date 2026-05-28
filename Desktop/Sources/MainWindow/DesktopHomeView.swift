@@ -66,11 +66,18 @@ struct DesktopHomeView: View {
                         if let barState = FloatingControlBarManager.shared.barState {
                             PushToTalkManager.shared.setup(barState: barState)
 
-                            // Wire session recording pause/resume to user interaction signals
-                            SessionRecordingManager.shared.observeActivity(
-                                barState: barState,
-                                chatProvider: viewModelContainer.chatProvider
-                            )
+                            // EXPERIMENT 2026-05-28: gate this too. Even with
+                            // recording itself disabled, observeActivity wires
+                            // Combine subscriptions to barState.$voice etc.
+                            // and NSApplication active/resign observers. Those
+                            // alone fire frequently and ResourceMonitor shows
+                            // a HOT THREAD with high sys time when active.
+                            if UserDefaults.standard.bool(forKey: "fazm_enable_session_recording_2028") {
+                                SessionRecordingManager.shared.observeActivity(
+                                    barState: barState,
+                                    chatProvider: viewModelContainer.chatProvider
+                                )
+                            }
                         }
 
                         // After onboarding or sign-in, close the main window — just show floating bar
