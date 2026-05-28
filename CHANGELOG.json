@@ -2,6 +2,13 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "2.9.50",
+      "date": "2026-05-28",
+      "changes": [
+        "Stopped the Settings sidebar Update Available indicator from pulsing forever; that always-on animation kept the SwiftUI display cycle dirty even when the rest of the sidebar was idle, the same pattern that caused the v2.9.47 main-thread storm"
+      ]
+    },
+    {
       "version": "2.9.49",
       "date": "2026-05-28",
       "changes": [
