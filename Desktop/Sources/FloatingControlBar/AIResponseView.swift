@@ -1984,7 +1984,7 @@ struct ModelToggleButton: View {
 
     private func isClaudeModel(_ id: String) -> Bool {
         // Claude IDs come in several shapes in the picker:
-        //   - Canonical: "claude-opus-4-7", "claude-sonnet-4-6"
+        //   - Canonical: "claude-opus-4-8", "claude-sonnet-4-6"
         //   - Plain aliases: "haiku", "sonnet", "opus"
         //   - Bracketed variants: "sonnet[1m]"
         // Gemini IDs always start with "gemini-"; Codex IDs with "gpt-".
