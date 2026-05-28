@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed the optional sign-in experiment so first-launch users wait for a real PostHog flag decision before falling back to the regular sign-in screen"
+  ],
   "releases": [
     {
       "version": "2.9.50",
