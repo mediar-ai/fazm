@@ -2,6 +2,15 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "2.9.49",
+      "date": "2026-05-28",
+      "changes": [
+        "Reduced CPU usage and idle layout churn in the home page, chat history, and detached chat windows when conversations or prompts were long, by truncating long previews, limiting how many past conversations load, and disabling unnecessary background animations",
+        "Session recording and screen observation are now off by default; enable them in Settings if you want them on",
+        "Fixed a brief CPU spike that happened when the cloudflared backend tunnel exited"
+      ]
+    },
+    {
       "version": "2.9.48",
       "date": "2026-05-28",
       "changes": [
