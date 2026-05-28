@@ -285,10 +285,19 @@ struct ConversationHistorySection: View {
 
             do {
                 let results = try await dbQueue.read { db -> [ConversationSummary] in
+                    // PERF FIX 2026-05-28: SUBSTR truncates `firstUserMessage`
+                    // in SQLite to ~300 chars. Users paste entire conversations
+                    // (40 KB+) into their prompts; without this truncation,
+                    // SwiftUI's `Text` in the ConversationRow MEASURES the full
+                    // string before `.lineLimit(2)` truncates the display, and
+                    // doing that across 90+ conversation rows pegged the main
+                    // thread continuously in `ResolvedStyledText.modifyTransition`.
+                    // Confirmed by bisect: removing all chat_messages > 1KB
+                    // dropped the storm to 0 samples.
                     let rows = try Row.fetchAll(db, sql: """
                         SELECT
                             cm.taskId,
-                            (SELECT sub.messageText FROM chat_messages sub
+                            (SELECT SUBSTR(sub.messageText, 1, 300) FROM chat_messages sub
                              WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
                              ORDER BY sub.createdAt ASC LIMIT 1) as firstUserMessage,
                             MAX(cm.createdAt) as lastMessageDate,
