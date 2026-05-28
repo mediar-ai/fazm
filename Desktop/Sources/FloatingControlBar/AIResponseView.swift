@@ -1092,8 +1092,15 @@ struct AIResponseView: View {
     // MARK: - Chat History
 
     /// Virtualization is on only for long conversations.
+    /// EXPERIMENT (2026-05-27 evening): force-disable while diagnosing the
+    /// `runAnimationGroup → LazyLayoutViewCache.invalidateSize` storm. Sample
+    /// of prod 2.9.47 shows `ScrollViewCommitMutation.apply()` running every
+    /// display cycle, which is the textbook signature of a viewport ↔ content-
+    /// size feedback loop (swap response → spacer → height changes → viewport
+    /// shifts → another swap). If the lag clears with this disabled, the
+    /// virt path needs a stable-content-size guard before re-enabling.
     private var virtualizationActive: Bool {
-        regularExchanges.count >= Self.virtualizationMinExchanges
+        return false
     }
 
     /// Whether the AI response for the exchange at `index` should render in full
