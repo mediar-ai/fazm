@@ -426,7 +426,18 @@ final class WebRelay: ObservableObject {
 
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
+            // Critical: when cloudflared exits, the writer side of the pipe
+            // closes, but the dispatch source keeps firing the readability
+            // handler in a tight loop with `availableData` returning empty
+            // Data. Without this guard the FileHandle.fd_monitoring queue
+            // pegs a worker core continuously (observed 1.5–2× CPU storm
+            // on 2026-05-28). Nil out the handler the first time we see
+            // EOF (empty data) so the dispatch source actually unregisters.
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            guard let output = String(data: data, encoding: .utf8) else { return }
 
             if let range = output.range(of: "https://[a-z0-9-]+\\.trycloudflare\\.com", options: .regularExpression) {
                 let url = String(output[range])
@@ -452,7 +463,12 @@ final class WebRelay: ObservableObject {
         // 5-attempts-per-5min window and exponential backoff. Once the cap is hit we
         // emit one Sentry breadcrumb and sleep for an hour before resetting, so we
         // don't burn the breadcrumb buffer on doomed-tunnel networks.
-        process.terminationHandler = { [weak self] proc in
+        process.terminationHandler = { [weak self, weak pipe] proc in
+            // Belt-and-suspenders: also clear the handler from the
+            // termination side so we never leak the dispatch source even if
+            // the read path never observes EOF (e.g. handler raced with
+            // process.run() failing).
+            pipe?.fileHandleForReading.readabilityHandler = nil
             Task { @MainActor in
                 guard let self, self.cloudflaredProcess === proc else { return }
                 self.cloudflaredProcess = nil
