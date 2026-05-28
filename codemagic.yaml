@@ -1550,14 +1550,14 @@ workflows:
 
           gcloud storage cp /tmp/fazm-latest.json "gs://$BUCKET/$PREFIX/latest.json"
 
-          # For non-staging (production) builds, also update the global desktop/latest.json
-          # so the stub installer serves the new version to fresh installs.
-          if [ "$IS_STAGING" != "true" ]; then
-            echo "Updating global desktop/latest.json for stub installer..."
-            gcloud storage cp /tmp/fazm-latest.json "gs://$BUCKET/desktop/latest.json" \
-              --cache-control="no-cache, max-age=0"
-            echo "✓ desktop/latest.json updated — new installs will get v$VERSION"
-          fi
+          # Intentionally NOT writing the global gs://$BUCKET/desktop/latest.json here.
+          # Every -macos tag registers as the "staging" channel in Firestore (see the
+          # next step), and the global manifest is what new website installs read via
+          # the stub installer; writing it on every build silently ships unpromoted
+          # staging builds to every new signup. Only scripts/promote_release.sh
+          # updates the global manifest, gated on a promotion to beta or stable.
+          # Reverts the regression from commit 404836cc (2026-03-20) that undid the
+          # original fix in e7741d9f (2026-03-19).
 
           echo "Uploaded arch-specific ZIPs and manifest to GCS"
           echo "  arm64:  $BASE_URL/$PREFIX/Fazm-arm64.zip ($ARM64_SIZE bytes)"
