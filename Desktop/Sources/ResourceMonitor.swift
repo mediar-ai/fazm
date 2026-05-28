@@ -543,8 +543,62 @@ class ResourceMonitor {
             log("ResourceMonitor: HOT THREAD #\(idx + 1): \(t.name) — CPU: \(String(format: "%.1f", t.cpu))%, user: \(String(format: "%.1f", t.userTime))s, sys: \(String(format: "%.1f", t.systemTime))s")
         }
         result["hot_threads"] = threadDetails
+
+        // --- Auto-sample on sustained hot-thread ----------------------------
+        // When the top thread is pegged ≥85% for two consecutive snapshots
+        // (~60s of sustained pegging — well past transient streaming bursts),
+        // shell out to `/usr/bin/sample` and append the top 30 stack frames to
+        // the app log. Throttled to once per 5min so a long storm doesn't spam
+        // the log. Lets us diagnose UI storms from logs alone instead of
+        // needing to be present with a Terminal open. Async on a utility
+        // queue; never blocks the monitor or the main thread.
+        if let top = hotThreads.first, top.cpu >= 85.0 {
+            Self.consecutiveHotSnapshots += 1
+        } else {
+            Self.consecutiveHotSnapshots = 0
+        }
+        let now = Date()
+        if Self.consecutiveHotSnapshots >= 2,
+           now.timeIntervalSince(Self.lastAutoSampleAt) > 300,
+           let top = hotThreads.first {
+            Self.lastAutoSampleAt = now
+            let pid = ProcessInfo.processInfo.processIdentifier
+            log("ResourceMonitor: [AutoSample] \(top.name) sustained at \(String(format: "%.1f", top.cpu))% for \(Self.consecutiveHotSnapshots) snapshots — sampling pid=\(pid) for 3s")
+            DispatchQueue.global(qos: .utility).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+                task.arguments = ["\(pid)", "3", "-mayDie"]
+                let outPipe = Pipe()
+                task.standardOutput = outPipe
+                task.standardError = Pipe()
+                do {
+                    try task.run()
+                    task.waitUntilExit()
+                    let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    let lines = output.components(separatedBy: "\n")
+                    // Pluck the top of the call graph — that's the hot stack.
+                    if let start = lines.firstIndex(where: { $0.contains("Call graph") }) {
+                        let end = min(start + 35, lines.count)
+                        let snippet = lines[start..<end].joined(separator: "\n")
+                        log("ResourceMonitor: [AutoSample] hot-stack trace:\n\(snippet)")
+                    } else {
+                        log("ResourceMonitor: [AutoSample] sample produced no parseable call graph (len=\(output.count))")
+                    }
+                } catch {
+                    log("ResourceMonitor: [AutoSample] failed to spawn /usr/bin/sample: \(error)")
+                }
+            }
+        }
+
         return result
     }
+
+    /// State for the auto-sample heuristic. nonisolated context, but
+    /// `collectPerThreadCPUDiagnostics` runs on a single serial queue ~30s,
+    /// so plain static access is race-free in practice.
+    private nonisolated(unsafe) static var consecutiveHotSnapshots: Int = 0
+    private nonisolated(unsafe) static var lastAutoSampleAt: Date = .distantPast
 
     /// Collect malloc zone statistics to see heap vs VM allocations.
     private nonisolated func collectMallocZoneDiagnostics() -> [String: Any] {
