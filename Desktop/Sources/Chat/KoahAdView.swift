@@ -133,9 +133,17 @@ enum KoahAdGate {
     static let featureFlagKey = "koah_enabled"
 
     static func shouldShowAd() -> Bool {
-        if UserDefaults.standard.bool(forKey: devForceShowKey) { return true }
-        if SubscriptionService.shared.isActive { return false }
-        return PostHogManager.shared.isFeatureEnabled(featureFlagKey)
+        // EXPERIMENT 2026-05-28: hard-disable Koah ads while diagnosing the
+        // main-thread layout storm. Even when ads don't fill, KoahWebView (a
+        // WKWebView wrapper) is rendered for every AI message. WKWebView's
+        // NSView wrapping invalidates layout via its intrinsicContentSize;
+        // per-message × per-window can drive continuous SwiftUI re-layout.
+        // If lag goes when this returns false, the ad WebViews are the
+        // culprit. Restore by removing this early return.
+        return false
+        // if UserDefaults.standard.bool(forKey: devForceShowKey) { return true }
+        // if SubscriptionService.shared.isActive { return false }
+        // return PostHogManager.shared.isFeatureEnabled(featureFlagKey)
     }
 }
 
