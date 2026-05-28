@@ -222,6 +222,7 @@ class PostHogManager {
         return await withCheckedContinuation { continuation in
             let resumeOnce = FeatureFlagEvaluationContinuation(continuation)
 
+            @MainActor
             func resolveFromCache() {
                 let value = PostHogSDK.shared.getFeatureFlag(flag)
                 resumeOnce.resume(returning: Self.evaluation(from: value))
