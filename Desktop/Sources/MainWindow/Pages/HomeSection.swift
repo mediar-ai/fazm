@@ -268,9 +268,21 @@ struct HomeSection: View {
                             ORDER BY createdAt DESC
                             LIMIT 30
                         """)
+                        // PERF FIX (2026-05-28): truncate the preview at the DB
+                        // boundary instead of passing the full messageText to
+                        // SwiftUI. User prompts can be 40 KB+; the recentMessages
+                        // card displays `Text(message.text).lineLimit(3).fixedSize(...)`,
+                        // and `.fixedSize` makes SwiftUI MEASURE the full string
+                        // before applying `.lineLimit`. Across 30 rows re-measured
+                        // on every 5s refresh-timer reassign, that pegs the main
+                        // thread. Capping the preview to ~400 chars eliminates the
+                        // measurement cost without changing the user-visible
+                        // 3-line truncation.
                         return rows.map { row in
-                            (
-                                text: (row["messageText"] as String?) ?? "",
+                            let raw = (row["messageText"] as String?) ?? ""
+                            let trimmed = raw.count > 400 ? String(raw.prefix(400)) + "…" : raw
+                            return (
+                                text: trimmed,
                                 date: (row["createdAt"] as Date?) ?? Date()
                             )
                         }
@@ -278,8 +290,16 @@ struct HomeSection: View {
 
                     await AppDatabase.shared.reportQuerySuccess()
                     await MainActor.run {
-                        totalMessages = total
-                        recentMessages = recent
+                        if totalMessages != total { totalMessages = total }
+                        // Equality guard: only reassign when contents actually
+                        // changed. Previously the 5s timer reassigned the whole
+                        // array on every tick, churning the LazyVStack diff and
+                        // re-measuring every row.
+                        let changed = recentMessages.count != recent.count
+                            || zip(recentMessages, recent).contains { $0.text != $1.text || $0.date != $1.date }
+                        if changed {
+                            recentMessages = recent
+                        }
                     }
                     return // success
                 } catch {
