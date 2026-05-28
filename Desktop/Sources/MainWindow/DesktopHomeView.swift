@@ -48,8 +48,19 @@ struct DesktopHomeView: View {
                             FloatingControlBarManager.shared.show()
                         }
 
-                        // Restore detached chat windows from the previous session
-                        DetachedChatWindowController.shared.restoreWindows(chatProvider: viewModelContainer.chatProvider)
+                        // EXPERIMENT 2026-05-28: skip window restoration to test
+                        // whether restored detached windows are what drives the
+                        // shared-main-thread relayout storm. Sample shows 7
+                        // NSHostingView.layout calls 60Hz, matching the count of
+                        // restored windows + bar + main. If with NO restored
+                        // windows the storm is gone, the trigger is somewhere
+                        // in the restoration path (likely a shared @Published
+                        // mutated when a restored window observes it).
+                        if UserDefaults.standard.bool(forKey: "fazm_restore_detached_windows_2028") {
+                            DetachedChatWindowController.shared.restoreWindows(chatProvider: viewModelContainer.chatProvider)
+                        } else {
+                            log("DetachedChatWindowController: restoration DISABLED (experiment)")
+                        }
 
                         // Set up push-to-talk voice input
                         if let barState = FloatingControlBarManager.shared.barState {
