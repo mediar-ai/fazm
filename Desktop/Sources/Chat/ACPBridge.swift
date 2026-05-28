@@ -111,6 +111,10 @@ actor ACPBridge {
     let text: String
     let costUsd: Double
     let sessionId: String
+    /// Model id the bridge actually used for this turn (e.g. "claude-sonnet-4-6",
+    /// "gemini-2.5-pro", "gpt-5.4/high"). Empty string when the bridge didn't
+    /// stamp one — callers should fall back to `ShortcutSettings.selectedModel`.
+    let model: String
     let inputTokens: Int
     let outputTokens: Int
     let cacheReadTokens: Int
@@ -214,7 +218,7 @@ actor ACPBridge {
     case toolActivity(name: String, status: String, toolUseId: String?, input: [String: Any]?)
     case toolResultDisplay(toolUseId: String, name: String, output: String)
     case result(
-      text: String, sessionId: String, costUsd: Double?, inputTokens: Int, outputTokens: Int,
+      text: String, sessionId: String, model: String, costUsd: Double?, inputTokens: Int, outputTokens: Int,
       cacheReadTokens: Int, cacheWriteTokens: Int, interrupted: Bool)
     case error(message: String)
     case authRequired(methods: [[String: Any]], authUrl: String?)
@@ -1305,12 +1309,13 @@ actor ACPBridge {
             let pending = drainQueue.removeFirst()
             switch pending {
             case .result(
-              let text, let sessionId, let costUsd, let inputTokens, let outputTokens,
+              let text, let sessionId, let model, let costUsd, let inputTokens, let outputTokens,
               let cacheReadTokens, let cacheWriteTokens, let interrupted):
               return QueryResult(
-                text: text, costUsd: costUsd ?? 0, sessionId: sessionId, inputTokens: inputTokens,
-                outputTokens: outputTokens, cacheReadTokens: cacheReadTokens,
-                cacheWriteTokens: cacheWriteTokens, interrupted: interrupted)
+                text: text, costUsd: costUsd ?? 0, sessionId: sessionId, model: model,
+                inputTokens: inputTokens, outputTokens: outputTokens,
+                cacheReadTokens: cacheReadTokens, cacheWriteTokens: cacheWriteTokens,
+                interrupted: interrupted)
             case .error(let message):
               log("ACPBridge: agent error (raw): \(message)")
               throw BridgeError.agentError(message)
@@ -1327,12 +1332,13 @@ actor ACPBridge {
               : waitForMessage())
             switch msg {
             case .result(
-              let text, let sessionId, let costUsd, let inputTokens, let outputTokens,
+              let text, let sessionId, let model, let costUsd, let inputTokens, let outputTokens,
               let cacheReadTokens, let cacheWriteTokens, let interrupted):
               return QueryResult(
-                text: text, costUsd: costUsd ?? 0, sessionId: sessionId, inputTokens: inputTokens,
-                outputTokens: outputTokens, cacheReadTokens: cacheReadTokens,
-                cacheWriteTokens: cacheWriteTokens, interrupted: interrupted)
+                text: text, costUsd: costUsd ?? 0, sessionId: sessionId, model: model,
+                inputTokens: inputTokens, outputTokens: outputTokens,
+                cacheReadTokens: cacheReadTokens, cacheWriteTokens: cacheWriteTokens,
+                interrupted: interrupted)
             case .error(let message):
               log("ACPBridge: agent error (raw): \(message)")
               throw BridgeError.agentError(message)
@@ -1358,12 +1364,13 @@ actor ACPBridge {
         onToolResultDisplay(toolUseId, name, output)
 
       case .result(
-        let text, let sessionId, let costUsd, let inputTokens, let outputTokens,
+        let text, let sessionId, let model, let costUsd, let inputTokens, let outputTokens,
         let cacheReadTokens, let cacheWriteTokens, let interrupted):
         return QueryResult(
-          text: text, costUsd: costUsd ?? 0, sessionId: sessionId, inputTokens: inputTokens,
-          outputTokens: outputTokens, cacheReadTokens: cacheReadTokens,
-          cacheWriteTokens: cacheWriteTokens, interrupted: interrupted)
+          text: text, costUsd: costUsd ?? 0, sessionId: sessionId, model: model,
+          inputTokens: inputTokens, outputTokens: outputTokens,
+          cacheReadTokens: cacheReadTokens, cacheWriteTokens: cacheWriteTokens,
+          interrupted: interrupted)
 
       case .error(let message):
         log("ACPBridge: agent error (raw): \(message)")
@@ -1701,6 +1708,7 @@ actor ACPBridge {
     case "result":
       let text = dict["text"] as? String ?? ""
       let sessionId = dict["sessionId"] as? String ?? ""
+      let model = dict["model"] as? String ?? ""
       let costUsd = dict["costUsd"] as? Double
       let inputTokens = dict["inputTokens"] as? Int ?? 0
       let outputTokens = dict["outputTokens"] as? Int ?? 0
@@ -1708,7 +1716,7 @@ actor ACPBridge {
       let cacheWriteTokens = dict["cacheWriteTokens"] as? Int ?? 0
       let interrupted = dict["interrupted"] as? Bool ?? false
       return .result(
-        text: text, sessionId: sessionId, costUsd: costUsd,
+        text: text, sessionId: sessionId, model: model, costUsd: costUsd,
         inputTokens: inputTokens, outputTokens: outputTokens,
         cacheReadTokens: cacheReadTokens, cacheWriteTokens: cacheWriteTokens,
         interrupted: interrupted)
@@ -1950,7 +1958,7 @@ actor ACPBridge {
     if effectiveSessionKey == nil {
       let sid: String? = {
         switch message {
-        case .result(_, let s, _, _, _, _, _, _): return s.isEmpty ? nil : s
+        case .result(_, let s, _, _, _, _, _, _, _): return s.isEmpty ? nil : s
         default: return nil
         }
       }()
@@ -1976,7 +1984,7 @@ actor ACPBridge {
       }
     case .toolUse(_, let name, _):
       log("ACPBridge: deliverMessage toolUse sessionKey=\(sessionKey ?? "nil") name=\(name)")
-    case .result(let text, let sid, _, _, _, _, _, let interrupted):
+    case .result(let text, let sid, _, _, _, _, _, _, let interrupted):
       // Stream finished for this window — drop its per-window delta counter so the
       // COMPONENTS line lists only windows that are actively streaming right now.
       ResourceCounters.shared.clear("streamDeltas_\(sessionKey ?? "floating")")
