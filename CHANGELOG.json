@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Started reporting Fazm-paid LLM usage from chat (builtin Claude and Gemini) to the Mediar dashboard, with the bridge now stamping the real model id and real Gemini token counts on every turn"
+  ],
   "releases": [
     {
       "version": "2.9.47",
