@@ -10,9 +10,13 @@
  * any model in availableModels (because the probe never ran), and this file
  * stays dormant.
  *
+ * Token tracking: extracted from promptResult._meta.quota.token_count, where
+ * gemini-cli stamps per-turn input/output totals (the standard ACP `usage`
+ * field on PromptResponse is left null by gemini-cli today). costUsd stays 0
+ * because gemini-cli doesn't compute dollar cost; MediarWeb derives it from
+ * the model + token counts.
+ *
  * Not yet handled (parity gaps with Claude path):
- *   - Cost / token tracking (gemini-cli's usage_update schema not yet
- *     adapter-ized; costUsd is reported as 0 same as Codex).
  *   - Image / file attachments (msg.attachments is silently ignored).
  *   - Stuck-session recovery beyond a single retry on resume failure.
  */
@@ -202,20 +206,46 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
     const promptResult = (await provider.request("session/prompt", {
       sessionId,
       prompt: promptBlocks,
-    })) as { stopReason: string };
+    })) as {
+      stopReason: string;
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedReadTokens?: number | null;
+        cachedWriteTokens?: number | null;
+        totalTokens?: number;
+      } | null;
+      _meta?: {
+        quota?: {
+          token_count?: { input_tokens?: number; output_tokens?: number };
+        };
+      };
+    };
+
+    // gemini-cli emits per-turn tokens at `_meta.quota.token_count` (see
+    // gemini bundle: `promptTokenCount` / `candidatesTokenCount` are summed
+    // across the turn's inner Gemini API calls and returned in this shape).
+    // The standard ACP `usage` field is left null by gemini-cli today; fall
+    // back to it in case a future version starts populating it.
+    const quotaTokens = promptResult._meta?.quota?.token_count;
+    const inputTokens = quotaTokens?.input_tokens ?? promptResult.usage?.inputTokens ?? 0;
+    const outputTokens = quotaTokens?.output_tokens ?? promptResult.usage?.outputTokens ?? 0;
+    const cacheReadTokens = promptResult.usage?.cachedReadTokens ?? 0;
+    const cacheWriteTokens = promptResult.usage?.cachedWriteTokens ?? 0;
 
     sendWithSession(sessionId, {
       type: "result",
       text: translator.collectedText,
       sessionId,
+      model: modelId,
       costUsd: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
     });
     if (isNewSession) {
-      logErr(`[gemini-query] new session ${sessionId.slice(0, 8)} stop=${promptResult.stopReason} chars=${translator.collectedText.length}`);
+      logErr(`[gemini-query] new session ${sessionId.slice(0, 8)} stop=${promptResult.stopReason} chars=${translator.collectedText.length} input=${inputTokens} output=${outputTokens}`);
     }
   } catch (err) {
     const rawMsg = err instanceof Error ? err.message : String(err);
