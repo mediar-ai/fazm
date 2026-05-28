@@ -96,6 +96,13 @@ final class StreamingResponseState: ObservableObject {
     @Published var stalledToolUseId: String? = nil
     @Published var stalledSince: Date? = nil
 
+    /// Debug-only counter ticked by the `simulateIdleScrollStorm` control
+    /// command at 60Hz to deterministically reproduce the idle scroll-anchor
+    /// storm. AIResponseView observes it and calls scrollToBottom on each tick,
+    /// exactly mimicking the runaway auto-follow loop so the [ScrollStorm] log
+    /// and the rate-limit collapse can be verified. No effect in normal use.
+    @Published var debugScrollStormTick: Int = 0
+
     /// Convenience accessor for plain-text response (used by window geometry and error handling).
     var aiResponseText: String {
         get { currentAIMessage?.text ?? "" }
