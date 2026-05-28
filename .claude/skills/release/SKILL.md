@@ -15,6 +15,7 @@ Cut a new Fazm Desktop release. **All builds run in Codemagic CI** triggered by 
 3. **NEVER edit `codemagic.yaml` mid-release.** If a step fails, root-cause first; do not patch CI to silence it. Once you know the fix, land it on `main`, bump version, push a fresh tag.
 4. **NEVER skip the changelog step.** Codemagic's "Prepare changelog" step commits the consolidated CHANGELOG.json back to `main`; if `unreleased` is empty, the GitHub release notes will be empty too.
 5. **Do not promote to beta or stable without explicit user approval.** Each promotion (staging → beta → stable) is a separate user decision.
+6. **NEVER add a write to `gs://fazm-prod-releases/desktop/latest.json` to `codemagic.yaml`.** That manifest is what new website signups read via the stub installer. The CI workflow is shared by all `-macos` tags, and every `-macos` tag registers as the **staging** channel in Firestore; if CI also writes the global manifest, every staging build silently ships to every new signup, bypassing the entire promotion gate. The ONLY writer is `scripts/promote_release.sh`, fired on explicit promotion to beta or stable. This regression has been introduced twice already (`404836cc` 2026-03-20, undoing `e7741d9f` 2026-03-19) and bled 35 staging builds (2.9.13 through 2.9.47) to ~250 new users between March and May 2026. `verify-release.sh` step 2 now hard-fails on it. If a CI step seems to "need" to update the global manifest, you are misreading the channel model; read `Desktop/Sources/UpdaterViewModel.swift:269` and `scripts/promote_release.sh:120-135` before touching anything.
 
 ## How a release works (architecture)
 
@@ -83,6 +84,17 @@ cd acp-bridge && PATH=/opt/homebrew/bin:$PATH npm install --no-audit --no-fund &
 # 5) Verify the playwright overlay patch still applies cleanly
 grep -q "_fazmOverlayScript" acp-bridge/node_modules/playwright-core/lib/coreBundle.js \
   || { echo "FATAL: overlay patch did not apply locally — Codemagic will fail too"; exit 1; }
+
+# 6) Staging-gate invariant: codemagic.yaml MUST NOT write the global
+#    desktop/latest.json. That file is owned by scripts/promote_release.sh.
+#    Strips comments (lines starting with whitespace + '#') before searching
+#    so the DO-NOT-REVERT banner in codemagic.yaml does not trigger this guard.
+if grep -vE '^\s*#' codemagic.yaml | grep -qE 'gs://[^"]*desktop/latest\.json'; then
+  echo "FATAL: codemagic.yaml has a write to gs://.../desktop/latest.json outside scripts/promote_release.sh."
+  echo "       This is the exact March 2026 regression (commit 404836cc)."
+  echo "       Read CRITICAL RULE #6 in this skill before continuing."
+  exit 1
+fi
 ```
 
 If any check fails, **fix it on `main` first**. Tagging a broken commit wastes ~20 min of CI time.
