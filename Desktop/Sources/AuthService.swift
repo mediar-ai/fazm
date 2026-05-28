@@ -849,6 +849,10 @@ class AuthService: NSObject {
     /// (via `signInWithGoogle()` while anon), the REST link path preserves
     /// the same UID and all backend data.
     func signInAnonymously() async throws {
+        let attemptId = UUID().uuidString
+        PostHogManager.shared.track("anonymous_signin_started", properties: [
+            "attempt_id": attemptId
+        ])
         AnalyticsManager.shared.signInStarted(provider: "anonymous")
         log("AuthService: Starting anonymous sign-in via REST signUp")
         // Trial start is keyed in UserDefaults per-device, not per-user. If a
@@ -886,8 +890,15 @@ class AuthService: NSObject {
 
             try processFirebaseAuthResponse(json, provider: "anonymous")
             AnalyticsManager.shared.signInCompleted(provider: "anonymous")
+            PostHogManager.shared.track("anonymous_signin_completed", properties: [
+                "attempt_id": attemptId
+            ])
             log("AuthService: anonymous sign-in completed (uid: \(self.userId ?? "?"))")
         } catch {
+            PostHogManager.shared.track("anonymous_signin_failed", properties: [
+                "attempt_id": attemptId,
+                "error": String(error.localizedDescription.prefix(500))
+            ])
             AnalyticsManager.shared.signInFailed(provider: "anonymous", error: error.localizedDescription)
             logError("AuthService: anonymous sign-in failed", error: error)
             throw error
