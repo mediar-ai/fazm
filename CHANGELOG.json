@@ -1,13 +1,12 @@
 {
-  "unreleased": [
-    "Fixed the optional sign-in experiment so first-launch users wait for a real PostHog flag decision before falling back to the regular sign-in screen"
-  ],
+  "unreleased": [],
   "releases": [
     {
-      "version": "2.9.50",
+      "version": "2.9.51",
       "date": "2026-05-28",
       "changes": [
-        "Stopped the Settings sidebar Update Available indicator from pulsing forever; that always-on animation kept the SwiftUI display cycle dirty even when the rest of the sidebar was idle, the same pattern that caused the v2.9.47 main-thread storm"
+        "Stopped the Settings sidebar Update Available indicator from pulsing forever; that always-on animation kept the SwiftUI display cycle dirty even when the rest of the sidebar was idle, the same pattern that caused the v2.9.47 main-thread storm",
+        "Fixed the optional sign-in experiment so first-launch users wait for a real PostHog flag decision before falling back to the regular sign-in screen"
       ]
     },
     {
