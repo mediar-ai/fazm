@@ -1819,6 +1819,29 @@ class FloatingControlBarManager {
                         n += 1
                     }
                     log("FloatingControlBarManager: clearToolStalled cleared stall+loading on \(n) state(s)")
+                } else if command == "simulateIdleScrollStorm" {
+                    // Test hook for the idle scroll-anchor storm fix: tick
+                    // debugScrollStormTick at 60Hz for 5s on every open window,
+                    // which drives AIResponseView.scrollToBottom on each tick
+                    // exactly like the runaway loop. Expect a one-shot
+                    // [ScrollStorm] log AND — with the rate-limit fix — the
+                    // animated re-pins collapse to instant snaps so the main
+                    // thread does NOT peg (sample thread-0 stays low).
+                    let states: [StreamingResponseState] = {
+                        var arr: [StreamingResponseState] = []
+                        if let bar = FloatingControlBarManager.shared.barState { arr.append(bar.streaming) }
+                        for entry in DetachedChatWindowController.shared.entriesSnapshot() {
+                            arr.append(entry.window.state.streaming)
+                        }
+                        return arr
+                    }()
+                    log("FloatingControlBarManager: simulateIdleScrollStorm driving \(states.count) window(s) at 60Hz for 5s")
+                    let deadline = Date().addingTimeInterval(5.0)
+                    let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { t in
+                        if Date() >= deadline { t.invalidate(); return }
+                        for st in states { st.debugScrollStormTick &+= 1 }
+                    }
+                    RunLoop.main.add(timer, forMode: .common)
                 } else if command == "simulateCreditExhausted" {
                     // Test hook: flip the same flag the cap-hit path sets so the
                     // onboarding banner + Settings copy go into "out of credits"
