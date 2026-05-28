@@ -420,11 +420,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the active recorder's session.
         SessionRecordingManager.cleanupStaleRecordings()
 
-        // Start session recording if feature flag is enabled (PostHog must be initialized first)
-        SessionRecordingManager.shared.startIfEnabled()
-
-        // Start the always-on screen observer recorder for Gemini analysis (local-only, no feature flag)
-        SessionRecordingManager.shared.startScreenObserver()
+        // EXPERIMENT 2026-05-28: disable session recording + screen observer.
+        // Sample of prod 2.9.47 showed thread-0/5/10 all near 100% CPU and the
+        // ACPBridge being OOM-killed; the dominant Fazm symbols across threads
+        // were `SessionRecorder.captureFrame` / `ScreenCaptureService.captureActiveWindow`
+        // / `VideoChunkEncoder.writeFrame`. Memory file
+        // `bug_fazm_screen_observer_tcc_dialog.md` flags the always-on
+        // observer as unfixed: it runs unconditionally and burns 7×/sec
+        // SCShareableContent calls. Disabling both calls as the experiment
+        // to confirm this is the root cause of the chat-window lag.
+        // If responsive, restore behind a UserDefaults opt-in gate.
+        if UserDefaults.standard.bool(forKey: "fazm_enable_session_recording_2028") {
+            SessionRecordingManager.shared.startIfEnabled()
+            SessionRecordingManager.shared.startScreenObserver()
+        } else {
+            log("SessionRecording: DISABLED at startup (experiment; set UserDefault 'fazm_enable_session_recording_2028' to re-enable)")
+        }
 
         // Test trigger: show session recording permission prompt.
         // Legacy: xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testSessionRecordingPermission"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
