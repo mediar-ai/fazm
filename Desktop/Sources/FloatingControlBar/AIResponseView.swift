@@ -314,7 +314,13 @@ struct AIResponseView: View {
                         // sort once so consumers can binary-search later if needed.
                         var byId: [UUID: StackedBubbleInfo] = [:]
                         for info in value { byId[info.id] = info }
-                        bubbleInfos = byId.values.sorted { $0.topY < $1.topY }
+                        let sorted = byId.values.sorted { $0.topY < $1.topY }
+                        // Equality guard: only write @State when the result
+                        // actually changed. Without this, an identical re-report
+                        // (sub-pixel jitter, overlay relayout) reassigns @State →
+                        // re-render → re-measure → re-report, a feedback loop that
+                        // feeds the scroll-anchor storm.
+                        if sorted != bubbleInfos { bubbleInfos = sorted }
                     }
                     .onPreferenceChange(ExchangeExtentPreferenceKey.self) { value in
                         // Latest extent per exchange (document coords) for the
@@ -463,6 +469,20 @@ struct AIResponseView: View {
                 UserDefaults.standard.removeObject(forKey: key)
                 isHanging = true
                 isHangingFromCrash = true
+                // Auto-expire the crash-triggered flash. The ReportIssueButton's
+                // `repeatForever` flash (gated on isHanging) keeps a SwiftUI
+                // animation transaction open for as long as isHanging stays true.
+                // If the user never sends a query in this window, that transaction
+                // never closes, and `.defaultScrollAnchor(.bottom)` re-pins under
+                // it animate every display cycle → main-thread layout storm →
+                // composer lag. Clear it after 20s so the flash can't run forever.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(20))
+                    if isHangingFromCrash {
+                        isHanging = false
+                        isHangingFromCrash = false
+                    }
+                }
             }
         }
         .onChange(of: isLoading) {
