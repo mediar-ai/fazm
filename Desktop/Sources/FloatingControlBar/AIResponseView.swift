@@ -1776,13 +1776,7 @@ private struct ExpandableQuestionBubble: View {
     /// lines); expansion uses the full string.
     private var displayedQuestion: String {
         if isExpanded { return question }
-        if question.count <= 600 { return question }
-        // Take first 600 chars or up to the second newline, whichever is shorter.
-        if let secondNewline = question.range(of: "\n", options: [], range: question.range(of: "\n")?.upperBound..<question.endIndex) {
-            let upTo = min(secondNewline.lowerBound, question.index(question.startIndex, offsetBy: 600))
-            return String(question[question.startIndex..<upTo])
-        }
-        return String(question.prefix(600))
+        return question.count <= 600 ? question : String(question.prefix(600))
     }
 
     var body: some View {
