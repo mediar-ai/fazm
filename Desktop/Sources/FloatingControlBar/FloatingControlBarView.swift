@@ -248,20 +248,31 @@ struct FloatingControlBarView: View {
                     : .clear,
                 radius: updatePulse ? 8 : 3
             )
+            // Value-based animation per Extensions/WindowVisibility.swift. When
+            // the gate (updateAvailable && visible) flips false, the modifier
+            // becomes `.default`, which snaps the in-flight repeatForever to a
+            // static value and CLOSES the SwiftUI animation transaction.
+            // The previous `withAnimation(.repeatForever) { updatePulse = true }`
+            // pattern leaked the transaction across the whole subtree and made
+            // `.defaultScrollAnchor(.bottom)` re-pin every display cycle →
+            // composer lag (2026-05-27).
+            .animation(
+                updaterViewModel.updateAvailable && windowIsVisible
+                    ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true)
+                    : .default,
+                value: updatePulse
+            )
             .onAppear { startUpdatePulseIfActive() }
             .onChange(of: updaterViewModel.updateAvailable) { _, _ in startUpdatePulseIfActive() }
             .onChange(of: windowIsVisible) { _, _ in startUpdatePulseIfActive() }
     }
 
     private func startUpdatePulseIfActive() {
-        if updaterViewModel.updateAvailable && windowIsVisible {
-            updatePulse = false
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                updatePulse = true
-            }
-        } else {
-            withAnimation(.default) { updatePulse = false }
-        }
+        // Just toggle the value; the value-based `.animation(...)` modifier
+        // above decides whether to repeat-forever (gates open) or snap (gates
+        // closed). Setting once is enough — autoreverses + repeatForever does
+        // the rest.
+        updatePulse = updaterViewModel.updateAvailable && windowIsVisible
     }
 
     private var updateButton: some View {
@@ -279,6 +290,15 @@ struct FloatingControlBarView: View {
                     .opacity(updateButtonPulse ? 1.0 : 0.4)
                     .scaleEffect(updateButtonPulse ? 1.15 : 0.9)
                     .shadow(color: FazmColors.purplePrimary.opacity(updateButtonPulse ? 0.9 : 0.0), radius: updateButtonPulse ? 8 : 0)
+                    // Value-based animation: same fix pattern as compactCircleView.
+                    // Closes the SwiftUI animation transaction when the window
+                    // hides instead of leaking it forever — see comment there.
+                    .animation(
+                        windowIsVisible
+                            ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                            : .default,
+                        value: updateButtonPulse
+                    )
             }
         }
         .buttonStyle(.plain)
@@ -289,14 +309,7 @@ struct FloatingControlBarView: View {
     }
 
     private func startUpdateButtonPulseIfVisible() {
-        if windowIsVisible {
-            updateButtonPulse = false
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                updateButtonPulse = true
-            }
-        } else {
-            withAnimation(.default) { updateButtonPulse = false }
-        }
+        updateButtonPulse = windowIsVisible
     }
 
     private func compactToggle(_ title: String, isOn: Binding<Bool>) -> some View {
