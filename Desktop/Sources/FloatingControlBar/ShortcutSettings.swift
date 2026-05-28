@@ -185,7 +185,7 @@ class ShortcutSettings: ObservableObject {
     static let defaultModels: [ModelOption] = [
         ModelOption(id: "haiku", label: "Scary (Haiku, latest)", shortLabel: "Scary"),
         ModelOption(id: "sonnet", label: "Fast (Sonnet, latest)", shortLabel: "Fast"),
-        ModelOption(id: "claude-opus-4-7", label: "Smart (Opus, latest)", shortLabel: "Smart"),
+        ModelOption(id: "claude-opus-4-8", label: "Smart (Opus, latest)", shortLabel: "Smart"),
     ]
 
     /// Mapping from model family substring to user-friendly labels and ordering.
@@ -239,10 +239,10 @@ class ShortcutSettings: ObservableObject {
             .map { String(modelId[$0]) } ?? ""
         if modelId.contains("haiku") { return "haiku" + bracketSuffix }
         if modelId.contains("sonnet") { return "sonnet" + bracketSuffix }
-        // Smart picker — canonical Opus 4.7. Migrates the legacy "default" alias and
-        // prior-pinned Opus versions (e.g. claude-opus-4-5) to the current canonical id.
+        // Smart picker — canonical Opus 4.8. Migrates the legacy "default" alias and
+        // prior-pinned Opus versions (e.g. claude-opus-4-5, claude-opus-4-7) to the current canonical id.
         if modelId.contains("opus") || modelId.contains("default") {
-            return "claude-opus-4-7" + bracketSuffix
+            return "claude-opus-4-8" + bracketSuffix
         }
         return modelId
     }
@@ -511,7 +511,7 @@ class ShortcutSettings: ObservableObject {
         self.doubleTapForLock = UserDefaults.standard.object(forKey: "shortcut_doubleTapForLock") as? Bool ?? true
         self.solidBackground = UserDefaults.standard.object(forKey: "shortcut_solidBackground") as? Bool ?? false
         self.pttSoundsEnabled = UserDefaults.standard.object(forKey: "shortcut_pttSoundsEnabled") as? Bool ?? true
-        // Migrate saved model IDs: legacy "default" alias and prior Opus pins -> canonical "claude-opus-4-7";
+        // Migrate saved model IDs: legacy "default" alias and prior Opus pins -> canonical "claude-opus-4-8";
         // haiku/sonnet stay as short aliases.
         let savedModel = UserDefaults.standard.string(forKey: "shortcut_selectedModel")
         if let saved = savedModel {
