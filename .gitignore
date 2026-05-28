@@ -9,7 +9,9 @@ DerivedData/
 *.o
 *.swiftdeps
 
-# Environment (both contain secrets)
+# Environment files. .env and .env.app.dev hold real secrets. .env.app holds
+# only non-secret bootstrap config but is kept out of this public repo by
+# policy; open-source builds fetch it from https://fazm.ai/api/bootstrap.
 .env
 .env.app
 .env.app.dev
