@@ -4496,7 +4496,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           const retryCacheReadTokens = retryResult.usage?.cachedReadTokens ?? 0;
           const retryCacheWriteTokens = retryResult.usage?.cachedWriteTokens ?? 0;
           const retryCostUsd = retryResult._meta?.costUsd ?? 0;
-          sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: retryCostUsd, inputTokens: retryInputTokens, outputTokens: retryOutputTokens, cacheReadTokens: retryCacheReadTokens, cacheWriteTokens: retryCacheWriteTokens });
+          sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: retryCostUsd, inputTokens: retryInputTokens, outputTokens: retryOutputTokens, cacheReadTokens: retryCacheReadTokens, cacheWriteTokens: retryCacheWriteTokens });
           return;
         }
 
@@ -4555,7 +4555,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (!promptResult.usage) {
           logErr(`[WARN] No usage data from ACP — cost/token tracking will be zero for this query`);
         }
-        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
+        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
       } catch (watchdogErr) {
         if (watchdogErr instanceof Error && watchdogErr.message.startsWith("TTFT_WATCHDOG")) {
           // Session is dead after interrupt — destroy it and retry with a fresh session
@@ -4613,7 +4613,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           if (!retryResult.usage) {
             logErr(`[WARN] No usage data from ACP — cost/token tracking will be zero for this query`);
           }
-          sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
+          sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
         } else {
           throw watchdogErr;
         }
@@ -4647,7 +4647,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         pendingTools.length = 0;
         clearToolTimersForSession(sessionId);
         logErr(`[FINALIZATION-IDLE] Rescued stalled turn for session ${sessionId.slice(0, 8)} (${err.message}); delivering ${fullText.length} chars as a completed result`);
-        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
         return;
       }
 
@@ -4661,7 +4661,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           logErr(
             `Query interrupted by user, sending partial result (${fullText.length} chars)`
           );
-          sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, interrupted: true });
+          sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, interrupted: true });
         } else {
           logErr("Query aborted (superseded by new query)");
         }
@@ -4894,7 +4894,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
         pendingTools.length = 0;
         clearToolTimersForSession(sessionId);
-        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
       }
       return;
     }
