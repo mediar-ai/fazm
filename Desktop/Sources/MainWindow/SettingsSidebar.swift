@@ -445,10 +445,15 @@ struct SettingsSidebar: View {
     }
 
     private func startGlowIfVisible() {
-        guard windowIsVisible else { return }
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-            updateGlowAnimating = true
-        }
+        // BISECT 2026-05-28: temporarily nopped to measure the main-thread
+        // storm contribution. The legacy `withAnimation(.repeatForever)`
+        // pattern leaks an animation transaction across the entire view
+        // tree forever, which keeps the SwiftUI display cycle dirty 60 Hz
+        // even when nothing else in the sidebar is changing.
+        // Restore as a value-based `.animation(...)` modifier (per
+        // FloatingControlBarView.swift:259) once we confirm it's a
+        // contributor.
+        return
     }
 
     private var searchField: some View {
