@@ -301,6 +301,7 @@ struct ConversationHistorySection: View {
                         GROUP BY cm.taskId
                         HAVING messageCount > 0
                         ORDER BY lastMessageDate DESC
+                        LIMIT 20
                     """)
 
                     return rows.compactMap { row -> ConversationSummary? in
