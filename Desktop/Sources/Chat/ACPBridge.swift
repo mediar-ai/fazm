@@ -2140,7 +2140,7 @@ actor ACPBridge {
       // supposed to finalize it has either ended or is keyed under a stale name.
       // Without this notification, the popout's streaming bubble would spin
       // forever. Fire the orphan handler so ChatProvider can clear UI state.
-      if case .result(let text, let sid, _, _, _, _, _, let interrupted) = message {
+      if case .result(let text, let sid, _, _, _, _, _, _, let interrupted) = message {
         let hasIncomingAlias = sessionKeyAliases.values.contains(key)
         let hasGen = sessionMessageGenerations[key] != nil
         if !hasIncomingAlias && !hasGen {
