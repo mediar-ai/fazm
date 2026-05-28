@@ -1755,13 +1755,34 @@ private struct ExpandableQuestionBubble: View {
         onBeginEdit != nil
     }
 
+    /// PERF FIX 2026-05-28: the original implementation called
+    /// `NSString.boundingRect(with:options:attributes:)` on the FULL question
+    /// text on EVERY body re-evaluation. With users pasting whole conversations
+    /// (40 KB+) into prompts, that single measurement pegged the main thread;
+    /// across multiple bubbles × 60Hz re-renders it caused the
+    /// `ResolvedStyledText.modifyTransition` storm. A fast character/newline
+    /// heuristic is fine here — we just need to know whether the bubble
+    /// overflows ~2 visual lines to show the expand button.
     private var needsExpansion: Bool {
-        let font = NSFont.systemFont(ofSize: 13)
-        return (question as NSString).boundingRect(
-            with: NSSize(width: 350, height: CGFloat.greatestFiniteMagnitude),
-            options: .usesLineFragmentOrigin,
-            attributes: [.font: font]
-        ).size.height > font.pointSize * 1.5 * 2 // more than 2 lines
+        // ~70 chars per line at fontSize 13, width 350; 2 lines ≈ 140 chars.
+        // Or any explicit newline indicates a multi-line message.
+        return question.count > 140 || question.contains("\n")
+    }
+
+    /// Cap what SwiftUI's SelectableText measures when collapsed. `.fixedSize`
+    /// on the SelectableText forces it to measure the full string before
+    /// `.lineLimit(2)` clips display — devastating with 40 KB prompts. While
+    /// collapsed we only feed it the first 600 chars (plenty for 2 visual
+    /// lines); expansion uses the full string.
+    private var displayedQuestion: String {
+        if isExpanded { return question }
+        if question.count <= 600 { return question }
+        // Take first 600 chars or up to the second newline, whichever is shorter.
+        if let secondNewline = question.range(of: "\n", options: [], range: question.range(of: "\n")?.upperBound..<question.endIndex) {
+            let upTo = min(secondNewline.lowerBound, question.index(question.startIndex, offsetBy: 600))
+            return String(question[question.startIndex..<upTo])
+        }
+        return String(question.prefix(600))
     }
 
     var body: some View {
@@ -1775,7 +1796,7 @@ private struct ExpandableQuestionBubble: View {
     private var displayView: some View {
         HStack(alignment: .top, spacing: 4) {
             SelectableText(
-                text: question,
+                text: displayedQuestion,
                 fontSize: 13,
                 textColor: NSColor(FazmColors.overlayForeground),
                 lineLimit: isExpanded ? nil : 2
