@@ -81,10 +81,69 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Step 2: Download the Sparkle ZIP (what auto-update users get)
+# Step 2: Channel-vs-latest.json invariant
+# -----------------------------------------------------------------------------
+# Every -macos tag lands on the staging channel in Firestore. New website
+# installs read gs://fazm-prod-releases/desktop/latest.json via the stub
+# installer. THE INVARIANT: a staging release must NOT change desktop/latest.json;
+# only scripts/promote_release.sh should ever bump it (on promotion to beta or
+# stable). If a staging build clobbered latest.json, CI is leaking every
+# in-progress staging build straight to new signups, exactly the regression
+# that bled 2.9.13 through 2.9.47 to ~250 new users between 2026-03-20 and
+# 2026-05-28. See codemagic.yaml around the per-version manifest upload step.
+echo ""
+echo "[2/6] Checking staging-vs-latest.json invariant..."
+
+# Find the channel for VERSION in the appcast. Sparkle emits <sparkle:channel>
+# inside each <item>; pull the one whose shortVersionString matches.
+APPCAST_CHANNEL=$(echo "$APPCAST_XML" | python3 -c "
+import sys, re
+xml = sys.stdin.read()
+# Naive but works for this simple feed: split on <item>, find the matching
+# version, then read its sparkle:channel (or empty = stable).
+items = xml.split('<item>')[1:]
+for it in items:
+    m = re.search(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', it)
+    if not m or m.group(1) != '$VERSION': continue
+    cm = re.search(r'<sparkle:channel>([^<]+)</sparkle:channel>', it)
+    print(cm.group(1) if cm else 'stable')
+    break
+" 2>/dev/null)
+
+LATEST_JSON_VERSION=$(curl -s "https://storage.googleapis.com/fazm-prod-releases/desktop/latest.json" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null)
+
+if [ -z "$LATEST_JSON_VERSION" ]; then
+    warn "Could not read desktop/latest.json — skipping invariant check"
+elif [ "$APPCAST_CHANNEL" = "staging" ] && [ "$LATEST_JSON_VERSION" = "$VERSION" ]; then
+    fail "REGRESSION DETECTED: v$VERSION is on staging channel, but desktop/latest.json points at v$VERSION."
+    fail "This means CI clobbered the global manifest on a staging build."
+    fail "Every new website install since this build downloaded an unpromoted staging release."
+    fail ""
+    fail "Root cause: codemagic.yaml is writing gs://fazm-prod-releases/desktop/latest.json"
+    fail "on a non-staging-suffixed tag. ONLY scripts/promote_release.sh may touch that path."
+    fail ""
+    fail "History of this exact bug:"
+    fail "  Mar 19 2026 e7741d9f — fix: removed the CI write"
+    fail "  Mar 20 2026 404836cc — regression: re-added it gated on IS_STAGING"
+    fail "  May 28 2026 b43e16c0 — re-fix: removed it again"
+    fail ""
+    fail "Inspect codemagic.yaml for any 'gcloud storage cp ... gs://.../desktop/latest.json'"
+    fail "outside scripts/promote_release.sh. Remove it. Re-run this script after the next build."
+    exit 1
+elif [ "$APPCAST_CHANNEL" = "staging" ]; then
+    pass "v$VERSION is on staging channel, desktop/latest.json still v$LATEST_JSON_VERSION (gate intact)"
+elif [ -n "$APPCAST_CHANNEL" ]; then
+    pass "v$VERSION is on $APPCAST_CHANNEL channel (latest.json check N/A for non-staging)"
+else
+    warn "Could not determine v$VERSION channel from appcast — skipping invariant check"
+fi
+
+# -----------------------------------------------------------------------------
+# Step 3: Download the Sparkle ZIP (what auto-update users get)
 # -----------------------------------------------------------------------------
 echo ""
-echo "[2/5] Downloading Sparkle ZIP..."
+echo "[3/6] Downloading Sparkle ZIP..."
 
 ZIP_PATH="$VERIFY_DIR/Fazm.zip"
 HTTP_CODE=$(curl -sL -o "$ZIP_PATH" -w "%{http_code}" "$DOWNLOAD_URL")
@@ -98,10 +157,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Step 3: Extract and verify code signature
+# Step 4: Extract and verify code signature
 # -----------------------------------------------------------------------------
 echo ""
-echo "[3/5] Verifying code signature..."
+echo "[4/6] Verifying code signature..."
 
 cd "$VERIFY_DIR"
 ditto -xk Fazm.zip . 2>/dev/null
@@ -153,10 +212,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Step 4: Test app launch
+# Step 5: Test app launch
 # -----------------------------------------------------------------------------
 echo ""
-echo "[4/5] Testing app launch..."
+echo "[5/6] Testing app launch..."
 
 # Copy to a temp location to test launch
 TEST_APP="$VERIFY_DIR/test-launch/$APP_NAME.app"
@@ -204,10 +263,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Step 5: Verify DMG download works too
+# Step 6: Verify DMG download works too
 # -----------------------------------------------------------------------------
 echo ""
-echo "[5/5] Checking DMG download..."
+echo "[6/6] Checking DMG download..."
 
 DMG_HTTP=$(curl -sI -o /dev/null -w "%{http_code}" -L "$DESKTOP_BACKEND_URL/download")
 if [ "$DMG_HTTP" = "200" ]; then
