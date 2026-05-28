@@ -63,6 +63,19 @@ struct AIResponseView: View {
     @State private var isHangingFromCrash = false
     @State private var shouldFollowContent = true
     @State private var isProgrammaticScroll = false
+    /// Scroll-storm instrumentation + rate-limit. `scrollToBottom` is supposed
+    /// to fire once per genuine new-content event or user action. When an idle
+    /// window gets into a layout feedback loop (a stuck `repeatForever` keeping
+    /// an animation transaction open, or auto-follow re-pins compounding), the
+    /// animated re-pin runs every display cycle → `runAnimationGroup →
+    /// LayoutScrollableTransform` pegs the main thread → composer keystrokes
+    /// lag. We (1) log a one-shot `[ScrollStorm]` line with the concurrent flag
+    /// state to localize the trigger, and (2) collapse rapid calls to an
+    /// instant snap so overlapping 0.15s glides can't compound.
+    @State private var lastScrollAt: Date = .distantPast
+    @State private var scrollRateWindowStart: Date = .distantPast
+    @State private var scrollRateCount: Int = 0
+    @State private var scrollStormLoggedAt: Date = .distantPast
     /// Debounced version of isLoading — stays true for at least 600ms after loading ends
     /// to prevent the typing indicator from flickering during rapid API retries.
     @State private var debouncedIsLoading = false
@@ -344,11 +357,11 @@ struct AIResponseView: View {
                     }
                     .onChange(of: chatHistory.count) {
                         shouldFollowContent = true
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom(proxy: proxy, reason: "chatHistory", userInitiated: true)
                     }
                     .onChange(of: streaming.pendingChatObserverExchanges.count) {
                         shouldFollowContent = true
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom(proxy: proxy, reason: "observerExchanges")
                     }
                     // Active re-pin while streaming: when a new content block
                     // appears (tool call, thinking block, new text segment) and
@@ -361,7 +374,7 @@ struct AIResponseView: View {
                     // with no button" state.
                     .onChange(of: currentMessage?.contentBlocks.count ?? 0) {
                         if shouldFollowContent {
-                            scrollToBottom(proxy: proxy)
+                            scrollToBottom(proxy: proxy, reason: "contentBlocks")
                         }
                     }
                     .onChange(of: isLoading) {
@@ -372,8 +385,16 @@ struct AIResponseView: View {
                     .onChange(of: isVoiceFollowUp) {
                         if isVoiceFollowUp {
                             shouldFollowContent = true
-                            scrollToBottom(proxy: proxy, anchor: "voiceFollowUp")
+                            scrollToBottom(proxy: proxy, anchor: "voiceFollowUp", reason: "voice", userInitiated: true)
                         }
+                    }
+                    // Debug-only: deterministic idle scroll-storm repro. The
+                    // `simulateIdleScrollStorm` control command ticks this at
+                    // 60Hz for a few seconds, driving scrollToBottom exactly
+                    // like the runaway loop so we can verify the rate-limit
+                    // collapses it (and the [ScrollStorm] log fires).
+                    .onChange(of: streaming.debugScrollStormTick) {
+                        scrollToBottom(proxy: proxy, reason: "debug-storm", userInitiated: true)
                     }
 
                     // Scroll-to-bottom overlay button — show whenever the view
@@ -386,7 +407,7 @@ struct AIResponseView: View {
                     if !shouldFollowContent && (currentMessage != nil || !userInput.isEmpty || !chatHistory.isEmpty) {
                         Button {
                             shouldFollowContent = true
-                            scrollToBottom(proxy: proxy)
+                            scrollToBottom(proxy: proxy, reason: "jumpButton", userInitiated: true)
                         } label: {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.system(size: 28))
@@ -495,23 +516,43 @@ struct AIResponseView: View {
         workspace.workspaceDirectory.isEmpty ? globalWorkspaceDirectory : workspace.workspaceDirectory
     }
 
-    private func scrollToBottom(proxy: ScrollViewProxy, anchor: String = "bottom") {
+    private func scrollToBottom(proxy: ScrollViewProxy, anchor: String = "bottom", reason: String = "unknown", userInitiated: Bool = false) {
+        let now = Date()
+
+        // --- Instrumentation: catch a runaway auto-follow / re-pin loop.
+        // scrollToBottom should fire once per real event. If it's being called
+        // >15×/sec, that IS the input-lag storm. Log once per storm (throttled
+        // to 5s) with the concurrent flag state so the log tells us WHICH
+        // trigger / stuck repeatForever is driving it (isHanging from the crash
+        // flash? a stuck isStreaming bubble? the chat observer?).
+        if now.timeIntervalSince(scrollRateWindowStart) >= 1.0 {
+            scrollRateWindowStart = now
+            scrollRateCount = 0
+        }
+        scrollRateCount += 1
+        if scrollRateCount == 16, now.timeIntervalSince(scrollStormLoggedAt) > 5.0 {
+            scrollStormLoggedAt = now
+            log("[ScrollStorm] scrollToBottom \(scrollRateCount)+/s session=\(currentMessage?.sessionKey ?? "floating") reason=\(reason) userInitiated=\(userInitiated) isTurnActive=\(isTurnActive) isHanging=\(isHanging) isStreaming=\(currentMessage?.isStreaming == true) observerRunning=\(streaming.isChatObserverRunning) shouldFollow=\(shouldFollowContent)")
+        }
+
+        // --- Fix: rate-limit the animated re-pin. A genuine new-content or
+        // user scroll animates once (the 0.15s glide). But if calls arrive
+        // faster than that glide (auto-follow during a reflow loop, or a stuck
+        // ambient animation re-pinning every frame), collapse to an instant
+        // snap so overlapping animations can't compound into a continuous
+        // runAnimationGroup → LayoutScrollableTransform main-thread storm.
+        let rapid = now.timeIntervalSince(lastScrollAt) < 0.12
+        lastScrollAt = now
+
         isProgrammaticScroll = true
-        // While a turn is in flight, snap instantly instead of animating. Each
-        // re-pin (fired on every new content block — frequent in tool-heavy
-        // turns) otherwise starts a 150ms scroll animation; because blocks/tokens
-        // arrive faster than the animation finishes, the window keeps re-rendering
-        // at display-cycle rate (60Hz) between the 50ms drip ticks instead of
-        // settling once per tick. A hard snap lets layout settle immediately and
-        // collapses the streaming re-render rate to the mutation rate. The smooth
-        // 150ms glide is kept for idle/user-initiated scrolls (scroll-to-bottom
-        // button, jump-back, voice follow-up, a newly-sent exchange).
-        if isTurnActive {
-            proxy.scrollTo(anchor, anchor: .bottom)
-        } else {
+        // Animate ONLY a deliberate, non-rapid, user-initiated jump while idle.
+        // Streaming, rapid-repeat, and background auto-follow all snap instantly.
+        if userInitiated && !rapid && !isTurnActive {
             withAnimation(.easeOut(duration: 0.15)) {
                 proxy.scrollTo(anchor, anchor: .bottom)
             }
+        } else {
+            proxy.scrollTo(anchor, anchor: .bottom)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             isProgrammaticScroll = false
