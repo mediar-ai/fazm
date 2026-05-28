@@ -67,9 +67,17 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
             defer: false
         )
 
-        // Put the first prompt in the actual macOS title bar
+        // Put the first prompt in the actual macOS title bar. We truncate
+        // aggressively because users paste entire prior conversations (40 KB+)
+        // into their first prompt; an NSWindow title that long forces the OS
+        // titlebar to re-measure the giant string on EVERY display cycle
+        // (60 Hz), pegging the main thread in NSHostingView.layout →
+        // ResolvedStyledText.modifyTransition. Bisect on 2026-05-28 confirmed:
+        // removing the full-length title from 5 restored detached windows
+        // drops total app CPU from ~200 % to baseline.
         let firstPrompt = state.streaming.chatHistory.first?.question ?? state.streaming.displayedQuery
-        self.title = firstPrompt.isEmpty ? "Fazm Chat" : firstPrompt
+        let trimmedTitle = DetachedChatWindow.truncateForTitle(firstPrompt)
+        self.title = trimmedTitle.isEmpty ? "Fazm Chat" : trimmedTitle
         self.minSize = NSSize(width: 360, height: 300)
         self.isReleasedWhenClosed = false
         self.delegate = self
@@ -92,6 +100,23 @@ class DetachedChatWindow: NSWindow, NSWindowDelegate {
         } else {
             center()
         }
+    }
+
+    /// Compact the first prompt into a single-line, ~80 char window title.
+    /// Returns "" when the prompt is empty so the caller can substitute the
+    /// default "Fazm Chat". Collapses newlines and runs of whitespace so the
+    /// title bar doesn't try to render a multi-paragraph block.
+    static func truncateForTitle(_ raw: String) -> String {
+        guard !raw.isEmpty else { return "" }
+        // Collapse all whitespace (including newlines and tabs) to single spaces
+        let oneLine = raw
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if oneLine.isEmpty { return "" }
+        let maxChars = 80
+        if oneLine.count <= maxChars { return oneLine }
+        return String(oneLine.prefix(maxChars)) + "…"
     }
 
     func setupViews() {
