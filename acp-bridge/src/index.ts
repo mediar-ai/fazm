@@ -1538,7 +1538,11 @@ function startAcpProcess(): void {
   const acpEntry = join(__dirname, "patched-acp-entry.mjs");
   const nodeBin = process.execPath;
 
-  const mode = env.ANTHROPIC_API_KEY ? "Mode A (Fazm API key)" : "Mode B (Your Claude Account / OAuth)";
+  const mode = env.FAZM_CUSTOM_API_ENDPOINT === "true"
+    ? "Mode C (Custom API endpoint)"
+    : env.ANTHROPIC_API_KEY
+      ? "Mode A (Fazm API key)"
+      : "Mode B (Your Claude Account / OAuth)";
   logErr(`Starting ACP subprocess [${mode}]: ${nodeBin} ${acpEntry}`);
 
   acpProcess = spawn(nodeBin, [acpEntry], {
@@ -1773,6 +1777,10 @@ function isAcpAuthError(err: unknown): boolean {
   return false;
 }
 
+function isCustomEndpointMode(): boolean {
+  return process.env.FAZM_CUSTOM_API_ENDPOINT === "true";
+}
+
 /** True when the bridge is running in built-in (bundled API key) mode.
  *  In this mode, an auth failure means the bundled key is invalid (rotated,
  *  revoked, or block-listed); it does NOT mean the user's personal Claude
@@ -1780,7 +1788,7 @@ function isAcpAuthError(err: unknown): boolean {
  *  so it can refetch the key from the backend and silently retry, instead of
  *  pushing the user into an OAuth flow they were never using. */
 function isBuiltinKeyMode(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return !!process.env.ANTHROPIC_API_KEY && !isCustomEndpointMode();
 }
 
 // --- Screenshot auto-resize ---
