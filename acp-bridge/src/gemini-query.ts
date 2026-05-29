@@ -202,6 +202,9 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
   }
   promptBlocks.push({ type: "text", text: msg.prompt });
 
+  // Mark this prompt in flight so the provider can rescue any session/update
+  // that gemini-cli emits under a mismatched sessionId (see decideGeminiRoute).
+  provider.beginActivePrompt(sessionId);
   try {
     const promptResult = (await provider.request("session/prompt", {
       sessionId,
@@ -247,12 +250,21 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
     if (isNewSession) {
       logErr(`[gemini-query] new session ${sessionId.slice(0, 8)} stop=${promptResult.stopReason} chars=${translator.collectedText.length} input=${inputTokens} output=${outputTokens}`);
     }
+    if (translator.collectedText.length === 0) {
+      // Distinguishes a genuine empty turn from a routing drop: if the model
+      // produced text that was lost to an id mismatch, a preceding "rescued
+      // id-mismatched session/update" line will be present; if not, the model
+      // truly produced no assistant text this turn.
+      logErr(`[gemini-query] empty turn session=${sessionId.slice(0, 8)} stop=${promptResult.stopReason} (no assistant text collected)`);
+    }
   } catch (err) {
     const rawMsg = err instanceof Error ? err.message : String(err);
     await new Promise((r) => setTimeout(r, 150));
     const turnErr = provider.getRecentTurnError();
     logErr(`[gemini-query] session/prompt failed: ${rawMsg}${turnErr ? ` | turnError: ${turnErr}` : ""}`);
     send({ type: "error", message: turnErr ?? `Gemini prompt failed: ${rawMsg}` });
+  } finally {
+    provider.endActivePrompt(sessionId);
   }
 }
 
