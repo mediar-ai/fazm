@@ -4376,21 +4376,26 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const IDLE_BAIL_LOG_MS = 10_000;  // rate-limit for the "past threshold but not firing" log
 
       // Test hook: simulate the compaction finalization stall (see flag-file decl).
-      // Expected WITH the fix: the placeholder is dropped (heartbeat fullTextLen=0)
-      // and the idle arm does NOT fire at 20s — it logs "[IDLE-ARM] … NOT firing:
-      // compaction in progress" until the 180s ceiling. WITHOUT the fix it would
-      // deliver "Compacting..." (13 chars) as a completed result at 21s. Inert in prod.
+      // In sim mode we do NOT send a real prompt — we inject ONLY a
+      // status_change:"compacting" + the "Compacting..." placeholder chunk, then let
+      // the turn hang silent, so the test is not polluted by the real model's
+      // streaming (which would clear the compaction flag). Expected WITH the fix:
+      // placeholder dropped (heartbeat fullTextLen=0) and the idle arm does NOT fire
+      // at 20s — it logs "[IDLE-ARM] … NOT firing: compaction in progress" until the
+      // 180s ceiling, then a [COMPACTION-STALL] rescue. WITHOUT the fix it fired at
+      // 21s and delivered "Compacting..." (13 chars) as a completed result. Inert in prod.
       let _simCompactionStall = false;
       try {
         if (existsSync(DEBUG_COMPACTION_STALL_FILE)) {
           unlinkSync(DEBUG_COMPACTION_STALL_FILE);
-          writeFileSync(DEBUG_DROP_FLAG_FILE, ""); // swallow this turn's prompt response
           _simCompactionStall = true;
-          logErr("[DEBUG-COMPACTION-STALL] Armed: injecting compacting status + placeholder, then swallowing result");
+          logErr("[DEBUG-COMPACTION-STALL] Armed: injecting compacting status + placeholder, NOT sending real prompt; turn will hang mid-compaction");
         }
       } catch { /* ignore test-hook errors */ }
 
-      const promptPromise = acpRequest("session/prompt", sessionPromptPayload);
+      const promptPromise = _simCompactionStall
+        ? new Promise<unknown>(() => { /* never resolves — a session/prompt stuck mid-compaction */ })
+        : acpRequest("session/prompt", sessionPromptPayload);
 
       if (_simCompactionStall) {
         const simHandler = sessionNotificationHandlers.get(sessionId);
