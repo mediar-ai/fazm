@@ -105,6 +105,12 @@ class FounderChatService: ObservableObject {
     /// Bundle-scoped form (target dev or prod individually): replace
     /// `com.fazm.founderChat` with `com.fazm.desktop-dev.founderChat` (dev)
     /// or `com.fazm.app.founderChat` (prod).
+    ///
+    /// Test the screenshot/file attachment path end-to-end by passing a local
+    /// file path (uploaded to Firebase Storage, then sent on the message):
+    /// ```
+    /// xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.desktop-dev.founderChat"), object: nil, userInfo: ["text": "see this", "attachmentPath": "/tmp/shot.png"], deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+    /// ```
     private func setupTestNotificationListener() {
         DistributedNotificationCenter.default().addFazmObserver(
             "founderChat"
@@ -113,16 +119,28 @@ class FounderChatService: ObservableObject {
                   let text = userInfo["text"] as? String else { return }
             let sender = userInfo["sender"] as? String ?? "user"
             let senderName = userInfo["senderName"] as? String
+            // Optional: one path or an array of paths to attach (test the upload path).
+            let attachmentPaths: [String] = (userInfo["attachmentPaths"] as? [String])
+                ?? (userInfo["attachmentPath"] as? String).map { [$0] }
+                ?? []
 
-            log("FounderChatService: Test notification received — sender=\(sender), text=\(text)")
+            log("FounderChatService: Test notification received — sender=\(sender), text=\(text), attachments=\(attachmentPaths.count)")
 
             Task { @MainActor [weak self] in
                 if sender == "founder" {
                     // Simulate receiving a founder message (write to Firestore as founder)
                     await self?.simulateFounderMessage(text: text, senderName: senderName ?? "Matt")
                 } else {
-                    // Send as user message
-                    await self?.sendMessage(text)
+                    // Send as user message (with attachments if provided)
+                    let atts: [ChatAttachment] = attachmentPaths.map { p in
+                        let url = URL(fileURLWithPath: p)
+                        return ChatAttachment(
+                            path: p,
+                            name: url.lastPathComponent,
+                            mimeType: ChatAttachmentHelper.mimeTypeForExtension(url.pathExtension.lowercased())
+                        )
+                    }
+                    await self?.sendMessage(text, attachments: atts)
                 }
             }
         }
