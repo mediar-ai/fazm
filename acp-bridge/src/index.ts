@@ -4108,6 +4108,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     // so this flag lets the idle arm tell "summarizing a large context" (slow but
     // fine) apart from "turn finished and stalled" (the #630 case it rescues).
     let compactionInProgress = false;
+    let compactionStartedAt = 0; // Date.now() of the in-flight compaction_start (0 = none)
     // Track task IDs started in THIS prompt turn vs stale ones from previous turns
     const currentTurnTaskIds = new Set<string>();
     let staleTaskNotificationCount = 0;
@@ -4141,9 +4142,16 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (sessionUpdate === "agent_message_chunk") textChunkCount++;
         else if (sessionUpdate === "agent_thought_chunk") thinkingChunkCount++;
         else if (isToolEvent) toolEventCount++;
-        // Track the compaction window so the idle arm can gate on it (below).
-        if (sessionUpdate === "compaction_start") compactionInProgress = true;
-        else if (sessionUpdate === "compact_boundary") compactionInProgress = false;
+        // Track the compaction window so the idle arm can gate on it (below), and
+        // log its duration so a slow/stalled compaction is greppable after the fact.
+        if (sessionUpdate === "compaction_start") {
+          compactionInProgress = true;
+          compactionStartedAt = now;
+        } else if (sessionUpdate === "compact_boundary") {
+          compactionInProgress = false;
+          if (compactionStartedAt) logErr(`[COMPACTION] completed in ${Math.round((now - compactionStartedAt) / 1000)}s`);
+          compactionStartedAt = 0;
+        }
         // Note when an interactive ask_followup tool starts, by title on the
         // pending notification (the completion notification often arrives with no
         // title — the exact reason a title-based pendingTools removal can go stale).
@@ -4737,6 +4745,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
         pendingTools.length = 0;
         clearToolTimersForSession(sessionId);
+        // If we were still inside a compaction when the (extended) idle ceiling
+        // fired, this is a genuinely-hung compaction, not a finished turn. Log it
+        // distinctly: cancelling here aborts the compaction, so the context is NOT
+        // reduced and the next turn will re-compact (the May 28 2026 loop). One
+        // grep for [COMPACTION-STALL] tells the whole story if it recurs.
+        if (compactionInProgress) {
+          logErr(`[COMPACTION-STALL] session ${sessionId.slice(0, 8)} compaction hung ${compactionStartedAt ? Math.round((Date.now() - compactionStartedAt) / 1000) : "?"}s with no compact_boundary — cancelled by idle ceiling; context not reduced, next turn will re-compact`);
+        }
         logErr(`[FINALIZATION-IDLE] Rescued stalled turn for session ${sessionId.slice(0, 8)} (${err.message}); delivering ${fullText.length} chars as a completed result`);
         sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
         return;
