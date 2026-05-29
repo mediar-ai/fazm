@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed the Referrals page showing an incorrect credit amount and clarified that you earn a free month for each friend you refer"
+  ],
   "releases": [
     {
       "version": "2.9.54",
