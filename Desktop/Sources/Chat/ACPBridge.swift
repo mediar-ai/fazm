@@ -684,7 +684,7 @@ actor ACPBridge {
         // Never send Fazm's bundled Anthropic key to that proxy. Keep a harmless
         // placeholder key so Anthropic-compatible local gateways that accept any
         // API key stay on the API-key path instead of triggering Claude OAuth.
-        env["ANTHROPIC_API_KEY"] = "fazm-custom-endpoint"
+        env["ANTHROPIC_API_KEY"] = "sk-fazm-custom-endpoint"
         log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled")
       } else {
         log(
