@@ -55,6 +55,7 @@ pub async fn get_upload_url(
         &object_path,
         "PUT",
         900, // 15 minutes
+        Some("video/mp4"),
     )
     .await
     .map_err(|e| {
@@ -73,12 +74,17 @@ pub async fn get_upload_url(
 /// Instead of signing locally with a PEM key, this calls the IAM API to sign
 /// using Google-managed keys. This is more reliable on Cloud Run — no risk of
 /// key corruption from base64 encoding in env vars.
-async fn generate_v4_signed_url_iam(
+///
+/// `content_type`: `Some(mime)` signs `content-type;host` (the client MUST send
+/// that exact Content-Type on the request, e.g. a PUT upload). `None` signs
+/// `host` only (e.g. a plain GET download).
+pub(crate) async fn generate_v4_signed_url_iam(
     sa_email: &str,
     bucket: &str,
     object: &str,
     http_method: &str,
     expiration_secs: i64,
+    content_type: Option<&str>,
 ) -> Result<String, String> {
     let now = Utc::now();
     let datestamp = now.format("%Y%m%d").to_string();
@@ -90,13 +96,19 @@ async fn generate_v4_signed_url_iam(
     let host = "storage.googleapis.com";
     let resource = format!("/{}/{}", bucket, object);
 
+    // Canonical + signed headers depend on whether a content-type is signed.
+    let (canonical_headers, signed_headers) = match content_type {
+        Some(ct) => (format!("content-type:{}\nhost:{}\n", ct, host), "content-type;host"),
+        None => (format!("host:{}\n", host), "host"),
+    };
+
     // Canonical query string (sorted)
     let mut query_params = vec![
         ("X-Goog-Algorithm", "GOOG4-RSA-SHA256".to_string()),
         ("X-Goog-Credential", credential.clone()),
         ("X-Goog-Date", datetime.clone()),
         ("X-Goog-Expires", expiration_secs.to_string()),
-        ("X-Goog-SignedHeaders", "content-type;host".to_string()),
+        ("X-Goog-SignedHeaders", signed_headers.to_string()),
     ];
     query_params.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -105,10 +117,6 @@ async fn generate_v4_signed_url_iam(
         .map(|(k, v)| format!("{}={}", url_encode(k), url_encode(v)))
         .collect::<Vec<_>>()
         .join("&");
-
-    // Canonical headers (sorted, lowercase)
-    let canonical_headers = format!("content-type:video/mp4\nhost:{}\n", host);
-    let signed_headers = "content-type;host";
 
     // Canonical request
     let canonical_request = format!(
