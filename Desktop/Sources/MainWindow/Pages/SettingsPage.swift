@@ -919,6 +919,22 @@ struct SettingsContentView: View {
     @AppStorage("customApiEndpoint") private var customApiEndpoint: String = ""
     @State private var showCustomEndpoint: Bool = false
 
+    private var aiChatAccountStatusText: String {
+        if ACPBridge.validCustomAPIEndpoint(customApiEndpoint) != nil {
+            return "Custom API Endpoint is on. Claude-compatible requests route there without using Fazm's built-in credits."
+        }
+        if chatProvider?.showCreditExhaustedAlert == true {
+            return "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting."
+        }
+        if bridgeMode == "builtin" {
+            return "Using Fazm's built-in Claude account. No sign-in required."
+        }
+        if chatProvider?.isClaudeConnected == true {
+            return "Connected to your personal Claude account."
+        }
+        return "Using your personal Claude account via OAuth. Sign in to connect."
+    }
+
     private var aiChatSection: some View {
         VStack(spacing: 20) {
             // Claude Account selector
@@ -946,13 +962,7 @@ struct SettingsContentView: View {
                         Task { await chatProvider?.switchBridgeMode(to: newValue) }
                     }
 
-                    Text(chatProvider?.showCreditExhaustedAlert == true
-                         ? "You've used all your built-in AI credits. Connect Claude Code or ChatGPT to keep chatting."
-                         : bridgeMode == "builtin"
-                         ? "Using Fazm's built-in Claude account. No sign-in required."
-                         : chatProvider?.isClaudeConnected == true
-                            ? "Connected to your personal Claude account."
-                            : "Using your personal Claude account via OAuth. Sign in to connect.")
+                    Text(aiChatAccountStatusText)
                         .scaledFont(size: 12)
                         .foregroundColor(FazmColors.textTertiary)
 
@@ -1059,7 +1069,7 @@ struct SettingsContentView: View {
                                 Task { await chatProvider?.restartBridgeForEndpointChange() }
                             }
 
-                        Text("Route API calls through an Anthropic-API-compatible endpoint (e.g. local LLM bridge, corporate proxy, or GitHub Copilot bridge). The endpoint must speak the Anthropic API format; a raw Gemini or OpenAI key will not work here. Leave empty to use the default Anthropic API.")
+                        Text("Route API calls through an Anthropic-API-compatible endpoint (e.g. local LLM bridge, corporate proxy, or GitHub Copilot bridge). The endpoint must speak the Anthropic API format; a raw Gemini or OpenAI key will not work here. Fazm will not send its built-in Anthropic key or count this usage against built-in credits.")
                             .scaledFont(size: 12)
                             .foregroundColor(FazmColors.textTertiary)
                     } else {
