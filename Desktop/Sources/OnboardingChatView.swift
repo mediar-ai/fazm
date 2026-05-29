@@ -507,15 +507,19 @@ struct OnboardingChatView: View {
         // window. A genuinely hung turn produces none of these, so the 30s
         // elapses and the existing header Skip button is shown.
         .onChange(of: chatProvider.messages.count) { _, _ in
-            if !quickReplyOptions.isEmpty { return }
-            resetSkipTimer(after: chatProvider.isSending ? 30 : 120)
+            if chatProvider.isSending {
+                resetSkipTimer(after: 30)              // activity while sending: reset stall window
+            } else if quickReplyOptions.isEmpty {
+                resetSkipTimer(after: 120)             // idle, no actionable options: inactivity window
+            }
+            // idle with options: no timer (handled by quickReplyOptions onChange)
         }
         .onChange(of: chatProvider.messages.last?.text) { _, _ in
-            guard chatProvider.isSending, quickReplyOptions.isEmpty else { return }
+            guard chatProvider.isSending else { return }
             resetSkipTimer(after: 30)
         }
         .onChange(of: chatProvider.messages.last?.contentBlocks.count) { _, _ in
-            guard chatProvider.isSending, quickReplyOptions.isEmpty else { return }
+            guard chatProvider.isSending else { return }
             resetSkipTimer(after: 30)
         }
         .onReceive(permissionCheckTimer) { _ in
