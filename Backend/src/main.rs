@@ -42,6 +42,10 @@ async fn main() {
             "/api/session-recording/auto-enroll",
             axum::routing::post(routes::session_recording::auto_enroll),
         )
+        .route(
+            "/api/founder-chat/get-attachment-upload-url",
+            axum::routing::post(routes::chat_attachment::get_attachment_upload_url),
+        )
         .route("/v1/keys", axum::routing::post(routes::keys::get_keys))
         .route(
             "/v1/llm-usage/mediar-forward",
