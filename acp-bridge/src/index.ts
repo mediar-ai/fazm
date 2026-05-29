@@ -4873,7 +4873,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           logErr(`[FINALIZATION-IDLE] Empty (0-char) stall for session ${stalledSessionId.slice(0, 8)} (${err.message}); auto-retrying once on a fresh session before surfacing the empty marker`);
           msg._priorStuckSessionId = stalledSessionId;
           msg.resume = undefined;
-          await handleQuery(msg, depth + 1);
+          await handleQuery(msg, _retryDepth + 1);
           return;
         }
 
