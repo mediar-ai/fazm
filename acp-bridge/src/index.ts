@@ -1461,6 +1461,11 @@ let nextRpcId = 1;
 // turn is affected. Never present in production.
 const debugDropPromptResultIds = new Set<number>();
 const DEBUG_DROP_FLAG_FILE = "/tmp/fazm-debug-drop-prompt-result";
+// One-shot test hook for the 2026-05-29 compaction finalization stall: when this
+// file exists, the next turn injects a status_change:"compacting" + the
+// "Compacting..." placeholder chunk (mimicking the 0.29.2 adapter), then swallows
+// the prompt result so the turn goes silent mid-compaction. See handleQuery.
+const DEBUG_COMPACTION_STALL_FILE = "/tmp/fazm-debug-compaction-stall";
 
 /** Send a JSON-RPC request to the ACP subprocess and wait for the response */
 async function acpRequest(
@@ -4370,7 +4375,30 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const HEARTBEAT_MS = 10_000;      // per-turn heartbeat cadence
       const IDLE_BAIL_LOG_MS = 10_000;  // rate-limit for the "past threshold but not firing" log
 
+      // Test hook: simulate the compaction finalization stall (see flag-file decl).
+      // Expected WITH the fix: the placeholder is dropped (heartbeat fullTextLen=0)
+      // and the idle arm does NOT fire at 20s — it logs "[IDLE-ARM] … NOT firing:
+      // compaction in progress" until the 180s ceiling. WITHOUT the fix it would
+      // deliver "Compacting..." (13 chars) as a completed result at 21s. Inert in prod.
+      let _simCompactionStall = false;
+      try {
+        if (existsSync(DEBUG_COMPACTION_STALL_FILE)) {
+          unlinkSync(DEBUG_COMPACTION_STALL_FILE);
+          writeFileSync(DEBUG_DROP_FLAG_FILE, ""); // swallow this turn's prompt response
+          _simCompactionStall = true;
+          logErr("[DEBUG-COMPACTION-STALL] Armed: injecting compacting status + placeholder, then swallowing result");
+        }
+      } catch { /* ignore test-hook errors */ }
+
       const promptPromise = acpRequest("session/prompt", sessionPromptPayload);
+
+      if (_simCompactionStall) {
+        const simHandler = sessionNotificationHandlers.get(sessionId);
+        if (simHandler) setTimeout(() => {
+          simHandler("session/update", { sessionId, update: { sessionUpdate: "status_change", status: "compacting" } });
+          simHandler("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Compacting..." } } });
+        }, 200);
+      }
 
       // [TURN-HEARTBEAT] — while this prompt is in flight, emit one line every
       // HEARTBEAT_MS. Turns shorter than that log nothing (cleared in finally);
