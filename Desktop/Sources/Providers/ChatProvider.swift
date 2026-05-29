@@ -4115,6 +4115,19 @@ class ChatProvider: ObservableObject {
         sendingSessionKeys.insert(effectiveKey)
         isSending = true
 
+        // Clear the compaction indicator when THIS session's turn unwinds.
+        // isCompacting is set on compaction_start and otherwise only cleared by a
+        // later non-compacting status_change — which the bridge's finalization-idle
+        // rescue path never sends, so a rescued/stalled compaction would leave the
+        // "compacting" indicator stuck on. Scoped by sessionKey so a concurrent
+        // pop-out's in-flight compaction isn't cleared out from under it.
+        defer {
+            if compactingSessionKey == sessionKey {
+                isCompacting = false
+                compactingSessionKey = nil
+            }
+        }
+
         // Notify observers (e.g. floating bar) that a new query is starting.
         // Set the session key first so subscribers can read it synchronously when
         // the count increment publishes (both willSets fire on MainActor before
