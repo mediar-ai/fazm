@@ -84,6 +84,41 @@ export function pickGeminiAuthMethod(env: NodeJS.ProcessEnv): string | null {
   return null;
 }
 
+/**
+ * Decide where an inbound gemini-cli notification should go.
+ *
+ * Normally the notification's sessionId matches a registered session handler
+ * and we route directly. But gemini-cli (0.42.0) is observed in production to
+ * emit `session/update` notifications under a sessionId that does NOT match the
+ * one `session/new`/`session/load` returned (heavy on resumed sessions, model
+ * switches, and concurrent floating+detached sessions). Those carry the
+ * assistant text, so dropping them surfaces as an empty turn or a timeout.
+ *
+ * Rescue rule: when an unmatched `session/update` arrives AND exactly one prompt
+ * is in flight, attribute it to that prompt's session. We require exactly one
+ * active prompt so we never misattribute text across concurrent turns; with 0
+ * or 2+ active prompts we fall back to the legacy "unrouted" path (drop) rather
+ * than guess. Non-`session/update` notifications are never rescued.
+ *
+ * Pure + exported so it can be unit-tested without spawning gemini-cli.
+ */
+export function decideGeminiRoute(args: {
+  updateSessionId: string | undefined;
+  hasHandler: (id: string) => boolean;
+  activePromptSessionIds: ReadonlySet<string>;
+  isSessionUpdate: boolean;
+}): { kind: "direct" | "rescue"; sessionId: string } | { kind: "unrouted" } {
+  const { updateSessionId, hasHandler, activePromptSessionIds, isSessionUpdate } = args;
+  if (updateSessionId && hasHandler(updateSessionId)) {
+    return { kind: "direct", sessionId: updateSessionId };
+  }
+  if (isSessionUpdate && activePromptSessionIds.size === 1) {
+    const activeId = [...activePromptSessionIds][0];
+    if (hasHandler(activeId)) return { kind: "rescue", sessionId: activeId };
+  }
+  return { kind: "unrouted" };
+}
+
 export class GeminiProvider {
   readonly name = "gemini";
 
@@ -99,6 +134,12 @@ export class GeminiProvider {
   /** Most recent stderr blob containing a turn error so query.ts can replace
    *  the generic JSON-RPC "Internal error" with the real reason. */
   private lastTurnError: { message: string; at: number } | null = null;
+  /** sessionIds with a `session/prompt` currently in flight. Drives the
+   *  unmatched-`session/update` rescue in routeNotification (see
+   *  decideGeminiRoute). */
+  private activePromptSessionIds = new Set<string>();
+  /** Count of rescued (id-mismatched) session/update notifications, for logging. */
+  private rescuedUpdateCount = 0;
 
   private readonly entryPath: string;
   private readonly env: NodeJS.ProcessEnv;
@@ -142,6 +183,17 @@ export class GeminiProvider {
 
   unregisterSessionHandler(sessionId: string): void {
     this.sessionNotificationHandlers.delete(sessionId);
+  }
+
+  /** Mark a session/prompt as in flight so unmatched session/update can be
+   *  rescued to it (see decideGeminiRoute). Idempotent. */
+  beginActivePrompt(sessionId: string): void {
+    this.activePromptSessionIds.add(sessionId);
+  }
+
+  /** Clear the in-flight marker once a prompt resolves/errors. */
+  endActivePrompt(sessionId: string): void {
+    this.activePromptSessionIds.delete(sessionId);
   }
 
   start(): void {
@@ -386,12 +438,33 @@ export class GeminiProvider {
 
   private routeNotification(method: string, params: unknown): void {
     const sessionId = GeminiProvider.extractSessionId(params);
-    const sessionHandler = sessionId ? this.sessionNotificationHandlers.get(sessionId) : undefined;
-    if (sessionHandler) {
-      sessionHandler(method, params);
-    } else if (this.onNotificationHook) {
-      this.onNotificationHook(method, params);
+    const decision = decideGeminiRoute({
+      updateSessionId: sessionId,
+      hasHandler: (id) => this.sessionNotificationHandlers.has(id),
+      activePromptSessionIds: this.activePromptSessionIds,
+      isSessionUpdate: method === "session/update",
+    });
+
+    if (decision.kind === "direct") {
+      this.sessionNotificationHandlers.get(decision.sessionId)?.(method, params);
+      return;
     }
+
+    if (decision.kind === "rescue") {
+      this.rescuedUpdateCount++;
+      // Log the first few and then sample, so a long stream doesn't flood stderr
+      // but the bug stays visible in support logs.
+      if (this.rescuedUpdateCount <= 3 || this.rescuedUpdateCount % 50 === 0) {
+        const kind = (params as Record<string, unknown> | undefined)?.update as Record<string, unknown> | undefined;
+        this.logErr(
+          `rescued id-mismatched session/update (${(kind?.sessionUpdate as string) ?? "?"}) from sessionId=${sessionId ?? "?"} -> active session ${decision.sessionId.slice(0, 8)} (count=${this.rescuedUpdateCount})`,
+        );
+      }
+      this.sessionNotificationHandlers.get(decision.sessionId)?.(method, params);
+      return;
+    }
+
+    if (this.onNotificationHook) this.onNotificationHook(method, params);
   }
 
   private static extractSessionId(params: unknown): string | undefined {
