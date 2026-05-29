@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-out chats getting stuck on \"Compacting...\" and never replying when the conversation auto-compacted"
+  ],
   "releases": [
     {
       "version": "2.9.53",
