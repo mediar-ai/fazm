@@ -4125,6 +4125,10 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     const currentTurnTaskIds = new Set<string>();
     let staleTaskNotificationCount = 0;
     const ctx = queryCtx; // capture for closure
+    // The compaction placeholder the SDK injects ("Compacting...") — a UI hint we
+    // must never persist as the turn's answer. Matched by content because the
+    // 0.29.2 adapter emits no compact_boundary to delimit it from the real reply.
+    const isCompactionPlaceholder = (t: string): boolean => /^\s*compacting\.{1,3}\s*$/i.test(t);
     sessionNotificationHandlers.set(sessionId, (method: string, params: unknown) => {
       if (abortController.signal.aborted) return;
 
@@ -4163,6 +4167,33 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           compactionInProgress = false;
           if (compactionStartedAt) logErr(`[COMPACTION] completed in ${Math.round((now - compactionStartedAt) / 1000)}s`);
           compactionStartedAt = 0;
+        } else if (sessionUpdate === "status_change") {
+          // 0.29.2 fallback: that adapter does NOT synthesize compaction_start/
+          // compact_boundary (only the 0.37.0 patched-acp-entry path does), so the
+          // gate above never engages and the idle arm both (a) kills a legit >20s
+          // compaction at the 20s threshold and (b) delivers the undropped
+          // "Compacting..." placeholder as the result (the 2026-05-29 prod stall).
+          // On 0.29.2 compaction surfaces only as status_change:"compacting", so
+          // mirror the gate off it. There is no compact_boundary to clear the flag;
+          // it is cleared when real content resumes (below / in the text callback).
+          const st = (update?.status as string | null) ?? null;
+          if (st === "compacting" && !compactionInProgress) {
+            compactionInProgress = true;
+            compactionStartedAt = now;
+          } else if (st && st !== "compacting" && compactionInProgress) {
+            compactionInProgress = false;
+            if (compactionStartedAt) logErr(`[COMPACTION] completed in ${Math.round((now - compactionStartedAt) / 1000)}s (status=${st})`);
+            compactionStartedAt = 0;
+          }
+        }
+        // Real work resuming (a thought chunk or a tool event) means compaction
+        // finished even when no compact_boundary/status_change arrives to clear the
+        // flag — without this the 180s ceiling would linger and the drop-guard
+        // could swallow real output on the 0.29.2 path.
+        if (compactionInProgress && (sessionUpdate === "agent_thought_chunk" || isToolEvent)) {
+          compactionInProgress = false;
+          if (compactionStartedAt) logErr(`[COMPACTION] completed in ${Math.round((now - compactionStartedAt) / 1000)}s (work resumed: ${sessionUpdate})`);
+          compactionStartedAt = 0;
         }
         // Note when an interactive ask_followup tool starts, by title on the
         // pending notification (the completion notification often arrives with no
@@ -4188,13 +4219,20 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           );
         }
         handleSessionUpdate(p, pendingTools, (text) => {
-          // The SDK streams a "Compacting..." placeholder assistant chunk inside
-          // the compaction window (between compaction_start and compact_boundary).
-          // It's a UI hint, not the answer — drop it so it can never be delivered
-          // or persisted as the turn's result (it was, in the May 28 2026 prod
-          // loop). Any pre-compaction answer was appended before the flag was set;
-          // the real post-compaction answer streams after compact_boundary clears it.
-          if (compactionInProgress) return;
+          // The SDK streams a "Compacting..." placeholder assistant chunk during
+          // compaction. It's a UI hint, not the answer — drop it so it can never be
+          // delivered or persisted as the turn's result (it was, in the May 28 and
+          // May 29 2026 prod stalls). On the 0.37.0 path compact_boundary clears the
+          // flag before the real answer streams; on 0.29.2 there is no boundary, so
+          // real post-compaction text arrives as a normal agent_message_chunk while
+          // the flag is still set — detect the placeholder by content, and treat any
+          // non-placeholder chunk as the real answer resuming (keep it, clear flag).
+          if (compactionInProgress) {
+            if (isCompactionPlaceholder(text)) return;
+            compactionInProgress = false;
+            if (compactionStartedAt) logErr(`[COMPACTION] completed in ${Math.round((Date.now() - compactionStartedAt) / 1000)}s (text resumed)`);
+            compactionStartedAt = 0;
+          }
           fullText += text;
         }, { currentTurnTaskIds, onStaleNotification: () => { staleTaskNotificationCount++; } }, ctx);
       }
