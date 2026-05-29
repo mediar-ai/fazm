@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Smart now uses Claude Opus 4.8 (latest); legacy Opus pins are auto-migrated to the new canonical id"
+  ],
   "releases": [
     {
       "version": "2.9.51",
