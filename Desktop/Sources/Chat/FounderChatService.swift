@@ -260,10 +260,10 @@ class FounderChatService: ObservableObject {
         let userEmail = AuthService.shared.userEmail ?? ""
         let userName = AuthService.shared.displayName
 
-        // Upload attachments to Firebase Storage first (failed ones are dropped + logged).
+        // Upload attachments to GCS first (failed ones are dropped + logged).
         var uploaded: [FounderChatAttachment] = []
         for att in attachments {
-            if let up = await uploadAttachment(att, uid: uid, idToken: idToken, messageId: messageId) {
+            if let up = await uploadAttachment(att, idToken: idToken, messageId: messageId) {
                 uploaded.append(up)
             }
         }
@@ -329,10 +329,11 @@ class FounderChatService: ObservableObject {
         return uploaded.count > 1 ? "📎 \(uploaded.count) files" : "📎 \(first.name)"
     }
 
-    /// Upload one attachment's bytes to Firebase Storage via the REST API,
-    /// authed by the user's Firebase ID token. Returns a reference with a
-    /// tokenized download URL, or nil on failure / oversize.
-    private func uploadAttachment(_ att: ChatAttachment, uid: String, idToken: String, messageId: String) async -> FounderChatAttachment? {
+    /// Upload one attachment to GCS, reusing the session-recording signed-URL
+    /// path: ask the backend for a signed PUT (+ a signed GET to store), then
+    /// PUT the bytes straight to GCS. Returns a reference, or nil on failure /
+    /// oversize.
+    private func uploadAttachment(_ att: ChatAttachment, idToken: String, messageId: String) async -> FounderChatAttachment? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: att.path)) else {
             log("FounderChatService: uploadAttachment — cannot read \(att.path)")
             return nil
@@ -342,35 +343,63 @@ class FounderChatService: ObservableObject {
             return nil
         }
 
-        let objectPath = "founder_chat_attachments/\(uid)/\(messageId)/\(att.name)"
-        guard let encodedPath = objectPath.addingPercentEncoding(withAllowedCharacters: Self.storagePathAllowed),
-              let uploadURL = URL(string: "https://firebasestorage.googleapis.com/v0/b/\(Self.storageBucket)/o?uploadType=media&name=\(encodedPath)") else {
-            log("FounderChatService: uploadAttachment — could not build URL for \(att.name)")
+        let backendURL = Self.backendBaseURL()
+        guard !backendURL.isEmpty,
+              let signURL = URL(string: "\(backendURL)/api/founder-chat/get-attachment-upload-url") else {
+            log("FounderChatService: uploadAttachment — FAZM_BACKEND_URL not set, skipping")
             return nil
         }
 
-        var request = URLRequest(url: uploadURL)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(att.mimeType, forHTTPHeaderField: "Content-Type")
-        request.httpBody = data
+        // 1. Ask the backend for signed upload + download URLs.
+        var signReq = URLRequest(url: signURL)
+        signReq.httpMethod = "POST"
+        signReq.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        signReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        signReq.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "message_id": messageId,
+            "filename": att.name,
+            "content_type": att.mimeType,
+        ])
 
+        let uploadURLString: String, downloadURLString: String, objectPath: String
         do {
-            let (respData, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let (respData, response) = try await URLSession.shared.data(for: signReq)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                  let json = try? JSONSerialization.jsonObject(with: respData) as? [String: Any],
+                  let up = json["upload_url"] as? String,
+                  let down = json["download_url"] as? String,
+                  let obj = json["object_path"] as? String else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 let body = String(data: respData, encoding: .utf8) ?? ""
-                log("FounderChatService: uploadAttachment failed (status \(code)): \(body.prefix(300))")
+                log("FounderChatService: get-attachment-upload-url failed (status \(code)): \(body.prefix(300))")
                 return nil
             }
-            let json = try? JSONSerialization.jsonObject(with: respData) as? [String: Any]
-            let token = (json?["downloadTokens"] as? String) ?? ""
-            let downloadURL = "https://firebasestorage.googleapis.com/v0/b/\(Self.storageBucket)/o/\(encodedPath)?alt=media&token=\(token)"
-            return FounderChatAttachment(url: downloadURL, name: att.name, mimeType: att.mimeType, storagePath: objectPath, localPath: att.path)
+            uploadURLString = up; downloadURLString = down; objectPath = obj
         } catch {
-            log("FounderChatService: uploadAttachment failed: \(error.localizedDescription)")
+            log("FounderChatService: get-attachment-upload-url error: \(error.localizedDescription)")
             return nil
         }
+
+        // 2. PUT the bytes directly to GCS. Content-Type MUST match what was signed.
+        guard let putURL = URL(string: uploadURLString) else { return nil }
+        var putReq = URLRequest(url: putURL)
+        putReq.httpMethod = "PUT"
+        putReq.setValue(att.mimeType, forHTTPHeaderField: "Content-Type")
+        putReq.httpBody = data
+        do {
+            let (putData, putResp) = try await URLSession.shared.data(for: putReq)
+            guard let http = putResp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                let code = (putResp as? HTTPURLResponse)?.statusCode ?? -1
+                let body = String(data: putData, encoding: .utf8) ?? ""
+                log("FounderChatService: attachment PUT failed (status \(code)): \(body.prefix(300))")
+                return nil
+            }
+        } catch {
+            log("FounderChatService: attachment PUT error: \(error.localizedDescription)")
+            return nil
+        }
+
+        return FounderChatAttachment(url: downloadURLString, name: att.name, mimeType: att.mimeType, storagePath: objectPath, localPath: att.path)
     }
 
     // MARK: - Mark Messages as Read
