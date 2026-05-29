@@ -174,7 +174,7 @@ struct PaywallSheet: View {
                             Text("Refer a Friend")
                                 .scaledFont(size: 14, weight: .semibold)
                                 .foregroundColor(FazmColors.textPrimary)
-                            Text("Get 1 month free for you and your friend")
+                            Text("Get 1 month free for every friend you refer")
                                 .scaledFont(size: 12)
                                 .foregroundColor(FazmColors.textTertiary)
                         }
@@ -302,7 +302,7 @@ struct PaywallSheet: View {
                         .scaledFont(size: 17, weight: .semibold)
                         .foregroundColor(FazmColors.textPrimary)
 
-                    Text("Share your link with a friend. When they install Fazm and send 5 messages, you both get 1 month of Pro free.")
+                    Text("Share your link with a friend. When they install Fazm and send 5 messages, you get 1 month of Pro free.")
                         .scaledFont(size: 13)
                         .foregroundColor(FazmColors.textTertiary)
                         .multilineTextAlignment(.center)
@@ -360,7 +360,7 @@ struct PaywallSheet: View {
                     stepRow(number: "1", text: "Share your link with a friend")
                     stepRow(number: "2", text: "They download and install Fazm")
                     stepRow(number: "3", text: "They send 5 messages from the floating bar")
-                    stepRow(number: "4", text: "You both get 1 month of Pro free")
+                    stepRow(number: "4", text: "You get 1 month of Pro free")
                 }
                 .padding(.horizontal, 20)
             }
@@ -483,7 +483,7 @@ struct PaywallSheet: View {
         Task {
             if let status = try? await ReferralService.shared.fetchReferralStatus() {
                 await MainActor.run {
-                    referralCredit = status.reward_months * 49
+                    referralCredit = status.reward_months * ReferralService.creditPerReferralUSD
                 }
             }
         }
