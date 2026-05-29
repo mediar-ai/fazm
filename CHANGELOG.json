@@ -1,6 +1,6 @@
 {
   "unreleased": [
-    "Fixed chat sometimes getting stuck loading or showing an empty reply after the assistant finished responding",
+    "Fixed chat sometimes getting stuck loading, returning an empty reply, or erroring out on the next message after a long or complex response",
     "Fixed referral Copy Link button and code not appearing in Settings > About when the link failed to load"
   ],
   "releases": [
