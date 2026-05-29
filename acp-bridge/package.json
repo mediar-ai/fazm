@@ -11,7 +11,7 @@
     "test": "npm run build && node --test test/"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.37.0",
+    "@agentclientprotocol/claude-agent-acp": "0.29.2",
     "@google/gemini-cli": "^0.42.0",
     "@playwright/mcp": "0.0.73",
     "@types/ws": "^8.18.1",
