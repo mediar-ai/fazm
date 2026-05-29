@@ -1466,6 +1466,15 @@ const DEBUG_DROP_FLAG_FILE = "/tmp/fazm-debug-drop-prompt-result";
 // "Compacting..." placeholder chunk (mimicking the 0.29.2 adapter), then swallows
 // the prompt result so the turn goes silent mid-compaction. See handleQuery.
 const DEBUG_COMPACTION_STALL_FILE = "/tmp/fazm-debug-compaction-stall";
+// One-shot test hook for the 0-char (empty-turn) finalization stall — upstream
+// #630's mid-thinking variant where the stream dies at the first thinking chunk
+// before any assistant text. When this file exists the next session/prompt
+// response is swallowed (like DEBUG_DROP_FLAG_FILE) AND assistant text is
+// suppressed for that one turn, so fullText stays 0 and the finalization-idle
+// arm exercises the 0-char auto-retry-once path. The flag is reset before the
+// retry so the retried turn streams a real answer. Never present in production.
+const DEBUG_DROP_EMPTY_FLAG_FILE = "/tmp/fazm-debug-drop-prompt-result-empty";
+let debugSuppressTextThisTurn = false;
 
 /** Send a JSON-RPC request to the ACP subprocess and wait for the response */
 async function acpRequest(
@@ -1483,6 +1492,12 @@ async function acpRequest(
           unlinkSync(DEBUG_DROP_FLAG_FILE);
           debugDropPromptResultIds.add(id);
           logErr(`[DEBUG-DROP] Armed: will swallow session/prompt response id=${id} to simulate finalization stall (#630)`);
+        }
+        if (existsSync(DEBUG_DROP_EMPTY_FLAG_FILE)) {
+          unlinkSync(DEBUG_DROP_EMPTY_FLAG_FILE);
+          debugDropPromptResultIds.add(id);
+          debugSuppressTextThisTurn = true;
+          logErr(`[DEBUG-DROP] Armed EMPTY variant: will swallow session/prompt response id=${id} AND suppress assistant text so fullText=0 (exercises the 0-char auto-retry path)`);
         }
       } catch { /* ignore test-hook errors */ }
     }
@@ -4238,7 +4253,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
             if (compactionStartedAt) logErr(`[COMPACTION] completed in ${Math.round((Date.now() - compactionStartedAt) / 1000)}s (text resumed)`);
             compactionStartedAt = 0;
           }
-          fullText += text;
+          if (!debugSuppressTextThisTurn) fullText += text;
         }, { currentTurnTaskIds, onStaleNotification: () => { staleTaskNotificationCount++; } }, ctx);
       }
     });
@@ -4871,6 +4886,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         const alreadyRetried = msg._priorStuckSessionId !== undefined;
         if (fullText.length === 0 && !alreadyRetried) {
           logErr(`[FINALIZATION-IDLE] Empty (0-char) stall for session ${stalledSessionId.slice(0, 8)} (${err.message}); auto-retrying once on a fresh session before surfacing the empty marker`);
+          debugSuppressTextThisTurn = false; // let the retry stream real text (test hook only)
           msg._priorStuckSessionId = stalledSessionId;
           msg.resume = undefined;
           await handleQuery(msg, _retryDepth + 1);
