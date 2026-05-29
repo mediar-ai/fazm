@@ -4507,6 +4507,7 @@ class ChatProvider: ObservableObject {
             }
             let toolActivityHandler: ACPBridge.ToolActivityHandler = { [weak self] name, status, toolUseId, input in
                 Task { @MainActor [weak self] in
+                    lastActivityTime = Date()
                     // Forward to phone
                     self?.webRelay.sendToPhone(["type": "tool_activity", "name": name, "status": status])
                     self?.addToolActivity(
@@ -4585,6 +4586,7 @@ class ChatProvider: ObservableObject {
             }
             let thinkingDeltaHandler: ACPBridge.ThinkingDeltaHandler = { [weak self] text in
                 Task { @MainActor [weak self] in
+                    lastActivityTime = Date()
                     self?.appendThinking(messageId: aiMessageId, text: text)
                 }
             }
@@ -5461,6 +5463,13 @@ class ChatProvider: ObservableObject {
 
             let errorDurationMs = Int(Date().timeIntervalSince(queryStartTime) * 1000)
             let hadTokens = firstTokenTime != nil
+            // Diagnostic detail that de-opaques generic "timeout" failures: when the
+            // first token arrived (if ever), how long the turn had been silent at
+            // give-up, and whether the bridge streamed ANY signal at all. With no
+            // activity, idle == the full turn duration (silent the entire time).
+            let failureTtftMs = firstTokenTime.map { Int($0.timeIntervalSince(queryStartTime) * 1000) }
+            let receivedAnyActivity = lastActivityTime != nil
+            let idleMsAtFailure = lastActivityTime.map { Int(Date().timeIntervalSince($0) * 1000) } ?? errorDurationMs
             // toolStartTimes still has entries for tools that started but never reported
             // "completed" — these are the tools running when the error/timeout fired.
             // Critical for diagnosing 600s inactivity timeouts ("which tool hung?").
@@ -5513,6 +5522,9 @@ class ChatProvider: ObservableObject {
                 bridgeWasStartedAtQueryStart: bridgeWasStartedAtQueryStart,
                 hadPartialContent: hadPartialContent,
                 partialResponseText: partialResponseText,
+                ttftMs: failureTtftMs,
+                idleMsAtFailure: idleMsAtFailure,
+                receivedAnyActivity: receivedAnyActivity,
                 toolsRunning: toolsRunning,
                 toolsUsed: toolNames,
                 sessionKey: effectiveKey
