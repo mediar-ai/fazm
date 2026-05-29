@@ -4445,6 +4445,11 @@ class ChatProvider: ObservableObject {
         // top suspect for fresh-install users showing 0 completed queries.
         let bridgeWasStartedAtQueryStart = acpBridgeStarted
         var firstTokenTime: Date?
+        // Updated on every streamed signal (text, thinking, tool activity). On a
+        // failure this lets us report idle-at-failure and whether the bridge sent
+        // anything at all — turning the opaque "AI took too long" into a
+        // distinguishable request-hang vs started-then-stalled signal.
+        var lastActivityTime: Date?
         var toolNames: [String] = []
         var toolStartTimes: [String: Date] = [:]
         var toolResults: [String: String] = [:]  // Track last result per tool for success/failure
@@ -4482,6 +4487,7 @@ class ChatProvider: ObservableObject {
             // Callbacks for ACP bridge
             let textDeltaHandler: ACPBridge.TextDeltaHandler = { [weak self] delta in
                 Task { @MainActor [weak self] in
+                    lastActivityTime = Date()
                     if firstTokenTime == nil {
                         firstTokenTime = Date()
                         let ttftMs = Int(Date().timeIntervalSince(queryStartTime) * 1000)
@@ -5270,6 +5276,10 @@ class ChatProvider: ObservableObject {
                 costUsd: queryResult.costUsd,
                 messageLength: responseLength,
                 bridgeMode: bridgeMode,
+                // Actual model the bridge ran; fall back to the picker selection
+                // if the bridge didn't report one. Lets us compute per-provider
+                // completion rates against chat_agent_query_failed.model.
+                model: queryResult.model.isEmpty ? ShortcutSettings.shared.selectedModel : queryResult.model,
                 inputTokens: queryResult.inputTokens,
                 outputTokens: queryResult.outputTokens,
                 cacheReadTokens: queryResult.cacheReadTokens,
