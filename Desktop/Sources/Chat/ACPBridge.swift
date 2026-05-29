@@ -291,6 +291,26 @@ actor ACPBridge {
     }
   }
 
+  /// User-configured Anthropic-compatible endpoint, if it is safe to pass to
+  /// the SDK. Invalid values are ignored so a typo can't brick chat.
+  static func validCustomAPIEndpoint(from defaults: UserDefaults = .standard) -> String? {
+    guard let raw = defaults.string(forKey: "customApiEndpoint") else { return nil }
+    return validCustomAPIEndpoint(raw)
+  }
+
+  static func validCustomAPIEndpoint(_ raw: String) -> String? {
+    let endpoint = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !endpoint.isEmpty,
+      let url = URL(string: endpoint),
+      let scheme = url.scheme?.lowercased(),
+      scheme == "http" || scheme == "https",
+      let host = url.host,
+      !host.isEmpty else {
+      return nil
+    }
+    return endpoint
+  }
+
   let mode: BridgeMode
 
   /// Persistent auth handler called whenever auth_required arrives (even outside query)
@@ -655,15 +675,20 @@ actor ACPBridge {
     // and makes the Anthropic SDK throw "API Error: Invalid URL" on every query, silently
     // bricking built-in chat (the retry-with-resume path can even swallow it into an empty
     // turn so the user sees no error at all). Falling back to the default keeps chat working.
-    if let customEndpoint = defaults.string(forKey: "customApiEndpoint")?
-      .trimmingCharacters(in: .whitespacesAndNewlines), !customEndpoint.isEmpty {
-      if let url = URL(string: customEndpoint),
-        let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-        let host = url.host, !host.isEmpty {
+    if let rawCustomEndpoint = defaults.string(forKey: "customApiEndpoint")?
+      .trimmingCharacters(in: .whitespacesAndNewlines), !rawCustomEndpoint.isEmpty {
+      if let customEndpoint = Self.validCustomAPIEndpoint(rawCustomEndpoint) {
         env["ANTHROPIC_BASE_URL"] = customEndpoint
+        env["FAZM_CUSTOM_API_ENDPOINT"] = "true"
+        // A custom endpoint means the user is routing their own model/provider.
+        // Never send Fazm's bundled Anthropic key to that proxy. Keep a harmless
+        // placeholder key so Anthropic-compatible local gateways that accept any
+        // API key stay on the API-key path instead of triggering Claude OAuth.
+        env["ANTHROPIC_API_KEY"] = "fazm-custom-endpoint"
+        log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled")
       } else {
         log(
-          "ACPBridge: ignoring malformed customApiEndpoint '\(customEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
+          "ACPBridge: ignoring malformed customApiEndpoint '\(rawCustomEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
         )
       }
     }
@@ -2615,8 +2640,7 @@ enum BridgeError: LocalizedError {
       // raw upstream errors like `API Error: 400 ... "No models loaded ... use the 'lms load' command"`
       // are confusing — users blame Fazm for an error that's coming from their local server.
       // Detect known custom-endpoint failures and surface an actionable message instead.
-      let endpoint = UserDefaults.standard.string(forKey: "customApiEndpoint") ?? ""
-      if !endpoint.isEmpty {
+      if let endpoint = ACPBridge.validCustomAPIEndpoint() {
         let lower = cleaned.lowercased()
         if lower.contains("no models loaded") || lower.contains("lms load") {
           return "Your custom API endpoint (\(endpoint)) reported no model is loaded. Load a model in your local server (e.g. LM Studio → Developer → Load Model), or turn off Custom API Endpoint in Settings → Advanced → AI Chat to use Fazm's built-in Claude."
