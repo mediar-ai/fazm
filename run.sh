@@ -298,7 +298,12 @@ if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
     mkdir -p "$APP_BUNDLE/Contents/Resources/acp-bridge"
     cp -Rf "$ACP_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
     cp -f "$ACP_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
-    cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    # Use rsync --delete so stale nested deps from prior installs are wiped.
+    # cp -Rf merges directories and leaves orphaned files behind, which previously
+    # caused @agentclientprotocol/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk
+    # (an older 0.2.91 from the prior ACP 0.29.2) to shadow the new top-level 0.3.146 →
+    # `SyntaxError: ... does not provide an export named 'filterEscalatingDefaultMode'`.
+    rsync -a --delete "$ACP_BRIDGE_DIR/node_modules/" "$APP_BUNDLE/Contents/Resources/acp-bridge/node_modules/"
     # Copy browser overlay init scripts for Playwright MCP
     for f in browser-overlay-init.js browser-overlay-init-page.cjs browser-overlay-init-page.ts; do
         if [ -f "$ACP_BRIDGE_DIR/$f" ]; then
