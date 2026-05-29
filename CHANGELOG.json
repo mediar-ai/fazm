@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Fixed the Referrals page showing an incorrect credit amount and clarified that you earn a free month for each friend you refer",
-    "Made onboarding show the Skip button after 30 seconds (instead of 2 minutes) when the setup chat gets stuck, so you can jump into the app instead of waiting"
+    "Made onboarding show the Skip button after 30 seconds (instead of 2 minutes) when the setup chat gets stuck, so you can jump into the app instead of waiting",
+    "Fixed Gemini (Flash and Pro) sometimes returning an empty reply or timing out, by recovering response text the Gemini engine streamed under a mismatched session id"
   ],
   "releases": [
     {
