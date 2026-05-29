@@ -586,6 +586,10 @@ class ChatProvider: ObservableObject {
     @Published var isCompacting = false
     /// The session key of the currently compacting session (nil when not compacting)
     @Published var compactingSessionKey: String?
+    /// Wall-clock start of an in-flight compaction, keyed by session (sessionKey ??
+    /// "__main__"). Set on compaction_start; cleared on compact_boundary (→ fires
+    /// compaction_completed) or on turn unwind (→ fires compaction_stalled).
+    private var compactionStartTimes: [String: Date] = [:]
 
     // MARK: - Rate Limit State
     /// Latest rate limit status from Claude API ("allowed", "allowed_warning", "rejected")
@@ -4122,6 +4126,15 @@ class ChatProvider: ObservableObject {
         // "compacting" indicator stuck on. Scoped by sessionKey so a concurrent
         // pop-out's in-flight compaction isn't cleared out from under it.
         defer {
+            // If a compaction was still in flight when the turn unwound (no
+            // compact_boundary arrived), the bridge's finalization-idle arm
+            // rescued a stalled compaction — record it for cross-user visibility.
+            if let start = compactionStartTimes.removeValue(forKey: sessionKey ?? "__main__") {
+                AnalyticsManager.shared.compactionStalled(
+                    durationMs: Int(Date().timeIntervalSince(start) * 1000),
+                    sessionKey: sessionKey
+                )
+            }
             if compactingSessionKey == sessionKey {
                 isCompacting = false
                 compactingSessionKey = nil
@@ -4628,12 +4641,21 @@ class ChatProvider: ObservableObject {
                             self.isCompacting = active
                             self.compactingSessionKey = active ? sessionKey : nil
                             if active {
+                                self.compactionStartTimes[sessionKey ?? "__main__"] = Date()
                                 log("ChatProvider: Context compaction started (session=\(sessionKey ?? "nil"))")
                             } else {
                                 log("ChatProvider: Context compaction finished (session=\(sessionKey ?? "nil"))")
                             }
                         case .compactBoundary(let trigger, let preTokens):
                             log("ChatProvider: Compact boundary — trigger=\(trigger), preTokens=\(preTokens)")
+                            if let start = self.compactionStartTimes.removeValue(forKey: sessionKey ?? "__main__") {
+                                AnalyticsManager.shared.compactionCompleted(
+                                    durationMs: Int(Date().timeIntervalSince(start) * 1000),
+                                    preTokens: preTokens,
+                                    trigger: trigger,
+                                    sessionKey: sessionKey
+                                )
+                            }
                         case .taskStarted(let taskId, let description):
                             self.addToolActivity(
                                 messageId: aiMessageId,
