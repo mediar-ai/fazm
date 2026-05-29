@@ -703,6 +703,31 @@ class AnalyticsManager {
         PostHogManager.shared.track("chat_message_dropped", properties: props)
     }
 
+    /// Fired when an auto-compaction finishes successfully (the SDK emitted a
+    /// compact_boundary). `durationMs` is wall-clock from compaction_start.
+    /// Lets us see, across all users, how slow compaction actually is — the
+    /// signal we lacked when the May 28 2026 idle-arm regression silently
+    /// cancelled slow compactions on this machine only.
+    func compactionCompleted(durationMs: Int, preTokens: Int, trigger: String, sessionKey: String?) {
+        PostHogManager.shared.track("compaction_completed", properties: [
+            "duration_ms": durationMs,
+            "pre_tokens": preTokens,
+            "trigger": trigger,
+            "session_key": sessionKey ?? "main",
+        ])
+    }
+
+    /// Fired when a turn ends while a compaction was still in progress (no
+    /// compact_boundary arrived) — i.e. the compaction stalled and the bridge's
+    /// finalization-idle arm rescued the turn. This is the cross-user visibility
+    /// for the stall the user otherwise only sees as a stuck "compacting…" turn.
+    func compactionStalled(durationMs: Int, sessionKey: String?) {
+        PostHogManager.shared.track("compaction_stalled", properties: [
+            "duration_ms": durationMs,
+            "session_key": sessionKey ?? "main",
+        ])
+    }
+
     /// Fired at the moment `ensureBridgeStarted()` decides to spin up the ACP
     /// bridge. Pair with `bridge_warmup_ready` (or its absence) to measure the
     /// cold-start window — i.e. how long the user is exposed to the warmup-race
