@@ -4732,11 +4732,16 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // but session/prompt never resolved. Deliver what streamed as a normal
       // COMPLETED result (not `interrupted` — the answer is whole, so it must not
       // get a misleading "(interrupted)" marker), cancel the zombie turn upstream
-      // (cancel ends the turn, keeps the session cached so the next prompt resumes
-      // cleanly — verified: the same session ran fine on the very next turn), and
-      // do NOT route into the stuck-session retry/replay paths (those re-run and
-      // double-bill a turn that already finished). abort() first to silence any
-      // late stragglers the abandoned prompt may still emit.
+      // (cancel ends the turn), then DROP this session from the cache so the next
+      // prompt rebuilds from priorContext instead of replaying it. On
+      // extended-thinking models (opus-4-8 on ACP 0.37.0+) the stall dies mid
+      // thinking-block, and the cancel leaves that block unsigned in the session
+      // history (in-memory + on disk); reusing or resuming it next turn replays it
+      // and the API rejects the whole request with `400 ... thinking ... blocks ...
+      // cannot be modified` (the poison Fix 1 in the retry path also catches).
+      // Do NOT re-run this prompt here (that would double-bill a turn that already
+      // finished) — only the NEXT, user-initiated prompt rebuilds. abort() first to
+      // silence any late stragglers the abandoned prompt may still emit.
       if (err instanceof Error && err.message.startsWith("FINALIZATION_IDLE")) {
         abortController.abort();
         acpNotify("session/cancel", { sessionId });
@@ -4755,6 +4760,16 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
         logErr(`[FINALIZATION-IDLE] Rescued stalled turn for session ${sessionId.slice(0, 8)} (${err.message}); delivering ${fullText.length} chars as a completed result`);
         sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        // See the block comment above: the mid-thinking cancel can leave an
+        // unsigned thinking block behind, so reusing/resuming this session next
+        // turn would 400. Marking it interrupted forces the next prompt through
+        // session/new + priorContext replay. The partial answer we just delivered
+        // lives in the app's chat history and re-enters as priorContext, so the
+        // conversation continues seamlessly without the thinking-block cascade.
+        unregisterSession(sessionKey);
+        imageTurnCounts.delete(sessionKey);
+        interruptedSessions.add(sessionId);
+        activeSessionId = "";
         return;
       }
 
@@ -4938,6 +4953,41 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         activeSessionId = "";
         msg.resume = undefined;
         msg.model = downgraded;
+        lastApiRetry = null;
+        return handleQuery(msg, _retryDepth + 1);
+      }
+
+      // Poisoned thinking-block history (extended-thinking models on ACP 0.37.0+,
+      // e.g. opus-4-8). When a turn stalls or is cancelled mid-thinking (upstream
+      // #630 + the finalization-idle rescue's session/cancel), the SDK leaves an
+      // assistant message whose `thinking`/`redacted_thinking` block has no
+      // finalized signature. The NEXT prompt — whether it reuses the cached session
+      // or session/resumes from disk — replays that block and the API rejects the
+      // whole request with `400 ... thinking or redacted_thinking blocks ... cannot
+      // be modified`. A plain session-resume retry (below) just replays the same
+      // poison and 400s again (observed cascading depth=0 -> depth=1 in prod,
+      // which is what "destroyed the whole conversation" looked like to the user).
+      // Route straight to session/new + priorContext replay instead: priorContext
+      // is plain user/assistant text (no signed thinking blocks), so it sidesteps
+      // the rejection while preserving the conversation. Mirrors the image-too-large
+      // poisoned-history handling above.
+      const isThinkingBlockPoison =
+        /thinking[\s\S]{0,40}blocks[\s\S]{0,80}cannot be modified/i.test(errMsg) ||
+        /blocks in the latest assistant message cannot be modified/i.test(errMsg);
+      if (isThinkingBlockPoison && sessionId && _retryDepth < MAX_QUERY_RETRIES) {
+        logErr(`session/prompt failed with poisoned thinking-block history, forcing session/new + priorContext replay (depth=${_retryDepth}): ${errMsg}`);
+        const stuckSessionId = sessionId;
+        for (const name of pendingTools) {
+          sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
+        }
+        pendingTools.length = 0;
+        clearToolTimersForSession(sessionId);
+        unregisterSession(sessionKey);
+        imageTurnCounts.delete(sessionKey);
+        interruptedSessions.delete(sessionId);
+        activeSessionId = "";
+        msg.resume = undefined;
+        msg._priorStuckSessionId = stuckSessionId;
         lastApiRetry = null;
         return handleQuery(msg, _retryDepth + 1);
       }
