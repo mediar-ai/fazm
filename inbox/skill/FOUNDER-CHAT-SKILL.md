@@ -22,14 +22,15 @@ Read the full message history provided in the prompt. Categorize:
 usually a screenshot of a bug. You MUST look at them before replying:
 
 ```bash
-node ~/fazm/inbox/scripts/download-chat-attachment.js --path "STORAGE_PATH"
+node ~/fazm/inbox/scripts/download-chat-attachment.js --url "ATTACHMENT_URL"
 ```
 
-This prints a local file path. **Read** image attachments (png/jpeg) with the Read tool
-so you actually see what the user is showing you; the screenshot is often the whole point
-of the report, and replying without looking at it will miss the issue. Non-image files
-(pdf/log/etc.) are also downloaded; reference them by their local path during the
-investigation.
+`url` is a signed download link (valid ~7 days). The script prints a local file path.
+**Read** image attachments (png/jpeg) with the Read tool so you actually see what the
+user is showing you; the screenshot is often the whole point of the report, and replying
+without looking at it will miss the issue. Non-image files (pdf/log/etc.) are also
+downloaded; reference them by their local path during the investigation. (If `url` is
+expired/missing, fall back to `--path "STORAGE_PATH"`.)
 
 ### Step 2: Investigate
 
