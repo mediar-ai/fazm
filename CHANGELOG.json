@@ -2,6 +2,13 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "2.9.53",
+      "date": "2026-05-29",
+      "changes": [
+        "Rolled the chat bridge library (claude-agent-acp) back to a known-good version to address reliability regressions seen in the newer release"
+      ]
+    },
+    {
       "version": "2.9.52",
       "date": "2026-05-28",
       "changes": [
