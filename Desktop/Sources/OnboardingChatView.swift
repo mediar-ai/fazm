@@ -477,23 +477,38 @@ struct OnboardingChatView: View {
                 resetSkipTimer()
             }
         }
-        // Hide skip when AI starts responding, but keep a stall-escape timer
-        // running. If a turn hangs (ACP status stuck at `requesting`, never
+        // Hide skip when AI starts responding, but arm a SHORT stall-escape
+        // timer. If a turn hangs (ACP status stuck at `requesting`, never
         // completing), isSending stays true forever and EVERY escape (Skip,
         // "Skip the rest", typing) is suppressed, trapping the user in the
-        // setup chat. Restarting the timer here surfaces Skip after 120s even
-        // while still "sending" so a hung onboarding resume turn is escapable.
-        // (founder-chat report, pillaholins@gmail.com, 2026-05-27)
+        // setup chat. We arm a 30s timer here and reset it on each streamed
+        // message/text/content update below, so Skip surfaces 30s after the
+        // turn goes *silent* (a true hang) yet never during a healthy long
+        // turn that's actively streaming.
+        // (founder-chat reports: pillaholins@gmail.com 2026-05-27 [first fix,
+        //  120s]; tetovalo@gmail.com 2026-05-28 [lowered to 30s, this change])
         .onChange(of: chatProvider.isSending) { _, isSending in
             if isSending {
                 withAnimation { skipButtonVisible = false }
-                resetSkipTimer()
+                resetSkipTimer(after: 30)
             }
         }
-        // Reset timer when a new message arrives
+        // Reset the escape timer on streaming activity. While a turn is in
+        // flight, any new message / streamed text / content block resets the
+        // 30s stall window; when idle we use the original 120s inactivity
+        // window. A genuinely hung turn produces none of these, so the 30s
+        // elapses and the existing header Skip button is shown.
         .onChange(of: chatProvider.messages.count) { _, _ in
-            if !quickReplyOptions.isEmpty || chatProvider.isSending { return }
-            resetSkipTimer()
+            if !quickReplyOptions.isEmpty { return }
+            resetSkipTimer(after: chatProvider.isSending ? 30 : 120)
+        }
+        .onChange(of: chatProvider.messages.last?.text) { _, _ in
+            guard chatProvider.isSending, quickReplyOptions.isEmpty else { return }
+            resetSkipTimer(after: 30)
+        }
+        .onChange(of: chatProvider.messages.last?.contentBlocks.count) { _, _ in
+            guard chatProvider.isSending, quickReplyOptions.isEmpty else { return }
+            resetSkipTimer(after: 30)
         }
         .onReceive(permissionCheckTimer) { _ in
             appState.checkScreenRecordingPermission()
@@ -635,15 +650,19 @@ struct OnboardingChatView: View {
         return progressed && hasEnoughMessages
     }
 
-    /// Show skip after 120s of no progress. Fires whether the chat is idle
+    /// Show skip after a period of no progress. Fires whether the chat is idle
     /// (inactivity) OR stuck "sending" on a hung turn — the latter is the
     /// onboarding-stall trap (status stuck at `requesting`, isSending never
     /// clears). The only gate is that the user has no clearer pending action
     /// (quick-reply options), since those represent an explicit next step.
-    private func resetSkipTimer() {
+    ///
+    /// `seconds` is 120 for genuine inactivity and 30 for an in-flight turn
+    /// (re-armed on each streamed update by the callers above, so the 30s only
+    /// elapses on a true hang, not a healthy long-streaming turn).
+    private func resetSkipTimer(after seconds: TimeInterval = 120) {
         skipButtonTimer?.invalidate()
         withAnimation { skipButtonVisible = false }
-        skipButtonTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: false) { _ in
+        skipButtonTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in
             if self.quickReplyOptions.isEmpty {
                 withAnimation { self.skipButtonVisible = true }
             }
