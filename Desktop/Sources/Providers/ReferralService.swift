@@ -6,6 +6,12 @@ import IOKit
 final class ReferralService {
     static let shared = ReferralService()
 
+    /// USD credit granted per completed referral, framed to the user as "1 month free"
+    /// (one month at the $9.99 base plan). MUST stay in sync with the backend grant in
+    /// `grant_free_month` (Backend/src/routes/referral.rs, currently -1000 cents). If these
+    /// drift, the paywall/settings credit display will lie about the actual Stripe balance.
+    static let creditPerReferralUSD = 10
+
     private let backendUrl: String
     private let deviceId: String
 
