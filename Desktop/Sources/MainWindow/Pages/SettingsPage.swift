@@ -4009,15 +4009,29 @@ struct SettingsContentView: View {
         guard !isLoadingReferralStatus else { return }
         isLoadingReferralStatus = true
         Task {
-            do {
-                let status = try await ReferralService.shared.fetchReferralStatus()
-                await MainActor.run {
-                    self.referralStatus = status
-                    self.isLoadingReferralStatus = false
+            var status = try? await ReferralService.shared.fetchReferralStatus()
+
+            // If the status fetch failed (offline/transient) or returned no code yet, make sure
+            // a code exists so the Copy Link button and code always render. generateReferralCode()
+            // returns the locally cached code without a network call when one already exists, so
+            // this also unblocks users whose status fetch failed but who already have a code.
+            if status == nil || (status?.code.isEmpty ?? true) {
+                if let generated = try? await ReferralService.shared.generateReferralCode() {
+                    status = ReferralService.ReferralStatusResponse(
+                        code: generated.code,
+                        referral_url: generated.url,
+                        referred_count: status?.referred_count ?? 0,
+                        completed_count: status?.completed_count ?? 0,
+                        reward_months: status?.reward_months ?? 0
+                    )
                 }
-            } catch {
-                log("Settings: referral status load error: \(error.localizedDescription)")
-                await MainActor.run { self.isLoadingReferralStatus = false }
+            }
+
+            await MainActor.run {
+                if let status = status {
+                    self.referralStatus = status
+                }
+                self.isLoadingReferralStatus = false
             }
         }
     }
