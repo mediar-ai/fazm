@@ -874,8 +874,17 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Bridge Creation & Mode Switching
 
+    private static var isCustomAPIEndpointActive: Bool {
+        ACPBridge.validCustomAPIEndpoint() != nil
+    }
+
     /// Create an ACPBridge based on the current bridgeMode setting
     private func createBridge() -> ACPBridge {
+        if let endpoint = ACPBridge.validCustomAPIEndpoint() {
+            log("ChatProvider: Using custom API endpoint (user-routed; bundled key disabled): \(endpoint)")
+            return ACPBridge(mode: .personalOAuth)
+        }
+
         if bridgeMode == "builtin" {
             // Bundled API key mode: direct Anthropic API (fastest path)
             let apiKey = KeyService.shared.anthropicAPIKey ?? ""
@@ -956,7 +965,7 @@ class ChatProvider: ObservableObject {
         // back to built-in via the Settings picker after every cap fire and bill
         // another full query each time (observed: 1,080 personal→builtin flips
         // and 305 over-cap built-in queries on a single user).
-        if newMode == "builtin" && isOverBuiltinCap {
+        if newMode == "builtin" && isOverBuiltinCap && !Self.isCustomAPIEndpointActive {
             log("ChatProvider: Refusing switchBridgeMode(builtin) — cumulative cost $\(String(format: "%.2f", builtinCumulativeCostUsd)) ≥ cap $\(String(format: "%.0f", Self.builtinCostCapUsd))")
             // Reset @AppStorage so the Settings picker UI snaps back to personal.
             bridgeMode = "personal"
@@ -3933,6 +3942,9 @@ class ChatProvider: ObservableObject {
         guard acpBridgeStarted else { return }
         let endpoint = UserDefaults.standard.string(forKey: "customApiEndpoint") ?? ""
         log("ChatProvider: Stopping bridge to apply custom endpoint change (endpoint=\(endpoint.isEmpty ? "default" : endpoint), will restart on next query)")
+        if Self.isCustomAPIEndpointActive {
+            showCreditExhaustedAlert = false
+        }
         await acpBridge.stop()
         acpBridgeStarted = false
     }
@@ -4273,7 +4285,11 @@ class ChatProvider: ObservableObject {
         // when the cap is reached — Gemini is the no-friction fallback.
         let currentModel = ShortcutSettings.shared.selectedModel
         let isGeminiRouted = Self.isGeminiModelId(currentModel)
-        if bridgeMode == "builtin" && isOverBuiltinCap && !isGeminiRouted {
+        let isCustomEndpointRouted = Self.isCustomAPIEndpointActive
+        if isCustomEndpointRouted && showCreditExhaustedAlert {
+            showCreditExhaustedAlert = false
+        }
+        if bridgeMode == "builtin" && isOverBuiltinCap && !isGeminiRouted && !isCustomEndpointRouted {
             showCreditExhaustedAlert = true
             if isClaudeConnected {
                 // Existing Claude creds — flip to personal and proceed seamlessly.
@@ -5278,8 +5294,6 @@ class ChatProvider: ObservableObject {
                 )
             }
 
-            let isBuiltinMode = bridgeMode == "builtin"
-            let accountType = isBuiltinMode ? "builtin" : "personal"
             let r = queryResult
 
             // Forward to MediarWeb only for turns Fazm actually pays for:
@@ -5287,12 +5301,18 @@ class ChatProvider: ObservableObject {
             // project). Personal Claude OAuth and Codex/ChatGPT OAuth bill the
             // user, so we skip them to keep the dashboard focused on Fazm cost.
             let modelAtTurnEnd = r.model.isEmpty ? ShortcutSettings.shared.selectedModel : r.model
+            let isCustomClaudeTurn = Self.isCustomAPIEndpointActive
+                && !Self.isGeminiModelId(modelAtTurnEnd)
+                && !Self.isCodexModelId(modelAtTurnEnd)
+            let isBuiltinMode = bridgeMode == "builtin"
+            let isFazmPaidClaudeTurn = isBuiltinMode && !isCustomClaudeTurn
+            let accountType = isCustomClaudeTurn ? "custom" : (isBuiltinMode ? "builtin" : "personal")
             let externalSource: String?
             if Self.isGeminiModelId(modelAtTurnEnd) {
                 externalSource = "fazm_chat_gemini"
             } else if Self.isCodexModelId(modelAtTurnEnd) {
                 externalSource = nil
-            } else if isBuiltinMode {
+            } else if isFazmPaidClaudeTurn {
                 externalSource = "fazm_chat_builtin"
             } else {
                 externalSource = nil
@@ -5326,7 +5346,7 @@ class ChatProvider: ObservableObject {
             // not the Anthropic key, so they're free regardless of cap state.
             let queryModelId = ShortcutSettings.shared.selectedModel
             let queryWasGemini = Self.isGeminiModelId(queryModelId)
-            if isBuiltinMode && !queryWasGemini {
+            if isFazmPaidClaudeTurn && !queryWasGemini {
                 builtinCumulativeCostUsd += queryResult.costUsd
                 if isOverBuiltinCap {
                     showCreditExhaustedAlert = true
@@ -5595,7 +5615,8 @@ class ChatProvider: ObservableObject {
             } else if bridgeMode == "personal",
                       let bridgeError = error as? BridgeError,
                       case .agentError(let msg) = bridgeError,
-                      Self.isModelAccessError(msg) {
+                      Self.isModelAccessError(msg),
+                      !Self.isCustomAPIEndpointActive {
                 // Personal account can't access the model (e.g. CLI creds without claude-sonnet-4-6).
                 // Fall back to builtin mode and auto-retry the query.
                 log("ChatProvider: model access error in personal mode, falling back to builtin: \(msg)")
