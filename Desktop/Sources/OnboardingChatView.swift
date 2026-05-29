@@ -467,15 +467,23 @@ struct OnboardingChatView: View {
             skipButtonTimer?.invalidate()
             skipButtonTimer = nil
         }
-        // Hide skip when quick-reply options appear (user has a clear next action)
+        // Hide skip when quick-reply options appear AND the turn is idle (the
+        // user has a clear, rendered next action). While a turn is in flight
+        // (isSending), quick-reply options are NOT rendered — they're queued
+        // behind the typing indicator — so they must NOT cancel the stall
+        // timer. Otherwise a turn that streams options then hangs in
+        // finalization (the common #630 stall: greeting + ask_followup, then
+        // the prompt never resolves) traps the user with no Skip and no
+        // actionable options. (tetovalo@gmail.com, 2026-05-28)
         .onChange(of: quickReplyOptions) { _, options in
-            if !options.isEmpty {
+            if !options.isEmpty && !chatProvider.isSending {
                 withAnimation { skipButtonVisible = false }
                 skipButtonTimer?.invalidate()
-            } else if !chatProvider.isSending {
+            } else if options.isEmpty && !chatProvider.isSending {
                 // Options cleared and AI not responding: restart inactivity timer
                 resetSkipTimer()
             }
+            // isSending: leave the stall timer running (options aren't on screen).
         }
         // Hide skip when AI starts responding, but arm a SHORT stall-escape
         // timer. If a turn hangs (ACP status stuck at `requesting`, never
@@ -663,7 +671,11 @@ struct OnboardingChatView: View {
         skipButtonTimer?.invalidate()
         withAnimation { skipButtonVisible = false }
         skipButtonTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in
-            if self.quickReplyOptions.isEmpty {
+            // Show Skip unless the user has an on-screen alternative. Quick-reply
+            // options only count when actually rendered — they're hidden while a
+            // turn is in flight (isSending) — so a stuck "sending" turn surfaces
+            // Skip even with options queued (the #630 finalization stall).
+            if self.quickReplyOptions.isEmpty || self.chatProvider.isSending {
                 withAnimation { self.skipButtonVisible = true }
             }
         }
