@@ -19,6 +19,16 @@ struct FounderChatAttachment: Identifiable, Equatable {
     var id: String { storagePath.isEmpty ? (localPath ?? url) : storagePath }
     var isImage: Bool { mimeType.hasPrefix("image/") }
 
+    /// Firestore REST `mapValue` encoding for the message doc's `attachments` array.
+    var firestoreValue: [String: Any] {
+        ["mapValue": ["fields": [
+            "url": ["stringValue": url],
+            "name": ["stringValue": name],
+            "mime_type": ["stringValue": mimeType],
+            "storage_path": ["stringValue": storagePath],
+        ]]]
+    }
+
     /// Identity ignores `localPath` (a transient render hint) so the polled
     /// remote copy compares equal to the optimistic local one and doesn't
     /// trigger a needless replace.
@@ -212,8 +222,9 @@ class FounderChatService: ObservableObject {
 
     // MARK: - Send Message
 
-    func sendMessage(_ text: String) async {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    func sendMessage(_ text: String, attachments: [ChatAttachment] = []) async {
+        // Allow attachment-only messages (e.g. a screenshot with no caption).
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty else { return }
         guard let uid = AuthService.shared.userId,
               let idToken = try? await AuthService.shared.getIdToken() else {
             log("FounderChatService: Cannot send — not signed in")
@@ -228,17 +239,31 @@ class FounderChatService: ObservableObject {
         let userEmail = AuthService.shared.userEmail ?? ""
         let userName = AuthService.shared.displayName
 
+        // Upload attachments to Firebase Storage first (failed ones are dropped + logged).
+        var uploaded: [FounderChatAttachment] = []
+        for att in attachments {
+            if let up = await uploadAttachment(att, uid: uid, idToken: idToken, messageId: messageId) {
+                uploaded.append(up)
+            }
+        }
+
         // Write message document
         let msgDocPath = "\(Self.baseUrl)/founder_chats/\(uid)/messages/\(messageId)"
-        let msgFields: [String: Any] = [
+        var msgFields: [String: Any] = [
             "text": ["stringValue": text],
             "sender": ["stringValue": "user"],
             "sender_name": ["stringValue": userName],
             "created_at": ["timestampValue": now],
             "read": ["booleanValue": false],
         ]
+        var maskFields = ["text", "sender", "sender_name", "created_at", "read"]
+        if !uploaded.isEmpty {
+            msgFields["attachments"] = ["arrayValue": ["values": uploaded.map { $0.firestoreValue }]]
+            maskFields.append("attachments")
+        }
+        let maskQuery = maskFields.map { "updateMask.fieldPaths=\($0)" }.joined(separator: "&")
 
-        var request = URLRequest(url: URL(string: "\(msgDocPath)?updateMask.fieldPaths=text&updateMask.fieldPaths=sender&updateMask.fieldPaths=sender_name&updateMask.fieldPaths=created_at&updateMask.fieldPaths=read")!)
+        var request = URLRequest(url: URL(string: "\(msgDocPath)?\(maskQuery)")!)
         request.httpMethod = "PATCH"
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -247,7 +272,7 @@ class FounderChatService: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                log("FounderChatService: Message sent successfully")
+                log("FounderChatService: Message sent successfully (\(uploaded.count) attachment(s))")
 
                 // Optimistically add to local messages
                 let msg = FounderChatMessage(
@@ -256,12 +281,16 @@ class FounderChatService: ObservableObject {
                     sender: .user,
                     senderName: userName,
                     createdAt: Date(),
-                    read: true // user's own message is always read
+                    read: true, // user's own message is always read
+                    attachments: uploaded
                 )
                 messages.append(msg)
 
-                // Update metadata doc (last message, unread for founder)
-                await updateMetadata(uid: uid, idToken: idToken, lastMessageText: text, userEmail: userEmail, userName: userName)
+                // Update metadata doc (last message, unread for founder). Use an
+                // emoji preview when there's no caption so the chat-list preview
+                // and Matt's report aren't blank for attachment-only messages.
+                let preview = text.isEmpty ? attachmentPreview(uploaded) : text
+                await updateMetadata(uid: uid, idToken: idToken, lastMessageText: preview, userEmail: userEmail, userName: userName)
             } else {
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
                 let body = String(data: data, encoding: .utf8) ?? ""
@@ -269,6 +298,57 @@ class FounderChatService: ObservableObject {
             }
         } catch {
             log("FounderChatService: Send failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Short text preview for an attachment-only message.
+    private func attachmentPreview(_ uploaded: [FounderChatAttachment]) -> String {
+        guard let first = uploaded.first else { return "📎 Attachment" }
+        if first.isImage { return uploaded.count > 1 ? "📷 \(uploaded.count) images" : "📷 Screenshot" }
+        return uploaded.count > 1 ? "📎 \(uploaded.count) files" : "📎 \(first.name)"
+    }
+
+    /// Upload one attachment's bytes to Firebase Storage via the REST API,
+    /// authed by the user's Firebase ID token. Returns a reference with a
+    /// tokenized download URL, or nil on failure / oversize.
+    private func uploadAttachment(_ att: ChatAttachment, uid: String, idToken: String, messageId: String) async -> FounderChatAttachment? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: att.path)) else {
+            log("FounderChatService: uploadAttachment — cannot read \(att.path)")
+            return nil
+        }
+        if data.count > Self.maxAttachmentBytes {
+            log("FounderChatService: uploadAttachment — \(att.name) too large (\(data.count) bytes), skipping")
+            return nil
+        }
+
+        let objectPath = "founder_chat_attachments/\(uid)/\(messageId)/\(att.name)"
+        guard let encodedPath = objectPath.addingPercentEncoding(withAllowedCharacters: Self.storagePathAllowed),
+              let uploadURL = URL(string: "https://firebasestorage.googleapis.com/v0/b/\(Self.storageBucket)/o?uploadType=media&name=\(encodedPath)") else {
+            log("FounderChatService: uploadAttachment — could not build URL for \(att.name)")
+            return nil
+        }
+
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(att.mimeType, forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+
+        do {
+            let (respData, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let body = String(data: respData, encoding: .utf8) ?? ""
+                log("FounderChatService: uploadAttachment failed (status \(code)): \(body.prefix(300))")
+                return nil
+            }
+            let json = try? JSONSerialization.jsonObject(with: respData) as? [String: Any]
+            let token = (json?["downloadTokens"] as? String) ?? ""
+            let downloadURL = "https://firebasestorage.googleapis.com/v0/b/\(Self.storageBucket)/o/\(encodedPath)?alt=media&token=\(token)"
+            return FounderChatAttachment(url: downloadURL, name: att.name, mimeType: att.mimeType, storagePath: objectPath, localPath: att.path)
+        } catch {
+            log("FounderChatService: uploadAttachment failed: \(error.localizedDescription)")
+            return nil
         }
     }
 
@@ -362,13 +442,29 @@ class FounderChatService: ObservableObject {
                     createdAt = Date()
                 }
 
+                var attachments: [FounderChatAttachment] = []
+                if let values = ((fields["attachments"] as? [String: Any])?["arrayValue"] as? [String: Any])?["values"] as? [[String: Any]] {
+                    for v in values {
+                        guard let mv = (v["mapValue"] as? [String: Any])?["fields"] as? [String: Any] else { continue }
+                        func str(_ key: String) -> String { (mv[key] as? [String: Any])?["stringValue"] as? String ?? "" }
+                        attachments.append(FounderChatAttachment(
+                            url: str("url"),
+                            name: str("name").isEmpty ? "file" : str("name"),
+                            mimeType: str("mime_type").isEmpty ? "application/octet-stream" : str("mime_type"),
+                            storagePath: str("storage_path"),
+                            localPath: nil
+                        ))
+                    }
+                }
+
                 fetched.append(FounderChatMessage(
                     id: docId,
                     text: text,
                     sender: FounderChatSender(rawValue: senderStr) ?? .user,
                     senderName: senderName,
                     createdAt: createdAt,
-                    read: read
+                    read: read,
+                    attachments: attachments
                 ))
             }
 
