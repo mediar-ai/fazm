@@ -1,6 +1,6 @@
 {
   "unreleased": [
-    "Smart now uses Claude Opus 4.8 (latest); legacy Opus pins are auto-migrated to the new canonical id",
+    "Fixed chat sometimes getting stuck loading or showing an empty reply after the assistant finished responding",
     "Fixed referral Copy Link button and code not appearing in Settings > About when the link failed to load"
   ],
   "releases": [
