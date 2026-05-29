@@ -17,6 +17,20 @@ Read the full message history provided in the prompt. Categorize:
 - **Feedback** — general positive/negative feedback
 - **Greeting** — simple hi/hello
 
+**Attachments:** a user message may include an `attachments` array (each item has
+`url`, `name`, `mime_type`, `storage_path`). Users send these to show you something,
+usually a screenshot of a bug. You MUST look at them before replying:
+
+```bash
+node ~/fazm/inbox/scripts/download-chat-attachment.js --path "STORAGE_PATH"
+```
+
+This prints a local file path. **Read** image attachments (png/jpeg) with the Read tool
+so you actually see what the user is showing you; the screenshot is often the whole point
+of the report, and replying without looking at it will miss the issue. Non-image files
+(pdf/log/etc.) are also downloaded; reference them by their local path during the
+investigation.
+
 ### Step 2: Investigate
 
 **For bug reports: you MUST complete ALL investigation steps in AGENT-VOICE.md BEFORE replying.** This means running sentry-logs.sh, checking PostHog, searching the codebase, and checking if other users are affected. Do not skip these steps. Do not reply first and investigate later. The user can wait 2 minutes for a real answer.
