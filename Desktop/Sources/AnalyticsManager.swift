@@ -565,6 +565,7 @@ class AnalyticsManager {
         costUsd: Double,
         messageLength: Int,
         bridgeMode: String,
+        model: String = "",
         inputTokens: Int = 0,
         outputTokens: Int = 0,
         cacheReadTokens: Int = 0,
@@ -580,6 +581,11 @@ class AnalyticsManager {
             "cost_usd": costUsd,
             "response_length": messageLength,
             "bridge_mode": bridgeMode,
+            // Mirror the `model` recorded on chat_agent_query_failed so completion
+            // vs failure RATES can be computed per provider (claude/gemini/codex).
+            // Without this, completed events carry no model and the denominator
+            // for a per-provider stall rate is unknowable.
+            "model": model,
             "input_tokens": inputTokens,
             "output_tokens": outputTokens,
             "cache_read_tokens": cacheReadTokens,
@@ -660,6 +666,9 @@ class AnalyticsManager {
         bridgeWasStartedAtQueryStart: Bool,
         hadPartialContent: Bool,
         partialResponseText: String = "",
+        ttftMs: Int? = nil,
+        idleMsAtFailure: Int? = nil,
+        receivedAnyActivity: Bool? = nil,
         toolsRunning: [String]? = nil,
         toolsUsed: [String]? = nil,
         sessionKey: String? = nil
@@ -674,6 +683,16 @@ class AnalyticsManager {
             "bridge_was_started_at_query_start": bridgeWasStartedAtQueryStart,
             "had_partial_content": hadPartialContent,
         ]
+        // De-opaque the generic "timeout" / "AI took too long" failures: how far
+        // into the turn did the silence start, and did the bridge send ANYTHING?
+        //   received_any_activity=false  → request-level hang (no notification at
+        //                                  all — upstream never acknowledged)
+        //   received_any_activity=true, ttft_ms=nil → started (thinking/tools) but
+        //                                  never produced text
+        //   ttft_ms set + idle_ms_at_failure large → streamed then went silent (#630)
+        if let ttftMs = ttftMs { props["ttft_ms"] = ttftMs }
+        if let idleMsAtFailure = idleMsAtFailure { props["idle_ms_at_failure"] = idleMsAtFailure }
+        if let receivedAnyActivity = receivedAnyActivity { props["received_any_activity"] = receivedAnyActivity }
         // Capture the AI's partial output when a `mid_stream` failure dropped a
         // partially-streamed response, so support investigations can see what
         // the model said before the error. Capped to match
