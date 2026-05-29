@@ -4091,6 +4091,18 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     // so concurrent queries don't clobber each other's handlers.
     let notificationCount = 0;
     let lastNotificationTime = Date.now();
+    // Diagnostic counters — make a quiet turn self-explanatory in the log so we
+    // can tell "model thinking hard" (thinking climbing, idle low) apart from
+    // "dead stream / finalization stall" (counts frozen, idle climbing). Read by
+    // the [TURN-HEARTBEAT] and [IDLE-ARM] diagnostics below.
+    let textChunkCount = 0;
+    let thinkingChunkCount = 0;
+    let toolEventCount = 0;
+    let lastNotifType = "none";
+    // When an interactive ask_followup tool_call was last seen pending. After it
+    // returns "Your turn is DONE", the model should end_turn next; if the turn
+    // then stalls, this lets the heartbeat show how long it has waited.
+    let askFollowupSeenAtMs = 0;
     // Track task IDs started in THIS prompt turn vs stale ones from previous turns
     const currentTurnTaskIds = new Set<string>();
     let staleTaskNotificationCount = 0;
@@ -4119,6 +4131,17 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         const toolCallId = isToolEvent ? (update?.toolCallId as string | undefined) : undefined;
         const toolTitle = isToolEvent ? (update?.title as string | undefined) : undefined;
         const toolStatus = isToolEvent ? (update?.status as string | undefined) : undefined;
+        // Diagnostic per-type counters (drive [TURN-HEARTBEAT] / [IDLE-ARM]).
+        lastNotifType = sessionUpdate ?? "?";
+        if (sessionUpdate === "agent_message_chunk") textChunkCount++;
+        else if (sessionUpdate === "agent_thought_chunk") thinkingChunkCount++;
+        else if (isToolEvent) toolEventCount++;
+        // Note when an interactive ask_followup tool starts, by title on the
+        // pending notification (the completion notification often arrives with no
+        // title — the exact reason a title-based pendingTools removal can go stale).
+        if (isToolEvent && toolStatus === "pending" && (toolTitle?.includes("ask_followup") ?? false)) {
+          askFollowupSeenAtMs = now;
+        }
         // Log every notification with gap time to detect stalls; include tool
         // identity so cross-session routing (and stuck-tool progression) is
         // visible in one grep.
@@ -4258,8 +4281,30 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const IDLE_FINALIZATION_MS = idleSecOverride > 0 ? idleSecOverride * 1000 : 20_000;
       const IDLE_CHECK_INTERVAL_MS = 3_000;
       let inactivityInterval: ReturnType<typeof setInterval> | null = null;
+      // Diagnostics (logging only; no behavior change).
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+      let lastIdleBailLogMs = 0;
+      const HEARTBEAT_MS = 10_000;      // per-turn heartbeat cadence
+      const IDLE_BAIL_LOG_MS = 10_000;  // rate-limit for the "past threshold but not firing" log
 
       const promptPromise = acpRequest("session/prompt", sessionPromptPayload);
+
+      // [TURN-HEARTBEAT] — while this prompt is in flight, emit one line every
+      // HEARTBEAT_MS. Turns shorter than that log nothing (cleared in finally);
+      // any longer/stuck turn leaves a trace that disambiguates thinking vs stall.
+      const heartbeatStart = Date.now();
+      heartbeatInterval = setInterval(() => {
+        const idleMs = Date.now() - lastNotificationTime;
+        const liveSubagent = Array.from(activeTaskTimers.values()).some((t) => t.sessionKey === sessionKey);
+        const afAgo = askFollowupSeenAtMs ? `${Math.round((Date.now() - askFollowupSeenAtMs) / 1000)}s` : "none";
+        logErr(
+          `[TURN-HEARTBEAT] sid=${sessionId.slice(0, 8)} key=${sessionKey} ` +
+          `elapsedMs=${Date.now() - heartbeatStart} notifs=${notificationCount} ` +
+          `text=${textChunkCount} thinking=${thinkingChunkCount} tool=${toolEventCount} lastType=${lastNotifType} ` +
+          `idleMs=${idleMs} pendingTools=[${pendingTools.join(",")}] liveSubagent=${liveSubagent} ` +
+          `askFollowupAgo=${afAgo} fullTextLen=${fullText.length}`
+        );
+      }, HEARTBEAT_MS);
 
       // Abort race: when the user clicks Stop, the interrupt handler calls
       // ctx.abortController.abort() and sends session/cancel to ACP. But
@@ -4299,12 +4344,31 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (idleFinalizationDisabled) return; // inert arm — never settles
         inactivityInterval = setInterval(() => {
           const idleMs = Date.now() - lastNotificationTime;
-          if (idleMs < IDLE_FINALIZATION_MS) return;       // still active recently
-          if (notificationCount === 0) return;             // never streamed — cold-start case, not ours
-          if (pendingTools.length > 0) return;             // a tool is mid-execution
+          if (idleMs < IDLE_FINALIZATION_MS) return;       // still active recently — not suspicious, no log
+          // Past the idle threshold. If a gate blocks the rescue, log WHICH gate
+          // (rate-limited) — this is the missing visibility that made the
+          // ask_followup case un-isolatable: a silent bail told us nothing.
           const liveSubagent = Array.from(activeTaskTimers.values())
             .some((t) => t.sessionKey === sessionKey);
-          if (liveSubagent) return;                        // a Task subagent is still running
+          let blockReason: string | null = null;
+          if (notificationCount === 0) blockReason = "notificationCount=0 (cold-start, not ours)";
+          else if (pendingTools.length > 0) blockReason = `pendingTools=[${pendingTools.join(",")}]`;
+          else if (liveSubagent) blockReason = "live subagent";
+          if (blockReason) {
+            const nowMs = Date.now();
+            if (nowMs - lastIdleBailLogMs >= IDLE_BAIL_LOG_MS) {
+              lastIdleBailLogMs = nowMs;
+              logErr(
+                `[IDLE-ARM] sid=${sessionId.slice(0, 8)} idle ${Math.round(idleMs / 1000)}s past threshold but NOT firing: ` +
+                `${blockReason} (thinking=${thinkingChunkCount} text=${textChunkCount} lastType=${lastNotifType})`
+              );
+            }
+            return;
+          }
+          logErr(
+            `[IDLE-ARM] sid=${sessionId.slice(0, 8)} firing FINALIZATION_IDLE: idle ${Math.round(idleMs / 1000)}s, ` +
+            `pendingTools=0, no live subagent (thinking=${thinkingChunkCount} text=${textChunkCount})`
+          );
           reject(new Error(
             `FINALIZATION_IDLE: streamed ${fullText.length} chars then silent ${Math.round(idleMs / 1000)}s ` +
             `(pendingTools=0, no live subagent) — session/prompt never resolved`
@@ -4620,6 +4684,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       } finally {
         if (watchdogTimer) clearTimeout(watchdogTimer);
         if (inactivityInterval) clearInterval(inactivityInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
       }
     };
 
