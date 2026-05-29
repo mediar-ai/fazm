@@ -3012,6 +3012,9 @@ function isUserMcpServer(name: string): boolean {
   return !BUILTIN_MCP_NAMES.has(name);
 }
 
+/** Canonical latest Opus id we ship. Must match ShortcutSettings.defaultModels / normalizeModelId. */
+const LATEST_OPUS_MODEL_ID = "claude-opus-4-8";
+
 function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: string; description?: string }>): void {
   logErr(`Raw models from ACP SDK: ${JSON.stringify(availableModels)}`);
   // Strip [1m] context variants and the "default" pseudo-model. The 1M entitlement is
@@ -3023,11 +3026,20 @@ function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: str
   const seen = new Set<string>();
   const transformed = availableModels
     .filter(m => m.modelId !== "default")
-    .map(m => ({
-      ...m,
-      modelId: m.modelId.replace(/\s*\[1m\]/gi, ""),
-      name: m.name.replace(/\s*\[1m\]/gi, "").trim(),
-    }))
+    .map(m => {
+      const stripped = m.modelId.replace(/\s*\[1m\]/gi, "");
+      // The 0.37.0 adapter's static catalog still advertises claude-opus-4-7,
+      // but the API accepts (and we ship) the newer claude-opus-4-8. Rewrite the
+      // stale advertised id to the latest so the picker option carries opus-4-8;
+      // otherwise selecting "Smart" sets selectedModel back to opus-4-7 and
+      // silently downgrades. Bump alongside ShortcutSettings on the next opus.
+      const modelId = stripped === "claude-opus-4-7" ? LATEST_OPUS_MODEL_ID : stripped;
+      return {
+        ...m,
+        modelId,
+        name: m.name.replace(/\s*\[1m\]/gi, "").trim(),
+      };
+    })
     .filter(m => {
       if (seen.has(m.modelId)) return false;
       seen.add(m.modelId);
