@@ -3482,7 +3482,7 @@ struct SettingsContentView: View {
                                     .foregroundColor(FazmColors.textTertiary)
                             } else if let status = referralStatus {
                                 if status.reward_months > 0 {
-                                    Text("$\(status.reward_months * 49) credit earned")
+                                    Text("$\(status.reward_months * ReferralService.creditPerReferralUSD) credit earned")
                                         .scaledFont(size: 13)
                                         .foregroundColor(FazmColors.success)
                                 } else if status.referred_count > 0 {
@@ -3561,7 +3561,7 @@ struct SettingsContentView: View {
                                         .foregroundColor(FazmColors.textTertiary)
                                 }
                                 VStack(spacing: 2) {
-                                    Text("$\(status.reward_months * 49)")
+                                    Text("$\(status.reward_months * ReferralService.creditPerReferralUSD)")
                                         .scaledFont(size: 15, weight: .bold)
                                         .foregroundColor(FazmColors.purplePrimary)
                                     Text("Credit")
@@ -3576,7 +3576,7 @@ struct SettingsContentView: View {
                             Text("How it works")
                                 .scaledFont(size: 12, weight: .medium)
                                 .foregroundColor(FazmColors.textSecondary)
-                            Text("Share your link. When a friend installs Fazm and sends 5 messages, you both get $49 credit toward Pro.")
+                            Text("Share your link. When a friend installs Fazm and sends 5 messages, you get 1 month of Pro free.")
                                 .scaledFont(size: 12)
                                 .foregroundColor(FazmColors.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
