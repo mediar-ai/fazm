@@ -551,7 +551,7 @@ pub async fn send_download(
           <h1 style="margin:0;font-size:28px;font-weight:bold;color:#ffffff;line-height:1.3;">Your download is ready</h1>
         </td></tr>
         <tr><td style="padding-bottom:32px;color:#94a3b8;font-size:16px;line-height:1.6;">
-          A friend invited you to try Fazm — the AI agent that controls your Mac with voice commands. Click below to download and get started.
+          A friend invited you to try Fazm, the AI agent that controls your Mac with voice commands. Click below to download and get started.
         </td></tr>
         <tr><td style="padding-bottom:24px;">
           <a href="{download_url}" style="display:inline-block;padding:14px 28px;background:linear-gradient(135deg,#8B5CF6,#7C3AED);color:#ffffff;font-size:16px;font-weight:600;text-decoration:none;border-radius:12px;">
@@ -562,10 +562,10 @@ pub async fn send_download(
           Your referral code: <strong style="color:#8B5CF6;">{code}</strong>
         </td></tr>
         <tr><td style="padding-bottom:40px;color:#64748b;font-size:14px;line-height:1.5;">
-          After installing, <a href="{open_in_app_url}" style="color:#8B5CF6;text-decoration:none;">click here to apply your referral</a> and both you and your friend get 1 month of Pro free.
+          After installing, <a href="{open_in_app_url}" style="color:#8B5CF6;text-decoration:none;">click here to apply your referral</a> so your friend gets 1 month of Pro free.
         </td></tr>
         <tr><td style="border-top:1px solid #1e293b;padding-top:24px;color:#475569;font-size:13px;line-height:1.5;">
-          <a href="https://fazm.ai" style="color:#8B5CF6;text-decoration:none;">fazm.ai</a> — AI computer agent for macOS.
+          <a href="https://fazm.ai" style="color:#8B5CF6;text-decoration:none;">fazm.ai</a>, the AI computer agent for macOS.
         </td></tr>
       </table>
     </td></tr>
@@ -713,7 +713,7 @@ async fn count_referred_users(
 
 /// Grant a free month to the referrer by adding a credit to their Stripe customer balance.
 /// Uses customer balance (not coupons) because the subscription uses flexible billing mode.
-/// The credit ($49) is automatically applied to the next invoice by Stripe.
+/// The credit ($10) is automatically applied to the next invoice by Stripe.
 async fn grant_free_month(
     client: &reqwest::Client,
     config: &Config,
@@ -744,17 +744,20 @@ async fn grant_free_month(
         .and_then(|c| c["id"].as_str())
         .ok_or_else(|| "Referrer has no Stripe customer".to_string())?;
 
-    // Add a $49 credit to the customer balance (negative amount = credit)
-    // Stripe automatically applies customer balance credits to the next invoice
+    // Add a $10 credit to the customer balance (negative amount = credit).
+    // $10 == one month at the $9.99 base plan. This MUST stay in sync with the client's
+    // ReferralService.creditPerReferralUSD (Desktop), which multiplies reward_months by it
+    // to show the earned credit; if they drift, the paywall/settings display lies.
+    // Stripe automatically applies customer balance credits to the next invoice.
     let resp = client
         .post(format!(
             "https://api.stripe.com/v1/customers/{customer_id}/balance_transactions"
         ))
         .bearer_auth(stripe_secret)
         .form(&[
-            ("amount", "-4900"), // -$49.00 (negative = credit)
+            ("amount", "-1000"), // -$10.00 (negative = credit)
             ("currency", "usd"),
-            ("description", "Referral reward — 1 month free"),
+            ("description", "Referral reward: 1 month free"),
         ])
         .send()
         .await
@@ -773,7 +776,7 @@ async fn grant_free_month(
         customer = %customer_id,
         transaction = %txn_id,
         ending_balance_cents = ending_balance,
-        "Applied referral reward — $49 credit"
+        "Applied referral reward: $10 credit"
     );
     Ok(())
 }
