@@ -1,4 +1,5 @@
 pub mod appcast;
+pub mod chat_attachment;
 pub mod composio;
 pub mod keys;
 pub mod llm_usage;
