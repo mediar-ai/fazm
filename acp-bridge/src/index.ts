@@ -4822,9 +4822,12 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // history (in-memory + on disk); reusing or resuming it next turn replays it
       // and the API rejects the whole request with `400 ... thinking ... blocks ...
       // cannot be modified` (the poison Fix 1 in the retry path also catches).
-      // Do NOT re-run this prompt here (that would double-bill a turn that already
-      // finished) — only the NEXT, user-initiated prompt rebuilds. abort() first to
-      // silence any late stragglers the abandoned prompt may still emit.
+      // For a >0-char partial we do NOT re-run here (that would double-bill a
+      // turn that already produced work) — only the NEXT, user-initiated prompt
+      // rebuilds. For a 0-char stall (died at the first thinking chunk: no
+      // tools ran, no MCP state, zero output tokens) we auto-retry once below —
+      // there is nothing to double-bill and nothing lossy to lose. abort()
+      // first to silence any late stragglers the abandoned prompt may emit.
       if (err instanceof Error && err.message.startsWith("FINALIZATION_IDLE")) {
         abortController.abort();
         acpNotify("session/cancel", { sessionId });
@@ -4841,18 +4844,41 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (compactionInProgress) {
           logErr(`[COMPACTION-STALL] session ${sessionId.slice(0, 8)} compaction hung ${compactionStartedAt ? Math.round((Date.now() - compactionStartedAt) / 1000) : "?"}s with no compact_boundary — cancelled by idle ceiling; context not reduced, next turn will re-compact`);
         }
-        logErr(`[FINALIZATION-IDLE] Rescued stalled turn for session ${sessionId.slice(0, 8)} (${err.message}); delivering ${fullText.length} chars as a completed result`);
-        sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
-        // See the block comment above: the mid-thinking cancel can leave an
-        // unsigned thinking block behind, so reusing/resuming this session next
-        // turn would 400. Marking it interrupted forces the next prompt through
-        // session/new + priorContext replay. The partial answer we just delivered
-        // lives in the app's chat history and re-enters as priorContext, so the
-        // conversation continues seamlessly without the thinking-block cascade.
+        // Drop the stalled session first — both the auto-retry and the
+        // deliver-and-stop paths need it gone. The mid-thinking cancel can
+        // leave an unsigned thinking block behind, so reusing/resuming this
+        // session next turn would 400; forcing the next prompt through
+        // session/new + priorContext replay avoids the cascade. Any partial
+        // we deliver lives in the app's chat history and re-enters as
+        // priorContext, so the conversation continues seamlessly.
+        const stalledSessionId = sessionId;
         unregisterSession(sessionKey);
         imageTurnCounts.delete(sessionKey);
-        interruptedSessions.add(sessionId);
+        interruptedSessions.add(stalledSessionId);
         activeSessionId = "";
+
+        // 0-char auto-retry-once (the documented fix for upstream #630's
+        // mid-thinking variant). When the stall dies at the very first thinking
+        // chunk, fullText is empty: the turn ran no tools, established no MCP
+        // state, and spent zero output tokens, so there is nothing to
+        // double-bill and nothing lossy to lose by re-running it. Retry exactly
+        // once on a fresh session. `msg._priorStuckSessionId` both triggers the
+        // priorContext replay AND — shared with the thinking-block-400 path —
+        // caps the retry at 1, so a retried turn that stalls (or 400s) again
+        // falls through to the marker instead of looping. A >0-char partial is
+        // never retried (that would double-bill real work); it delivers as a
+        // completed result exactly as before.
+        const alreadyRetried = msg._priorStuckSessionId !== undefined;
+        if (fullText.length === 0 && !alreadyRetried) {
+          logErr(`[FINALIZATION-IDLE] Empty (0-char) stall for session ${stalledSessionId.slice(0, 8)} (${err.message}); auto-retrying once on a fresh session before surfacing the empty marker`);
+          msg._priorStuckSessionId = stalledSessionId;
+          msg.resume = undefined;
+          await handleQuery(msg, depth + 1);
+          return;
+        }
+
+        logErr(`[FINALIZATION-IDLE] Rescued stalled turn for session ${stalledSessionId.slice(0, 8)} (${err.message}); delivering ${fullText.length} chars as a completed result${alreadyRetried ? " (0-char auto-retry already spent)" : ""}`);
+        sendWithSession(stalledSessionId, { type: "result", text: fullText, sessionId: stalledSessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
         return;
       }
 
