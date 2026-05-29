@@ -74,16 +74,19 @@ class FounderChatService: ObservableObject {
     private static let firestoreProjectId = "fazm-prod"
     private static let baseUrl = "https://firestore.googleapis.com/v1/projects/\(firestoreProjectId)/databases/(default)/documents"
 
-    /// Firebase Storage bucket (matches STORAGE_BUCKET in GoogleService-Info.plist).
-    private static let storageBucket = "fazm-prod.firebasestorage.app"
     /// Max attachment size accepted for upload (10 MB).
     private static let maxAttachmentBytes = 10 * 1024 * 1024
-    /// Characters left unescaped when percent-encoding a Storage object path.
-    /// Everything else (including `/`) is encoded, which is how Firebase
-    /// Storage represents an object's full name in both the upload `name`
-    /// query param and the download URL path segment.
-    private static let storagePathAllowed = CharacterSet(charactersIn:
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~")
+
+    /// Resolve `FAZM_BACKEND_URL` (trailing slashes trimmed); empty if unset.
+    private static func backendBaseURL() -> String {
+        if let raw = ProcessInfo.processInfo.environment["FAZM_BACKEND_URL"], !raw.isEmpty {
+            return raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        if let cstr = getenv("FAZM_BACKEND_URL"), let s = String(cString: cstr, encoding: .utf8), !s.isEmpty {
+            return s.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        return ""
+    }
 
     private var pollingTask: Task<Void, Never>?
     private var lastPollTime: Date?
