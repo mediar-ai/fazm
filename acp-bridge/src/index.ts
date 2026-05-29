@@ -4103,6 +4103,11 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     // returns "Your turn is DONE", the model should end_turn next; if the turn
     // then stalls, this lets the heartbeat show how long it has waited.
     let askFollowupSeenAtMs = 0;
+    // True between compaction_start and compact_boundary. Compaction is opaque to
+    // the bridge (no per-token deltas reach us — see COMPACTION_IDLE_CEILING_MS),
+    // so this flag lets the idle arm tell "summarizing a large context" (slow but
+    // fine) apart from "turn finished and stalled" (the #630 case it rescues).
+    let compactionInProgress = false;
     // Track task IDs started in THIS prompt turn vs stale ones from previous turns
     const currentTurnTaskIds = new Set<string>();
     let staleTaskNotificationCount = 0;
@@ -4136,6 +4141,9 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         if (sessionUpdate === "agent_message_chunk") textChunkCount++;
         else if (sessionUpdate === "agent_thought_chunk") thinkingChunkCount++;
         else if (isToolEvent) toolEventCount++;
+        // Track the compaction window so the idle arm can gate on it (below).
+        if (sessionUpdate === "compaction_start") compactionInProgress = true;
+        else if (sessionUpdate === "compact_boundary") compactionInProgress = false;
         // Note when an interactive ask_followup tool starts, by title on the
         // pending notification (the completion notification often arrives with no
         // title — the exact reason a title-based pendingTools removal can go stale).
@@ -4160,6 +4168,13 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           );
         }
         handleSessionUpdate(p, pendingTools, (text) => {
+          // The SDK streams a "Compacting..." placeholder assistant chunk inside
+          // the compaction window (between compaction_start and compact_boundary).
+          // It's a UI hint, not the answer — drop it so it can never be delivered
+          // or persisted as the turn's result (it was, in the May 28 2026 prod
+          // loop). Any pre-compaction answer was appended before the flag was set;
+          // the real post-compaction answer streams after compact_boundary clears it.
+          if (compactionInProgress) return;
           fullText += text;
         }, { currentTurnTaskIds, onStaleNotification: () => { staleTaskNotificationCount++; } }, ctx);
       }
@@ -4270,8 +4285,11 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       // alone — it requires positive evidence the turn's work is actually done:
       // no tool executing AND no live subagent. Legitimate slow work keeps
       // lastNotificationTime fresh (a long Bash/browser tool holds pendingTools>0;
-      // a 90-min Task subagent holds an activeTaskTimers entry; context compaction
-      // streams compaction_delta notifications), so none of it trips this.
+      // a 90-min Task subagent holds an activeTaskTimers entry). Context
+      // compaction is the EXCEPTION: it sends NO deltas the bridge can see (0
+      // compaction_delta notifications reach us in this SDK/adapter version —
+      // verified in prod), so it can't keep lastNotificationTime fresh. It is
+      // gated separately below via compactionInProgress + COMPACTION_IDLE_CEILING_MS.
       // Override with FAZM_IDLE_FINALIZATION_SECONDS (>0 sets the threshold,
       // <0 disables the arm entirely).
       const idleSecOverride = process.env.FAZM_IDLE_FINALIZATION_SECONDS
@@ -4280,6 +4298,13 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
       const idleFinalizationDisabled = idleSecOverride < 0;
       const IDLE_FINALIZATION_MS = idleSecOverride > 0 ? idleSecOverride * 1000 : 20_000;
       const IDLE_CHECK_INTERVAL_MS = 3_000;
+      // While a compaction is in flight, use this much longer ceiling instead of
+      // IDLE_FINALIZATION_MS. Summarizing a large context legitimately takes
+      // 30-90s and is silent to us, so the normal 20s threshold would cancel it
+      // mid-flight — which aborts the compaction, leaves the context over-limit,
+      // and makes every following turn re-compact and re-cancel (May 28 2026 prod
+      // loop). Only treat a compaction as genuinely hung after this ceiling.
+      const COMPACTION_IDLE_CEILING_MS = 180_000;
       let inactivityInterval: ReturnType<typeof setInterval> | null = null;
       // Diagnostics (logging only; no behavior change).
       let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -4354,6 +4379,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           if (notificationCount === 0) blockReason = "notificationCount=0 (cold-start, not ours)";
           else if (pendingTools.length > 0) blockReason = `pendingTools=[${pendingTools.join(",")}]`;
           else if (liveSubagent) blockReason = "live subagent";
+          else if (compactionInProgress && idleMs < COMPACTION_IDLE_CEILING_MS) blockReason = `compaction in progress (idle ${Math.round(idleMs / 1000)}s < ${Math.round(COMPACTION_IDLE_CEILING_MS / 1000)}s ceiling)`;
           if (blockReason) {
             const nowMs = Date.now();
             if (nowMs - lastIdleBailLogMs >= IDLE_BAIL_LOG_MS) {
