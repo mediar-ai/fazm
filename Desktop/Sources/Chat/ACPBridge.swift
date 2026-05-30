@@ -2612,15 +2612,21 @@ enum BridgeError: LocalizedError {
     case .stopped:
       return "Response stopped."
     case .creditExhausted(let message):
-      // Extract "resets X" clause from the error message if present (e.g. "resets 11pm (America/Santiago)")
+      // Read bridgeMode directly from UserDefaults so BridgeError stays
+      // self-contained. In BUILTIN mode the user is on Fazm's shared key, NOT
+      // their own Claude, so NEVER tell them to "Upgrade to Claude Pro at
+      // claude.ai" — that does nothing for the shared key and pushes them off
+      // the app. Built-in limits are handled by a silent Gemini switch in
+      // ChatProvider; this text only renders if Gemini is unavailable.
+      let mode = UserDefaults.standard.string(forKey: "bridgeMode") ?? "builtin"
+      // Extract the "resets X" clause if present (e.g. "resets 11pm (America/Santiago)").
       if let range = message.range(of: #"resets\s+\S.*"#, options: .regularExpression) {
         let resets = String(message[range])
-        return "You've hit Claude's usage limit (\(resets)). Upgrade to Claude Pro at claude.ai for higher limits."
+        if mode == "personal" {
+          return "Your Claude account hit its usage limit (\(resets)). It resets automatically, or upgrade your plan at claude.ai/settings/billing."
+        }
+        return "Claude is temporarily rate-limited (\(resets)). Connect your own Claude or ChatGPT account in Settings to keep going now."
       }
-      // Mode-aware fallback: telling a personal-mode user to "switch to personal account"
-      // is nonsensical (they already are). Read bridgeMode directly from UserDefaults so
-      // BridgeError stays self-contained and doesn't need an extra parameter.
-      let mode = UserDefaults.standard.string(forKey: "bridgeMode") ?? "builtin"
       if mode == "personal" {
         return "Your Claude account hit its usage limit. Try again later, or upgrade your plan at claude.ai/settings/billing."
       }
