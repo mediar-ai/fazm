@@ -557,12 +557,12 @@ actor ACPBridge {
     // a new bridge. Belt-and-suspenders alongside the in-bridge PPID watchdog.
     Self.sweepOrphanedBridges()
 
-    let nodePath = findNodeBinary()
+    let nodePath = Self.findNodeBinary()
     guard let nodePath else {
       throw BridgeError.nodeNotFound
     }
 
-    let bridgePath = findBridgeScript()
+    let bridgePath = Self.findBridgeScript()
     guard let bridgePath else {
       throw BridgeError.bridgeScriptNotFound
     }
@@ -2434,7 +2434,7 @@ actor ACPBridge {
 
   // MARK: - Node.js Discovery
 
-  private func findNodeBinary() -> String? {
+  static func findNodeBinary() -> String? {
     // 1. Check bundled node binary in app resources
     let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil)
     if let bundledNode, FileManager.default.isExecutableFile(atPath: bundledNode) {
@@ -2522,7 +2522,7 @@ actor ACPBridge {
     return connected
   }
 
-  private func findBridgeScript() -> String? {
+  static func findBridgeScript() -> String? {
     // 1. Check in app bundle Resources
     if let bundlePath = Bundle.main.resourcePath {
       let bundledScript = (bundlePath as NSString).appendingPathComponent(
