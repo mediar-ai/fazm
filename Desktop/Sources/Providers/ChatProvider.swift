@@ -2357,47 +2357,6 @@ class ChatProvider: ObservableObject {
         log("ChatProvider: selectModel \(modelId) (isCodex=\(Self.isCodexModelId(modelId)) isGemini=\(Self.isGeminiModelId(modelId)))")
     }
 
-    /// True when the Gemini ACP backend is reachable (FAZM_GEMINI_ENABLED on +
-    /// probe succeeded, so `gemini-*` models are advertised). Mirrors the same
-    /// check used by `PersonalAccountChooserSheet`.
-    var geminiAvailable: Bool {
-        ShortcutSettings.shared.availableModels.contains { $0.id.hasPrefix("gemini-") }
-    }
-
-    /// Preferred Gemini model for an automatic/silent switch: Pro (smartest),
-    /// falling back to Flash, then any advertised Gemini, then the Pro alias.
-    var preferredGeminiModelId: String {
-        let models = ShortcutSettings.shared.availableModels
-        if let pro = models.first(where: { $0.id == "gemini-pro-latest" }) { return pro.id }
-        if let flash = models.first(where: { $0.id == "gemini-flash-latest" }) { return flash.id }
-        return models.first(where: { $0.id.hasPrefix("gemini-") })?.id ?? "gemini-pro-latest"
-    }
-
-    /// Silently switch to Gemini and replay `text` on it — NO error UI is shown.
-    /// Used when the built-in Claude key is invalid/revoked or hit a temporary
-    /// usage limit: the user never sees an error, the turn just continues on
-    /// Gemini (free, no limit, uses Fazm's Vertex creds — not the dead Anthropic
-    /// key). Returns false when Gemini isn't available so the caller can fall
-    /// back to a visible message. The replay is dispatched on the next main-actor
-    /// tick (mirrors the chooser's `retryLastMessageOnGemini`) so it runs after
-    /// the current failed turn fully unwinds.
-    @discardableResult
-    func switchToGeminiAndReplay(text: String, reason: String) -> Bool {
-        guard geminiAvailable else {
-            log("ChatProvider: silent Gemini fallback unavailable (\(reason)) — no gemini models advertised")
-            return false
-        }
-        let geminiId = preferredGeminiModelId
-        log("ChatProvider: SILENT Gemini fallback (\(reason)) → \(geminiId)")
-        selectModel(geminiId)           // sets selectedModel + clears credit/auth flags
-        errorMessage = nil
-        clearPendingRetry()
-        Task { @MainActor in
-            await sendMessage(text, model: geminiId)
-        }
-        return true
-    }
-
     /// True if the model id routes through the Codex backend (gpt-*, codex-*,
     /// o[0-9]-*). Mirrors the bridge's `isCodexModel` regex.
     private static func isCodexModelId(_ modelId: String) -> Bool {
@@ -5656,12 +5615,22 @@ class ChatProvider: ObservableObject {
                     showCreditExhaustedAlert = true
                     errorMessage = bridgeError.errorDescription
                 } else if bridgeMode == "builtin" && isRateLimit {
-                    // Temporary rate limit on the built-in (shared) key — the user
-                    // isn't out of trial budget, Claude is just throttled. Silently
-                    // switch to Gemini (free, no limit) and replay so the turn
-                    // continues with NO error shown. Only surface a message when
-                    // Gemini isn't available to fall back to.
-                    if !switchToGeminiAndReplay(text: text, reason: "builtin_rate_limit") {
+                    // Temporary rate limit on the built-in (shared) key — Claude is
+                    // throttled but the user isn't out of trial budget. Mirror the
+                    // dead-key path: silently switch to Gemini (free, no limit) and
+                    // replay via the retry tail, with NO error shown. We do NOT set
+                    // builtinClaudeKeyDead (the key isn't dead — the limit resets),
+                    // so Claude auto-recovers on a later turn. Only surface a message
+                    // if Gemini isn't available to fall back to.
+                    if geminiAvailable {
+                        let geminiId = geminiFallbackModelId
+                        log("ChatProvider: builtin rate-limited — switching to \(geminiId) and replaying silently")
+                        ShortcutSettings.shared.selectedModel = geminiId
+                        // creditExhausted branch cleared pendingRetryMessage above; re-arm it.
+                        pendingRetryMessage = text
+                        retryAfterBuiltinKeyRefetch = true
+                        errorMessage = nil
+                    } else {
                         errorMessage = bridgeError.errorDescription
                     }
                 } else {
