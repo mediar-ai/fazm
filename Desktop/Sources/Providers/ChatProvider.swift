@@ -970,6 +970,9 @@ class ChatProvider: ObservableObject {
     /// Switch bridge mode, tearing down old bridge and setting up new one.
     /// If a query is in-flight (`isSending`), the switch is deferred until the query completes.
     func switchBridgeMode(to newMode: String) async {
+        // Changing provider setup (e.g. connecting a personal account) clears any
+        // bundled-key-dead state so the next send can evaluate Claude again.
+        builtinClaudeKeyDead = false
         let oldMode = bridgeMode
         guard newMode != oldMode else {
             log("ChatProvider: switchBridgeMode(\(newMode)) — already in this mode, skipping restart")
@@ -5632,6 +5635,8 @@ class ChatProvider: ObservableObject {
                         setupBridgeAuthHandlers()
                         // pendingRetryMessage was set at the start of sendMessage —
                         // mirror retryAfterModelFallback to trigger the silent re-send.
+                        // A fresh, working key means Claude is usable again.
+                        builtinClaudeKeyDead = false
                         retryAfterBuiltinKeyRefetch = true
                         errorMessage = nil
                     } else {
