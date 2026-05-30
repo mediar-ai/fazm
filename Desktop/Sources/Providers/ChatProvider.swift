@@ -4653,7 +4653,19 @@ class ChatProvider: ObservableObject {
                 sessionKey: isOnboarding ? "onboarding" : (sessionKey ?? "main"),
                 cwd: effectiveCwd,
                 mode: chatMode.rawValue,
-                model: model ?? modelOverride,
+                model: {
+                    let resolvedModel = model ?? modelOverride
+                    // Built-in Claude key dead this session: route hard-coded
+                    // Claude sends (e.g. onboarding's claude-sonnet-4-6) to Gemini
+                    // so we don't waste a doomed Claude attempt per turn. The
+                    // explicit `model:` arg would otherwise override selectedModel.
+                    if builtinClaudeKeyDead, bridgeMode == "builtin",
+                       let m = resolvedModel,
+                       !Self.isGeminiModelId(m), !Self.isCodexModelId(m) {
+                        return geminiFallbackModelId
+                    }
+                    return resolvedModel
+                }(),
                 resume: resume,
                 attachments: attachments,
                 priorContext: priorContextForBridge,
