@@ -1,12 +1,17 @@
 {
-  "unreleased": [
-    "Fixed the Referrals page showing an incorrect credit amount and clarified that you earn a free month for each friend you refer",
-    "Stopped Custom API Endpoint routing from using Fazm's built-in Anthropic key or built-in credits",
-    "Made the onboarding Skip button always available so you can jump straight into the app at any time if setup gets stuck",
-    "Fixed Gemini (Flash and Pro) sometimes returning an empty reply or timing out, by recovering response text the Gemini engine streamed under a mismatched session id",
-    "Added screenshot and file attachments to founder chat (paste, drag-and-drop, or attach a file)"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.55",
+      "date": "2026-05-29",
+      "changes": [
+        "Fixed the Referrals page showing an incorrect credit amount and clarified that you earn a free month for each friend you refer",
+        "Stopped Custom API Endpoint routing from using Fazm's built-in Anthropic key or built-in credits",
+        "Made the onboarding Skip button always available so you can jump straight into the app at any time if setup gets stuck",
+        "Fixed Gemini (Flash and Pro) sometimes returning an empty reply or timing out, by recovering response text the Gemini engine streamed under a mismatched session id",
+        "Added screenshot and file attachments to founder chat (paste, drag-and-drop, or attach a file)"
+      ]
+    },
     {
       "version": "2.9.54",
       "date": "2026-05-29",
