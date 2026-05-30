@@ -68,11 +68,15 @@ struct MemoryGraphPage: View {
         }
         .task {
             await viewModel.loadGraph()
+            // Fresh installs / users mid-file-indexing start empty while
+            // save_knowledge_graph writes land in the background. Retry via
+            // rebuildGraph (which also invalidates the cached DB handle) so we
+            // recover both the "not written yet" and "stale DB handle" cases
+            // before settling on the empty state.
             if viewModel.isEmpty {
-                await viewModel.rebuildGraph()
                 for _ in 1...10 {
                     try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    await viewModel.loadGraph()
+                    await viewModel.rebuildGraph()
                     if !viewModel.isEmpty { break }
                 }
             }
@@ -274,64 +278,54 @@ class MemoryGraphViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        do {
-            // Try local SQLite first (populated during file exploration)
-            var response = await KnowledgeGraphStorage.shared.loadGraph()
-            if response.nodes.isEmpty {
-                // Fall back to API (user may have graph from mobile)
-                response = try await APIClient.shared.getKnowledgeGraph()
-            }
+        // Local SQLite is the only source of truth. The graph is built
+        // incrementally by the save_knowledge_graph tool during chat + file
+        // exploration; there is no remote knowledge-graph backend.
+        var response = await KnowledgeGraphStorage.shared.loadGraph()
 
-            log("Knowledge graph: \(response.nodes.count) nodes, \(response.edges.count) edges")
-            isEmpty = response.nodes.isEmpty
+        log("Knowledge graph: \(response.nodes.count) nodes, \(response.edges.count) edges")
+        isEmpty = response.nodes.isEmpty
 
-            guard !isEmpty else { return }
+        guard !isEmpty else { return }
 
-            // Cap to top nodes by connection count for rendering performance
-            let userName = AuthService.shared.displayName.isEmpty ? nil : AuthService.shared.givenName
-            response = capGraphResponse(response, maxNodes: maxVisibleNodes, userNodeLabel: userName)
+        // Cap to top nodes by connection count for rendering performance
+        let userName = AuthService.shared.displayName.isEmpty ? nil : AuthService.shared.givenName
+        response = capGraphResponse(response, maxNodes: maxVisibleNodes, userNodeLabel: userName)
 
-            // Populate simulation with user node at center
-            log("User name for center node: \(userName ?? "nil")")
-            simulation.populate(graphResponse: response, userNodeLabel: userName)
-            log("Simulation populated: \(simulation.nodes.count) nodes (including user), \(simulation.edges.count) edges")
+        // Populate simulation with user node at center
+        log("User name for center node: \(userName ?? "nil")")
+        simulation.populate(graphResponse: response, userNodeLabel: userName)
+        log("Simulation populated: \(simulation.nodes.count) nodes (including user), \(simulation.edges.count) edges")
 
-            // Run initial layout off main thread for responsiveness
-            await Task.detached(priority: .userInitiated) { [simulation] in
-                simulation.runSync(ticks: 800)
-            }.value
+        // Run initial layout off main thread for responsiveness
+        await Task.detached(priority: .userInitiated) { [simulation] in
+            simulation.runSync(ticks: 800)
+        }.value
 
-            // Create scene nodes in batches to avoid blocking main thread
-            await createSceneNodes()
+        // Create scene nodes in batches to avoid blocking main thread
+        await createSceneNodes()
 
-            // Brief animation to settle, then stop
-            isAnimating = true
-            Task {
-                try? await Task.sleep(nanoseconds: 3_000_000_000) // 3s of live physics
-                await MainActor.run { isAnimating = false }
-            }
-        } catch {
-            log("Failed to load knowledge graph: \(error.localizedDescription)")
+        // Brief animation to settle, then stop
+        isAnimating = true
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3s of live physics
+            await MainActor.run { isAnimating = false }
         }
     }
 
     // MARK: - Rebuild Graph
 
+    /// "Rebuild" re-reads the local knowledge graph from disk. There is no
+    /// remote rebuild backend — the graph is populated incrementally by the
+    /// save_knowledge_graph tool. Invalidating the cached DB handle first
+    /// recovers the case where the graph was written under a different user
+    /// DB path than the one the first read resolved (stale `_dbQueue`).
     func rebuildGraph() async {
         isRebuilding = true
         defer { isRebuilding = false }
 
-        do {
-            _ = try await APIClient.shared.rebuildKnowledgeGraph()
-
-            // Wait a bit for the backend to process
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-
-            // Reload the graph
-            await loadGraph()
-        } catch {
-            log("Failed to rebuild knowledge graph: \(error.localizedDescription)")
-        }
+        await KnowledgeGraphStorage.shared.invalidateCache()
+        await loadGraph()
     }
 
     // MARK: - Incremental Graph Update
