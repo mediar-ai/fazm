@@ -22,15 +22,17 @@ Read the full message history provided in the prompt. Categorize:
 usually a screenshot of a bug. You MUST look at them before replying:
 
 ```bash
-node ~/fazm/inbox/scripts/download-chat-attachment.js --url "ATTACHMENT_URL"
+node ~/fazm/inbox/scripts/download-chat-attachment.js --path "STORAGE_PATH"
 ```
 
-`url` is a signed download link (valid ~7 days). The script prints a local file path.
+`--path` downloads via the admin Storage SDK (the pipeline service account has read
+access), which is the reliable path for this agent. The script prints a local file path.
 **Read** image attachments (png/jpeg) with the Read tool so you actually see what the
 user is showing you; the screenshot is often the whole point of the report, and replying
 without looking at it will miss the issue. Non-image files (pdf/log/etc.) are also
-downloaded; reference them by their local path during the investigation. (If `url` is
-expired/missing, fall back to `--path "STORAGE_PATH"`.)
+downloaded; reference them by their local path during the investigation. (The `url` field
+is a signed link used for in-app display; `--url "ATTACHMENT_URL"` also works if the
+backend signer has been granted bucket read.)
 
 ### Step 2: Investigate
 
