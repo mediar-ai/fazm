@@ -5544,6 +5544,9 @@ class ChatProvider: ObservableObject {
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                 messages[index].isStreaming = false
                 completeRemainingToolCalls(messageId: aiMessageId)
+                // Error/timeout also ends the turn — clear any stale stall so it
+                // doesn't resurface as a phantom hang on the next prompt.
+                clearStallIndicator(forResolvedKey: effectiveKey)
                 await Task.yield()  // Let UI update immediately
                 // Re-resolve the index: the yield above lets the Combine $messages
                 // sink drain, which can fire clearTransferredMessages() and shrink
