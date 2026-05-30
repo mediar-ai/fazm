@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Improved analytics so empty or dropped AI replies are no longer counted as successful answers (better visibility into per-model reliability)"
+  ],
   "releases": [
     {
       "version": "2.9.55",
