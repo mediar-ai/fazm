@@ -27,7 +27,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, mkdirSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, realpathSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
@@ -51,7 +51,17 @@ function parseArgs(argv) {
   return out;
 }
 
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+// Robust "am I the entrypoint?" check. The naive
+// `import.meta.url === \`file://${process.argv[1]}\`` breaks whenever the path holds a
+// character import.meta.url percent-encodes — notably the space in "Fazm Dev.app", which
+// becomes %20 while process.argv[1] keeps a literal space — so main() silently never runs
+// and the routine exits 0 having done nothing. Decode the URL to a real path and resolve
+// symlinks on both sides before comparing.
+function resolvePathSafe(p) {
+  try { return realpathSync(p); } catch { return p; }
+}
+const isMain = process.argv[1] != null &&
+  resolvePathSafe(fileURLToPath(import.meta.url)) === resolvePathSafe(process.argv[1]);
 const args = isMain ? parseArgs(process.argv.slice(2)) : {};
 const USER_DB = args["user-db"];
 const JOB_ID = args["job-id"];
