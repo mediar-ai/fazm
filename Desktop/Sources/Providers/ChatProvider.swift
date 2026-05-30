@@ -5271,6 +5271,22 @@ class ChatProvider: ObservableObject {
                 breadcrumb.message = "response_length=0 on success (outputTokens=\(queryResult.outputTokens), mode=\(bridgeMode))"
                 SentrySDK.addBreadcrumb(breadcrumb)
             }
+            // Classify the turn so an empty/dropped turn isn't counted as a
+            // success in PostHog. This event fires on the success path even when
+            // the model returned no text (the stamped empty-turn marker), so
+            // without an explicit outcome an empty turn looks identical to a real
+            // answer. Keys on the same "no text returned" marker substring used
+            // elsewhere (OnboardingChatView, empty_turn_audit.py).
+            let turnOutcome: String
+            if queryResult.interrupted {
+                turnOutcome = "interrupted"
+            } else if messageText.contains("no text returned") {
+                turnOutcome = "empty"
+            } else if responseLength == 0 {
+                turnOutcome = toolNames.isEmpty ? "empty" : "tool_only"
+            } else {
+                turnOutcome = "ok"
+            }
             AnalyticsManager.shared.chatAgentQueryCompleted(
                 durationMs: durationMs,
                 toolCallCount: toolNames.count,
@@ -5282,6 +5298,7 @@ class ChatProvider: ObservableObject {
                 // if the bridge didn't report one. Lets us compute per-provider
                 // completion rates against chat_agent_query_failed.model.
                 model: queryResult.model.isEmpty ? ShortcutSettings.shared.selectedModel : queryResult.model,
+                outcome: turnOutcome,
                 inputTokens: queryResult.inputTokens,
                 outputTokens: queryResult.outputTokens,
                 cacheReadTokens: queryResult.cacheReadTokens,
