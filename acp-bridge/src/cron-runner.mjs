@@ -28,7 +28,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { computeNextRun } from "./schedule.mjs";
 
@@ -62,7 +62,15 @@ if (isMain && (!USER_DB || !JOB_ID)) {
   process.exit(2);
 }
 
-const LOG_DIR = join(homedir(), "fazm", "inbox", "skill", "logs");
+// Log dir resolution. The in-app scheduler (RoutineScheduler.swift) passes
+// FAZM_ROUTINE_LOG_DIR (under Application Support) so we never create a ~/fazm tree
+// on a normal user's machine. The dev launchd pipeline sets nothing and has the
+// ~/fazm/inbox/skill checkout, so it keeps logging there. Anything else (e.g. a
+// stray manual run) falls back to the OS temp dir.
+const LOG_DIR = process.env.FAZM_ROUTINE_LOG_DIR
+  || (existsSync(join(homedir(), "fazm", "inbox", "skill"))
+        ? join(homedir(), "fazm", "inbox", "skill", "logs")
+        : join(tmpdir(), "fazm-routines"));
 try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
 const LOG_FILE = join(LOG_DIR, "routines.log");
 
