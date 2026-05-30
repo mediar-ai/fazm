@@ -864,6 +864,23 @@ class ChatProvider: ObservableObject {
     /// short enough that a transient blip doesn't lock the user out for long.
     private let builtinKeyRefetchCooldown: TimeInterval = 30
 
+    /// Set when the bundled built-in Claude key failed authentication and could
+    /// not be refreshed, so we transparently routed the user to Gemini (free,
+    /// bundled key) instead of dead-ending on a retry-only error. While true,
+    /// builtin-mode Claude sends are redirected to Gemini (see sendMessage).
+    /// Session-only: re-tries Claude on the next launch; cleared on key recovery
+    /// or a bridge-mode change.
+    private var builtinClaudeKeyDead = false
+
+    /// Model id to use when transparently falling back to Gemini. Prefers a
+    /// probe-advertised gemini model, otherwise the canonical un-versioned alias
+    /// the bridge accepts via session/set_model. Routing is model-id-based in the
+    /// bridge, so this resolves even before the picker probe populates availableModels.
+    private var geminiFallbackModelId: String {
+        ShortcutSettings.shared.availableModels.first(where: { Self.isGeminiModelId($0.id) })?.id
+            ?? "gemini-flash-latest"
+    }
+
     private let messagesPageSize = 50
     private let maxMessagesInMemory = 200
     private var playwrightExtensionObserver: AnyCancellable?
@@ -5622,16 +5639,28 @@ class ChatProvider: ObservableObject {
                         // or empty key (network/auth error against /v1/keys).
                         // Surface a clearer message than the OAuth-flavored one
                         // and DO NOT trigger Claude auth.
-                        log("ChatProvider: built-in key refetch returned \(newKey.isEmpty ? "no key" : "same key") — surfacing transient error")
-                        clearPendingRetry()
-                        errorMessage = "We couldn't verify your account. Please try again in a few seconds."
+                        // Same/no key came back: the bundled key is genuinely
+                        // unusable. Rather than dead-ending on a retry-only error,
+                        // transparently move the user onto Gemini (free, bundled
+                        // key) and let the existing retry tail replay on it.
+                        let geminiId = geminiFallbackModelId
+                        log("ChatProvider: built-in key refetch returned \(newKey.isEmpty ? "no key" : "same key"), falling back to \(geminiId)")
+                        builtinClaudeKeyDead = true
+                        ShortcutSettings.shared.selectedModel = geminiId
+                        retryAfterBuiltinKeyRefetch = true
+                        errorMessage = nil
                     }
                 } else {
                     // Already refetched within the cooldown window — give up for
                     // this turn so we don't spin. The user can manually retry.
-                    log("ChatProvider: built-in key still invalid within cooldown window — surfacing transient error")
-                    clearPendingRetry()
-                    errorMessage = "We couldn't verify your account. Please try again in a few seconds."
+                    // Refetched within the cooldown window and the bundled key is
+                    // still bad: fall straight to Gemini rather than dead-end.
+                    let geminiId = geminiFallbackModelId
+                    log("ChatProvider: built-in key still invalid within cooldown, falling back to \(geminiId)")
+                    builtinClaudeKeyDead = true
+                    ShortcutSettings.shared.selectedModel = geminiId
+                    retryAfterBuiltinKeyRefetch = true
+                    errorMessage = nil
                 }
             } else if bridgeMode == "builtin",
                       let bridgeError = error as? BridgeError,
