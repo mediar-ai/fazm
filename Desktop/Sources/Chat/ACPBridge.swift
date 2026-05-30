@@ -588,162 +588,12 @@ actor ACPBridge {
     // the Swift side sends a nil/empty cwd (new chat, no inherited workspace).
     proc.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
 
-    // Build environment based on auth mode
-    var env = ProcessInfo.processInfo.environment
-    env["NODE_NO_WARNINGS"] = "1"
-    switch mode {
-    case .personalOAuth:
-      env.removeValue(forKey: "ANTHROPIC_API_KEY")
-    case .bundledKey(let apiKey):
-      env["ANTHROPIC_API_KEY"] = apiKey
-    }
-
-    // Ensure the directory containing node is in PATH
-    let nodeDir = (nodePath as NSString).deletingLastPathComponent
-    let existingPath = env["PATH"] ?? "/usr/bin:/bin"
-    if !existingPath.contains(nodeDir) {
-      env["PATH"] = "\(nodeDir):\(existingPath)"
-    }
-
-    // Voice Response (TTS) toggle
-    let defaults = UserDefaults.standard
-    if defaults.bool(forKey: "voiceResponseEnabled") {
-      env["FAZM_VOICE_RESPONSE"] = "true"
-    }
-
-    // Bundle scope: "app" or "desktop-dev". The bridge uses this to namespace
-    // its `/tmp/fazm-bridge-state.json` dump so dev's and prod's bridges
-    // don't overwrite each other's state when both apps are running.
-    env["FAZM_BUNDLE_SCOPE"] = AppPaths.bundleScope
-
-    // Browser automation mode: "extension" (Playwright + Chrome extension, default)
-    // or "managed" (Fazm-bundled browser-harness driving its own Chrome). The two
-    // are mutually exclusive in acp-bridge to avoid dual-Chrome state confusion.
-    let browserMode = defaults.string(forKey: "browserMode") ?? "extension"
-    env["FAZM_BROWSER_MODE"] = browserMode
-
-    // Assrt QA testing MCP (beta) — additive to whichever browser mode is active.
-    // When enabled, the bridge registers @assrt-ai/assrt as a sibling MCP server
-    // exposing assrt_test / assrt_plan / assrt_diagnose plus seed_* cookie/IDB
-    // tools and Phase 3 freeform browser control. Assrt is fully standalone:
-    // it owns its own Chrome on port 9755 with profile at ~/.assrt/managed-chrome
-    // and never attaches to browser-harness's Chrome on 9655. Cookies are kept
-    // in sync via runManagedBrowserImport(), which mirrors the import into both
-    // profiles using ai_browser_profile.bulk_import --extra-dest-profile.
-    if defaults.bool(forKey: "assrtEnabled") {
-      env["FAZM_ASSRT_ENABLED"] = "true"
-    }
-
-    // Mirror the user's currently-selected chat model into the bridge env so
-    // sibling MCP servers (notably Assrt) can pin their credential provider to
-    // match. Without this, Assrt's keychain.ts would always prefer Claude OAuth
-    // and 401 on Gemini-selected sessions. The bridge reads this in
-    // buildMcpServers() and translates the model id to an ASSRT_PROVIDER value.
-    let selectedModel = defaults.string(forKey: "shortcut_selectedModel") ?? ""
-    if !selectedModel.isEmpty {
-      env["FAZM_SELECTED_MODEL"] = selectedModel
-    }
-
-    // Forward the runtime Gemini API key (fetched from the backend into
-    // KeyService memory) to the bridge env when Gemini is enabled. The bridge
-    // passes GEMINI_API_KEY through to the assrt subprocess, where assrt-mcp's
-    // credential resolver uses it as the last-resort fallback provider (after
-    // Claude OAuth and ANTHROPIC_API_KEY). Without this, assrt could only fall
-    // back to Gemini if the user manually exported GEMINI_API_KEY in their env.
-    // Only forwarded when FAZM_GEMINI_ENABLED is on, matching the rest of the
-    // Gemini gating, and only when we actually hold a key.
-    if env["FAZM_GEMINI_ENABLED"] == "true", let geminiKey = KeyService.shared.geminiAPIKey, !geminiKey.isEmpty {
-      env["GEMINI_API_KEY"] = geminiKey
-    }
-
-    // Playwright MCP extension mode — only meaningful when browserMode == "extension"
-    if browserMode != "managed" {
-      let useExtension =
-        defaults.object(forKey: "playwrightUseExtension") == nil
-        || defaults.bool(forKey: "playwrightUseExtension")
-      if useExtension {
-        env["PLAYWRIGHT_USE_EXTENSION"] = "true"
-        if let token = defaults.string(forKey: "playwrightExtensionToken"), !token.isEmpty {
-          env["PLAYWRIGHT_MCP_EXTENSION_TOKEN"] = token
-        }
-      }
-    }
-
-    // Custom API endpoint (allows proxying through Copilot, corporate gateways, etc.)
-    // Only forward it when it's an absolute http(s) URL with a host. A malformed value
-    // (missing scheme, "localhost:8766", stray text) otherwise lands in ANTHROPIC_BASE_URL
-    // and makes the Anthropic SDK throw "API Error: Invalid URL" on every query, silently
-    // bricking built-in chat (the retry-with-resume path can even swallow it into an empty
-    // turn so the user sees no error at all). Falling back to the default keeps chat working.
-    if let rawCustomEndpoint = defaults.string(forKey: "customApiEndpoint")?
-      .trimmingCharacters(in: .whitespacesAndNewlines), !rawCustomEndpoint.isEmpty {
-      if let customEndpoint = Self.validCustomAPIEndpoint(rawCustomEndpoint) {
-        env["ANTHROPIC_BASE_URL"] = customEndpoint
-        env["FAZM_CUSTOM_API_ENDPOINT"] = "true"
-        // A custom endpoint means the user is routing their own model/provider.
-        // Never send Fazm's bundled Anthropic key to that proxy. Keep a harmless
-        // placeholder key so Anthropic-compatible local gateways that accept any
-        // API key stay on the API-key path instead of triggering Claude OAuth.
-        env["ANTHROPIC_API_KEY"] = "sk-fazm-custom-endpoint"
-        log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled")
-      } else {
-        log(
-          "ACPBridge: ignoring malformed customApiEndpoint '\(rawCustomEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
-        )
-      }
-    }
-
-    // Tool timeout override (user-configurable in Settings > Advanced)
-    let toolTimeout = defaults.integer(forKey: "toolTimeoutSeconds")
-    if toolTimeout > 0 {
-      env["FAZM_TOOL_TIMEOUT_SECONDS"] = String(toolTimeout)
-    }
-
-    // Pass app bundle path so acp-bridge can find bundled binaries/resources
-    // (Node may run from /tmp due to NodeBinaryHelper, so process.execPath is unreliable)
-    if let resourcePath = Bundle.main.resourcePath {
-      env["FAZM_RESOURCES_PATH"] = resourcePath
-    }
-
-    // Composio MCP wiring. When the user has connected a Composio toolkit
-    // (Gmail today; Slack, GitHub, etc. later), the bridge registers an
-    // HTTP MCP server pointed at our backend proxy at
-    // `${FAZM_BACKEND_URL}/api/composio/mcp/<toolkit>`. The proxy holds the
-    // Composio API key server-side and forwards requests under this user's
-    // Firebase identity.
-    //
-    // We always inject FAZM_AUTH_TOKEN (when signed in) so the agent can call
-    // /api/composio/connect from a skill to *start* the OAuth flow even before
-    // any toolkit is enabled. FAZM_COMPOSIO_TOOLKITS is the post-OAuth signal
-    // that tells the bridge to actually register MCP servers.
-    //
-    // Token lifetime: ~1 hour. Long-running sessions will eventually 401 on
-    // Composio tool calls; the skill nudges the user to reconnect (which
-    // triggers `restartBridge`) when that happens. Refresh-on-tool-failure
-    // is a v2 problem.
-    var firebaseToken: String? = nil
-    if let token = try? await AuthService.shared.getIdToken(), !token.isEmpty {
-      firebaseToken = token
-      env["FAZM_AUTH_TOKEN"] = token
-    }
-    let composioFlags = ["composioGmailEnabled"].filter { defaults.bool(forKey: $0) }
-    if !composioFlags.isEmpty {
-      if firebaseToken != nil {
-        let toolkits = composioFlags.compactMap { flag -> String? in
-          switch flag {
-          case "composioGmailEnabled": return "gmail"
-          default: return nil
-          }
-        }
-        let toolkitsCSV = toolkits.joined(separator: ",")
-        env["FAZM_COMPOSIO_TOOLKITS"] = toolkitsCSV
-        log("ACPBridge: Composio toolkits enabled: \(toolkitsCSV)")
-      } else {
-        log("ACPBridge: Composio toolkit(s) enabled but no auth token available; skipping")
-      }
-    }
-
-    proc.environment = env
+    // Build the bridge launch environment (auth mode, MCP wiring, browser mode,
+    // Composio token, etc.). Extracted into makeBridgeEnvironment so the in-app
+    // routine scheduler (RoutineScheduler) can spawn cron-runner.mjs — which spawns
+    // its own headless bridge — with byte-identical auth/MCP env. A var added there
+    // for interactive chat is then automatically inherited by routines.
+    proc.environment = await Self.makeBridgeEnvironment(mode: mode, nodePath: nodePath)
 
     let stdin = Pipe()
     let stdout = Pipe()
@@ -2430,6 +2280,194 @@ actor ACPBridge {
     stdinPipe = nil
     stdoutPipe = nil
     stderrPipe = nil
+  }
+
+  // MARK: - Launch environment (shared with RoutineScheduler)
+
+  /// The auth mode a freshly-launched bridge should use right now, given the current
+  /// settings + bundled-key availability. Mirrors `ChatProvider.createBridge()` so a
+  /// routine always runs on the same provider as the user's interactive chat. Keep the
+  /// two in sync.
+  static func currentMode() -> BridgeMode {
+    // A custom endpoint means the user routes their own model/provider — never send
+    // the bundled key (matches createBridge()).
+    if validCustomAPIEndpoint() != nil {
+      return .personalOAuth
+    }
+    let bridgeMode = UserDefaults.standard.string(forKey: "bridgeMode") ?? "builtin"
+    if bridgeMode == "builtin" {
+      let apiKey = KeyService.shared.anthropicAPIKey ?? ""
+      if !apiKey.isEmpty {
+        return .bundledKey(apiKey: apiKey)
+      }
+      // No bundled key available — fall back to personal OAuth.
+      return .personalOAuth
+    }
+    // Personal mode: always OAuth.
+    return .personalOAuth
+  }
+
+  /// Builds the complete environment for a freshly-launched bridge process, given the
+  /// resolved auth `mode` and `nodePath`. Extracted from `start()` so the in-app routine
+  /// scheduler can spawn cron-runner.mjs (which spawns its own headless bridge) with
+  /// identical auth/MCP env — otherwise the headless routine bridge silently drifts from
+  /// the interactive one whenever a new var is added here.
+  static func makeBridgeEnvironment(mode: BridgeMode, nodePath: String) async -> [String: String] {
+    var env = ProcessInfo.processInfo.environment
+    env["NODE_NO_WARNINGS"] = "1"
+    switch mode {
+    case .personalOAuth:
+      env.removeValue(forKey: "ANTHROPIC_API_KEY")
+    case .bundledKey(let apiKey):
+      env["ANTHROPIC_API_KEY"] = apiKey
+    }
+
+    // Ensure the directory containing node is in PATH
+    let nodeDir = (nodePath as NSString).deletingLastPathComponent
+    let existingPath = env["PATH"] ?? "/usr/bin:/bin"
+    if !existingPath.contains(nodeDir) {
+      env["PATH"] = "\(nodeDir):\(existingPath)"
+    }
+
+    // Voice Response (TTS) toggle
+    let defaults = UserDefaults.standard
+    if defaults.bool(forKey: "voiceResponseEnabled") {
+      env["FAZM_VOICE_RESPONSE"] = "true"
+    }
+
+    // Bundle scope: "app" or "desktop-dev". The bridge uses this to namespace
+    // its `/tmp/fazm-bridge-state.json` dump so dev's and prod's bridges
+    // don't overwrite each other's state when both apps are running.
+    env["FAZM_BUNDLE_SCOPE"] = AppPaths.bundleScope
+
+    // Browser automation mode: "extension" (Playwright + Chrome extension, default)
+    // or "managed" (Fazm-bundled browser-harness driving its own Chrome). The two
+    // are mutually exclusive in acp-bridge to avoid dual-Chrome state confusion.
+    let browserMode = defaults.string(forKey: "browserMode") ?? "extension"
+    env["FAZM_BROWSER_MODE"] = browserMode
+
+    // Assrt QA testing MCP (beta) — additive to whichever browser mode is active.
+    // When enabled, the bridge registers @assrt-ai/assrt as a sibling MCP server
+    // exposing assrt_test / assrt_plan / assrt_diagnose plus seed_* cookie/IDB
+    // tools and Phase 3 freeform browser control. Assrt is fully standalone:
+    // it owns its own Chrome on port 9755 with profile at ~/.assrt/managed-chrome
+    // and never attaches to browser-harness's Chrome on 9655. Cookies are kept
+    // in sync via runManagedBrowserImport(), which mirrors the import into both
+    // profiles using ai_browser_profile.bulk_import --extra-dest-profile.
+    if defaults.bool(forKey: "assrtEnabled") {
+      env["FAZM_ASSRT_ENABLED"] = "true"
+    }
+
+    // Mirror the user's currently-selected chat model into the bridge env so
+    // sibling MCP servers (notably Assrt) can pin their credential provider to
+    // match. Without this, Assrt's keychain.ts would always prefer Claude OAuth
+    // and 401 on Gemini-selected sessions. The bridge reads this in
+    // buildMcpServers() and translates the model id to an ASSRT_PROVIDER value.
+    let selectedModel = defaults.string(forKey: "shortcut_selectedModel") ?? ""
+    if !selectedModel.isEmpty {
+      env["FAZM_SELECTED_MODEL"] = selectedModel
+    }
+
+    // Forward the runtime Gemini API key (fetched from the backend into
+    // KeyService memory) to the bridge env when Gemini is enabled. The bridge
+    // passes GEMINI_API_KEY through to the assrt subprocess, where assrt-mcp's
+    // credential resolver uses it as the last-resort fallback provider (after
+    // Claude OAuth and ANTHROPIC_API_KEY). Without this, assrt could only fall
+    // back to Gemini if the user manually exported GEMINI_API_KEY in their env.
+    // Only forwarded when FAZM_GEMINI_ENABLED is on, matching the rest of the
+    // Gemini gating, and only when we actually hold a key.
+    if env["FAZM_GEMINI_ENABLED"] == "true", let geminiKey = KeyService.shared.geminiAPIKey, !geminiKey.isEmpty {
+      env["GEMINI_API_KEY"] = geminiKey
+    }
+
+    // Playwright MCP extension mode — only meaningful when browserMode == "extension"
+    if browserMode != "managed" {
+      let useExtension =
+        defaults.object(forKey: "playwrightUseExtension") == nil
+        || defaults.bool(forKey: "playwrightUseExtension")
+      if useExtension {
+        env["PLAYWRIGHT_USE_EXTENSION"] = "true"
+        if let token = defaults.string(forKey: "playwrightExtensionToken"), !token.isEmpty {
+          env["PLAYWRIGHT_MCP_EXTENSION_TOKEN"] = token
+        }
+      }
+    }
+
+    // Custom API endpoint (allows proxying through Copilot, corporate gateways, etc.)
+    // Only forward it when it's an absolute http(s) URL with a host. A malformed value
+    // (missing scheme, "localhost:8766", stray text) otherwise lands in ANTHROPIC_BASE_URL
+    // and makes the Anthropic SDK throw "API Error: Invalid URL" on every query, silently
+    // bricking built-in chat (the retry-with-resume path can even swallow it into an empty
+    // turn so the user sees no error at all). Falling back to the default keeps chat working.
+    if let rawCustomEndpoint = defaults.string(forKey: "customApiEndpoint")?
+      .trimmingCharacters(in: .whitespacesAndNewlines), !rawCustomEndpoint.isEmpty {
+      if let customEndpoint = Self.validCustomAPIEndpoint(rawCustomEndpoint) {
+        env["ANTHROPIC_BASE_URL"] = customEndpoint
+        env["FAZM_CUSTOM_API_ENDPOINT"] = "true"
+        // A custom endpoint means the user is routing their own model/provider.
+        // Never send Fazm's bundled Anthropic key to that proxy. Keep a harmless
+        // placeholder key so Anthropic-compatible local gateways that accept any
+        // API key stay on the API-key path instead of triggering Claude OAuth.
+        env["ANTHROPIC_API_KEY"] = "sk-fazm-custom-endpoint"
+        log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled")
+      } else {
+        log(
+          "ACPBridge: ignoring malformed customApiEndpoint '\(rawCustomEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
+        )
+      }
+    }
+
+    // Tool timeout override (user-configurable in Settings > Advanced)
+    let toolTimeout = defaults.integer(forKey: "toolTimeoutSeconds")
+    if toolTimeout > 0 {
+      env["FAZM_TOOL_TIMEOUT_SECONDS"] = String(toolTimeout)
+    }
+
+    // Pass app bundle path so acp-bridge can find bundled binaries/resources
+    // (Node may run from /tmp due to NodeBinaryHelper, so process.execPath is unreliable)
+    if let resourcePath = Bundle.main.resourcePath {
+      env["FAZM_RESOURCES_PATH"] = resourcePath
+    }
+
+    // Composio MCP wiring. When the user has connected a Composio toolkit
+    // (Gmail today; Slack, GitHub, etc. later), the bridge registers an
+    // HTTP MCP server pointed at our backend proxy at
+    // `${FAZM_BACKEND_URL}/api/composio/mcp/<toolkit>`. The proxy holds the
+    // Composio API key server-side and forwards requests under this user's
+    // Firebase identity.
+    //
+    // We always inject FAZM_AUTH_TOKEN (when signed in) so the agent can call
+    // /api/composio/connect from a skill to *start* the OAuth flow even before
+    // any toolkit is enabled. FAZM_COMPOSIO_TOOLKITS is the post-OAuth signal
+    // that tells the bridge to actually register MCP servers.
+    //
+    // Token lifetime: ~1 hour. Long-running sessions will eventually 401 on
+    // Composio tool calls; the skill nudges the user to reconnect (which
+    // triggers `restartBridge`) when that happens. Refresh-on-tool-failure
+    // is a v2 problem.
+    var firebaseToken: String? = nil
+    if let token = try? await AuthService.shared.getIdToken(), !token.isEmpty {
+      firebaseToken = token
+      env["FAZM_AUTH_TOKEN"] = token
+    }
+    let composioFlags = ["composioGmailEnabled"].filter { defaults.bool(forKey: $0) }
+    if !composioFlags.isEmpty {
+      if firebaseToken != nil {
+        let toolkits = composioFlags.compactMap { flag -> String? in
+          switch flag {
+          case "composioGmailEnabled": return "gmail"
+          default: return nil
+          }
+        }
+        let toolkitsCSV = toolkits.joined(separator: ",")
+        env["FAZM_COMPOSIO_TOOLKITS"] = toolkitsCSV
+        log("ACPBridge: Composio toolkits enabled: \(toolkitsCSV)")
+      } else {
+        log("ACPBridge: Composio toolkit(s) enabled but no auth token available; skipping")
+      }
+    }
+
+    return env
   }
 
   // MARK: - Node.js Discovery
