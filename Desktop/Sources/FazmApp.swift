@@ -403,6 +403,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Start resource monitoring (memory, CPU, disk)
         ResourceMonitor.shared.start()
 
+        // Start the in-app routine scheduler. This is what actually fires user routines
+        // (cron_jobs) on end-user machines — every 60s it spawns cron-runner.mjs for due
+        // jobs while the app runs. Without it, routines save to the DB but never execute
+        // (the only other scheduler is a dev-machine launchd job).
+        RoutineScheduler.shared.start()
+
         // Identify analytics
         AnalyticsManager.shared.identify()
         AnalyticsManager.shared.reportAllSettingsIfNeeded()
@@ -1203,6 +1209,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Stop heartbeat timer
         sentryHeartbeatTimer?.invalidate()
         sentryHeartbeatTimer = nil
+
+        // Stop the routine scheduler (in-flight cron-runner subprocesses keep their own
+        // timeout and finish independently of the app).
+        RoutineScheduler.shared.stop()
 
         // Mark clean shutdown so next launch skips expensive DB integrity check
         AppDatabase.markCleanShutdown()
