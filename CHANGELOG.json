@@ -1,12 +1,17 @@
 {
-  "unreleased": [
-    "Improved analytics so empty or dropped AI replies are no longer counted as successful answers (better visibility into per-model reliability)",
-    "Keep going when built-in Claude is unavailable: automatically continue on Gemini if the built-in key fails or hits a usage limit, instead of showing an error",
-    "Fixed scheduled routines never running: the app now fires your recurring routines on time while it is open",
-    "Fixed a phantom \"tool not responding\" indicator that reappeared on the next prompt in pop-out and bar chats, showing a healthy session as hung for thousands of seconds",
-    "Removed dead no-op knowledge-graph API path from the Memory page; the refresh now re-reads local storage and recovers a stale DB handle instead of doing nothing"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.56",
+      "date": "2026-05-30",
+      "changes": [
+        "Improved analytics so empty or dropped AI replies are no longer counted as successful answers (better visibility into per-model reliability)",
+        "Keep going when built-in Claude is unavailable: automatically continue on Gemini if the built-in key fails or hits a usage limit, instead of showing an error",
+        "Fixed scheduled routines never running: the app now fires your recurring routines on time while it is open",
+        "Fixed a phantom \"tool not responding\" indicator that reappeared on the next prompt in pop-out and bar chats, showing a healthy session as hung for thousands of seconds",
+        "Removed dead no-op knowledge-graph API path from the Memory page; the refresh now re-reads local storage and recovers a stale DB handle instead of doing nothing"
+      ]
+    },
     {
       "version": "2.9.55",
       "date": "2026-05-29",
