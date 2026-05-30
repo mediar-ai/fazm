@@ -291,6 +291,13 @@ actor AppDatabase {
             .appendingPathComponent(userId, isDirectory: true)
     }
 
+    /// Absolute path to the active user's `fazm.db` — the same file the pool opens.
+    /// Nonisolated so RoutineScheduler can point `cron-runner.mjs --user-db` at the
+    /// running build's DB without hopping the actor.
+    nonisolated static func activeDatabasePath() -> String {
+        staticUserBaseDirectory().appendingPathComponent("fazm.db").path
+    }
+
     /// Mark a clean shutdown by removing the running flag file.
     /// Call from applicationWillTerminate to avoid unnecessary integrity checks on next launch.
     /// This is nonisolated so it can be called synchronously from the main thread during termination.
