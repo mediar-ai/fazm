@@ -877,8 +877,12 @@ class ChatProvider: ObservableObject {
     /// the bridge accepts via session/set_model. Routing is model-id-based in the
     /// bridge, so this resolves even before the picker probe populates availableModels.
     private var geminiFallbackModelId: String {
-        ShortcutSettings.shared.availableModels.first(where: { Self.isGeminiModelId($0.id) })?.id
-            ?? "gemini-flash-latest"
+        // Prefer Pro (smartest) for the silent fallback, then Flash, then any
+        // advertised Gemini, then the canonical Pro alias the bridge accepts.
+        let models = ShortcutSettings.shared.availableModels
+        if let pro = models.first(where: { $0.id == "gemini-pro-latest" }) { return pro.id }
+        if let flash = models.first(where: { $0.id == "gemini-flash-latest" }) { return flash.id }
+        return models.first(where: { Self.isGeminiModelId($0.id) })?.id ?? "gemini-pro-latest"
     }
 
     private let messagesPageSize = 50
@@ -5622,7 +5626,7 @@ class ChatProvider: ObservableObject {
                     // builtinClaudeKeyDead (the key isn't dead — the limit resets),
                     // so Claude auto-recovers on a later turn. Only surface a message
                     // if Gemini isn't available to fall back to.
-                    if geminiAvailable {
+                    if ShortcutSettings.shared.availableModels.contains(where: { Self.isGeminiModelId($0.id) }) {
                         let geminiId = geminiFallbackModelId
                         log("ChatProvider: builtin rate-limited — switching to \(geminiId) and replaying silently")
                         ShortcutSettings.shared.selectedModel = geminiId
