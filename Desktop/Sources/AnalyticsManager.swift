@@ -566,6 +566,7 @@ class AnalyticsManager {
         messageLength: Int,
         bridgeMode: String,
         model: String = "",
+        outcome: String = "ok",
         inputTokens: Int = 0,
         outputTokens: Int = 0,
         cacheReadTokens: Int = 0,
@@ -586,6 +587,13 @@ class AnalyticsManager {
             // Without this, completed events carry no model and the denominator
             // for a per-provider stall rate is unknowable.
             "model": model,
+            // Distinguishes a real answer from a silent empty turn. The event
+            // fires on the "success" path even when the model produced no text
+            // (the empty-turn marker), so without this an empty turn is
+            // miscounted as a success. Values: "ok" (visible answer),
+            // "empty" (no text, no tools — the Gemini drop bug), "tool_only"
+            // (tools ran, no final text), "interrupted" (user stopped it).
+            "outcome": outcome,
             "input_tokens": inputTokens,
             "output_tokens": outputTokens,
             "cache_read_tokens": cacheReadTokens,
