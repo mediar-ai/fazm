@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Improved analytics so empty or dropped AI replies are no longer counted as successful answers (better visibility into per-model reliability)"
+    "Improved analytics so empty or dropped AI replies are no longer counted as successful answers (better visibility into per-model reliability)",
+    "Keep going when built-in Claude is unavailable: automatically continue on Gemini if the built-in key fails or hits a usage limit, instead of showing an error"
   ],
   "releases": [
     {
