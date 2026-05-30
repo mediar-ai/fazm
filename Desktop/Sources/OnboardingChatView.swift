@@ -156,8 +156,6 @@ struct OnboardingChatView: View {
     @State private var inputPulseActive: Bool = false
     @State private var inputPulsePhase: Bool = false
     @State private var showSkipConfirmation: Bool = false
-    @State private var skipButtonVisible: Bool = false
-    @State private var skipButtonTimer: Timer? = nil
     @FocusState private var isInputFocused: Bool
 
     // Parallel exploration state
@@ -191,15 +189,19 @@ struct OnboardingChatView: View {
 
                 Spacer()
 
-                if skipButtonVisible {
-                    Button(action: { showSkipConfirmation = true }) {
-                        Text("Skip")
-                            .scaledFont(size: 13)
-                            .foregroundColor(FazmColors.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity)
+                // Always-available escape hatch. The onboarding stall is NOT an
+                // onboarding bug — it's the query-layer hang, which can strike the
+                // very first turn — so a timer-gated Skip left users trapped with no
+                // visible way out. Rendered subtly (textTertiary) so it doesn't pull
+                // healthy users out early, but it is ALWAYS present and tappable,
+                // including while a turn is in flight or stalled.
+                Button(action: { showSkipConfirmation = true }) {
+                    Text("Skip")
+                        .scaledFont(size: 13)
+                        .foregroundColor(FazmColors.textTertiary)
                 }
+                .buttonStyle(.plain)
+                .help("Skip setup and go straight to the app")
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
@@ -461,66 +463,6 @@ struct OnboardingChatView: View {
         }
         .onAppear {
             startChat()
-            resetSkipTimer()
-        }
-        .onDisappear {
-            skipButtonTimer?.invalidate()
-            skipButtonTimer = nil
-        }
-        // Hide skip when quick-reply options appear AND the turn is idle (the
-        // user has a clear, rendered next action). While a turn is in flight
-        // (isSending), quick-reply options are NOT rendered — they're queued
-        // behind the typing indicator — so they must NOT cancel the stall
-        // timer. Otherwise a turn that streams options then hangs in
-        // finalization (the common #630 stall: greeting + ask_followup, then
-        // the prompt never resolves) traps the user with no Skip and no
-        // actionable options. (tetovalo@gmail.com, 2026-05-28)
-        .onChange(of: quickReplyOptions) { _, options in
-            if !options.isEmpty && !chatProvider.isSending {
-                withAnimation { skipButtonVisible = false }
-                skipButtonTimer?.invalidate()
-            } else if options.isEmpty && !chatProvider.isSending {
-                // Options cleared and AI not responding: restart inactivity timer
-                resetSkipTimer()
-            }
-            // isSending: leave the stall timer running (options aren't on screen).
-        }
-        // Hide skip when AI starts responding, but arm a SHORT stall-escape
-        // timer. If a turn hangs (ACP status stuck at `requesting`, never
-        // completing), isSending stays true forever and EVERY escape (Skip,
-        // "Skip the rest", typing) is suppressed, trapping the user in the
-        // setup chat. We arm a 30s timer here and reset it on each streamed
-        // message/text/content update below, so Skip surfaces 30s after the
-        // turn goes *silent* (a true hang) yet never during a healthy long
-        // turn that's actively streaming.
-        // (founder-chat reports: pillaholins@gmail.com 2026-05-27 [first fix,
-        //  120s]; tetovalo@gmail.com 2026-05-28 [lowered to 30s, this change])
-        .onChange(of: chatProvider.isSending) { _, isSending in
-            if isSending {
-                withAnimation { skipButtonVisible = false }
-                resetSkipTimer(after: 30)
-            }
-        }
-        // Reset the escape timer on streaming activity. While a turn is in
-        // flight, any new message / streamed text / content block resets the
-        // 30s stall window; when idle we use the original 120s inactivity
-        // window. A genuinely hung turn produces none of these, so the 30s
-        // elapses and the existing header Skip button is shown.
-        .onChange(of: chatProvider.messages.count) { _, _ in
-            if chatProvider.isSending {
-                resetSkipTimer(after: 30)              // activity while sending: reset stall window
-            } else if quickReplyOptions.isEmpty {
-                resetSkipTimer(after: 120)             // idle, no actionable options: inactivity window
-            }
-            // idle with options: no timer (handled by quickReplyOptions onChange)
-        }
-        .onChange(of: chatProvider.messages.last?.text) { _, _ in
-            guard chatProvider.isSending else { return }
-            resetSkipTimer(after: 30)
-        }
-        .onChange(of: chatProvider.messages.last?.contentBlocks.count) { _, _ in
-            guard chatProvider.isSending else { return }
-            resetSkipTimer(after: 30)
         }
         .onReceive(permissionCheckTimer) { _ in
             appState.checkScreenRecordingPermission()
@@ -660,29 +602,6 @@ struct OnboardingChatView: View {
         let progressed = hasMinimumSteps || explorationDone || lotsOfMessages
         let hasEnoughMessages = chatProvider.messages.count >= 6
         return progressed && hasEnoughMessages
-    }
-
-    /// Show skip after a period of no progress. Fires whether the chat is idle
-    /// (inactivity) OR stuck "sending" on a hung turn — the latter is the
-    /// onboarding-stall trap (status stuck at `requesting`, isSending never
-    /// clears). The only gate is that the user has no clearer pending action
-    /// (quick-reply options), since those represent an explicit next step.
-    ///
-    /// `seconds` is 120 for genuine inactivity and 30 for an in-flight turn
-    /// (re-armed on each streamed update by the callers above, so the 30s only
-    /// elapses on a true hang, not a healthy long-streaming turn).
-    private func resetSkipTimer(after seconds: TimeInterval = 120) {
-        skipButtonTimer?.invalidate()
-        withAnimation { skipButtonVisible = false }
-        skipButtonTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in
-            // Show Skip unless the user has an on-screen alternative. Quick-reply
-            // options only count when actually rendered — they're hidden while a
-            // turn is in flight (isSending) — so a stuck "sending" turn surfaces
-            // Skip even with options queued (the #630 finalization stall).
-            if self.quickReplyOptions.isEmpty || self.chatProvider.isSending {
-                withAnimation { self.skipButtonVisible = true }
-            }
-        }
     }
 
     // MARK: - Scroll
