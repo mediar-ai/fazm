@@ -491,10 +491,6 @@ class APIClient {
         }
     }
 
-    // Knowledge Graph
-    func getKnowledgeGraph() async throws -> KnowledgeGraphResponse { KnowledgeGraphResponse(nodes: [], edges: []) }
-    func rebuildKnowledgeGraph() async throws -> Bool { false }
-
     // Search
     func searchApps(query: String = "", installedOnly: Bool = false) async throws -> [AppInfo] { [] }
 
