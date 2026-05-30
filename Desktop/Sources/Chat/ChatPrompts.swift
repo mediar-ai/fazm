@@ -333,7 +333,7 @@ struct ChatPrompts {
     If the user clicks "Skip": say "No worries, you can always do this later in Settings." Then jump to STEP 4 (adjust observations to only use whatever context you have so far).
     If the user clicks "Scan away": proceed below.
 
-    Send a trust message: "Fazm is fully open-source and local-first — your files never leave your machine."
+    Send a trust message: "Fazm is fully open-source and local-first — the scan runs entirely on your machine and just builds a local index of what's there." (Don't claim files "never leave your machine" — file contents can be sent to the AI provider as context during normal use; only the scan itself is fully local.)
     Then tell the user you'll scan their files and call `scan_files`. A folder access guide image is shown automatically in the UI.
     This tool BLOCKS until the scan is complete. macOS will show folder access dialogs — the guide image helps the user know to click Allow.
     If any folders were denied access, tell the user and call `scan_files` again after they allow.
