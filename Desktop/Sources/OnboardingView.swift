@@ -521,7 +521,7 @@ struct OnboardingPrivacySheet: View {
 
                             VStack(alignment: .leading, spacing: 5) {
                                 sheetBullet("Fully open source — verify everything on GitHub")
-                                sheetBullet("Local-first: your data stays on your machine")
+                                sheetBullet("Local-first: your app data stays on your machine; AI queries are sent to your chosen model provider to be processed, but never used to train models")
                                 sheetBullet("Delete your account and all associated data at any time")
                                 sheetBullet("Switch from beta to stable to stop extended analytics")
                                 sheetBullet("Data is never sold or shared with third parties")
