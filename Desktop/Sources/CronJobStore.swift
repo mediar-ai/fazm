@@ -65,6 +65,30 @@ enum CronJobStore {
         }
     }
 
+    /// Routines that are due to fire now: enabled, with a `next_run_at` at or before
+    /// `now`. This is the in-app equivalent of the `SELECT ... WHERE enabled = 1 AND
+    /// next_run_at <= now` query in `inbox/skill/check-routines.sh`. A routine whose
+    /// time passed while the app was closed still has `next_run_at` in the past, so it
+    /// shows up here on the next tick after launch (catch-up-once).
+    static func dueJobs(now: Date = Date()) async -> [CronJob] {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return [] }
+        do {
+            return try await dbQueue.read { db in
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT * FROM cron_jobs
+                    WHERE enabled = 1
+                      AND next_run_at IS NOT NULL
+                      AND next_run_at <= ?
+                    ORDER BY next_run_at ASC
+                """, arguments: [now.timeIntervalSince1970])
+                return rows.map(parseJob)
+            }
+        } catch {
+            logError("CronJobStore: dueJobs failed", error: error)
+            return []
+        }
+    }
+
     static func getJob(id: String) async -> CronJob? {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return nil }
         do {
