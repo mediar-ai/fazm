@@ -3758,6 +3758,29 @@ class ChatProvider: ObservableObject {
         return nil
     }
 
+    /// Wipe the live "tool not responding" indicator on a session's streaming
+    /// state. The bridge sets `stalledToolName`/`stalledSince` when an `mcp__*`
+    /// tool goes silent mid-turn and normally clears it via a
+    /// `tool_stalled stalled:false` event when the tool resumes. But if the turn
+    /// ENDS while a tool is still flagged (the tool finished as the turn wrapped,
+    /// or the session was abandoned), no clear event ever arrives and the stale
+    /// stall survives on the @Published state. It stays invisible while idle (the
+    /// indicator is gated on `isAILoading`), then re-renders the moment the NEXT
+    /// turn streams — showing a tool "not responding · Ns" with the counter
+    /// ticking from the original stall (observed: a "fazm tool" stuck at 3000s+
+    /// in a perfectly healthy pop-out). `StreamingResponseState` documents the
+    /// field as "cleared on stalled:false, on Stop, or on turn end" — this closes
+    /// the missing "on turn end" path. Called at turn start (so a new turn can't
+    /// inherit a prior stall) and at turn finalization (so the state stays clean).
+    @MainActor
+    private func clearStallIndicator(forResolvedKey key: String) {
+        guard let streaming = streamingState(for: key), streaming.stalledToolName != nil else { return }
+        log("ChatProvider: clearing stale tool-stalled indicator on session=\(key) (tool=\(streaming.stalledToolName ?? "?"))")
+        streaming.stalledToolName = nil
+        streaming.stalledToolUseId = nil
+        streaming.stalledSince = nil
+    }
+
     /// Fully tear down a session's bridge state (so the underlying `claude`
     /// subprocess dies). Called by `DetachedChatWindowController.onWindowClose`
     /// to prevent the warm-session leak that kept claude subprocesses spinning
@@ -4154,6 +4177,13 @@ class ChatProvider: ObservableObject {
         }
         sendingSessionKeys.insert(effectiveKey)
         isSending = true
+
+        // A new turn is starting — wipe any leftover "tool not responding"
+        // indicator left on this session's streaming state by a PRIOR turn that
+        // ended while a tool was still flagged stalled. Without this, the stale
+        // stall (invisible while idle) re-renders the instant this turn streams,
+        // showing a healthy session as a tool hung for thousands of seconds.
+        clearStallIndicator(forResolvedKey: effectiveKey)
 
         // Clear the compaction indicator when THIS session's turn unwinds.
         // isCompacting is set on compaction_start and otherwise only cleared by a
@@ -5183,6 +5213,9 @@ class ChatProvider: ObservableObject {
                 }
 
                 completeRemainingToolCalls(messageId: aiMessageId)
+                // Turn finished cleanly — no tool is in flight anymore, so drop
+                // any lingering "tool not responding" indicator on this session.
+                clearStallIndicator(forResolvedKey: effectiveKey)
 
                 // Forward final result to phone
                 webRelay.sendToPhone(["type": "result", "text": messageText])
