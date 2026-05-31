@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed pop-out chats getting stuck on \"Compacting...\" forever when a session short-circuits with an empty instant response"
+    "Fixed pop-out chats getting stuck on \"Compacting...\" forever when a session short-circuits with an empty instant response",
+    "Fixed pop-out New Chat sometimes opening already in a thinking/spinner state after a stuck turn, and added logging to trace the new-chat session handoff"
   ],
   "releases": [
     {
