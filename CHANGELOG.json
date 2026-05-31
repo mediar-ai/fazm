@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-out chats getting stuck on \"Compacting...\" forever when a session short-circuits with an empty instant response"
+  ],
   "releases": [
     {
       "version": "2.9.56",
