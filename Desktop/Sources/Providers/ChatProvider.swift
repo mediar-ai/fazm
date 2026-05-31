@@ -3801,6 +3801,49 @@ class ChatProvider: ObservableObject {
         return sendingSessionKeys.contains(sessionKey)
     }
 
+    /// Cleanup + diagnostics for the pop-out "+ / New chat" path.
+    ///
+    /// The detached `resetSession` only resets the bridge session; it never
+    /// scrubs the stuck in-flight message left in `provider.messages` under the
+    /// old key. If that message still carries `isStreaming=true` (the
+    /// finalization-stall family, #630 — the turn froze with pending tools + a
+    /// live subagent so neither the idle-arm nor the orphan handler ever fired),
+    /// the spinner bleeds straight into the brand-new chat and the user never
+    /// sees that a new session began (the window key looks unchanged because the
+    /// visual state never reset). This proactively flips those flags off and
+    /// releases the stale sending lock, independent of the async `resetSession`
+    /// racing a frozen session.
+    ///
+    /// The logs here are the breadcrumb that was previously missing: the entire
+    /// `onNewChat` closure emitted nothing, so prod showed no trace of the +
+    /// click, the old→new key handoff, or how many zombie streaming messages
+    /// were stranded under the old key.
+    @MainActor
+    func purgeStuckStreamingForNewChat(oldKey: String, newKey: String) {
+        let stuckIdx = messages.indices.filter {
+            (messages[$0].sessionKey ?? "") == oldKey && messages[$0].isStreaming
+        }
+        let hadSendingLock = sendingSessionKeys.contains(oldKey)
+        log("ChatProvider: newChat (pop-out) oldKey=\(oldKey) -> newKey=\(newKey) stuckStreamingMsgs=\(stuckIdx.count) hadSendingLock=\(hadSendingLock) totalMessages=\(messages.count)")
+        for i in stuckIdx {
+            messages[i].isStreaming = false
+        }
+        if hadSendingLock {
+            sendingSessionKeys.remove(oldKey)
+            isSending = !sendingSessionKeys.isEmpty
+            log("ChatProvider: newChat released stale sending lock for oldKey=\(oldKey)")
+        }
+        // Defensive: clear any pop-out streaming state still bound to the old
+        // key. The caller re-keys the window to newKey before this runs, so this
+        // normally finds nothing — but a restored/late-bound entry could still
+        // reference oldKey and keep a spinner alive.
+        if let streaming = streamingState(for: oldKey) {
+            streaming.currentAIMessage?.isStreaming = false
+            streaming.isAILoading = false
+            log("ChatProvider: newChat cleared lingering pop-out streaming state still bound to oldKey=\(oldKey)")
+        }
+    }
+
     /// Force-mark a session as no longer sending. Called by the per-window
     /// safety watchdog when the bridge has gone silent and the completion
     /// event will never arrive (e.g. a bridge-side poison-scrub aborted a
