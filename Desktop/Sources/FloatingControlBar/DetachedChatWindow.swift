@@ -1048,9 +1048,19 @@ class DetachedChatWindowController {
             self.entries[id]?.sessionKey = newKey
             win.sessionKey = newKey
             self.saveWindowRegistry()
-            Task { @MainActor in
-                if let oldKey {
+            // Proactively scrub any stuck `isStreaming=true` message stranded
+            // under the old key + release its sending lock, BEFORE the async
+            // resetSession races a possibly-frozen bridge session. Without this,
+            // a finalization-stalled turn (#630) keeps its spinner alive and it
+            // bleeds into the fresh chat — the symptom the user hit: clicking +
+            // produced a "new chat" that was already in thinking state. Also the
+            // single place that logs the +-click and old→new key handoff.
+            if let oldKey {
+                provider.purgeStuckStreamingForNewChat(oldKey: oldKey, newKey: newKey)
+                Task { @MainActor in
+                    log("[DetachedChat] newChat resetSession start oldKey=\(oldKey)")
                     await provider.resetSession(key: oldKey)
+                    log("[DetachedChat] newChat resetSession done oldKey=\(oldKey)")
                 }
             }
         }
