@@ -1474,6 +1474,15 @@ const DEBUG_COMPACTION_STALL_FILE = "/tmp/fazm-debug-compaction-stall";
 // arm exercises the 0-char auto-retry-once path. The flag is reset before the
 // retry so the retried turn streams a real answer. Never present in production.
 const DEBUG_DROP_EMPTY_FLAG_FILE = "/tmp/fazm-debug-drop-prompt-result-empty";
+// One-shot test hook for the 2026-05-30 "poisoned resume" stall: when this file
+// exists, the next session/prompt on a RESUMED session resolves instantly
+// (~0ms) with stopReason=end_turn, 0 output tokens, and 0 assistant text, after
+// emitting a status_change:"compacting" + "Compacting..." placeholder — faithfully
+// mimicking a session that short-circuits without ever calling the model (field
+// case: session 0ea67ea0 looping on "Compacting..." forever). Exercises the
+// [COMPACTION-POISON-RECOVERY] path. The flag is consumed on arm, so the recovery's
+// fresh session streams a real answer. Never present in production.
+const DEBUG_POISON_EMPTY_RESUME_FILE = "/tmp/fazm-debug-poison-empty-resume";
 let debugSuppressTextThisTurn = false;
 
 /** Send a JSON-RPC request to the ACP subprocess and wait for the response */
@@ -4416,8 +4425,20 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
         }
       } catch { /* ignore test-hook errors */ }
 
+      let _simPoisonEmpty = false;
+      try {
+        if (existsSync(DEBUG_POISON_EMPTY_RESUME_FILE)) {
+          unlinkSync(DEBUG_POISON_EMPTY_RESUME_FILE);
+          _simPoisonEmpty = true;
+          debugSuppressTextThisTurn = true; // ensure fullText stays 0 even if a stray chunk arrives
+          logErr("[DEBUG-POISON-EMPTY] Armed: next resume resolves end_turn in ~0ms with 0 output tokens + 'Compacting...' placeholder, no model call");
+        }
+      } catch { /* ignore test-hook errors */ }
+
       const promptPromise = _simCompactionStall
         ? new Promise<unknown>(() => { /* never resolves — a session/prompt stuck mid-compaction */ })
+        : _simPoisonEmpty
+        ? Promise.resolve({ stopReason: "end_turn", usage: { inputTokens: 120, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0, totalTokens: 120 }, _meta: { costUsd: 0 } })
         : acpRequest("session/prompt", sessionPromptPayload);
 
       if (_simCompactionStall) {
@@ -4426,6 +4447,14 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           simHandler("session/update", { sessionId, update: { sessionUpdate: "status_change", status: "compacting" } });
           simHandler("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Compacting..." } } });
         }, 200);
+      }
+
+      if (_simPoisonEmpty) {
+        const simHandler = sessionNotificationHandlers.get(sessionId);
+        if (simHandler) {
+          simHandler("session/update", { sessionId, update: { sessionUpdate: "status_change", status: "compacting" } });
+          simHandler("session/update", { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Compacting..." } } });
+        }
       }
 
       // [TURN-HEARTBEAT] — while this prompt is in flight, emit one line every
@@ -4702,6 +4731,57 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           const retryCostUsd = retryResult._meta?.costUsd ?? 0;
           sendWithSession(sessionId, { type: "result", text: fullText, sessionId, model: msg.model ?? DEFAULT_MODEL, costUsd: retryCostUsd, inputTokens: retryInputTokens, outputTokens: retryOutputTokens, cacheReadTokens: retryCacheReadTokens, cacheWriteTokens: retryCacheWriteTokens });
           return;
+        }
+
+        // [COMPACTION-POISON-RECOVERY] — narrow re-add of empty-turn recovery.
+        // The BLANKET version was removed 2026-05-13 (fad9af4f) because it was
+        // lossy (priorContext replay destroys live MCP/browser/subagent state)
+        // and out-of-spec (ACP defines end_turn as success). This re-adds it for
+        // ONE unambiguous signature only: a RESUMED session whose session/prompt
+        // resolves with stopReason=end_turn in ~0ms, zero output tokens, AND zero
+        // assistant text. That is the SDK short-circuiting WITHOUT ever calling
+        // the model — not a model that chose to say nothing. Field case
+        // (fazm.log 2026-05-30, session 0ea67ea0): a prior heavy turn unwound a
+        // live subagent mid-flight, after which every resume emitted
+        // status_change:"compacting" + the "Compacting..." placeholder, then
+        // end_turn duration=0ms, and the pop-out looped on "Compacting..."
+        // forever with no way out.
+        //
+        // Why this is NOT the lossy case fad9af4f guards against: at 0ms with 0
+        // output the session is already inert — the heavy turn (and its
+        // subagent/tool state) ended long ago, so there is nothing live left to
+        // destroy by replaying. A legitimate empty end_turn that actually ran the
+        // model needs a real API round-trip (>50ms) and/or emits output tokens,
+        // so it can never match. isNewSession is excluded (a fresh session
+        // returning empty is a real empty answer). _retryDepth<1 makes it
+        // one-shot: if the fresh session ALSO returns empty we fall through and
+        // deliver the empty result, exactly as the spec-honest path below does.
+        if (
+          !isNewSession &&
+          _retryDepth < 1 &&
+          promptResult.stopReason === "end_turn" &&
+          fullText.length === 0 &&
+          promptDurationMs < 50 &&
+          outputTokens === 0
+        ) {
+          logErr(`[COMPACTION-POISON-RECOVERY] Empty end_turn on resumed session ${sessionId} (duration=${promptDurationMs}ms, outputTokens=${outputTokens}, fullTextLen=0): session short-circuited without running the model. Forcing fresh session with priorContext replay (depth=${_retryDepth}).`);
+          const stuckSessionId = sessionId;
+          // Silence in-flight notification draining from the dead session,
+          // including the "Compacting..." placeholder chunk already streamed
+          // toward Swift (see INTERRUPT-REPLAY / DEFERRED-REPLAY above).
+          abortController.abort();
+          unregisterSession(sessionKey);
+          imageTurnCounts.delete(sessionKey);
+          interruptedSessions.delete(sessionId);
+          activeSessionId = "";
+          for (const name of pendingTools) {
+            sendWithSession(sessionId, { type: "tool_activity", name, status: "completed" });
+          }
+          pendingTools.length = 0;
+          clearToolTimersForSession(sessionId);
+          msg.resume = undefined;
+          msg._priorStuckSessionId = stuckSessionId;
+          return handleQuery(msg, _retryDepth + 1);
         }
 
         // Empty assistant turn (fullText.length === 0 + stopReason=end_turn):
