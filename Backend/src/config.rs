@@ -16,14 +16,12 @@ pub struct Config {
     // PostHog personal API key (for session recording auto-enrollment)
     pub posthog_personal_api_key: String,
     // Max users to auto-enroll for session recording
-    // API keys served to authenticated clients
-    pub anthropic_api_key: String,
+    // API keys served to authenticated clients. The bundled Anthropic/Claude key
+    // was discontinued in 2026-06 (see routes/keys.rs); the backend no longer
+    // loads or serves it.
     pub deepgram_api_key: String,
     pub gemini_api_key: String,
     pub elevenlabs_api_key: String,
-    // Comma-separated list of Firebase UIDs or device IDs that should NOT receive the builtin API key.
-    // Set to "*" to block ALL users (global kill switch).
-    pub builtin_key_blocklist: Vec<String>,
     // Mediar dashboard forwarding
     pub mediar_usage_ingest_url: String,
     pub mediar_usage_ingest_secret: String,
@@ -100,12 +98,6 @@ impl Config {
             deepgram_api_key: std::env::var("DEEPGRAM_API_KEY").unwrap_or_default(),
             gemini_api_key: std::env::var("GEMINI_API_KEY").unwrap_or_default(),
             elevenlabs_api_key: std::env::var("ELEVENLABS_API_KEY").unwrap_or_default(),
-            builtin_key_blocklist: std::env::var("BUILTIN_KEY_BLOCKLIST")
-                .unwrap_or_default()
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect(),
             mediar_usage_ingest_url: std::env::var("MEDIAR_USAGE_INGEST_URL").unwrap_or_default(),
             mediar_usage_ingest_secret: std::env::var("MEDIAR_USAGE_INGEST_SECRET")
                 .unwrap_or_default(),
