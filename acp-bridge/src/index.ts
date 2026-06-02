@@ -2292,6 +2292,21 @@ function sendAuthCancelledResult(sessionId: string, err: unknown): void {
 async function startAuthFlow(triggerSessionKey?: string): Promise<void> {
   if (activeAuthPromise) {
     logErr("Auth flow already in progress, waiting for it...");
+    // Re-emit auth_required for the new trigger session. A flow may already be
+    // running because warmup hit a 401 with no query in flight (pre-warm path).
+    // When the user then sends a query, this branch is taken and — without the
+    // re-emit — Swift never gets a fresh auth_required, so isClaudeAuthRequired
+    // stays at its existing `true` value with no @Published transition. The
+    // spinner-clear subscription (ChatQueryLifecycle, commit 739e2b57) only
+    // fires on a transition, so the query would hang until flow.complete or the
+    // 10-min OAuth timeout. Re-assigning the (already-true) flag re-publishes it
+    // and clears the spinner for whichever surface is loading. Guard on a known
+    // authUrl so we don't clobber claudeAuthUrl during the startOAuthFlow race
+    // window (activeAuthPromise is set before activeOAuthFlow.authUrl exists);
+    // in that window the original send() at the bottom of this flow is imminent.
+    if (activeOAuthFlow?.authUrl) {
+      send({ type: "auth_required", methods: authMethods, authUrl: activeOAuthFlow.authUrl, triggerSessionKey });
+    }
     return activeAuthPromise;
   }
 
