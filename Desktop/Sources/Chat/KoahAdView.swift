@@ -254,6 +254,21 @@ struct KoahAdView: View {
     }
 }
 
+/// A `WKWebView` that reports no intrinsic content size.
+///
+/// The ad slot's height is driven entirely by SwiftUI via the measured-height
+/// binding (`.frame(height:)`). A vanilla `WKWebView` also reports an
+/// intrinsicContentSize and calls `invalidateIntrinsicContentSize` as its content
+/// loads, which fed back into SwiftUI's layout pass and, with one web view per AI
+/// message per window, drove a continuous re-layout storm (the reason ads were
+/// hard-disabled on 2026-05-28). Returning `noIntrinsicMetric` breaks that feedback
+/// loop: the web view can never resize the SwiftUI layout, only our explicit frame can.
+private final class NonInvalidatingWebView: WKWebView {
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+}
+
 private struct KoahWebView: NSViewRepresentable {
     let question: String
     let answer: String
@@ -271,7 +286,7 @@ private struct KoahWebView: NSViewRepresentable {
         userController.add(context.coordinator, name: "koah")
         config.userContentController = userController
 
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = NonInvalidatingWebView(frame: .zero, configuration: config)
         web.setValue(false, forKey: "drawsBackground") // transparent
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator
