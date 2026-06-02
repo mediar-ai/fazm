@@ -17,13 +17,28 @@ enum NodeBinaryHelper {
 
     /// Returns a path to the node binary that can be safely executed.
     /// Copies from the app bundle to a temp dir and verifies it works.
+    ///
+    /// The temp path is scoped by bundle ID (`fazm-node-app` for prod,
+    /// `fazm-node-desktop-dev` for dev) so that dev and prod builds running on
+    /// the same user account never clobber each other's copy. Pre-2026-06-02
+    /// both used the unscoped `fazm-node` path; a dev `./run.sh` could replace
+    /// the running prod app's temp node, and if the dev cert was unhealthy
+    /// (e.g. XProtect-blocked team), the next prod ACP-bridge spawn got
+    /// SIGKILL'd and the chat hung forever.
     static func externalNodePath(from bundledPath: String) -> String {
         if let cached = cachedPath,
            FileManager.default.isExecutableFile(atPath: cached) {
             return cached
         }
 
-        let tmpNode = NSTemporaryDirectory() + "fazm-node"
+        let tmpNode = NSTemporaryDirectory() + "fazm-node-" + AppPaths.bundleScope
+        // Best-effort cleanup of the pre-2026-06-02 shared path so it can't
+        // keep getting flagged by XProtect after upgrade. Ignored if absent
+        // or in use by another build's still-running bridge.
+        let legacyTmpNode = NSTemporaryDirectory() + "fazm-node"
+        if FileManager.default.fileExists(atPath: legacyTmpNode) {
+            try? FileManager.default.removeItem(atPath: legacyTmpNode)
+        }
         do {
             if FileManager.default.fileExists(atPath: tmpNode) {
                 try FileManager.default.removeItem(atPath: tmpNode)
