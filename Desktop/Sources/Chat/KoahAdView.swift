@@ -163,6 +163,11 @@ struct KoahAdView: View {
     @State private var measuredHeight: CGFloat = 0
     @State private var didFail: Bool = false
     @State private var isHoveringAdFree: Bool = false
+    // Lazy mount: wait a short beat after the message settles before creating the
+    // WKWebView, so messages the user immediately follows up on never spawn an ad
+    // request. The web view is also torn down the moment an ad fails to fill, so
+    // non-filling messages leave nothing mounted.
+    @State private var didMount: Bool = false
 
     init(question: String, answer: String, publisherID: String = KoahIDs.activePublisherID) {
         self.question = question
@@ -223,17 +228,29 @@ struct KoahAdView: View {
                 .padding(.horizontal, 4)
             }
             
-            KoahWebView(
-                question: KoahContextRedactor.redact(question),
-                answer: KoahContextRedactor.redact(answer),
-                publisherID: publisherID,
-                measuredHeight: $measuredHeight,
-                didFail: $didFail
-            )
-            .frame(height: visibleHeight)
-            .opacity(visibleHeight > 0 ? 1 : 0)
+            // Only mount the WKWebView after the settle delay, and never once the
+            // slot has failed to fill. While requesting it sits at zero height and
+            // zero opacity; it expands only when an ad actually renders.
+            if didMount && !didFail {
+                KoahWebView(
+                    question: KoahContextRedactor.redact(question),
+                    answer: KoahContextRedactor.redact(answer),
+                    publisherID: publisherID,
+                    measuredHeight: $measuredHeight,
+                    didFail: $didFail
+                )
+                .frame(height: visibleHeight)
+                .opacity(visibleHeight > 0 ? 1 : 0)
+            }
         }
         .accessibilityLabel("Sponsored")
+        .task {
+            // ~0.45s settle window. This task is cancelled automatically if the slot
+            // disappears first (e.g. the user sends another prompt), so transient
+            // messages never fire an ad request.
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            if !Task.isCancelled { didMount = true }
+        }
     }
 }
 
