@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed pop-out chat hanging with loading spinner when Claude OAuth expires mid-query"
+  ],
   "releases": [
     {
       "version": "2.9.57",
