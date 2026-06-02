@@ -469,7 +469,7 @@ class DetachedChatWindowController {
             sessionKey: String,
             x: Double, y: Double, width: Double, height: Double,
             workspace: String = "",
-            selectedModel: String = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "claude-sonnet-4-6",
+            selectedModel: String = UserDefaults.standard.string(forKey: "shortcut_selectedModel") ?? "gemini-flash-latest",
             draftInput: String = ""
         ) {
             self.sessionKey = sessionKey
@@ -492,7 +492,7 @@ class DetachedChatWindowController {
             workspace = try c.decodeIfPresent(String.self, forKey: .workspace) ?? ""
             selectedModel = try c.decodeIfPresent(String.self, forKey: .selectedModel)
                 ?? UserDefaults.standard.string(forKey: "shortcut_selectedModel")
-                ?? "claude-sonnet-4-6"
+                ?? "gemini-flash-latest"
             draftInput = try c.decodeIfPresent(String.self, forKey: .draftInput) ?? ""
         }
     }
