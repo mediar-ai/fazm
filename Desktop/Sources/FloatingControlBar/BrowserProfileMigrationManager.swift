@@ -321,7 +321,7 @@ struct BrowserProfileMigrationView: View {
         Task {
             await chatProvider.sendMessage(
                 "Hi, I'd like to set up browser profile import.",
-                model: "claude-sonnet-4-6",
+                model: "gemini-flash-latest",
                 systemPromptSuffix: ChatPrompts.browserProfileMigration,
                 systemPromptPrefix: nil,
                 sessionKey: "browser-migration"
@@ -339,7 +339,7 @@ struct BrowserProfileMigrationView: View {
         Task {
             await chatProvider.sendMessage(
                 text,
-                model: "claude-sonnet-4-6",
+                model: "gemini-flash-latest",
                 systemPromptSuffix: ChatPrompts.browserProfileMigration,
                 systemPromptPrefix: nil,
                 sessionKey: "browser-migration"
@@ -355,7 +355,7 @@ struct BrowserProfileMigrationView: View {
         Task {
             await chatProvider.sendMessage(
                 option,
-                model: "claude-sonnet-4-6",
+                model: "gemini-flash-latest",
                 systemPromptSuffix: ChatPrompts.browserProfileMigration,
                 systemPromptPrefix: nil,
                 sessionKey: "browser-migration"
