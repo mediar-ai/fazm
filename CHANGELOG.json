@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed pop-out chat hanging with loading spinner when Claude OAuth expires mid-query"
+    "Fixed pop-out chat hanging with loading spinner when Claude OAuth expires mid-query",
+    "Fixed a rare case where the chat spinner could hang after Claude sign-in expired (the reconnect prompt now surfaces immediately instead of stalling)"
   ],
   "releases": [
     {
@@ -101,7 +102,7 @@
       "changes": [
         "Fixed pop-out chat sometimes staying stuck on the loading spinner after a reply finished, blocking new messages, by detecting stalled turns and completing them",
         "Ensure final session-recording chunk flushes cleanly on app quit",
-        "Added a live \"Browser is not responding \u00b7 Ns\" indicator that surfaces when an in-flight MCP tool (Playwright, etc.) stops emitting status updates, so the window no longer looks frozen during a silent tool hang",
+        "Added a live \"Browser is not responding · Ns\" indicator that surfaces when an in-flight MCP tool (Playwright, etc.) stops emitting status updates, so the window no longer looks frozen during a silent tool hang",
         "Added a Force stop affordance next to the \"not responding\" indicator that hard-kills the wedged Playwright MCP subprocess so a hung browser tool actually dies, instead of just hiding the spinner while the work keeps running underneath",
         "Added a \"Browser reset\" canvas card after Force stop with a Retry button that re-sends the prompt that was in flight, so the user does not have to retype what they just asked",
         "Sponsored ads are no longer shown to anyone by default; gated behind a remote feature flag so we can roll out gradually",
@@ -132,7 +133,7 @@
       "changes": [
         "Fixed Claude account picker hanging when re-auth was needed but expired credentials were still in the keychain",
         "Fixed chat response being replaced with a Claude reconnect prompt right after switching to a GPT or Gemini model",
-        "Replaced the pulsing \"Connect Claude\" peel with an inline \"Claude \u2014 Connect\u2026\" entry in the model picker (mirrors how Codex/ChatGPT shows up when not connected)"
+        "Replaced the pulsing \"Connect Claude\" peel with an inline \"Claude — Connect…\" entry in the model picker (mirrors how Codex/ChatGPT shows up when not connected)"
       ]
     },
     {
@@ -142,13 +143,13 @@
         "Fixed the menu bar icon and dock click doing nothing after launch-at-login on reboot; the floating bar is now guaranteed to appear even when the main window scene hasn't bound its open-window action yet, so you no longer have to Cmd-Q and reopen to recover",
         "Switching to Gemini from the credit-exhausted chooser now picks Gemini Pro by default (was Flash)",
         "Added a verification-codes skill so Fazm can pull 2FA codes from Messages, WhatsApp, or Notification Center instead of asking you to read them out",
-        "Fixed ask_followup chips staying hidden while the AI turn was still streaming \u2014 quick-reply buttons now appear as soon as the model emits them, so the chat no longer looks frozen when the model keeps working after ask_followup",
+        "Fixed ask_followup chips staying hidden while the AI turn was still streaming — quick-reply buttons now appear as soon as the model emits them, so the chat no longer looks frozen when the model keeps working after ask_followup",
         "Fixed model switches into Claude from Gemini or ChatGPT failing with a session error; the floating bar now starts a fresh session instead of getting stuck",
         "Fixed Memory settings page spinning forever when the knowledge graph was empty; now shows an empty state with a Try again button",
         "Fixed Claude account connect failing with a 400 \"Custom expires_in not allowed for scope\" error; the OAuth flow no longer requests a custom token lifetime so Anthropic's new server-side policy is honored",
         "Internal: Chat Message Sent and chat_agent_query_failed analytics now carry the user prompt and any partial AI response so failed queries are no longer invisible in support investigations",
-        "Removed the 10-minute inactivity cap on AI replies \u2014 slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button",
-        "Internal: signin-optional experiment plumbing \u2014 anonymous Firebase sign-in on first launch when the signin-optional PostHog flag picks treatment; goes through the REST signUp endpoint so it works without keychain-access-groups entitlement. Paywall and Settings present the existing sign-in window when an anonymous user wants to subscribe; Google sign-in then links to the same Firebase UID via REST signInWithIdp so trial date, Stripe customer, and chat history carry over",
+        "Removed the 10-minute inactivity cap on AI replies — slow models (Gemini Pro, GPT-5 high) no longer fail with \"AI took too long to respond\"; cancellation is now user-initiated via the stop button",
+        "Internal: signin-optional experiment plumbing — anonymous Firebase sign-in on first launch when the signin-optional PostHog flag picks treatment; goes through the REST signUp endpoint so it works without keychain-access-groups entitlement. Paywall and Settings present the existing sign-in window when an anonymous user wants to subscribe; Google sign-in then links to the same Firebase UID via REST signInWithIdp so trial date, Stripe customer, and chat history carry over",
         "Fixed Claude OAuth re-auth not appearing when token expired (chat would hang on thinking)",
         "Added \"Stuck? Chat with the founder\" button on onboarding so new users can message the founder without finishing setup first"
       ]
@@ -200,7 +201,7 @@
         "Fixed Settings &gt; Import sessions failing with \"ai-browser-profile not bundled\" on universal builds (Sparkle/.dmg)",
         "Made error messages in Settings &gt; Browser Automation cards selectable so they can be copied for support",
         "Fixed empty chat canvas during AI response streaming",
-        "Added Assrt QA testing MCP \u2014 opt-in browser automation tools (Settings &gt; Browser Automation &gt; Assrt). Imports your real browser session into both managed browsers when enabled",
+        "Added Assrt QA testing MCP — opt-in browser automation tools (Settings &gt; Browser Automation &gt; Assrt). Imports your real browser session into both managed browsers when enabled",
         "Fixed a crash when popping out or closing chat windows during streaming responses"
       ]
     },
@@ -247,17 +248,17 @@
       "changes": [
         "Fixed the 'Open in Browser' button on the Remote Control settings page not responding to clicks",
         "Fixed a stale 'not responding' warning showing on a healthy query after the app recovered from an unclean shutdown",
-        "Fixed AI losing context after browser extension install when chatting in main chat or a pop-out \u2014 the resume message now routes back to your active chat instead of the floating bar",
+        "Fixed AI losing context after browser extension install when chatting in main chat or a pop-out — the resume message now routes back to your active chat instead of the floating bar",
         "Floating bar close is now instant (removed the staged fade and shrink that briefly showed an empty translucent window before collapsing to the pill)",
         "Fixed floating bar going silent when a pop-out chat was busy: messages now dispatch immediately instead of queueing behind the unrelated pop-out",
-        "Added per-shortcut on/off toggles in Settings \u2192 Shortcuts so you can disable Ask Fazm, New Pop-Out Chat, Push to Talk, or \u2318\\ when they conflict with other apps",
+        "Added per-shortcut on/off toggles in Settings → Shortcuts so you can disable Ask Fazm, New Pop-Out Chat, Push to Talk, or ⌘\\ when they conflict with other apps",
         "Stopped the AI from giving confusing Claude Code setup instructions (like editing config files or restarting Claude Code) when helping connect the browser extension",
         "Fixed push-to-talk transcription concatenating onto previously spoken text when a chat reply was already on screen, so each voice message starts fresh",
         "Clarified Custom API Endpoint setting requires an Anthropic-API-compatible endpoint",
-        "Fixed push-to-talk inserting repeated gibberish (e.g. '\u092d\u093e\u0908 \u092d\u093e\u0908 \u092d\u093e\u0908') when transcription hallucinated on silent audio",
+        "Fixed push-to-talk inserting repeated gibberish (e.g. 'भाई भाई भाई') when transcription hallucinated on silent audio",
         "Built-in API key spend is now capped at $10 lifetime for every account including Pro; previously Pro was incorrectly exempt and a few users had burned $40-$70 of bundled compute on a $9.99/mo subscription",
         "Fixed AI losing chat context after an interrupted message (now correctly restores the last 20 turns of history)",
-        "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant\u2026' state and no longer hangs indefinitely if startup stalls",
+        "Fixed the chat sitting on an empty window with no response when the AI assistant takes a while to start up on first launch; it now shows a clear 'Preparing your assistant…' state and no longer hangs indefinitely if startup stalls",
         "Added a \"Sign in with a different account\" option to the paywall, so users who subscribed under a different account can switch instead of getting stuck",
         "Clearer message when built-in Claude usage runs out, with a direct path to connect your own Claude account",
         "Hide 1M-context model variants in the picker after a failed query, so personal-mode users without the paid Claude usage add-on do not pick them again"
@@ -299,7 +300,7 @@
       "version": "2.9.18",
       "date": "2026-05-15",
       "changes": [
-        "Fixed false \"out of credit\" errors during Anthropic outages \u2014 Claude 529 overload responses no longer trigger a mode switch or abort other open chat windows"
+        "Fixed false \"out of credit\" errors during Anthropic outages — Claude 529 overload responses no longer trigger a mode switch or abort other open chat windows"
       ]
     },
     {
@@ -414,7 +415,7 @@
       "changes": [
         "Fixed data-loss bug where legacy chat databases were deleted even when the merge into the active database failed; failed sources now move to a merge-failed quarantine folder",
         "Removed legacy Omi cleanup paths and rebrand-migration code; renamed com.omi.replayTutorial debug notification to com.fazm.replayTutorial",
-        "Scoped dev build to a separate ~/Library/Application Support/Fazm-Dev/ directory so dev and prod can no longer cross-contaminate each other\u2019s user data",
+        "Scoped dev build to a separate ~/Library/Application Support/Fazm-Dev/ directory so dev and prod can no longer cross-contaminate each other’s user data",
         "Fixed an AppKit crash on macOS 26 (Tahoe) where the floating bar would crash with EXC_BREAKPOINT after an AI response by changing the post-response resize from animated to instant"
       ]
     },
@@ -488,7 +489,7 @@
         "Fixed missing thinking indicator in pop-out chat and floating bar while waiting for first AI token",
         "Sticky stack of recent user messages at the top of the chat (floating bar and popout): your past prompts stay visible as you scroll deeper, capped at 50% of the chat height. Click any peek to jump back to that message",
         "Fixed pop-out windows growing taller on every restart (titlebar height was being double-counted when restoring saved frame)",
-        "GPT-5 family models (Codex backend) now appear in the model picker automatically at startup when the toggle is on, no need to re-toggle Settings \u2192 Advanced \u2192 Codex Backend",
+        "GPT-5 family models (Codex backend) now appear in the model picker automatically at startup when the toggle is on, no need to re-toggle Settings → Advanced → Codex Backend",
         "Routines now report failure when the agent ends a turn without producing any text response, instead of being silently marked successful",
         "Reclaim disk space from leftover screen recording chunks; observer recordings now move (instead of copy) into a stable location and stale chunks are cleaned up at launch",
         "Streamlined GPT model picker to show only the latest generation (GPT-5.5)",
@@ -498,7 +499,7 @@
         "Switched to flat $9.99/month subscription with no free trial; paywall now appears immediately on launch for users without an active subscription",
         "Fixed empty AI message bubbles in detached chat windows when streaming buffers were silently dropped during long tool-heavy responses",
         "Check subscription at sign-in instead of post-onboarding so the paywall gates new users immediately",
-        "Stop built-in cost cap from being bypassed \u2014 Settings picker can no longer flip back to built-in once the cap is reached, and disconnecting Claude no longer drops users with exhausted credits back into built-in mode",
+        "Stop built-in cost cap from being bypassed — Settings picker can no longer flip back to built-in once the cap is reached, and disconnecting Claude no longer drops users with exhausted credits back into built-in mode",
         "Hide 1M-context model variants in built-in mode to prevent picking a tier without entitlement",
         "Auto-fall-back to standard context when Claude rejects a request for the 1M-context tier",
         "Stop chat agent on floating-bar close and detached-window close so abandoned queries no longer hang for 10 minutes and surface a stray error",
@@ -581,10 +582,10 @@
       "version": "2.4.2",
       "date": "2026-04-26",
       "changes": [
-        "Fixed Smart (Opus) model preference not persisting after app update \u2014 now correctly maps stored \"opus\" to the new ACP model ID",
+        "Fixed Smart (Opus) model preference not persisting after app update — now correctly maps stored \"opus\" to the new ACP model ID",
         "Improved workspace directory picker: Open button now reads Select for clarity",
         "Updated Custom API Endpoint help text to mention local LLM bridges as an example",
-        "Fixed Stripe checkout cancellation redirect \u2014 returning to the app after cancelling a subscription checkout no longer shows an error page"
+        "Fixed Stripe checkout cancellation redirect — returning to the app after cancelling a subscription checkout no longer shows an error page"
       ]
     },
     {
@@ -636,7 +637,7 @@
         "Fixed pop-out windows not restoring after app update or restart",
         "Fixed suggested replies persisting after starting a new chat",
         "Fixed typing indicator flickering during network retries by adding a 600ms debounce",
-        "Added global shortcut (\u2318\u21e7N) to open a new pop-out chat window from anywhere",
+        "Added global shortcut (⌘⇧N) to open a new pop-out chat window from anywhere",
         "Fixed duplicate AI response bubble appearing in pop-out window after sending a follow-up question",
         "Added custom API endpoint setting for proxies and corporate gateways",
         "Updated paywall to highlight full desktop control capabilities",
@@ -711,7 +712,7 @@
         "Fixed detached chat window not streaming AI responses",
         "Fixed floating bar getting stuck in loading state when queries are enqueued while agent is busy",
         "Fixed voice response not playing after using the mute/unmute toggle in the floating bar",
-        "Fixed transcription for non-English speakers \u2014 replacement rules now only apply to English and multi-language modes",
+        "Fixed transcription for non-English speakers — replacement rules now only apply to English and multi-language modes",
         "Fixed font size setting not applying to chat messages, follow-up questions, input field, and UI elements throughout the app",
         "Fixed high CPU usage caused by SwiftUI layout thrashing when Settings is open",
         "Fixed orphaned ACP bridge process spinning at 100% CPU after app exit",
@@ -748,25 +749,25 @@
         "Added analytics tracking throughout the post-onboarding tutorial flow",
         "Fixed remote control connection reliability: token refresh on auth errors, heartbeat re-registration, exponential backoff, and persistent tunnel registry",
         "Added \"Chat with our founder\" button on paywall for a free month offer",
-        "Added \"Refer a Friend\" option to the paywall \u2014 share a link, get 1 month free when your friend sends 5 messages"
+        "Added \"Refer a Friend\" option to the paywall — share a link, get 1 month free when your friend sends 5 messages"
       ]
     },
     {
       "version": "1.5.0",
       "date": "2026-03-27",
       "changes": [
-        "Fixed Claude sign-in getting stuck when authorization step is missed \u2014 now shows a retry button",
+        "Fixed Claude sign-in getting stuck when authorization step is missed — now shows a retry button",
         "Added built-in Claude account option (Vertex AI) - no personal Claude sign-in needed",
-        "Added pin toggle (\u2318P) to keep the floating dialog open when clicking away",
+        "Added pin toggle (⌘P) to keep the floating dialog open when clicking away",
         "Added Response Style setting for floating bar (Off/Soft/Strict) to control answer compactness",
         "Added stop button and follow-up-while-streaming to floating bar",
         "Chat persists when clicking away from floating bar; collapses to half-height semi-transparent preview and restores on focus",
         "Replaced pin button with New Chat button in floating bar",
         "Removed background style (solid/transparent) toggle from settings",
         "Code snippets in floating bar are now collapsed to 5 lines with a quick copy button",
-        "Moved floating bar to bottom of screen \u2014 chat now expands upward",
+        "Moved floating bar to bottom of screen — chat now expands upward",
         "Post-onboarding tutorial now continues as a guided chat in the floating bar with 3 test prompts",
-        "Added Google Workspace integration \u2014 ask about your email, calendar, and files directly from the floating bar",
+        "Added Google Workspace integration — ask about your email, calendar, and files directly from the floating bar",
         "Fixed exploration text blocks running together without line breaks",
         "Improved exploration card with larger pulsating toggle button and inline loading animation",
         "Added visible loading animation when transcribing voice input after push-to-talk",
@@ -788,7 +789,7 @@
         "Improved update experience: shows helpful guidance when macOS blocks auto-updates due to App Management permission",
         "Fixed chat getting permanently stuck after a temporary API error",
         "Reduced default chat height by half and persist user resize preference across sessions",
-        "Fixed infinite retry loop when built-in credits run out \u2014 now auto-switches to personal Claude account",
+        "Fixed infinite retry loop when built-in credits run out — now auto-switches to personal Claude account",
         "Fixed push-to-talk input being lost when clicking away without sending",
         "Added Sentry error reporting to critical error paths (database, chat, audio, auth) for better production issue visibility",
         "Added comprehensive analytics tracking: session duration, conversation depth, tool success/failure, floating bar response metrics, credit exhaustion, and onboarding start events",
@@ -810,8 +811,8 @@
         "Fixed floating bar window expanding beyond screen bounds during long conversations",
         "Fixed SQLite syntax error when AI generates double-escaped datetime queries",
         "Auto-retry update after granting App Management permission in System Settings",
-        "Bundled skills now update automatically when the app ships improvements \u2014 a brief toast notification appears when any skill is refreshed",
-        "Added Report an Issue button to the response header \u2014 icon-only with tooltip; flashes orange if AI is stuck thinking for 30+ seconds",
+        "Bundled skills now update automatically when the app ships improvements — a brief toast notification appears when any skill is refreshed",
+        "Added Report an Issue button to the response header — icon-only with tooltip; flashes orange if AI is stuck thinking for 30+ seconds",
         "Report issue button now flashes on startup if the previous session crashed unexpectedly",
         "Fixed \"AI service temporarily unavailable\" errors caused by oversized screenshots accumulating in long sessions",
         "Fixed Playwright screenshots exceeding API dimension limits on Retina displays",
@@ -819,7 +820,7 @@
         "Screen recording now only captures when you're actively interacting with the app",
         "Authentication now opens in Chrome instead of the default browser, so existing sessions are available",
         "Added Home tab as default landing page with usage guide, floating bar toggle, stats, and recent activity",
-        "Fixed AI queries hanging silently when rate limit is reached \u2014 now shows sign-in prompt",
+        "Fixed AI queries hanging silently when rate limit is reached — now shows sign-in prompt",
         "API keys are now fetched from the backend instead of being bundled in the app binary",
         "Renamed internal MCP server from omi-tools to fazm-tools and added diagnostic logging for tool calls",
         "Claude account now connects immediately when switching to Your Claude Account in Settings",
@@ -840,7 +841,7 @@
         "Fixed voice input failing when API keys are not yet loaded on startup",
         "Added Connect Claude button in floating bar when credits run out or auth is needed",
         "Added Connect Claude button to floating bar for quick sign-in when Claude account is disconnected",
-        "Fixed app appearing unresponsive \u2014 now shows a \"not responding\" message and stops the agent after 60 seconds",
+        "Fixed app appearing unresponsive — now shows a \"not responding\" message and stops the agent after 60 seconds",
         "Improved screenshot handling: captures screen earlier and stores more efficiently for better AI context",
         "Replaced Google Workspace integration with a native Python MCP server for more reliable Gmail, Calendar, and Drive access",
         "Improved browser extension setup window layout",
@@ -851,7 +852,7 @@
         "Fixed app showing as damaged after update due to invalid Python venv symlinks in bundle",
         "Fixed post-onboarding tutorial not showing after resetting onboarding",
         "Added Settings menu item (Cmd+,) and fixed window not reopening after close",
-        "Added AI browser profile \u2014 Fazm can now read your browser history and saved accounts to give smarter, personalized answers",
+        "Added AI browser profile — Fazm can now read your browser history and saved accounts to give smarter, personalized answers",
         "Fixed Cmd+, shortcut and Settings menu item when no window is open",
         "Fixed post-onboarding tutorial not showing after resetting onboarding",
         "Fixed 401 auth errors on API keys by retrying with a refreshed token",
@@ -867,13 +868,13 @@
         "Replaced Talk to Fazm button-like badge with animated keyboard showing the active shortcut key",
         "Observer cards now appear immediately in chat with accept/reject buttons and click feedback",
         "Reduced observer response delay from 30s to 5s",
-        "Bundled Hindsight memory system \u2014 the AI now remembers context across conversations",
+        "Bundled Hindsight memory system — the AI now remembers context across conversations",
         "Fixed floating bar not being draggable despite setting being enabled",
         "Fixed crash caused by browser profile migration popup not properly cleaning up memory on dismiss",
         "Smoother floating bar animations when expanding, collapsing, and switching between states",
         "Added always-on screen observer for Gemini analysis that persists across app restarts",
         "Fixed Google Workspace MCP not working for release-build users by creating venv at runtime",
-        "Observer cards now save immediately instead of waiting 5 seconds \u2014 tap Dismiss to undo",
+        "Observer cards now save immediately instead of waiting 5 seconds — tap Dismiss to undo",
         "Fixed free trial users being incorrectly prompted to switch to personal account on temporary rate limits",
         "Improved memory: Fazm now better understands when to use its knowledge about you from Hindsight and browser profile",
         "Fixed browser profile and Hindsight failing on some machines due to bundled Python not finding its standard library",
@@ -890,13 +891,13 @@
         "Fixed Connect Claude button not responding in floating bar when credits run out",
         "Fixed Intel Mac support: skip Hindsight/PostgreSQL on x86_64, fix __dirname error in skills, improve Login Item error handling",
         "Fixed a crash caused by a race condition in audio capture during rapid PTT toggling",
-        "Fixed Fazm silently showing desktop instead of app windows when Screen Recording permission is missing \u2014 now shows a clear error and prompts to re-enable the permission",
-        "Improved rate limit messaging \u2014 shows upgrade option when hitting Claude usage limits",
+        "Fixed Fazm silently showing desktop instead of app windows when Screen Recording permission is missing — now shows a clear error and prompts to re-enable the permission",
+        "Improved rate limit messaging — shows upgrade option when hitting Claude usage limits",
         "Fixed UI freezes during AI response streaming",
-        "Fixed crash on macOS 26 (Tahoe) caused by 4K code signing page hashes \u2014 now uses 16K pages required by Apple Silicon on macOS 26",
+        "Fixed crash on macOS 26 (Tahoe) caused by 4K code signing page hashes — now uses 16K pages required by Apple Silicon on macOS 26",
         "Fixed crash caused by leaked Swift task continuation in ACP bridge",
-        "Added automatic rollback when an update crashes on launch \u2014 restores the previous version and blocks the bad update",
-        "Added Voice Response setting \u2014 AI can speak its answers aloud using text-to-speech (Deepgram Luna voice)",
+        "Added automatic rollback when an update crashes on launch — restores the previous version and blocks the bad update",
+        "Added Voice Response setting — AI can speak its answers aloud using text-to-speech (Deepgram Luna voice)",
         "Knowledge graph data from onboarding is now also saved to Hindsight for long-term memory recall",
         "Added Discovered Tasks tab showing AI-identified tasks from screen analysis",
         "Fixed Claude OAuth sign-in failing on first attempt when not logged in to claude.ai",
