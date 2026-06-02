@@ -245,7 +245,7 @@ struct OnboardingChatView: View {
                                     // Resend the last user message
                                     if let lastUserMsg = chatProvider.messages.last(where: { $0.sender == .user }) {
                                         Task {
-                                            await chatProvider.sendMessage(lastUserMsg.text, model: "claude-sonnet-4-6")
+                                            await chatProvider.sendMessage(lastUserMsg.text, model: "gemini-flash-latest")
                                         }
                                     }
                                 },
@@ -571,7 +571,7 @@ struct OnboardingChatView: View {
         if pendingPermissionType == type {
             pendingPermissionType = nil
             Task {
-                await chatProvider.sendMessage("Grant \(label) — done!", model: "claude-sonnet-4-6")
+                await chatProvider.sendMessage("Grant \(label) — done!", model: "gemini-flash-latest")
             }
         }
     }
@@ -688,7 +688,7 @@ struct OnboardingChatView: View {
                     await bridgeWarmup
                     await chatProvider.sendMessage(
                         "Hi, I just installed Fazm!",
-                        model: "claude-sonnet-4-6",
+                        model: "gemini-flash-latest",
                         systemPromptPrefix: systemPrompt
                     )
                     return
@@ -741,7 +741,7 @@ struct OnboardingChatView: View {
                 // restarts, causing the AI to ignore onboarding tools and respond generically.
                 await chatProvider.sendMessage(
                     "I'm back — the app just restarted after granting a permission. Let's continue where we left off.",
-                    model: "claude-sonnet-4-6",
+                    model: "gemini-flash-latest",
                     systemPromptPrefix: resumeSystemPrompt
                 )
             }
@@ -760,7 +760,7 @@ struct OnboardingChatView: View {
 
                 await chatProvider.sendMessage(
                     "Hi, I just installed Fazm!",
-                    model: "claude-sonnet-4-6",
+                    model: "gemini-flash-latest",
                     systemPromptPrefix: systemPrompt
                 )
             }
@@ -782,7 +782,7 @@ struct OnboardingChatView: View {
         quickReplyOptions = []
 
         Task {
-            await chatProvider.sendMessage(text, model: "claude-sonnet-4-6")
+            await chatProvider.sendMessage(text, model: "gemini-flash-latest")
         }
     }
 
@@ -819,7 +819,7 @@ struct OnboardingChatView: View {
 
                 if result.contains("granted") {
                     // Granted immediately — tell the AI
-                    await chatProvider.sendMessage("\(option) — done!", model: "claude-sonnet-4-6")
+                    await chatProvider.sendMessage("\(option) — done!", model: "gemini-flash-latest")
                 } else {
                     // Pending — wait silently for the permission check timer to detect it
                     // The onChange handlers for appState.has*Permission will send the message
@@ -829,7 +829,7 @@ struct OnboardingChatView: View {
         } else {
             // Regular quick reply — just send as message
             Task {
-                await chatProvider.sendMessage(option, model: "claude-sonnet-4-6")
+                await chatProvider.sendMessage(option, model: "gemini-flash-latest")
             }
         }
     }
@@ -985,14 +985,14 @@ struct OnboardingChatView: View {
                 // before the first query. Without this, execute_sql may not be registered
                 // in time and the AI falls back to raw Bash SQLite queries that can hang.
                 bridge.warmupSession(sessions: [
-                    .init(key: "graph-exploration", model: "claude-sonnet-4-6", systemPrompt: systemPrompt)
+                    .init(key: "graph-exploration", model: "gemini-flash-latest", systemPrompt: systemPrompt)
                 ])
 
                 let result = try await bridge.query(
                     prompt: "Begin exploration. \(fileCount) files have been indexed in the indexed_files table.",
                     systemPrompt: systemPrompt,
                     sessionKey: "graph-exploration",
-                    model: "claude-sonnet-4-6",
+                    model: "gemini-flash-latest",
                     onTextDelta: { @Sendable _ in },
                     onToolCall: { @Sendable _, name, input in
                         let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
@@ -1045,7 +1045,7 @@ struct OnboardingChatView: View {
                 // before the first query. Without this, execute_sql may not be registered
                 // in time and the AI falls back to raw Bash SQLite queries that can hang.
                 bridge.warmupSession(sessions: [
-                    .init(key: "profile-exploration", model: "claude-sonnet-4-6", systemPrompt: systemPrompt)
+                    .init(key: "profile-exploration", model: "gemini-flash-latest", systemPrompt: systemPrompt)
                 ])
 
                 // Flag shared between callbacks (called sequentially from bridge event loop)
@@ -1055,7 +1055,7 @@ struct OnboardingChatView: View {
                     prompt: "Begin exploration. \(fileCount) files have been indexed in the indexed_files table.",
                     systemPrompt: systemPrompt,
                     sessionKey: "profile-exploration",
-                    model: "claude-sonnet-4-6",
+                    model: "gemini-flash-latest",
                     onTextDelta: { @Sendable delta in
                         let insertBoundary = needsBoundary.value
                         if insertBoundary { needsBoundary.value = false }
