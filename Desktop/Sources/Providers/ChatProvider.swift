@@ -1988,14 +1988,20 @@ class ChatProvider: ObservableObject {
                     }
                 }
             }
+            // Pre-warm sessions on the user's currently-selected model so the
+            // first query is instant on whatever they default to. New users now
+            // default to Gemini Flash (see ShortcutSettings); existing users keep
+            // their saved pick. The bridge routes the warmup by model id, so a
+            // gemini-* id warms a Gemini session, a claude/gpt id warms theirs.
+            let warmupModel = ShortcutSettings.shared.selectedModel
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
-                .init(key: "main", model: "claude-sonnet-4-6", systemPrompt: mainSystemPrompt, resume: savedMainSessionId),
-                .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
-                .init(key: "observer", model: "claude-sonnet-4-6", systemPrompt: chatObserverSystemPrompt),
+                .init(key: "main", model: warmupModel, systemPrompt: mainSystemPrompt, resume: savedMainSessionId),
+                .init(key: "floating", model: warmupModel, systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
+                .init(key: "observer", model: warmupModel, systemPrompt: chatObserverSystemPrompt),
                 // Always-ready clean session handed to the next new detached pop-out
                 // (claimWarmDetachedSession). Uses the floating system prompt because
                 // detached windows query with the floating system-prompt prefix.
-                .init(key: "spare", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt)
+                .init(key: "spare", model: warmupModel, systemPrompt: floatingSystemPrompt)
             ])
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
@@ -3968,7 +3974,7 @@ class ChatProvider: ObservableObject {
                 guard let self = self else { return }
                 await self.sendMessage(
                     continuationMessage,
-                    model: wasOnboarding ? "claude-sonnet-4-6" : nil,
+                    model: wasOnboarding ? "gemini-flash-latest" : nil,
                     sessionKey: nil
                 )
                 // Restore the prior onboarding flag in case nothing else flipped it.
