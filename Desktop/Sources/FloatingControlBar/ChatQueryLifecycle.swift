@@ -283,6 +283,28 @@ enum ChatQueryLifecycle {
                 }
         )
 
+        // Clear the loading spinner and surface the auth error message immediately
+        // when Claude OAuth expires mid-query. Without this, pop-out/detached chat
+        // windows hang forever with a loading spinner: the bridge enters an indefinite
+        // OAuth wait loop so `isSending` never flips false, meaning the
+        // `$isSending.filter { !$0 }.first()` subscriber (added in DetachedChatWindow
+        // show()) never fires handlePostQuery. The floating bar is unaffected (it
+        // awaits sendMessage() directly and calls handlePostQuery after it returns),
+        // but calling handlePostQuery a second time there is benign — it just re-sets
+        // the same auth error message.
+        cancellables.append(
+            provider.$isClaudeAuthRequired
+                .receive(on: DispatchQueue.main)
+                .filter { $0 }
+                .sink { [weak state, weak provider] _ in
+                    guard let state, let provider else { return }
+                    guard state.streaming.isAILoading else { return }
+                    let currentKey = sessionKeyProvider?() ?? sessionKey ?? ""
+                    log("ChatQueryLifecycle: isClaudeAuthRequired while loading — clearing spinner and showing auth message (session=\(currentKey))")
+                    ChatQueryLifecycle.handlePostQuery(provider: provider, state: state, sessionKey: currentKey)
+                }
+        )
+
         return cancellables
     }
 
