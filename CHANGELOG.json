@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "Fixed pop-out chat hanging with loading spinner when Claude OAuth expires mid-query",
-    "Fixed a rare case where the chat spinner could hang after Claude sign-in expired (the reconnect prompt now surfaces immediately instead of stalling)"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.58",
+      "date": "2026-06-01",
+      "changes": [
+        "Fixed pop-out chat hanging with loading spinner when Claude OAuth expires mid-query",
+        "Fixed a rare case where the chat spinner could hang after Claude sign-in expired (the reconnect prompt now surfaces immediately instead of stalling)"
+      ]
+    },
     {
       "version": "2.9.57",
       "date": "2026-05-30",
