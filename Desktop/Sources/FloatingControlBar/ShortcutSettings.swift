@@ -411,6 +411,11 @@ class ShortcutSettings: ObservableObject {
     func shortLabel(for modelId: String) -> String? {
         if let m = availableModels.first(where: { $0.id == modelId }) { return m.shortLabel }
         if let m = Self.defaultModels.first(where: { $0.id == modelId }) { return m.shortLabel }
+        // Gemini aliases aren't in defaultModels (they only enter availableModels
+        // after the startup probe). Fall back to the whitelist so the new-user
+        // default (gemini-flash-latest) labels as "Flash" immediately on launch,
+        // not "Fast" (Sonnet) until the probe lands.
+        if let g = Self.geminiPickerWhitelist.first(where: { $0.modelId == modelId }) { return g.short }
         let normalized = Self.normalizeModelId(modelId)
         if normalized != modelId,
            let m = Self.defaultModels.first(where: { $0.id == normalized }) { return m.shortLabel }
@@ -522,7 +527,12 @@ class ShortcutSettings: ObservableObject {
                 UserDefaults.standard.set(normalized, forKey: "shortcut_selectedModel")
             }
         } else {
-            self.selectedModel = "sonnet"
+            // New-user default: Gemini Flash (free, no usage cap, fast). Only
+            // applies when nothing is saved yet — existing users who explicitly
+            // picked Sonnet/Opus/GPT keep their saved selection (it's read above).
+            // Set in init so didSet does NOT persist it; the user's first explicit
+            // pick is what gets written to UserDefaults.
+            self.selectedModel = "gemini-flash-latest"
         }
         if let saved = UserDefaults.standard.string(forKey: "shortcut_floatingBarCompactness"),
            let mode = FloatingBarCompactness(rawValue: saved) {
