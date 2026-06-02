@@ -94,7 +94,6 @@ impl Config {
             gcs_session_replay_bucket: std::env::var("GCS_SESSION_REPLAY_BUCKET")
                 .unwrap_or_else(|_| "fazm-session-recordings".to_string()),
             posthog_personal_api_key: std::env::var("POSTHOG_PERSONAL_API_KEY").unwrap_or_default(),
-            anthropic_api_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
             deepgram_api_key: std::env::var("DEEPGRAM_API_KEY").unwrap_or_default(),
             gemini_api_key: std::env::var("GEMINI_API_KEY").unwrap_or_default(),
             elevenlabs_api_key: std::env::var("ELEVENLABS_API_KEY").unwrap_or_default(),
