@@ -590,6 +590,14 @@ final class PaywallWindowController {
     private var hostingView: NSHostingView<AnyView>?
 
     func show(chatProvider: ChatProvider) {
+        // Global kill switch (ads funnel): suppress presentation entirely so no
+        // call site — auto gates, the ad "Go Ad-Free" button, or debug hooks —
+        // can surface the paywall while it's disabled.
+        guard SubscriptionService.paywallEnabled else {
+            log("PaywallWindowController: paywall disabled (FAZM_PAYWALL_ENABLED off) — not showing")
+            chatProvider.showPaywall = false
+            return
+        }
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
