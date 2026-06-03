@@ -1739,6 +1739,9 @@ class FloatingControlBarManager {
                 } else if command.hasPrefix("setWorkspace:") {
                     let path = String(command.dropFirst("setWorkspace:".count))
                     UserDefaults.standard.set(path, forKey: "aiChatWorkingDirectory")
+                    // Record in the MRU list so it shows up in the recent-workspaces
+                    // dropdown (web + pop-out chat); add() no-ops on empty/home paths.
+                    RecentWorkspaces.add(path)
                     log("FloatingControlBarManager: Workspace set to \(path)")
                     self.writeControlState()
                 } else if command == "listPopOuts" {
