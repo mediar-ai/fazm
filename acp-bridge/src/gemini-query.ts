@@ -106,7 +106,9 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
   const mcpServers = buildMcpServers(mode, cwd, sessionKey, modelId);
 
   let entry = geminiSessions.get(sessionKey);
-  logErr(`[gemini-query] CACHE-DIAG get key=${sessionKey} hit=${!!entry} size=${geminiSessions.size} keys=[${[...geminiSessions.keys()].join("|")}] cachedCwd=${entry?.cwd ?? "-"} incomingCwd=${cwd} cachedModel=${entry?.modelId ?? "-"} incomingModel=${modelId}`);
+  if (entry) {
+    logErr(`[gemini-query] reusing warm session ${entry.sessionId.slice(0, 8)} for key=${sessionKey}`);
+  }
   if (entry && (entry.cwd !== cwd || entry.modelId !== modelId)) {
     logErr(`[gemini-query] dropping cached session for ${sessionKey}: cwd or model changed`);
     dropGeminiSession(sessionKey, provider);
