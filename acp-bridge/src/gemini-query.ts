@@ -106,6 +106,7 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
   const mcpServers = buildMcpServers(mode, cwd, sessionKey, modelId);
 
   let entry = geminiSessions.get(sessionKey);
+  logErr(`[gemini-query] CACHE-DIAG get key=${sessionKey} hit=${!!entry} size=${geminiSessions.size} keys=[${[...geminiSessions.keys()].join("|")}] cachedCwd=${entry?.cwd ?? "-"} incomingCwd=${cwd} cachedModel=${entry?.modelId ?? "-"} incomingModel=${modelId}`);
   if (entry && (entry.cwd !== cwd || entry.modelId !== modelId)) {
     logErr(`[gemini-query] dropping cached session for ${sessionKey}: cwd or model changed`);
     dropGeminiSession(sessionKey, provider);
@@ -348,7 +349,7 @@ export async function prewarmGeminiSession(
     logErr(`[gemini-warmup] set_model failed for '${sessionKey}' (continuing with default): ${modelErr}`);
   }
   sendWithSession(entry.sessionId, { type: "session_started", sessionKey, isResume: false } as OutboundMessage);
-  logErr(`[gemini-warmup] pre-warmed '${sessionKey}' session ${entry.sessionId.slice(0, 8)} (model=${modelId})`);
+  logErr(`[gemini-warmup] pre-warmed '${sessionKey}' session ${entry.sessionId.slice(0, 8)} (model=${modelId}) cwd=${cwd} size=${geminiSessions.size} keys=[${[...geminiSessions.keys()].join("|")}]`);
 }
 
 export function dropGeminiSession(sessionKey: string, provider: GeminiProvider): void {
