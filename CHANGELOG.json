@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "New chats now start on Gemini Flash by default (fast and free); you can switch to Claude or ChatGPT anytime from the model picker",
-    "Dev and prod no longer clobber each other\u2019s cached helper binary in /tmp, so launching a dev build can no longer freeze a running prod chat"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.60",
+      "date": "2026-06-03",
+      "changes": [
+        "New chats now start on Gemini Flash by default (fast and free); you can switch to Claude or ChatGPT anytime from the model picker",
+        "Dev and prod no longer clobber each other\u2019s cached helper binary in /tmp, so launching a dev build can no longer freeze a running prod chat"
+      ]
+    },
     {
       "version": "2.9.58",
       "date": "2026-06-01",
