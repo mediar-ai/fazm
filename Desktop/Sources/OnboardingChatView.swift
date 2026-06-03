@@ -495,16 +495,16 @@ struct OnboardingChatView: View {
                 withAnimation { onboardingError = .general(errorText) }
             } else if let lastAI = chatProvider.messages.last(where: { $0.sender == .ai }),
                       lastAI.text.contains("no text returned") {
-                // Empty AI turn (no text, no tools). Common on low-RAM Macs
-                // where the Claude subprocess gets interrupted mid-reply under
-                // memory pressure. The marker bubble (stamped in ChatProvider)
-                // is a dead end during onboarding: no auth/credit/error flag
-                // fires, so without this the user only gets the Skip button
-                // after the 120s inactivity timer. Surface the general error
-                // banner immediately so Retry + Skip Setup are one tap away.
-                // (founder-chat report, 715877392@qq.com, 2026-05-27)
+                // Genuinely empty AI turn: no text AND no tools. ask_followup-only
+                // turns no longer reach here — fazm-tools now count toward the turn's
+                // tool set (ChatProvider.toolCallHandler), so a model answering via
+                // ask_followup renders its quick-reply UI instead of this marker.
+                // What's left is a rare real hiccup (interrupted stream, model
+                // produced nothing). Surface a calm, non-alarming retry so onboarding
+                // never dead-ends — Retry + Skip are one tap away — without blaming
+                // the user's machine. (orig founder-chat report 715877392@qq.com)
                 withAnimation {
-                    onboardingError = .general("The response got cut off (your Mac may be low on memory). Close a few other apps and tap Retry, or skip setup to jump into the app.")
+                    onboardingError = .general("That didn't come through. Tap Retry, or skip setup to jump straight into the app.")
                 }
             } else {
                 // Successful response, clear any previous error
@@ -653,6 +653,11 @@ struct OnboardingChatView: View {
 
         // Mark as onboarding so ACP session ID gets persisted for restart recovery
         chatProvider.isOnboarding = true
+        // Stash the onboarding prompt so the first agent turn — now fired by the
+        // user tapping a quick-reply after the static welcome (no auto-send) — still
+        // runs with the onboarding instructions even though handleQuickReply doesn't
+        // pass a prefix.
+        chatProvider.onboardingSystemPrompt = systemPrompt
 
         // Track onboarding start
         AnalyticsManager.shared.onboardingStarted()
@@ -746,31 +751,41 @@ struct OnboardingChatView: View {
                 )
             }
         } else {
-            // Fresh start — clear stale messages, mark mid-onboarding, begin
+            // Fresh start. STEP 0 (welcome + safety + the "ready to get started?"
+            // question) is rendered DETERMINISTICALLY here — no auto-send, no model
+            // call, no auth/warmup dependency. The new user always sees a friendly,
+            // instant first screen. The agent is first invoked only when the user
+            // taps a quick-reply (handleQuickReply -> sendMessage), by which point
+            // the bridge is warm and there is no auto-fired message racing the
+            // post-sign-in bridge restart (the old concurrent_send drop). The
+            // onboarding prompt (stashed above) tells the agent STEP 0 was already
+            // shown and to start at STEP 1.
             chatProvider.messages.removeAll()
             OnboardingChatPersistence.saveMidOnboarding()
 
+            let welcomeMsg = ChatMessage(
+                text: "Hey! I'm Fazm — your AI assistant that lives right here on your Mac.",
+                sender: .ai
+            )
+            let safetyMsg = ChatMessage(
+                text: "I'm fully open-source and local-first — your data is stored on your machine, and AI queries aren't used to train AI models.",
+                sender: .ai
+            )
+            chatProvider.messages.append(welcomeMsg)
+            chatProvider.messages.append(safetyMsg)
+            quickReplyQuestion = "I can browse the web, control apps, write code, and chat — ready to get started?"
+            quickReplyOptions = ["Let's go!", "Tell me more"]
+
             Task {
-                // Initialize DB so messages are persisted for restart recovery
+                // Persist the static welcome for restart recovery, then warm the
+                // bridge in the background so the first agent turn (on the user's
+                // tap) is fast. Not awaited against the UI — the screen is already up.
                 let userId = UserDefaults.standard.string(forKey: "auth_tokenUserId")
                 await AppDatabase.shared.configure(userId: userId)
                 try? await AppDatabase.shared.initialize()
-
-                // Note: we no longer clear onboarding messages from DB — they're part of history
-
-                // Best-effort reuse of the pre-warmed "onboarding" Gemini session:
-                // if the launch warmup has already created it (a real new user's
-                // sign-in usually outlasts warmup), this send reuses it; otherwise
-                // it creates the session itself — same as before. We deliberately
-                // do NOT block on warmup completion: the gemini cold-start is ~10s
-                // and stalling the first onboarding reply behind it would be worse
-                // than a cold first turn. The warmup's clobber guard ensures a late
-                // warm session never replaces this live one.
-                await chatProvider.sendMessage(
-                    "Hi, I just installed Fazm!",
-                    model: "gemini-flash-latest",
-                    systemPromptPrefix: systemPrompt
-                )
+                await OnboardingChatPersistence.saveMessage(welcomeMsg)
+                await OnboardingChatPersistence.saveMessage(safetyMsg)
+                await chatProvider.warmupBridge()
             }
         }
     }
