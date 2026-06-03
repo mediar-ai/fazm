@@ -183,7 +183,7 @@ final class SubscriptionService {
     /// `FAZM_PAYWALL_ENABLED=true` (also accepts `1`/`yes`/`on`) in `.env.app`
     /// (and mirror it into Codemagic's `FAZM_APP_ENV`).
     static let paywallEnabled: Bool = {
-        switch Self.env("FAZM_PAYWALL_ENABLED").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        switch SubscriptionService.env("FAZM_PAYWALL_ENABLED").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "true", "1", "yes", "on": return true
         default: return false
         }
