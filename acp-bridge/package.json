@@ -8,7 +8,7 @@
     "build": "tsc && cp src/patched-acp-entry.mjs dist/patched-acp-entry.mjs && cp src/schedule.mjs dist/schedule.mjs && cp src/cron-runner.mjs dist/cron-runner.mjs",
     "postinstall": "node scripts/patch-playwright-overlay.cjs",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test test/"
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.29.2",
