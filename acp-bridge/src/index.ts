@@ -54,6 +54,7 @@ import {
 import { GeminiProvider } from "./gemini-provider.js";
 import {
   handleGeminiQuery,
+  prewarmGeminiSession,
   isGeminiModel,
   dropGeminiSession,
   interruptGeminiSession,
@@ -3340,6 +3341,43 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
         }
         const sessionStartMs = Date.now();
         try {
+          // Provider-aware warmup. User-facing sessions follow the selected
+          // model, and Gemini Flash is now the default for new users — so route
+          // gemini-* models to gemini-cli's ACP surface and pre-create a warm
+          // session there. Without this the first query pays session/new + MCP
+          // spin-up on the visible turn, and the Claude path below would reject
+          // the gemini model id at set_model anyway. The "observer" key is
+          // excluded: it's a background memory/skill task that always runs on
+          // Claude via acpRequest (flushChatObserverBatch), so it stays on the
+          // Claude path even when Swift tags it with the user's Gemini model.
+          if (cfg.key !== "observer" && isGeminiModel(cfg.model)) {
+            const gprov = isGeminiEnabled() ? getGeminiProvider() : null;
+            if (!gprov) {
+              logErr(`Pre-warm: skipping gemini model '${cfg.model}' for key=${cfg.key} (gemini disabled); first query will create it`);
+              return;
+            }
+            try {
+              await prewarmGeminiSession(cfg, warmCwd, {
+                logErr,
+                send,
+                sendWithSession,
+                getProvider: () => gprov,
+                buildMcpServers,
+                registerSession,
+              });
+              completedKeys.push(cfg.key);
+              logErr(`Pre-warm gemini session '${cfg.key}' ready in ${Date.now() - sessionStartMs}ms`);
+            } catch (gerr) {
+              // Self-contained: route gemini warmup failures straight to
+              // failedSessions so they never reach the outer catch's Claude
+              // OAuth path (isAcpAuthError / startAuthFlow).
+              const errMsg = gerr instanceof Error ? gerr.message : String(gerr);
+              failedSessions.push({ key: cfg.key, error: errMsg });
+              logErr(`Pre-warm gemini session '${cfg.key}' FAILED after ${Date.now() - sessionStartMs}ms: ${errMsg}`);
+            }
+            return;
+          }
+
           const sessionParams: Record<string, unknown> = {
             cwd: warmCwd,
             mcpServers: buildMcpServers("act", warmCwd, cfg.key, cfg.model),
@@ -3425,7 +3463,14 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
           // future resume with this id resolves correctly even if warmCwd
           // and the SDK's original cwd differ.
           registerSession(cfg.key, { sessionId, cwd: warmCwd, model: cfg.model, provider: "claude" });
-          await acpRequest("session/set_model", { sessionId, modelId: cfg.model });
+          // Only pin the model when it's a Claude id. The observer reaches this
+          // Claude path even when Swift tagged it with the user's Gemini/Codex
+          // model (it's an always-Claude background session); the Claude
+          // subprocess would 400 on a non-Claude id, failing the warmup. The
+          // observer runs fine on the SDK default model.
+          if (!isGeminiModel(cfg.model) && !isCodexModel(cfg.model)) {
+            await acpRequest("session/set_model", { sessionId, modelId: cfg.model });
+          }
           // Tell the Swift client about the pre-warmed sessionId NOW, even though
           // no user prompt has run yet. Without this, the very first prompt against
           // a pre-warmed session that immediately rate-limits would lose its
