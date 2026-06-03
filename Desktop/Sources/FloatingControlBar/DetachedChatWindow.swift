@@ -427,6 +427,10 @@ class DetachedChatWindowController {
         /// cancel events that fail to propagate (e.g. bridge crash mid-cancel) or any
         /// other path that leaves `isStreaming = true` after the agent loop is dead.
         var safetyWatchdog: Task<Void, Never>?
+        /// Single-flight guard for `reconcileBlankFinalizedBubble` so the
+        /// frequently-firing `sendingSessionKeys` sink can't stack reconciliation
+        /// passes on top of each other.
+        var reconcileInFlight: Bool = false
     }
 
     /// Inactivity ceiling for the per-pop-out safety watchdog. After this many
@@ -1620,7 +1624,7 @@ class DetachedChatWindowController {
         // the set changes.
         let sendingSub = provider.$sendingSessionKeys
             .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak state] keys in
+            .sink { [weak self, weak state, weak provider] keys in
                 guard let self, let state else { return }
                 let key = self.entries[winId]?.sessionKey ?? initialKey
                 let isSessionSending = key.map { keys.contains($0) } ?? false
@@ -1629,8 +1633,75 @@ class DetachedChatWindowController {
                 if state.streaming.isAILoading != newLoading {
                     state.streaming.isAILoading = newLoading
                 }
+                // Live self-heal: this window's turn has fully finished (no longer
+                // sending, not streaming). If the on-screen answer bubble is blank,
+                // the finalized reply was lost to a concurrent `$messages` race even
+                // though finalization always persists it to the local store — so
+                // restore it from disk instead of forcing the user to reopen the
+                // window. No-ops on the normal path (answer already rendered).
+                if !isSessionSending, !msgStreaming, let provider {
+                    self.reconcileBlankFinalizedBubble(winId: winId, state: state, provider: provider)
+                }
             }
         entries[winId]?.sharedProviderCancellables.append(sendingSub)
+    }
+
+    /// Restore a pop-out's answer bubble from the local store when a completed
+    /// turn rendered blank.
+    ///
+    /// The symptom: a reply streams fully, the turn finalizes, then the bubble
+    /// disappears. Root cause is a race on the shared `provider.$messages`
+    /// publisher under concurrent load (e.g. another pop-out running a long,
+    /// tool-heavy turn) that drops the live `currentAIMessage` reference's content
+    /// even though `ChatProvider` finalization always persists the reply to the
+    /// local SQLite store. Detached windows are restored from that store, so the
+    /// answer is never actually lost — only its live in-memory display is. This
+    /// reads it back and moves it into `chatHistory`, the same shape the
+    /// window-restore path produces.
+    ///
+    /// Tightly guarded: it only acts when there is a pending question on screen
+    /// but no renderable answer text anywhere in the live current message, so the
+    /// normal completion path (where `currentAIMessage` already holds the answer)
+    /// is untouched. A spurious fire is still benign — it just re-renders the same
+    /// exchange from history with identical content.
+    private func reconcileBlankFinalizedBubble(winId: ObjectIdentifier, state: FloatingControlBarState, provider: ChatProvider) {
+        guard !state.streaming.displayedQuery.isEmpty else { return }
+        let cur = state.streaming.currentAIMessage
+        let hasRenderableAnswer = cur.map { msg -> Bool in
+            if !msg.text.isEmpty { return true }
+            return msg.contentBlocks.contains { block in
+                if case .text(_, let t) = block, !t.isEmpty { return true }
+                return false
+            }
+        } ?? false
+        guard !hasRenderableAnswer else { return }
+        guard let key = entries[winId]?.sessionKey, key.hasPrefix("detached-") else { return }
+        guard entries[winId]?.reconcileInFlight != true else { return }
+        entries[winId]?.reconcileInFlight = true
+        log("[DetachedChat] reconcileBlankFinalizedBubble: blank finished bubble detected, restoring from store session=\(key)")
+        Task { @MainActor [weak self, weak state, weak provider] in
+            defer { self?.entries[winId]?.reconcileInFlight = false }
+            guard let state else { return }
+            // The finalize-time store save is async and can lag the sending-flag
+            // flip; retry briefly until the persisted answer is visible.
+            for _ in 0..<6 {
+                // Bail if the user started a new turn or the bubble healed itself.
+                if state.streaming.currentAIMessage?.isStreaming == true { return }
+                if let k = self?.entries[winId]?.sessionKey,
+                   provider?.isSending(sessionKey: k) == true { return }
+                let saved = await ChatMessageStore.loadMessages(context: "__\(key)__", limit: 100)
+                if let lastAI = saved.last(where: { $0.sender == .ai }), !lastAI.text.isEmpty {
+                    state.loadHistory(from: saved)
+                    state.streaming.displayedQuery = ""
+                    state.streaming.currentAIMessage = nil
+                    state.streaming.isAILoading = false
+                    log("[DetachedChat] reconcileBlankFinalizedBubble: healed blank bubble from store (msgs=\(saved.count)) session=\(key)")
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            log("[DetachedChat] reconcileBlankFinalizedBubble: no persisted answer found after retries session=\(key)")
+        }
     }
 
     /// Reset (and, while streaming, re-arm) the per-window safety watchdog.
