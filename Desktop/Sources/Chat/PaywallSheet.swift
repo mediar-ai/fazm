@@ -595,7 +595,6 @@ final class PaywallWindowController {
         // can surface the paywall while it's disabled.
         guard SubscriptionService.paywallEnabled else {
             log("PaywallWindowController: paywall disabled (FAZM_PAYWALL_ENABLED off) — not showing")
-            chatProvider.showPaywall = false
             return
         }
         if let existing = window, existing.isVisible {
