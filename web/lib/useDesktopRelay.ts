@@ -23,12 +23,18 @@ export interface AvailableModel {
   shortLabel: string;
 }
 
+export interface RecentWorkspace {
+  path: string;
+  name: string;
+}
+
 export interface DesktopState {
   model: string;
   modelLabel: string;
   workspace: string;
   voiceEnabled: boolean;
   availableModels: AvailableModel[];
+  recentWorkspaces: RecentWorkspace[];
 }
 
 export interface PopOut {
@@ -210,6 +216,7 @@ export function useDesktopRelay(token: string | null): RelayHook {
           workspace: (msg.workspace as string) || "",
           voiceEnabled: Boolean(msg.voiceEnabled),
           availableModels: (msg.availableModels as AvailableModel[]) || [],
+          recentWorkspaces: (msg.recentWorkspaces as RecentWorkspace[]) || [],
         };
         setDesktopState(next);
         break;
@@ -455,26 +462,32 @@ export function useDesktopRelay(token: string | null): RelayHook {
     // Done in the handler below by diffing the list.
   }, [sendControl]);
 
+  const refreshState = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: "request_state" }));
+  }, []);
+
   const setModel = useCallback(
     (id: string) => {
       trackEvent("web_set_model", { model: id });
       sendControl(`setModel:${id}`);
+      // The desktop applies the change asynchronously and only pushes state on
+      // request, so re-fetch shortly after so the header chip reflects it.
+      setTimeout(refreshState, 400);
     },
-    [sendControl]
+    [sendControl, refreshState]
   );
 
   const setWorkspace = useCallback(
     (path: string) => {
       trackEvent("web_set_workspace");
       sendControl(`setWorkspace:${path}`);
+      // Re-fetch so the workspace chip + recent-workspaces list update (the new
+      // path moves to the top of the MRU list on the desktop).
+      setTimeout(refreshState, 400);
     },
-    [sendControl]
+    [sendControl, refreshState]
   );
-
-  const refreshState = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ type: "request_state" }));
-  }, []);
 
   const refreshPopouts = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
