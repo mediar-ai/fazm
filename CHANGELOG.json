@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Gemini Flash chats now warm up at launch so the first message responds faster"
+  ],
   "releases": [
     {
       "version": "2.9.62",
