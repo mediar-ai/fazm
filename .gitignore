@@ -25,6 +25,9 @@ DerivedData/
 .claude/
 skills/
 
+# Codex (user-local config with machine-specific absolute paths)
+.codex/
+
 # macOS
 .DS_Store
 *.swp
