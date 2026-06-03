@@ -201,19 +201,9 @@ export default function Chat({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Restore text/voice mode preference across sessions. Power users who type
-  // shouldn't have to flip to text mode every visit.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("fazm.showTextInput");
-      if (saved === "1") setShowTextInput(true);
-    } catch {}
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem("fazm.showTextInput", showTextInput ? "1" : "0");
-    } catch {}
-  }, [showTextInput]);
+  // Voice is the default input mode. We intentionally do NOT persist a text-mode
+  // preference: every visit, and every follow-up after sending, returns to the
+  // hold-to-talk button. Users who want to type can still tap "Type instead".
 
   // First-time hold-to-talk hint. Show once when the user lands in voice mode
   // with no messages yet, then never again.
@@ -338,12 +328,14 @@ export default function Chat({
       // Desktop is busy — queue locally instead of dropping the message.
       setQueue((q) => [...q, trimmed]);
       setInput("");
+      setShowTextInput(false); // follow-up defaults back to voice
       return;
     }
     onSend(trimmed);
     setInput("");
-    // Do NOT reset showTextInput — keep the text input visible after sending
-    // so the user can type a follow-up without switching back to voice mode.
+    // Return to voice mode: the follow-up field should default to hold-to-talk,
+    // not stay as a text box.
+    setShowTextInput(false);
     setUserScrolled(false); // resume auto-scroll on new send
   };
 
