@@ -751,6 +751,13 @@ struct OnboardingChatView: View {
             OnboardingChatPersistence.saveMidOnboarding()
 
             Task {
+                // Start/await bridge warmup so the pre-warmed "onboarding" Gemini
+                // session is ready before this first auto-send. Without the await a
+                // fast sign-in can beat warmup and this send creates a cold
+                // session/new on the visible turn. warmupBridge() coalesces onto the
+                // in-flight launch warmup, so this never starts a duplicate.
+                async let bridgeWarmup: () = chatProvider.warmupBridge()
+
                 // Initialize DB so messages are persisted for restart recovery
                 let userId = UserDefaults.standard.string(forKey: "auth_tokenUserId")
                 await AppDatabase.shared.configure(userId: userId)
@@ -758,6 +765,7 @@ struct OnboardingChatView: View {
 
                 // Note: we no longer clear onboarding messages from DB — they're part of history
 
+                await bridgeWarmup
                 await chatProvider.sendMessage(
                     "Hi, I just installed Fazm!",
                     model: "gemini-flash-latest",
