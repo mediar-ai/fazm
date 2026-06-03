@@ -1474,12 +1474,25 @@ class ChatProvider: ObservableObject {
             let availableModels = ShortcutSettings.shared.availableModels.map { m in
                 ["id": m.id, "label": m.label, "shortLabel": m.shortLabel] as [String: Any]
             }
+            // Recent workspaces (MRU), filtered the same way the desktop dropdown is:
+            // drop the current workspace, the home dir, and any path that no longer
+            // exists as a directory. Each entry carries the full path plus the last
+            // folder name so the web client can render it like the pop-out chat.
+            let home = NSHomeDirectory()
+            let recentWorkspaces = RecentWorkspaces.list().filter { path in
+                guard !path.isEmpty, path != workspace, path != home else { return false }
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+            }.map { path in
+                ["path": path, "name": (path as NSString).lastPathComponent] as [String: Any]
+            }
             return [
                 "model": ShortcutSettings.shared.selectedModel,
                 "modelLabel": ShortcutSettings.shared.selectedModelShortLabel,
                 "workspace": workspace,
                 "voiceEnabled": voiceEnabled,
                 "availableModels": availableModels,
+                "recentWorkspaces": recentWorkspaces,
             ] as [String: Any]
         }
 
