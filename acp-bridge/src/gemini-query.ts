@@ -268,6 +268,89 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
   }
 }
 
+/**
+ * Eagerly create + cache a Gemini session for `sessionKey` so the first user
+ * query reuses it instead of paying session/new + MCP-server spin-up on the
+ * visible turn. This is the Gemini analogue of the Claude warmup in
+ * preWarmSession (index.ts): create the session, register it, pin the model,
+ * and emit `session_started` so Swift banks the sessionId for resume — but it
+ * never sends a prompt.
+ *
+ * Writes into the same module-level `geminiSessions` cache that
+ * handleGeminiQuery reads (keyed by sessionKey), so the next query
+ * short-circuits to this warm session as long as cwd + model still match.
+ * Throws on failure so the caller (preWarmSession) can record a per-session
+ * warmup outcome; a failed warm just means the session is created lazily on
+ * the first query, exactly as before.
+ */
+export async function prewarmGeminiSession(
+  cfg: { key: string; model: string; systemPrompt?: string; resume?: string },
+  cwd: string,
+  deps: GeminiQueryDeps,
+): Promise<void> {
+  const { logErr, sendWithSession, getProvider, buildMcpServers, registerSession } = deps;
+  const sessionKey = cfg.key;
+  const modelId = cfg.model;
+
+  // Idempotent: already warm for this exact key + cwd + model.
+  const existing = geminiSessions.get(sessionKey);
+  if (existing && existing.cwd === cwd && existing.modelId === modelId) {
+    logErr(`[gemini-warmup] '${sessionKey}' already warm (${existing.sessionId.slice(0, 8)})`);
+    return;
+  }
+
+  const provider = getProvider();
+  // start/initialize/authenticate are idempotent — handleGeminiQuery calls them
+  // on every query — so this is safe even if the startup probe already ran.
+  provider.start();
+  await provider.initialize();
+  await provider.authenticate();
+
+  const mcpServers = buildMcpServers("act", cwd, sessionKey, modelId);
+
+  // Resume a saved session if Swift handed us an id (main/floating). On failure
+  // fall back to a fresh session quietly — warmup has no live turn to attach a
+  // session_expired notice to (unlike handleGeminiQuery).
+  if (cfg.resume) {
+    try {
+      await provider.request("session/load", { sessionId: cfg.resume, cwd, mcpServers });
+      const entry: GeminiSessionEntry = { sessionId: cfg.resume, cwd, modelId, systemPromptDelivered: true };
+      geminiSessions.set(sessionKey, entry);
+      geminiSessionIdToKey.set(entry.sessionId, sessionKey);
+      registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId, provider: "gemini" });
+      try {
+        await provider.request("session/set_model", { sessionId: entry.sessionId, modelId });
+      } catch (modelErr) {
+        logErr(`[gemini-warmup] set_model after resume failed for '${sessionKey}' (continuing): ${modelErr}`);
+      }
+      sendWithSession(entry.sessionId, { type: "session_started", sessionKey, isResume: true } as OutboundMessage);
+      logErr(`[gemini-warmup] resumed '${sessionKey}' session ${entry.sessionId.slice(0, 8)}`);
+      return;
+    } catch (resumeErr) {
+      logErr(`[gemini-warmup] session/load failed for '${sessionKey}', creating fresh: ${resumeErr}`);
+    }
+  }
+
+  // Fresh session. systemPromptDelivered=false so the first real query delivers
+  // the system-prompt preamble (matches handleGeminiQuery's new-session path).
+  const result = (await provider.request("session/new", {
+    cwd,
+    mcpServers,
+    ...(cfg.systemPrompt ? { _meta: { systemPrompt: cfg.systemPrompt } } : {}),
+  })) as { sessionId: string };
+  const entry: GeminiSessionEntry = { sessionId: result.sessionId, cwd, modelId, systemPromptDelivered: false };
+  geminiSessions.set(sessionKey, entry);
+  geminiSessionIdToKey.set(entry.sessionId, sessionKey);
+  registerSession(sessionKey, { sessionId: entry.sessionId, cwd, model: modelId, provider: "gemini" });
+  try {
+    await provider.request("session/set_model", { sessionId: entry.sessionId, modelId });
+  } catch (modelErr) {
+    logErr(`[gemini-warmup] set_model failed for '${sessionKey}' (continuing with default): ${modelErr}`);
+  }
+  sendWithSession(entry.sessionId, { type: "session_started", sessionKey, isResume: false } as OutboundMessage);
+  logErr(`[gemini-warmup] pre-warmed '${sessionKey}' session ${entry.sessionId.slice(0, 8)} (model=${modelId})`);
+}
+
 export function dropGeminiSession(sessionKey: string, provider: GeminiProvider): void {
   const entry = geminiSessions.get(sessionKey);
   if (!entry) return;
