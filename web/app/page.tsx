@@ -76,7 +76,15 @@ export default function Home() {
       {/* Header: hamburger | Fazm + dot | model + workspace chips | New chat + Sign out
           Everything lives on a single row per user spec; the middle cluster scrolls
           horizontally on narrow screens so it never bumps the right-side controls. */}
-      <header className="safe-pt flex items-center gap-2 px-4 py-3 border-b border-neutral-800">
+      <header
+        className="flex items-center gap-2 px-4 border-b border-neutral-800"
+        style={{
+          // safe-area inset + a comfortable base so the chips never hug the
+          // notch/top corner, with extra room below to lower the bottom border.
+          paddingTop: "calc(env(safe-area-inset-top) + 1rem)",
+          paddingBottom: "0.875rem",
+        }}
+      >
         {/* Left cluster: hamburger + wordmark + online dot */}
         <div className="flex items-center gap-2 shrink-0">
           <button
@@ -132,8 +140,10 @@ export default function Home() {
             </button>
           )}
           <button
+            type="button"
             onClick={signOut}
-            className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-neutral-200 bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] rounded-full px-3 py-1.5 transition-colors"
+            title="Sign out"
           >
             Sign out
           </button>
