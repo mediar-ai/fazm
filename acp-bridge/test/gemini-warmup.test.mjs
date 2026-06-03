@@ -160,3 +160,59 @@ test("warmup resume falls back to a fresh session when session/load fails", asyn
   assert.equal(provider.newCount, 1, "fell back to a fresh session/new");
   assert.equal(geminiSessionCount(), 1);
 });
+
+test("warmup does NOT clobber a session a concurrent query created mid-warmup", async () => {
+  // Reproduces the onboarding race: the auto-send beats the (slow) gemini warmup,
+  // creates + caches its own session, and the warmup's late session/new must NOT
+  // overwrite it (else the live conversation is stranded on an empty warm session).
+  clearGeminiSessions();
+  let releaseWarmupNew;
+  const warmupNewGate = new Promise((r) => { releaseWarmupNew = r; });
+  let newCount = 0;
+  const provider = {
+    calls: [],
+    start() {},
+    async initialize() { return {}; },
+    async authenticate() {},
+    async request(method) {
+      this.calls.push({ method });
+      if (method === "session/new") {
+        newCount++;
+        const id = `sid-${newCount}`;
+        if (newCount === 1) await warmupNewGate; // the warmup's session/new blocks
+        return { sessionId: id };
+      }
+      if (method === "session/prompt") return { stopReason: "end_turn", _meta: {} };
+      return {};
+    },
+    registerSessionHandler() {},
+    unregisterSessionHandler() {},
+    beginActivePrompt() {},
+    endActivePrompt() {},
+    getRecentTurnError() { return null; },
+    notify() {},
+  };
+  const deps = makeDeps(provider, newSink());
+
+  // Warmup starts; its session/new (sid-1) blocks on the gate.
+  const warmupPromise = prewarmGeminiSession(
+    { key: "onboarding", model: "gemini-flash-latest" }, "/cwd", deps,
+  );
+  // The query races in and creates + caches its own session (sid-2).
+  await handleGeminiQuery(
+    { sessionKey: "onboarding", model: "gemini-flash-latest", cwd: "/cwd", prompt: "hi", systemPrompt: "SP" },
+    deps,
+  );
+  // Now let the warmup's session/new return — it must detect sid-2 and discard sid-1.
+  releaseWarmupNew();
+  await warmupPromise;
+
+  // A follow-up reuses the LIVE (query's) session — no new session/new.
+  const before = newCount;
+  await handleGeminiQuery(
+    { sessionKey: "onboarding", model: "gemini-flash-latest", cwd: "/cwd", prompt: "again", systemPrompt: "SP" },
+    deps,
+  );
+  assert.equal(newCount, before, "follow-up reused the live session — warmup did not clobber it");
+  assert.equal(geminiSessionCount(), 1, "exactly one onboarding session cached");
+});
