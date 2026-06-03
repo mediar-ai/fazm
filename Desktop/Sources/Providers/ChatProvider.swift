@@ -5298,9 +5298,34 @@ class ChatProvider: ObservableObject {
                 // backend save network call to complete.
                 await Task.yield()
             } else {
-                // Message no longer in memory (user switched away from this session).
+                // Message no longer in memory: the placeholder bubble slipped out
+                // of `messages` before finalization (a session switch, a poll-driven
+                // array rebuild, or a clear racing the in-flight turn). The streamed
+                // answer is still in queryResult.text. Without the save below it would
+                // be written only to the backend (further down) and NEVER to the local
+                // SQLite store — and detached pop-outs restore from the local store,
+                // not the backend, so the answer would stream and then vanish for good
+                // on the next reload. Persist it locally here so it can never be lost.
                 messageText = queryResult.text
-                log("Chat response arrived after session switch")
+                log("Chat response arrived after session switch — persisting to local store so it isn't lost (len=\(messageText.count), session=\(sessionKey ?? "main"))")
+                if !messageText.isEmpty {
+                    let salvaged = ChatMessage(
+                        id: aiMessageId,
+                        text: messageText,
+                        sender: .ai,
+                        isStreaming: false,
+                        sessionKey: sessionKey
+                    )
+                    if isOnboarding {
+                        Task { await OnboardingChatPersistence.saveMessage(salvaged) }
+                    } else if sessionKey == "floating" {
+                        let sid = floatingChatSessionId
+                        Task { await ChatMessageStore.saveMessage(salvaged, context: "__floating__", sessionId: sid) }
+                    } else if let key = sessionKey, key.hasPrefix("detached-") {
+                        let sid = queryResult.sessionId.isEmpty ? nil : queryResult.sessionId
+                        Task { await ChatMessageStore.saveMessage(salvaged, context: "__\(key)__", sessionId: sid) }
+                    }
+                }
             }
 
             // Release the sending lock as soon as the AI response is visible in the
