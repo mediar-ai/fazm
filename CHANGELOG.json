@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed pop-out chat messages disappearing after they finished streaming (the reply is restored from local history instead of vanishing)"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.62",
+      "date": "2026-06-03",
+      "changes": [
+        "Fixed pop-out chat messages disappearing after they finished streaming (the reply is restored from local history instead of vanishing)"
+      ]
+    },
     {
       "version": "2.9.61",
       "date": "2026-06-02",
