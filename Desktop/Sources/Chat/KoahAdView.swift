@@ -190,40 +190,44 @@ struct KoahAdView: View {
                     
                     Spacer()
                     
-                    Button(action: {
-                        if let provider = FloatingControlBarManager.shared.chatProvider {
-                            provider.showPaywall = true
-                            PaywallWindowController.shared.show(chatProvider: provider)
+                    // Hidden while the paywall kill switch is off (ads funnel):
+                    // with no paywall there's no ad-free upgrade to offer.
+                    if SubscriptionService.paywallEnabled {
+                        Button(action: {
+                            if let provider = FloatingControlBarManager.shared.chatProvider {
+                                provider.showPaywall = true
+                                PaywallWindowController.shared.show(chatProvider: provider)
+                            }
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 8))
+                                Text("Go Ad-Free")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(FazmColors.purplePrimary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(FazmColors.purplePrimary.opacity(isHoveringAdFree ? 0.2 : 0.1))
+                            .cornerRadius(4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(FazmColors.purplePrimary.opacity(isHoveringAdFree ? 0.45 : 0.2), lineWidth: 0.5)
+                            )
+                            .contentShape(Rectangle())
                         }
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 8))
-                            Text("Go Ad-Free")
-                                .font(.system(size: 10, weight: .semibold))
+                        .buttonStyle(.plain)
+                        .help("Upgrade to Fazm Pro for an ad-free experience")
+                        .onHover { hovering in
+                            isHoveringAdFree = hovering
+                            if hovering {
+                                NSCursor.pointingHand.set()
+                            } else {
+                                NSCursor.arrow.set()
+                            }
                         }
-                        .foregroundColor(FazmColors.purplePrimary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(FazmColors.purplePrimary.opacity(isHoveringAdFree ? 0.2 : 0.1))
-                        .cornerRadius(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(FazmColors.purplePrimary.opacity(isHoveringAdFree ? 0.45 : 0.2), lineWidth: 0.5)
-                        )
-                        .contentShape(Rectangle())
+                        .animation(.easeOut(duration: 0.12), value: isHoveringAdFree)
                     }
-                    .buttonStyle(.plain)
-                    .help("Upgrade to Fazm Pro for an ad-free experience")
-                    .onHover { hovering in
-                        isHoveringAdFree = hovering
-                        if hovering {
-                            NSCursor.pointingHand.set()
-                        } else {
-                            NSCursor.arrow.set()
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.12), value: isHoveringAdFree)
                 }
                 .padding(.horizontal, 4)
             }
