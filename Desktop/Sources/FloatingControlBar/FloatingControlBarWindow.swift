@@ -1627,7 +1627,9 @@ class FloatingControlBarManager {
                 guard let provider = self?.chatProvider else { return }
                 log("FloatingControlBarManager: Test paywall triggered")
                 provider.showPaywall = true
-                PaywallWindowController.shared.show(chatProvider: provider)
+                // userInitiated so the QA hook can present the paywall even while
+                // the FAZM_PAYWALL_ENABLED kill switch is off.
+                PaywallWindowController.shared.show(chatProvider: provider, userInitiated: true)
             }
         }
 
