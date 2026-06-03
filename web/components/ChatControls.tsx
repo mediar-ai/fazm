@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   type AvailableModel,
   type DesktopState,
@@ -40,13 +41,72 @@ function lastFolderName(path: string, fallback = "Workspace"): string {
   return parts[parts.length - 1] || fallback;
 }
 
-/** Hook: close popover on outside-click or Escape. */
-function useDismissable(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
+/**
+ * Portal-rendered popover anchored to a trigger element.
+ *
+ * The header's control row uses `overflow-x-auto` so the chips can scroll
+ * horizontally on narrow phones. That clipping context also clips any absolutely
+ * positioned child, which used to swallow the dropdown menus entirely (they open
+ * below a ~32px-tall row, so the menu fell outside the clip and was invisible).
+ * Rendering into `document.body` with `position: fixed` escapes the clip and any
+ * stacking context, so the menu always shows. Position is recomputed from the
+ * trigger's bounding rect on open, resize, and scroll.
+ */
+function DropdownMenu({
+  open,
+  triggerRef,
+  align,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  align: "left" | "right";
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{
+    top: number;
+    left?: number;
+    right?: number;
+  } | null>(null);
+
+  // Recompute position whenever the menu is open.
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const update = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (align === "right") {
+        setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      } else {
+        setPos({ top: r.bottom + 4, left: r.left });
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, align, triggerRef]);
+
+  // Close on outside-click or Escape. The portal lives outside the trigger's DOM
+  // subtree, so we explicitly treat clicks inside either the menu or the trigger
+  // as "inside".
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t)) return;
+      if (triggerRef.current?.contains(t)) return;
+      onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -57,8 +117,25 @@ function useDismissable(open: boolean, onClose: () => void) {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
-  return ref;
+  }, [open, onClose, triggerRef]);
+
+  if (!open || !pos || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={{
+        position: "fixed",
+        top: pos.top,
+        left: pos.left,
+        right: pos.right,
+        zIndex: 9999,
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -73,7 +150,7 @@ function ModelDropdown({
   onSetModel: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useDismissable(open, () => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const models: AvailableModel[] = desktopState.availableModels || [];
   const selected = models.find((m) => m.id === desktopState.model);
@@ -84,8 +161,9 @@ function ModelDropdown({
     selected?.shortLabel || desktopState.modelLabel || "Model";
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div className="relative shrink-0">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 text-xs text-neutral-300 bg-neutral-800/70 hover:bg-neutral-700 active:bg-neutral-600 border border-white/[0.06] rounded-full px-3 py-1.5 transition-colors"
@@ -94,8 +172,13 @@ function ModelDropdown({
         <span className="truncate max-w-[80px]">{triggerText}</span>
         <ChevronIcon open={open} />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-30 min-w-[220px] max-w-[300px] bg-neutral-900 border border-white/[0.08] rounded-xl shadow-xl py-1 max-h-[60vh] overflow-y-auto hide-scrollbar">
+      <DropdownMenu
+        open={open}
+        triggerRef={triggerRef}
+        align="left"
+        onClose={() => setOpen(false)}
+      >
+        <div className="min-w-[220px] max-w-[300px] bg-neutral-900 border border-white/[0.08] rounded-xl shadow-xl py-1 max-h-[60vh] overflow-y-auto hide-scrollbar">
           {models.length === 0 ? (
             <div className="px-3 py-2 text-xs text-neutral-500">
               Loading models…
@@ -135,7 +218,7 @@ function ModelDropdown({
             })
           )}
         </div>
-      )}
+      </DropdownMenu>
     </div>
   );
 }
