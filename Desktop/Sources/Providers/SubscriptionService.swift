@@ -175,11 +175,27 @@ final class SubscriptionService {
         dailyMessageCount += 1
     }
 
+    /// Master kill switch for the paywall. While disabled, the app never gates
+    /// on subscription/trial state and the paywall window is never presented —
+    /// used during paid acquisition (running ads) so new users hit zero friction.
+    ///
+    /// Disabled by default. To bring the paywall back, set the env var
+    /// `FAZM_PAYWALL_ENABLED=true` (also accepts `1`/`yes`/`on`) in `.env.app`
+    /// (and mirror it into Codemagic's `FAZM_APP_ENV`).
+    static let paywallEnabled: Bool = {
+        switch Self.env("FAZM_PAYWALL_ENABLED").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "true", "1", "yes", "on": return true
+        default: return false
+        }
+    }()
+
     /// Whether the paywall should be shown right now.
     /// Free until day `trialDays` after Firebase account creation. After that,
     /// the paywall fires unless the user has an active Stripe subscription
     /// (which includes the post-checkout Stripe trial status `trialing`).
     func shouldShowPaywall() -> Bool {
+        // Global kill switch (ads funnel): never gate while disabled.
+        if !Self.paywallEnabled { return false }
         if isActive { return false }
         return isTrialExpired
     }
