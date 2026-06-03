@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Restored the Go Ad-Free button on sponsored messages so you can always upgrade to remove ads"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.61",
+      "date": "2026-06-02",
+      "changes": [
+        "Restored the Go Ad-Free button on sponsored messages so you can always upgrade to remove ads"
+      ]
+    },
     {
       "version": "2.9.60",
       "date": "2026-06-03",
