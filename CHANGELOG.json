@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Restored the Go Ad-Free button on sponsored messages so you can always upgrade to remove ads"
+  ],
   "releases": [
     {
       "version": "2.9.60",
