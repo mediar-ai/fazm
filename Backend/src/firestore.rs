@@ -293,6 +293,19 @@ pub async fn deactivate_channel(
 }
 
 /// List ALL release documents (live and inactive), ordered by descending build number.
+///
+/// We CANNOT use Firestore's server-side `orderBy: build DESCENDING` because `build`
+/// is stored as a string and lexicographic order is wrong for non-zero-padded numbers
+/// ("999" > "2009060"). Older tags (v1.x, v0.x) carry build numbers like "15" or "1"
+/// alongside modern "2009060", so sort happens client-side after parsing to u64.
+///
+/// `limit: 1000` is the failsafe ceiling: we currently have ~150 release docs and ship
+/// ~60 patches per quarter, so this buys ~3 years of headroom without pagination. If
+/// the collection ever exceeds 1000 docs, ALL callers (promote_release.sh in particular)
+/// will silently see a truncated view again. At that point switch to proper pagination
+/// via a `created_at` timestamp field + cursor (`startAfter`). Pre-2026-06: this was
+/// `limit: 100` with no orderBy, which dropped every tag from v2.9.13 onward out of the
+/// response and broke `./scripts/promote_release.sh` for every recent build.
 pub async fn list_all_releases(
     config: &Arc<Config>,
     token: &str,
@@ -305,7 +318,7 @@ pub async fn list_all_releases(
     let query = serde_json::json!({
         "structuredQuery": {
             "from": [{ "collectionId": COLLECTION }],
-            "limit": 100
+            "limit": 1000
         }
     });
 
@@ -336,6 +349,11 @@ pub async fn list_all_releases(
 }
 
 /// List all live release documents, ordered by descending build number.
+///
+/// In practice `deactivate_channel` keeps at most one `is_live=true` doc per channel
+/// (staging, beta, stable), so this query returns ~3 docs. `limit: 1000` is defensive
+/// in case a race ever lets multiple live docs slip through. Same string-build sort
+/// caveat as `list_all_releases`.
 pub async fn list_live_releases(
     config: &Arc<Config>,
     token: &str,
@@ -356,7 +374,7 @@ pub async fn list_live_releases(
                     "value": { "booleanValue": true }
                 }
             },
-            "limit": 100
+            "limit": 1000
         }
     });
 
