@@ -619,6 +619,14 @@ class ChatProvider: ObservableObject {
     /// Set to true during onboarding so the ACP session ID is persisted for restart recovery.
     var isOnboarding = false
 
+    /// The onboarding system prompt, stashed by OnboardingChatView when onboarding
+    /// starts. Used as the fallback prefix for any onboarding send that doesn't pass
+    /// one explicitly — notably the first agent turn, which is now triggered by the
+    /// user tapping a quick-reply ("Let's go!") after the static welcome, via
+    /// handleQuickReply. Without this the first agent turn would run with no
+    /// onboarding instructions and behave like a generic chat.
+    var onboardingSystemPrompt: String?
+
     // MARK: - Floating Chat Session Persistence
 
     /// Per-mode UserDefaults key so sessions from one mode aren't mistakenly
@@ -4609,10 +4617,13 @@ class ChatProvider: ObservableObject {
             // Passing it here ensures it is applied if the session was invalidated
             // (e.g. cwd change) and a new session/new is triggered mid-conversation.
             var systemPrompt: String
-            if isOnboarding, let prefix = systemPromptPrefix, !prefix.isEmpty {
+            if isOnboarding, let prefix = (systemPromptPrefix?.isEmpty == false ? systemPromptPrefix : onboardingSystemPrompt), !prefix.isEmpty {
                 // Onboarding uses its own prompt exclusively — the main chat prompt
                 // contains rules like "don't ask follow-up questions" that conflict
-                // with the onboarding deep-dive step.
+                // with the onboarding deep-dive step. Fall back to the stored
+                // onboardingSystemPrompt when the caller didn't pass one (e.g. the
+                // first agent turn fired by a quick-reply tap after the static
+                // welcome), so the agent always gets the onboarding instructions.
                 systemPrompt = prefix
             } else {
                 systemPrompt = cachedMainSystemPrompt
