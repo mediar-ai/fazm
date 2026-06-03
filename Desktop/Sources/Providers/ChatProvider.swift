@@ -4643,7 +4643,18 @@ class ChatProvider: ObservableObject {
                 let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
                 let result = await ChatToolExecutor.execute(toolCall, sessionKey: sessionKey)
                 log("Fazm tool \(name) executed for callId=\(callId)")
-                await MainActor.run { toolResults[name] = result }
+                await MainActor.run {
+                    toolResults[name] = result
+                    // Count fazm-tool calls toward this turn's tool set. MCP tools
+                    // are tracked in toolActivityHandler, but fazm-tools (ask_followup,
+                    // set_user_preferences, request_permission, …) only surface here.
+                    // Without this, a turn whose only action is a fazm-tool — e.g.
+                    // a model answering entirely via ask_followup with no prose —
+                    // has empty `toolNames` and gets misclassified as an empty/
+                    // interrupted turn (the "no text returned" marker + scary banner),
+                    // even though it asked a perfectly good question.
+                    if !toolNames.contains(name) { toolNames.append(name) }
+                }
                 return result
             }
             let toolActivityHandler: ACPBridge.ToolActivityHandler = { [weak self] name, status, toolUseId, input in
