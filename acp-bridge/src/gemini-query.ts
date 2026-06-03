@@ -311,12 +311,28 @@ export async function prewarmGeminiSession(
 
   const mcpServers = buildMcpServers("act", cwd, sessionKey, modelId);
 
+  // Clobber guard. The first user query for this key (notably the onboarding
+  // auto-send on a fast sign-in) can race this warmup: it creates + caches its
+  // OWN session while our session/new|load is in flight. If, after our async
+  // call returns, the cached entry is no longer the one we saw at entry, a
+  // concurrent query won — keep its session (it holds the live conversation) and
+  // discard ours, rather than overwriting the cache and silently stranding the
+  // conversation on an empty warm session.
+  const racedAway = (): boolean => {
+    const now = geminiSessions.get(sessionKey);
+    return !!now && now !== existing;
+  };
+
   // Resume a saved session if Swift handed us an id (main/floating). On failure
   // fall back to a fresh session quietly — warmup has no live turn to attach a
   // session_expired notice to (unlike handleGeminiQuery).
   if (cfg.resume) {
     try {
       await provider.request("session/load", { sessionId: cfg.resume, cwd, mcpServers });
+      if (racedAway()) {
+        logErr(`[gemini-warmup] '${sessionKey}' created concurrently during resume; keeping live session, discarding warm ${cfg.resume.slice(0, 8)}`);
+        return;
+      }
       const entry: GeminiSessionEntry = { sessionId: cfg.resume, cwd, modelId, systemPromptDelivered: true };
       geminiSessions.set(sessionKey, entry);
       geminiSessionIdToKey.set(entry.sessionId, sessionKey);
@@ -341,6 +357,12 @@ export async function prewarmGeminiSession(
     mcpServers,
     ...(cfg.systemPrompt ? { _meta: { systemPrompt: cfg.systemPrompt } } : {}),
   })) as { sessionId: string };
+  if (racedAway()) {
+    const winner = geminiSessions.get(sessionKey)!;
+    logErr(`[gemini-warmup] '${sessionKey}' created concurrently (${winner.sessionId.slice(0, 8)}); keeping live session, discarding warm ${result.sessionId.slice(0, 8)}`);
+    try { provider.unregisterSessionHandler(result.sessionId); } catch { /* nothing registered */ }
+    return;
+  }
   const entry: GeminiSessionEntry = { sessionId: result.sessionId, cwd, modelId, systemPromptDelivered: false };
   geminiSessions.set(sessionKey, entry);
   geminiSessionIdToKey.set(entry.sessionId, sessionKey);
@@ -351,7 +373,7 @@ export async function prewarmGeminiSession(
     logErr(`[gemini-warmup] set_model failed for '${sessionKey}' (continuing with default): ${modelErr}`);
   }
   sendWithSession(entry.sessionId, { type: "session_started", sessionKey, isResume: false } as OutboundMessage);
-  logErr(`[gemini-warmup] pre-warmed '${sessionKey}' session ${entry.sessionId.slice(0, 8)} (model=${modelId}) cwd=${cwd} size=${geminiSessions.size} keys=[${[...geminiSessions.keys()].join("|")}]`);
+  logErr(`[gemini-warmup] pre-warmed '${sessionKey}' session ${entry.sessionId.slice(0, 8)} (model=${modelId})`);
 }
 
 export function dropGeminiSession(sessionKey: string, provider: GeminiProvider): void {
