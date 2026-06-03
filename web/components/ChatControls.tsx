@@ -237,7 +237,7 @@ function WorkspaceDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(desktopState.workspace || "");
-  const ref = useDismissable(open, () => setOpen(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Sync the draft to the upstream workspace whenever the popover opens or the
@@ -247,13 +247,16 @@ function WorkspaceDropdown({
   }, [desktopState.workspace, open]);
 
   // Autofocus the input when the popover opens (desktop only — avoid yanking
-  // up the mobile keyboard for a glance).
+  // up the mobile keyboard for a glance). Deferred a frame because the input now
+  // lives in a portal that mounts after the position is computed.
   useEffect(() => {
     if (!open) return;
-    if (window.matchMedia("(hover: hover)").matches) {
+    if (!window.matchMedia("(hover: hover)").matches) return;
+    const raf = requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
-    }
+    });
+    return () => cancelAnimationFrame(raf);
   }, [open]);
 
   const trigger = lastFolderName(desktopState.workspace);
@@ -268,8 +271,9 @@ function WorkspaceDropdown({
   };
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div className="relative shrink-0">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 text-xs text-neutral-300 bg-neutral-800/70 hover:bg-neutral-700 active:bg-neutral-600 border border-white/[0.06] rounded-full px-3 py-1.5 transition-colors"
@@ -278,8 +282,13 @@ function WorkspaceDropdown({
         <span className="truncate max-w-[120px]">{trigger}</span>
         <ChevronIcon open={open} />
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-30 w-[280px] bg-neutral-900 border border-white/[0.08] rounded-xl shadow-xl p-3">
+      <DropdownMenu
+        open={open}
+        triggerRef={triggerRef}
+        align="right"
+        onClose={() => setOpen(false)}
+      >
+        <div className="w-[280px] bg-neutral-900 border border-white/[0.08] rounded-xl shadow-xl p-3">
           <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">
             Workspace
           </div>
@@ -325,7 +334,7 @@ function WorkspaceDropdown({
             </button>
           </div>
         </div>
-      )}
+      </DropdownMenu>
     </div>
   );
 }
