@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Gemini Flash chats now warm up at launch so the first message responds faster"
+    "Gemini Flash chats now warm up at launch so the first message responds faster",
+    "Onboarding now opens instantly with a reliable welcome and can no longer get stuck or show a false error on the first message"
   ],
   "releases": [
     {
