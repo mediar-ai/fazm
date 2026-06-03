@@ -66,34 +66,37 @@ function DropdownMenu({
   children: React.ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{
-    top: number;
-    left?: number;
-    right?: number;
-  } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Recompute position whenever the menu is open.
+  // Recompute position whenever the menu is open. We always position by `left`
+  // (computed from the alignment) and then clamp into the viewport with an 8px
+  // margin so a right-aligned panel can never spill off the left edge on a
+  // narrow phone. Width is measured from the rendered menu once it mounts.
   useEffect(() => {
     if (!open) {
       setPos(null);
       return;
     }
-    const update = () => {
-      const el = triggerRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (align === "right") {
-        setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
-      } else {
-        setPos({ top: r.bottom + 4, left: r.left });
-      }
+    const MARGIN = 8;
+    const place = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const r = trigger.getBoundingClientRect();
+      const menuWidth = menuRef.current?.offsetWidth ?? 280;
+      const vw = window.innerWidth;
+      let left = align === "right" ? r.right - menuWidth : r.left;
+      left = Math.min(Math.max(MARGIN, left), Math.max(MARGIN, vw - menuWidth - MARGIN));
+      setPos({ top: r.bottom + 4, left });
     };
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    place();
+    // Re-run once the portal has rendered so we can measure its real width.
+    const raf = requestAnimationFrame(place);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
     return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
     };
   }, [open, align, triggerRef]);
 
@@ -128,7 +131,6 @@ function DropdownMenu({
         position: "fixed",
         top: pos.top,
         left: pos.left,
-        right: pos.right,
         zIndex: 9999,
       }}
     >
