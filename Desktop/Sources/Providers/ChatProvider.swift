@@ -2007,15 +2007,28 @@ class ChatProvider: ObservableObject {
             // their saved pick. The bridge routes the warmup by model id, so a
             // gemini-* id warms a Gemini session, a claude/gpt id warms theirs.
             let warmupModel = ShortcutSettings.shared.selectedModel
-            await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
-                .init(key: "main", model: warmupModel, systemPrompt: mainSystemPrompt, resume: savedMainSessionId),
-                .init(key: "floating", model: warmupModel, systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
-                .init(key: "observer", model: warmupModel, systemPrompt: chatObserverSystemPrompt),
+            var warmupSessions = [
+                ACPBridge.WarmupSessionConfig(key: "main", model: warmupModel, systemPrompt: mainSystemPrompt, resume: savedMainSessionId),
+                ACPBridge.WarmupSessionConfig(key: "floating", model: warmupModel, systemPrompt: floatingSystemPrompt, resume: savedFloatingSessionId),
+                ACPBridge.WarmupSessionConfig(key: "observer", model: warmupModel, systemPrompt: chatObserverSystemPrompt),
                 // Always-ready clean session handed to the next new detached pop-out
                 // (claimWarmDetachedSession). Uses the floating system prompt because
                 // detached windows query with the floating system-prompt prefix.
-                .init(key: "spare", model: warmupModel, systemPrompt: floatingSystemPrompt)
-            ])
+                ACPBridge.WarmupSessionConfig(key: "spare", model: warmupModel, systemPrompt: floatingSystemPrompt),
+            ]
+            // The onboarding guided chat sends on its own "onboarding" session key
+            // (see sendMessage) and always uses Gemini Flash regardless of the
+            // selected model, so warm it too — otherwise the first auto-send
+            // ("Hi, I just installed Fazm!") pays a cold session/new on the visible
+            // turn (the exact path new users get stuck on). Gate on
+            // onboarding-not-completed so returning users don't warm a session they
+            // will never use. No system prompt is passed here: the real onboarding
+            // prompt is delivered on the first send (Gemini delivers the system
+            // prompt as a preamble on a fresh session's first turn).
+            if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+                warmupSessions.append(ACPBridge.WarmupSessionConfig(key: "onboarding", model: "gemini-flash-latest"))
+            }
+            await acpBridge.warmupSession(cwd: workingDirectory, sessions: warmupSessions)
             // Resume is now handled at warmup — clear pendingFloatingResume so query() doesn't try again
             pendingFloatingResume = nil
 
