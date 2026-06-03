@@ -30,6 +30,23 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
   </svg>
 );
 
+const FolderIcon = ({ className = "" }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    aria-hidden
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
+    />
+  </svg>
+);
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
@@ -263,12 +280,18 @@ function WorkspaceDropdown({
 
   const trigger = lastFolderName(desktopState.workspace);
   const fullPath = desktopState.workspace || "Not set";
+  const recents = desktopState.recentWorkspaces || [];
 
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed !== (desktopState.workspace || "")) {
       onSetWorkspace(trimmed);
     }
+    setOpen(false);
+  };
+
+  const pick = (path: string) => {
+    onSetWorkspace(path);
     setOpen(false);
   };
 
@@ -290,50 +313,90 @@ function WorkspaceDropdown({
         align="right"
         onClose={() => setOpen(false)}
       >
-        <div className="w-[280px] bg-neutral-900 border border-white/[0.08] rounded-xl shadow-xl p-3">
-          <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">
-            Workspace
+        <div className="w-[280px] bg-neutral-900 border border-white/[0.08] rounded-xl shadow-xl overflow-hidden">
+          {/* Current workspace */}
+          <div className="px-3 pt-3 pb-2">
+            <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1.5">
+              Workspace
+            </div>
+            <div className="flex items-start gap-2">
+              <FolderIcon className="w-3.5 h-3.5 mt-0.5 text-neutral-300 shrink-0" />
+              <span className="text-[11px] text-neutral-300 break-all leading-relaxed flex-1 min-w-0">
+                {fullPath}
+              </span>
+            </div>
           </div>
-          <div className="text-[11px] text-neutral-400 break-all mb-2 leading-relaxed">
-            {fullPath}
-          </div>
-          <input
-            ref={inputRef}
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                commit();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setOpen(false);
-              }
-            }}
-            placeholder="/path/to/folder"
-            spellCheck={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-            className="w-full bg-neutral-800 text-white text-xs rounded-lg px-2.5 py-1.5 border border-white/[0.06] focus:border-white/[0.12] outline-none placeholder:text-neutral-600"
-            style={{ fontSize: "13px" }}
-          />
-          <div className="flex justify-end gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-[11px] text-neutral-400 hover:text-neutral-200 px-2 py-1 rounded-md transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={commit}
-              className="text-[11px] text-white bg-white/[0.10] hover:bg-white/[0.16] border border-white/[0.08] px-2.5 py-1 rounded-md transition-colors"
-            >
-              Set
-            </button>
+
+          {/* Recent workspaces — mirrors the pop-out chat's recents list */}
+          {recents.length > 0 && (
+            <>
+              <div className="h-px bg-white/[0.06]" />
+              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-neutral-500">
+                Recent
+              </div>
+              <div className="max-h-[40vh] overflow-y-auto hide-scrollbar pb-1">
+                {recents.map((ws) => (
+                  <button
+                    key={ws.path}
+                    type="button"
+                    onClick={() => pick(ws.path)}
+                    className="w-full text-left px-3 py-2 flex items-center gap-2 text-neutral-300 hover:bg-white/[0.04] transition-colors"
+                    title={ws.path}
+                  >
+                    <FolderIcon className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs truncate">{ws.name}</span>
+                      <span className="block text-[10px] text-neutral-500 truncate">
+                        {ws.path}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Manual path entry — the web's equivalent of the desktop "Browse…" */}
+          <div className="h-px bg-white/[0.06]" />
+          <div className="p-3">
+            <input
+              ref={inputRef}
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commit();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setOpen(false);
+                }
+              }}
+              placeholder="/path/to/folder"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              className="w-full bg-neutral-800 text-white text-xs rounded-lg px-2.5 py-1.5 border border-white/[0.06] focus:border-white/[0.12] outline-none placeholder:text-neutral-600"
+              style={{ fontSize: "13px" }}
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="text-[11px] text-neutral-400 hover:text-neutral-200 px-2 py-1 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={commit}
+                className="text-[11px] text-white bg-white/[0.10] hover:bg-white/[0.16] border border-white/[0.08] px-2.5 py-1 rounded-md transition-colors"
+              >
+                Set
+              </button>
+            </div>
           </div>
         </div>
       </DropdownMenu>
