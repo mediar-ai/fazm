@@ -978,6 +978,13 @@ class ChatToolExecutor {
         guard let text = args["text"] as? String, !text.isEmpty else {
             return "Error: missing 'text' parameter"
         }
+        return await speak(text)
+    }
+
+    /// Core TTS entrypoint shared by the `speak_response` tool and the
+    /// model-independent voice fallback. Synthesizes `text` and starts playback.
+    static func speak(_ text: String) async -> String {
+        guard !text.isEmpty else { return "Error: empty text" }
 
         log("speak_response: synthesizing \(text.count) chars")
 
@@ -996,6 +1003,60 @@ class ChatToolExecutor {
             log("speak_response: no TTS provider for language '\(lang)', staying silent")
             return "Error: no TTS provider configured for language '\(lang)'"
         }
+    }
+
+    /// Model-independent voice fallback. When a turn finishes with voice enabled
+    /// but the model never called `speak_response`, synthesize a short spoken
+    /// summary from the final rendered text. Claude obeys the speak_response
+    /// instruction reliably; codex/GPT and Gemini routinely skip it (see Junior
+    /// Carvalho thread 2026-05-13), so without this voice only worked on Claude.
+    static func speakModelIndependentSummary(_ fullText: String, model: String) async {
+        let summary = spokenSummary(from: fullText)
+        guard !summary.isEmpty else { return }
+        log("voice fallback: model=\(model) skipped speak_response, synthesizing \(summary.count)-char summary from \(fullText.count)-char response")
+        AnalyticsManager.shared.voiceResponseSynthesized(source: "fallback", model: model)
+        _ = await speak(summary)
+    }
+
+    /// Strip markdown and trim a full assistant response down to a short, natural
+    /// spoken summary (first couple of sentences, length-capped). Mirrors the
+    /// brevity the `speak_response` tool instructs the model to produce, and
+    /// avoids reading code blocks / URLs aloud.
+    static func spokenSummary(from text: String) -> String {
+        var s = text
+        func rx(_ pattern: String, _ replacement: String) {
+            s = s.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+        }
+        // Drop fenced code blocks entirely (never read code aloud).
+        rx("(?s)```.*?```", " ")
+        // Images, then links -> keep the alt/link text only.
+        rx("!\\[[^\\]]*\\]\\([^)]*\\)", " ")
+        rx("\\[([^\\]]+)\\]\\([^)]*\\)", "$1")
+        // Bare URLs.
+        rx("https?://\\S+", " ")
+        // Line-leading markers: headers, bullets, numbered lists, blockquotes.
+        rx("(?m)^\\s{0,3}#{1,6}\\s*", "")
+        rx("(?m)^\\s*[-*+]\\s+", "")
+        rx("(?m)^\\s*\\d+\\.\\s+", "")
+        rx("(?m)^\\s*>\\s?", "")
+        // Inline emphasis / inline-code markers.
+        rx("[`*_~]", "")
+        // Collapse all whitespace runs.
+        rx("\\s+", " ")
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return "" }
+
+        let maxChars = 450
+        if s.count <= maxChars { return s }
+        let capped = String(s.prefix(maxChars))
+        // Prefer to end on a sentence boundary inside the cap (but not so early
+        // that we speak almost nothing).
+        let terminators: Set<Character> = [".", "!", "?"]
+        if let idx = capped.lastIndex(where: { terminators.contains($0) }),
+           capped.distance(from: capped.startIndex, to: idx) > 80 {
+            return String(capped[...idx]).trimmingCharacters(in: .whitespaces)
+        }
+        return capped.trimmingCharacters(in: .whitespaces) + "…"
     }
 
     private static func speakViaElevenLabs(text: String, voiceId: String, languageCode: String, speed: Double) async -> String {
