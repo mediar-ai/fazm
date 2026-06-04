@@ -614,6 +614,18 @@ class AnalyticsManager {
         chatSessionTrackQuery(costUsd: costUsd)
     }
 
+    /// Fires when voice (TTS) audio is produced. `source` is "tool" when the
+    /// model called speak_response itself, or "fallback" when the bridge
+    /// synthesized a spoken summary because the model skipped the tool (codex/
+    /// GPT and Gemini routinely do). Lets us measure how often each model needs
+    /// the model-independent voice path vs. obeying the tool.
+    func voiceResponseSynthesized(source: String, model: String) {
+        PostHogManager.shared.track("voice_response_synthesized", properties: [
+            "source": source,
+            "model": model,
+        ])
+    }
+
     func chatToolCallCompleted(toolName: String, durationMs: Int, success: Bool = true, error: String? = nil) {
         let cleanName: String
         if toolName.hasPrefix("mcp__") {
