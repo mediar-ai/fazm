@@ -1131,6 +1131,11 @@ actor ACPBridge {
     // exactly 600s with no output activity even when the model was working).
     var messageCount = 0
     var lastMessageTime = Date()
+    // Tracks whether the model called speak_response during this turn. If voice
+    // is on and it never did, we synthesize a spoken summary from the final text
+    // (see the .result case below). speak_response reaches us as a tool_use line
+    // regardless of provider, so this catches Claude / codex / gemini uniformly.
+    var spokeThisTurn = false
     while true {
       let message = try await (sessionKey != nil
         ? waitForMessage(sessionKey: sessionKey!)
@@ -1150,6 +1155,7 @@ actor ACPBridge {
         onTextDelta(text)
 
       case .toolUse(let callId, let name, let input):
+        if name == "speak_response" { spokeThisTurn = true }
         // Per-session interrupt flag takes precedence; fall back to legacy global
         let interrupted = sessionKey.flatMap { sessionInterrupted[$0] } ?? isInterrupted
         if interrupted {
@@ -1241,6 +1247,21 @@ actor ACPBridge {
       case .result(
         let text, let sessionId, let model, let costUsd, let inputTokens, let outputTokens,
         let cacheReadTokens, let cacheWriteTokens, let interrupted):
+        // Model-independent voice fallback: voice is on, the turn produced text,
+        // but the model never called speak_response (codex/GPT and Gemini skip it
+        // far more than Claude). Synthesize a spoken summary so voice works on
+        // every model. Excludes background/headless sessions that should stay
+        // silent (observer, onboarding graph/profile agents, the spare warmup).
+        let nonSpokenKeys: Set<String> = ["observer", "graph-exploration", "profile-exploration", "spare"]
+        if !interrupted, !spokeThisTurn, !text.isEmpty,
+           !nonSpokenKeys.contains(sessionKey ?? ""),
+           UserDefaults.standard.bool(forKey: "voiceResponseEnabled") {
+          let spokenText = text
+          let spokenModel = model
+          Task { @MainActor in
+            await ChatToolExecutor.speakModelIndependentSummary(spokenText, model: spokenModel)
+          }
+        }
         return QueryResult(
           text: text, costUsd: costUsd ?? 0, sessionId: sessionId, model: model,
           inputTokens: inputTokens, outputTokens: outputTokens,
