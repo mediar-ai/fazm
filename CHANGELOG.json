@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Voice responses now work on every model (GPT/Codex, Gemini), not just Claude. If the model skips the speak-aloud tool, Fazm reads its answer for you automatically"
+  ],
   "releases": [
     {
       "version": "2.9.64",
