@@ -118,18 +118,41 @@ else
 fi
 
 # When promoted to beta or stable, update desktop/latest.json on GCS so the
-# stub installer serves this version to new users.
+# stub installer serves this version to new users. This MUST succeed: if it
+# silently fails, new website signups keep downloading the previous version
+# while the appcast happily auto-updates existing users to the new one, and
+# the two populations diverge silently until someone notices. Fail hard so the
+# operator either fixes the gcloud auth and reruns the copy, or rolls back.
 NEW_CHANNEL=$(echo "$BODY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('new_channel',''))" 2>/dev/null)
 if [ "$NEW_CHANNEL" = "beta" ] || [ "$NEW_CHANNEL" = "stable" ]; then
     BUCKET="fazm-prod-releases"
 
     echo ""
     echo "Updating desktop/latest.json to v$VERSION..."
+    # Do NOT redirect stderr — the actual gcloud error (403, missing object,
+    # wrong active account) is the single most useful piece of context here.
     if gcloud storage cp "gs://$BUCKET/desktop/$VERSION/latest.json" "gs://$BUCKET/desktop/latest.json" \
-        --cache-control="no-cache, max-age=0" 2>/dev/null; then
+        --cache-control="no-cache, max-age=0"; then
         echo "✓ desktop/latest.json updated — new installs will get v$VERSION"
     else
-        echo "⚠ Failed to update desktop/latest.json. Update manually:"
-        echo "  gcloud storage cp gs://$BUCKET/desktop/$VERSION/latest.json gs://$BUCKET/desktop/latest.json --cache-control='no-cache, max-age=0'"
+        ACTIVE_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "<unknown>")
+        echo ""
+        echo "✗ FAILED to update gs://$BUCKET/desktop/latest.json"
+        echo ""
+        echo "  The Firestore promote to '$NEW_CHANNEL' DID succeed: $TAG is now live on"
+        echo "  the $NEW_CHANNEL channel and existing users will auto-update via Sparkle."
+        echo "  But new website signups download v$(gcloud storage cat "gs://$BUCKET/desktop/latest.json" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo '?')"
+        echo "  (the previous latest.json) until this manifest is fixed."
+        echo ""
+        echo "  Active gcloud account: $ACTIVE_ACCOUNT"
+        echo "  This bucket lives in the fazm-prod project; bucket writes require an"
+        echo "  account with storage.objects.create on fazm-prod-releases."
+        echo ""
+        echo "  RECOVERY (run as the right account, e.g. i@m13v.com):"
+        echo "    gcloud config set account i@m13v.com"
+        echo "    gcloud storage cp gs://$BUCKET/desktop/$VERSION/latest.json gs://$BUCKET/desktop/latest.json --cache-control='no-cache, max-age=0'"
+        echo ""
+        echo "  Or, if the new version is broken, roll back with the rollback skill."
+        exit 1
     fi
 fi
