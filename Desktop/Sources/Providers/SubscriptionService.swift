@@ -24,7 +24,11 @@ final class SubscriptionService {
     /// Days of fully-free usage after Firebase account creation. During this
     /// window `shouldShowPaywall()` returns false so the app is fully unlocked
     /// and no card is asked. At day `trialDays + 1`, the paywall fires.
-    let trialDays = 7
+    ///
+    /// Set to 0 = no free trial: `isTrialExpired` is true immediately, so the
+    /// paywall fires on the very first gate (sign-in / pre-query) for any user
+    /// without an active subscription.
+    let trialDays = 0
     let freeMessagesPerDay = 0
 
     /// Cached unit amount (cents) the user will be charged after their Stripe
