@@ -590,15 +590,6 @@ final class PaywallWindowController {
     private var hostingView: NSHostingView<AnyView>?
 
     func show(chatProvider: ChatProvider, userInitiated: Bool = false) {
-        // Global kill switch (ads funnel): suppress AUTOMATIC presentation so the
-        // trial / sign-in gates never force the paywall during paid acquisition.
-        // A user who explicitly taps "Go Ad-Free" on an ad (or a QA debug hook) is
-        // opting in, so the userInitiated path always presents even while the
-        // switch is off.
-        guard SubscriptionService.paywallEnabled || userInitiated else {
-            log("PaywallWindowController: paywall disabled (FAZM_PAYWALL_ENABLED off) — not showing")
-            return
-        }
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
