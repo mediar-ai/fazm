@@ -80,7 +80,7 @@ struct PaywallSheet: View {
                     .padding(.top, 8)
 
                 VStack(spacing: 6) {
-                    Text("Try Fazm Pro free")
+                    Text(headerTitle)
                         .scaledFont(size: 15, weight: .medium)
                         .foregroundColor(FazmColors.textPrimary)
                         .multilineTextAlignment(.center)
@@ -399,7 +399,12 @@ struct PaywallSheet: View {
 
     private var trialDays: Int { SubscriptionService.shared.cachedTrialDays }
 
-    /// Subheader under "Try Fazm Pro free".
+    /// Header title. Only advertises "free" when a backend trial is configured.
+    private var headerTitle: String {
+        hasFreeTrial ? "Try Fazm Pro free" : "Unlock Fazm Pro"
+    }
+
+    /// Subheader under the header title.
     private var headerSubtitle: String {
         if hasFreeTrial {
             return "Start your \(trialDays)-day free trial. No charge today."
