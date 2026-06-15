@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Paywall header now reflects whether a free trial is currently available"
+  ],
   "releases": [
     {
       "version": "2.9.65",
