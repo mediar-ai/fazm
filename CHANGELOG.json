@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed conversation history list hiding older chats for power users (was capped at 20)"
+    "Fixed conversation history list hiding older chats for power users (was capped at 20)",
+    "Custom API Endpoint setting now warns when your selected model is not a Claude model (the endpoint only routes Claude traffic), with a one-tap switch to a Claude model"
   ],
   "releases": [
     {
