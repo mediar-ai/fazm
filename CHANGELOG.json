@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Paywall header now reflects whether a free trial is currently available"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.66",
+      "date": "2026-06-15",
+      "changes": [
+        "Paywall header now reflects whether a free trial is currently available"
+      ]
+    },
     {
       "version": "2.9.65",
       "date": "2026-06-04",
