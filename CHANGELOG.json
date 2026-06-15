@@ -1,9 +1,15 @@
 {
   "unreleased": [
-    "Restored the Opus option in the model picker so \"Smart\" mode is selectable again",
     "Fixed conversation history list hiding older chats for power users (was capped at 20)"
   ],
   "releases": [
+    {
+      "version": "2.9.67",
+      "date": "2026-06-15",
+      "changes": [
+        "Restored the Opus option in the model picker so \"Smart\" mode is selectable again"
+      ]
+    },
     {
       "version": "2.9.66",
       "date": "2026-06-15",
