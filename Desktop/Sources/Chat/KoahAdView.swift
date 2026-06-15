@@ -191,9 +191,7 @@ struct KoahAdView: View {
                     Spacer()
                     
                     // Always offered alongside a rendered ad. Tapping it is a
-                    // voluntary upgrade, so it surfaces the paywall (userInitiated)
-                    // even while the FAZM_PAYWALL_ENABLED kill switch suppresses
-                    // forced gating during paid acquisition.
+                    // voluntary upgrade, so it surfaces the paywall (userInitiated).
                     Button(action: {
                         if let provider = FloatingControlBarManager.shared.chatProvider {
                             provider.showPaywall = true
