@@ -1072,6 +1072,37 @@ struct SettingsContentView: View {
                         Text("Route API calls through an Anthropic-API-compatible endpoint (e.g. local LLM bridge, corporate proxy, or GitHub Copilot bridge). The endpoint must speak the Anthropic API format; a raw Gemini or OpenAI key will not work here. Fazm will not send its built-in Anthropic key or count this usage against built-in credits.")
                             .scaledFont(size: 12)
                             .foregroundColor(FazmColors.textTertiary)
+
+                        // The custom endpoint only overrides ANTHROPIC_BASE_URL, so it
+                        // ONLY routes Claude-model traffic. Gemini/Codex models bypass it
+                        // entirely. New users default to Gemini Flash, so without this
+                        // warning the endpoint silently receives zero requests.
+                        if !ChatProvider.isClaudeModelId(shortcutSettings.selectedModel) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(.orange)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Your current model (\(shortcutSettings.selectedModelShortLabel)) does not use this endpoint. The custom endpoint only applies to Claude models. Switch to a Claude model for your requests to reach it.")
+                                        .scaledFont(size: 12)
+                                        .foregroundColor(FazmColors.textSecondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Button("Switch to a Claude model") {
+                                        let claude = shortcutSettings.availableModels.first(where: {
+                                            ChatProvider.isClaudeModelId($0.id)
+                                        })?.id ?? "sonnet"
+                                        shortcutSettings.selectedModel = claude
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                            }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.orange.opacity(0.1))
+                            )
+                        }
                     } else {
                         Text("Override the Anthropic API URL for proxies or custom gateways.")
                             .scaledFont(size: 12)
