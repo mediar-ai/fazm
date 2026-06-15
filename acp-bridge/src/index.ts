@@ -3078,14 +3078,25 @@ function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: str
   // when the SDK only exposes sonnet[1m]) and dedupes if both forms come back.
   const seen = new Set<string>();
   const transformed = availableModels
-    .filter(m => m.modelId !== "default")
     .map(m => {
       const stripped = m.modelId.replace(/\s*\[1m\]/gi, "");
-      // The 0.37.0 adapter's static catalog still advertises claude-opus-4-7,
-      // but the API accepts (and we ship) the newer claude-opus-4-8. Rewrite the
-      // stale advertised id to the latest so the picker option carries opus-4-8;
-      // otherwise selecting "Smart" sets selectedModel back to opus-4-7 and
-      // silently downgrades. Bump alongside ShortcutSettings on the next opus.
+      const haystack = `${m.modelId} ${m.name} ${m.description ?? ""}`.toLowerCase();
+      const isOpus = stripped.includes("opus") || haystack.includes("opus");
+      // The "default" pseudo-model used to be a pure 1M-context trap we dropped outright.
+      // As of 2026-06 Anthropic folded Opus INTO `default` (carrying a 1M-context label)
+      // and REMOVED the standalone opus entry from the catalog, so blanket-dropping
+      // `default` silently strips Opus ("Smart") from the picker. Remap an Opus-bearing
+      // `default` to the canonical opus id instead: sent explicitly via session/set_model
+      // this avoids the 1M credit gate, and the advertised version text ("Opus 4.7") is
+      // stale — the served model is 4-8 — so we match on the word "opus", not a version.
+      // A non-Opus `default` (unexpected) is still dropped.
+      if (stripped === "default") {
+        if (!isOpus) return null;
+        return { modelId: LATEST_OPUS_MODEL_ID, name: "Opus", description: m.description };
+      }
+      // Legacy path: when the catalog DID expose a standalone claude-opus-4-7, bump it to
+      // the latest so the picker option carries opus-4-8 (else selecting "Smart" silently
+      // downgrades). Bump alongside ShortcutSettings on the next opus.
       const modelId = stripped === "claude-opus-4-7" ? LATEST_OPUS_MODEL_ID : stripped;
       return {
         ...m,
@@ -3093,6 +3104,7 @@ function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: str
         name: m.name.replace(/\s*\[1m\]/gi, "").trim(),
       };
     })
+    .filter((m): m is { modelId: string; name: string; description?: string } => m !== null)
     .filter(m => {
       if (seen.has(m.modelId)) return false;
       seen.add(m.modelId);
