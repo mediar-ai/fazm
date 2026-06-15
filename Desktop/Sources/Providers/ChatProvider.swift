@@ -2403,7 +2403,7 @@ class ChatProvider: ObservableObject {
 
     /// True if the model id routes through the Codex backend (gpt-*, codex-*,
     /// o[0-9]-*). Mirrors the bridge's `isCodexModel` regex.
-    private static func isCodexModelId(_ modelId: String) -> Bool {
+    static func isCodexModelId(_ modelId: String) -> Bool {
         let lower = modelId.lowercased()
         if lower.hasPrefix("gpt-") || lower.hasPrefix("codex-") { return true }
         if lower.count >= 2,
@@ -2412,6 +2412,15 @@ class ChatProvider: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// True if the model id routes through the Anthropic SDK path (Claude).
+    /// Defined by exclusion: anything that is neither a Gemini nor a Codex model
+    /// goes through the Anthropic path. This matters for the Custom API Endpoint
+    /// setting, which only overrides `ANTHROPIC_BASE_URL` and therefore ONLY
+    /// affects Claude-routed traffic — Gemini/Codex models bypass it entirely.
+    static func isClaudeModelId(_ modelId: String) -> Bool {
+        return !isGeminiModelId(modelId) && !isCodexModelId(modelId)
     }
 
     /// True if the model id routes through the Gemini backend (`gemini-*`,
