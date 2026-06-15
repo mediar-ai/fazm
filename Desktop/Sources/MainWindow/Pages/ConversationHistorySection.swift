@@ -310,8 +310,16 @@ struct ConversationHistorySection: View {
                         GROUP BY cm.taskId
                         HAVING messageCount > 0
                         ORDER BY lastMessageDate DESC
-                        LIMIT 20
+                        LIMIT 500
                     """)
+                    // 2026-06-15: bumped from LIMIT 20 -> 500. The 20 cap (added
+                    // 2026-05-28 alongside the SUBSTR perf fix) silently hid older
+                    // conversations from power users with no search/pagination to
+                    // reach them (reported by Farid Mammadov). The actual perf
+                    // storm was string LENGTH (40KB pasted prompts), already fixed
+                    // by SUBSTR(...,1,300); row count is cheap because the list is
+                    // a LazyVStack that only renders visible rows. 500 keeps a sane
+                    // upper bound until proper search/pagination lands.
 
                     return rows.compactMap { row -> ConversationSummary? in
                         guard let taskId = row["taskId"] as String?,
