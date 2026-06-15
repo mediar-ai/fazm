@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Restored the Opus option in the model picker so \"Smart\" mode is selectable again"
+  ],
   "releases": [
     {
       "version": "2.9.66",
