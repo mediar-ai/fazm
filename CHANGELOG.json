@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed local file paths in chat replies not being clickable and throwing an application error when opened"
+  ],
   "releases": [
     {
       "version": "2.9.68",
