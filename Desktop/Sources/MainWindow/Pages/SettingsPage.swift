@@ -1091,7 +1091,17 @@ struct SettingsContentView: View {
                                         let claude = shortcutSettings.availableModels.first(where: {
                                             ChatProvider.isClaudeModelId($0.id)
                                         })?.id ?? "sonnet"
-                                        shortcutSettings.selectedModel = claude
+                                        // Route through selectModel so the change reaches every
+                                        // surface the user might query from: the global default,
+                                        // the floating bar workspace, and any open pop-out windows
+                                        // (each keeps its own workspace.selectedModel). Setting only
+                                        // the global default would leave open pop-outs on the old
+                                        // non-Claude model and still bypass the endpoint there.
+                                        if let chatProvider {
+                                            chatProvider.selectModel(claude)
+                                        } else {
+                                            shortcutSettings.selectedModel = claude
+                                        }
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
