@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed local file paths in chat replies not being clickable and throwing an application error when opened"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.69",
+      "date": "2026-06-16",
+      "changes": [
+        "Fixed local file paths in chat replies not being clickable and throwing an application error when opened"
+      ]
+    },
     {
       "version": "2.9.68",
       "date": "2026-06-16",
