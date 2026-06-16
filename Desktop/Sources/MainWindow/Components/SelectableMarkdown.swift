@@ -6,7 +6,14 @@ import SwiftUI
 // MARK: - Plain-Text Copy NSTextView
 
 /// NSTextView subclass that always copies plain text (no RTF/rich formatting).
-fileprivate class PlainCopyNSTextView: NSTextView {
+fileprivate class PlainCopyNSTextView: NSTextView, NSTextViewDelegate {
+    // Intercept link clicks so local file paths open correctly. Without this,
+    // NSTextView hands the link straight to NSWorkspace, which throws an
+    // "application error" for scheme-less paths like /Users/foo/bar.png.
+    func textView(_ view: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        return PlainCopyText.openLink(link)
+    }
+
     override func copy(_ sender: Any?) {
         guard let storage = textStorage, selectedRange().length > 0 else { return }
         let plain = storage.attributedSubstring(from: selectedRange()).string
@@ -75,6 +82,7 @@ struct PlainCopyText: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSTextView {
         let tv = PlainCopyNSTextView()
+        tv.delegate = tv
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = false
@@ -98,6 +106,45 @@ struct PlainCopyText: NSViewRepresentable {
             tv.writingToolsBehavior = .none
         }
         return tv
+    }
+
+    /// Opens a clicked link. http(s)/mailto/etc. route through the system as usual;
+    /// `file://` URLs and scheme-less local paths are resolved to a real filesystem
+    /// path and opened (or their containing folder revealed if the file moved).
+    /// Returns true when handled, so NSTextView doesn't fall back to its default open.
+    @discardableResult
+    static func openLink(_ link: Any) -> Bool {
+        let url: URL
+        if let u = link as? URL {
+            url = u
+        } else if let s = link as? String, let parsed = URL(string: s) {
+            url = parsed
+        } else {
+            return false
+        }
+
+        let ws = NSWorkspace.shared
+
+        // Real non-file scheme (http, https, mailto, …) → let the system route it.
+        if let scheme = url.scheme?.lowercased(), scheme != "file" {
+            return ws.open(url)
+        }
+
+        // file:// URL or a scheme-less local path → resolve to a filesystem path.
+        let rawPath = url.path.isEmpty ? url.absoluteString : url.path
+        let path = (rawPath as NSString).expandingTildeInPath
+        let fileURL = URL(fileURLWithPath: path)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: fileURL.path) {
+            return ws.open(fileURL)
+        }
+        // File is gone — reveal its parent folder instead of throwing an error.
+        let parent = fileURL.deletingLastPathComponent()
+        if fm.fileExists(atPath: parent.path) {
+            return ws.open(parent)
+        }
+        log("PlainCopyText.openLink: path does not exist: \(fileURL.path)")
+        return false
     }
 
     func updateNSView(_ tv: NSTextView, context: Context) {
@@ -453,7 +500,45 @@ struct SelectableMarkdown: View {
             result.append(NSAttributedString(string: text, attributes: attrs))
         }
 
+        linkifyLocalFilePaths(in: result, linkColor: linkColor)
         return result
+    }
+
+    private static let filePathRegex = try? NSRegularExpression(
+        pattern: #"(?:file://)?(?:~|/)[^\s'"`)\]]+"#
+    )
+
+    /// Detects bare local file paths (and `file://` URLs) in already-rendered text and
+    /// makes them clickable links — but only when the path actually exists on disk, which
+    /// keeps unrelated strings like "1/2" or code fragments from being linkified.
+    private static func linkifyLocalFilePaths(in attr: NSMutableAttributedString, linkColor: NSColor) {
+        guard let regex = filePathRegex else { return }
+        let ns = attr.string as NSString
+        let matches = regex.matches(in: attr.string, range: NSRange(location: 0, length: ns.length))
+        let fm = FileManager.default
+        let trailing = CharacterSet(charactersIn: ".,;:!?")
+        // Iterate in reverse so earlier ranges stay valid as we add attributes.
+        for match in matches.reversed() {
+            var range = match.range
+            // Skip anything already carrying a link (e.g. a markdown link).
+            if attr.attribute(.link, at: range.location, effectiveRange: nil) != nil { continue }
+            var raw = ns.substring(with: range)
+            // Trim trailing sentence punctuation that the regex greedily captured.
+            while let last = raw.unicodeScalars.last, trailing.contains(last) {
+                raw.removeLast()
+                range.length -= 1
+            }
+            guard range.length > 0 else { continue }
+            var pathStr = raw
+            if pathStr.hasPrefix("file://") {
+                pathStr = String(pathStr.dropFirst("file://".count))
+            }
+            let decoded = pathStr.removingPercentEncoding ?? pathStr
+            let resolved = (decoded as NSString).expandingTildeInPath
+            guard fm.fileExists(atPath: resolved) else { continue }
+            attr.addAttribute(.link, value: URL(fileURLWithPath: resolved), range: range)
+            attr.addAttribute(.foregroundColor, value: linkColor, range: range)
+        }
     }
 
     // MARK: - Markdown Preprocessing
