@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Removed the \"Chat with Our Founder\" booking option from the subscription paywall"
+  ],
   "releases": [
     {
       "version": "2.9.69",
