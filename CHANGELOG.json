@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed the in-app assistant pointing users to a non-existent Settings > Personal Account menu when asking how to connect a personal Claude/ChatGPT account"
+  ],
   "releases": [
     {
       "version": "2.9.70",
