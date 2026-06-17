@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Removed the \"Chat with Our Founder\" booking option from the subscription paywall"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.70",
+      "date": "2026-06-17",
+      "changes": [
+        "Removed the \"Chat with Our Founder\" booking option from the subscription paywall"
+      ]
+    },
     {
       "version": "2.9.69",
       "date": "2026-06-16",
