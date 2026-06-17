@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed the in-app assistant pointing users to a non-existent Settings > Personal Account menu when asking how to connect a personal Claude/ChatGPT account"
+    "Fixed the in-app assistant pointing users to a non-existent Settings > Personal Account menu when asking how to connect a personal Claude/ChatGPT account",
+    "Fixed a code-signing seal corruption that could cause repeated app restarts and an onboarding loop, by clearing stale Python caches from all bundled automation helpers (not just one)"
   ],
   "releases": [
     {

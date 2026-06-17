@@ -652,18 +652,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// with Sparkle and notarization-aware paths. Runs async on a utility queue so it never
     /// blocks launch; failures are silent (e.g. no write access to /Applications).
     static func cleanBundledPycaches() {
-        let venvRoot = Bundle.main.bundlePath + "/Contents/Resources/google-workspace-mcp/.venv"
+        // Every bundled Python venv can have runtime-written __pycache__ left over from a
+        // pre-fix build. Any one of them breaks the bundle's code-signing seal and the broken
+        // seal survives Sparkle updates, so we must scan ALL of them, not just google-workspace-mcp.
+        // (browser-harness + ai-browser-profile venvs were added to the bundle in e59009f2.)
+        let resources = Bundle.main.bundlePath + "/Contents/Resources"
+        let venvRoots = [
+            resources + "/google-workspace-mcp/.venv",
+            resources + "/browser-harness/.venv",
+            resources + "/ai-browser-profile/.venv",
+        ]
         DispatchQueue.global(qos: .utility).async {
             let fm = FileManager.default
-            guard fm.fileExists(atPath: venvRoot),
-                  let enumerator = fm.enumerator(atPath: venvRoot) else { return }
-            var dirs: [String] = []
-            for case let relPath as String in enumerator where (relPath as NSString).lastPathComponent == "__pycache__" {
-                dirs.append(venvRoot + "/" + relPath)
-            }
             var removed = 0
-            for path in dirs {
-                if (try? fm.removeItem(atPath: path)) != nil { removed += 1 }
+            for venvRoot in venvRoots {
+                guard fm.fileExists(atPath: venvRoot),
+                      let enumerator = fm.enumerator(atPath: venvRoot) else { continue }
+                var dirs: [String] = []
+                for case let relPath as String in enumerator where (relPath as NSString).lastPathComponent == "__pycache__" {
+                    dirs.append(venvRoot + "/" + relPath)
+                }
+                for path in dirs {
+                    if (try? fm.removeItem(atPath: path)) != nil { removed += 1 }
+                }
             }
             if removed > 0 {
                 NSLog("AppDelegate: cleaned %d __pycache__ dir(s) from bundle to restore code-signing seal", removed)
