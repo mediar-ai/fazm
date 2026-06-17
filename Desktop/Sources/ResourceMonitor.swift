@@ -1281,14 +1281,14 @@ class ResourceMonitor {
 
         ## Why This Matters
 
-        iCloud syncs every file in this directory. When a dev tool writes a `target/` (thousands of Rust object files) or a `.next/` directory to iCloud root, every change forces a sync attempt. fseventsd, fileproviderd, and cloudd then enter a retry loop, leaking memory and burning CPU until reboot. This is a documented multi-day freeze cycle root cause on this machine.
+        iCloud syncs every file in this directory. When a dev tool writes a `target/` (thousands of Rust object files) or a `.next/` directory to iCloud root, every change forces a sync attempt. fseventsd, fileproviderd, and cloudd then enter a retry loop, leaking memory and burning CPU until reboot. This is a well-documented cause of multi-day system slowdowns.
 
         ## Recommended Approach
 
         1. List the iCloud root with `ls -la "~/Library/Mobile Documents/com~apple~CloudDocs/"` to see all entries with sizes.
         2. Identify entries that look like build artifacts (`target`, `.next`, `node_modules`, `build`, `dist`) or test scratch directories.
         3. Move them out of iCloud (they should never be synced). For Rust set `CARGO_TARGET_DIR` outside iCloud; for Node add the build directory to `.gitignore`-equivalent exclusions.
-        4. If `~/scripts/cleanup-icloud-dev-artifacts.sh` exists on this machine, recommend running it; otherwise build a one-off cleanup plan with the user.
+        4. Build a one-off cleanup plan with the user for the specific artifacts found.
 
         Read-only first. Never delete files in iCloud without explicit user approval.
         """
@@ -1450,8 +1450,8 @@ class ResourceMonitor {
         UserDefaults.standard.set(now, forKey: cooldownKey)
         log("ResourceMonitor: swap=\(String(format: "%.0f", swapUsedMB))MB/\(String(format: "%.0f", swapTotalMB))MB (\(String(format: "%.0f", swapPercent))%), surfacing zone pressure heal card")
 
-        let task = "Swap is \(String(format: "%.0f", swapPercent))% full — kernel zone exhaustion risk is elevated"
-        let description = "The system has consumed most of its swap space (\(String(format: "%.0f", swapUsedMB)) MB used of \(String(format: "%.0f", swapTotalMB)) MB). Heavy swap pressure often precedes the kind of kernel zone exhaustion (kalloc.1024[vfs.namei]) that caused the Apr 27 panic. Reducing background memory consumers now can prevent a reboot-required crash."
+        let task = "Swap is \(String(format: "%.0f", swapPercent))% full — your Mac is low on memory"
+        let description = "Your Mac has used most of its swap space (\(String(format: "%.0f", swapUsedMB)) MB of \(String(format: "%.0f", swapTotalMB)) MB). When swap stays this full, apps slow down and the system can become unstable. Closing a few heavy apps usually clears it up."
         let document = """
         ## What Was Observed
 
@@ -1459,15 +1459,14 @@ class ResourceMonitor {
 
         ## Why This Matters
 
-        macOS uses compressed swap backed by APFS. When swap is nearly full, the kernel has no room to move cold pages out, so physical pages stay wired. This increases pressure on the zone allocator (kalloc regions). The documented Apr 27 2026 kernel panic on this machine was caused by `data.kalloc.1024[vfs.namei]` growing to 20 GB — a condition that develops faster under swap pressure because fewer pages can be reclaimed.
+        macOS uses compressed swap backed by APFS. When swap is nearly full, the system has little room to move inactive memory out of RAM, so everything slows down and, in extreme cases, the system can become unstable. Freeing up memory now keeps things responsive.
 
         ## Recommended Approach (read-only first)
 
         1. Identify the top memory consumers: `top -o mem -l 1 | head -20`.
-        2. Look for processes with very large RSIZE or VSIZE (Claude Code, Xcode, Safari, JetBrains).
-        3. Run `sudo zprint | sort -k4 -n -r | head -20` to see which kernel zones are largest. (Requires explicit user approval for sudo.)
-        4. If `vfs.namei` or `data.kalloc.1024` is near its max, a proactive reboot is safer than waiting for a panic.
-        5. Reducing the number of active Claude Code sessions, closing Xcode, or quitting browser tabs typically frees hundreds of MB within seconds.
+        2. Look for apps using a lot of memory (browsers with many tabs, editors, IDEs).
+        3. Quit the heaviest apps or close unused browser tabs — this typically frees hundreds of MB within seconds.
+        4. If memory stays tight after that, restarting the Mac clears swap completely.
         """
 
         await writeHealCard(HealCardPayload(
