@@ -523,10 +523,6 @@ class AnalyticsManager {
         ])
     }
 
-    func paywallFounderCallTapped() {
-        PostHogManager.shared.track("paywall_founder_call_tapped")
-    }
-
     func paywallDismissed() {
         PostHogManager.shared.track("paywall_dismissed")
     }
