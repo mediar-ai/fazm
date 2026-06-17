@@ -195,45 +195,6 @@ struct PaywallSheet: View {
                     )
                 }
                 .buttonStyle(.plain)
-
-                // Option 3: Chat with founder
-                Button(action: {
-                    AnalyticsManager.shared.paywallFounderCallTapped()
-                    if let url = URL(string: "https://cal.com/team/mediar/fazm") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "video.fill")
-                            .scaledFont(size: 20)
-                            .foregroundStyle(FazmColors.purpleGradient)
-                            .frame(width: 32)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Chat with Our Founder")
-                                .scaledFont(size: 14, weight: .semibold)
-                                .foregroundColor(FazmColors.textPrimary)
-                            Text("Get 1 month free after a quick call")
-                                .scaledFont(size: 12)
-                                .foregroundColor(FazmColors.textTertiary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .scaledFont(size: 12, weight: .medium)
-                            .foregroundColor(FazmColors.textQuaternary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(FazmColors.backgroundTertiary.opacity(0.6))
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(FazmColors.border.opacity(0.5), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
 
