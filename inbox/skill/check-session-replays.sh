@@ -51,7 +51,14 @@ log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG_FILE"; }
 log "=== Session Replay Check: $(date) ==="
 
 # Step 1: Find the next unanalyzed device
-DEVICE_JSON=$("$NODE_BIN" "$SCRIPTS_DIR/check-unanalyzed-devices.js" 2>>"$LOG_FILE")
+# Hard timeout so a hung HTTP/DB call can never wedge the launchd job. A missing
+# timeout here left one run hung for ~17h on Jun 15 2026, which blocked every
+# subsequent 20-min run (StartInterval jobs do not overlap).
+DEVICE_JSON=$(gtimeout 120 "$NODE_BIN" "$SCRIPTS_DIR/check-unanalyzed-devices.js" 2>>"$LOG_FILE") || {
+    rc=$?
+    log "ERROR: check-unanalyzed-devices.js failed or timed out (exit $rc). Exiting; launchd retries next interval."
+    exit 1
+}
 
 if [ "$DEVICE_JSON" = "null" ] || [ -z "$DEVICE_JSON" ]; then
     log "No unanalyzed devices found. Done."
@@ -72,7 +79,9 @@ log "  Chunks: $TOTAL_CHUNKS total, $UNANALYZED unanalyzed, needsGemini=$NEEDS_G
 ANALYSES_JSON=""
 if [ "$NEEDS_GEMINI" = "True" ]; then
     log "Triggering Gemini analysis for $UNANALYZED chunks..."
-    ANALYSES_JSON=$("$NODE_BIN" "$SCRIPTS_DIR/trigger-session-analysis.js" "$DEVICE_ID" 2>>"$LOG_FILE")
+    # gtimeout caps the call above the trigger script's own 15-min poll window so a
+    # stuck socket (no per-request timeout inside the node script) cannot hang forever.
+    ANALYSES_JSON=$(gtimeout 1000 "$NODE_BIN" "$SCRIPTS_DIR/trigger-session-analysis.js" "$DEVICE_ID" 2>>"$LOG_FILE")
     EXIT_CODE=$?
     if [ $EXIT_CODE -eq 2 ]; then
         log "Device has too many unanalyzed chunks (>60). Skipping for now."
