@@ -75,23 +75,32 @@ NEEDS_GEMINI=$(echo "$DEVICE_JSON" | python3 -c "import json,sys; print(json.loa
 log "Selected device: $DEVICE_ID ($USER_NAME <$USER_EMAIL>)"
 log "  Chunks: $TOTAL_CHUNKS total, $UNANALYZED unanalyzed, needsGemini=$NEEDS_GEMINI"
 
-# Step 2: If device has unanalyzed chunks, trigger Gemini analysis and wait
+# Step 2: If device has unanalyzed chunks, analyze ONE bounded batch (up to 60).
+# Large backlogs drain across multiple runs; investigation is deferred until the
+# device is fully analyzed so we never run an expensive investigation on partial data.
 ANALYSES_JSON=""
 if [ "$NEEDS_GEMINI" = "True" ]; then
-    log "Triggering Gemini analysis for $UNANALYZED chunks..."
+    log "Triggering Gemini analysis (bounded batch) for $UNANALYZED unanalyzed chunks..."
     # gtimeout caps the call above the trigger script's own 15-min poll window so a
     # stuck socket (no per-request timeout inside the node script) cannot hang forever.
     ANALYSES_JSON=$(gtimeout 1000 "$NODE_BIN" "$SCRIPTS_DIR/trigger-session-analysis.js" "$DEVICE_ID" 2>>"$LOG_FILE")
     EXIT_CODE=$?
-    if [ $EXIT_CODE -eq 2 ]; then
-        log "Device has too many unanalyzed chunks (>60). Skipping for now."
-        exit 0
-    elif [ $EXIT_CODE -ne 0 ]; then
+    if [ $EXIT_CODE -ne 0 ]; then
         log "WARNING: Analysis trigger failed with code $EXIT_CODE"
         exit 1
     fi
+    log "Gemini analysis batch complete."
 
-    log "Gemini analysis complete."
+    # If chunks remain, the device is mid-drain: skip investigation this run and
+    # let the next run analyze the next batch. Avoids investigating partial data.
+    REMAINING=$(curl -s --connect-timeout 15 --max-time 60 "${ORCHESTRATE_URL:-https://dash.m13v.com/api/session-recordings/orchestrate}?action=status&deviceId=$DEVICE_ID" \
+        -H "Authorization: Bearer ${CRON_SECRET}" 2>>"$LOG_FILE" \
+        | python3 -c "import json,sys; print(json.load(sys.stdin).get('unanalyzedChunks', 0))" 2>/dev/null || echo "0")
+    if [ "$REMAINING" -gt 0 ] 2>/dev/null; then
+        log "Device still has $REMAINING unanalyzed chunks; will keep draining on the next run. Deferring investigation."
+        exit 0
+    fi
+    log "Device fully analyzed."
 else
     log "All chunks already analyzed. Fetching existing analyses..."
     ANALYSES_JSON=$(curl -s --connect-timeout 15 --max-time 60 "${ORCHESTRATE_URL:-https://dash.m13v.com/api/session-recordings/orchestrate}?action=analyses&deviceId=$DEVICE_ID" \
@@ -197,9 +206,16 @@ if [ "$FINAL_UNANALYZED" -gt 0 ] 2>/dev/null; then
     MARK_REASON="Device still has $FINAL_UNANALYZED unanalyzed chunks"
 fi
 
-if [ "$REPORT_EMAIL_SENT" != "True" ]; then
+# Per-session emails were removed: findings are recorded to the DB/dashboard and a
+# weekly digest email is sent instead. Gate marking on the investigation actually
+# completing (a valid outcome file with >=1 Gemini analysis), not on any email.
+GEMINI_ANALYSIS_COUNT=$(python3 -c "import json; d=json.load(open('$OUTCOME_FILE')); print(d.get('geminiAnalysisCount', 0))" 2>/dev/null || echo "0")
+if [ ! -f "$OUTCOME_FILE" ]; then
     SHOULD_MARK=false
-    MARK_REASON="${MARK_REASON:+$MARK_REASON; }Report email was not sent"
+    MARK_REASON="${MARK_REASON:+$MARK_REASON; }No outcome file produced"
+elif [ "$GEMINI_ANALYSIS_COUNT" -lt 1 ] 2>/dev/null; then
+    SHOULD_MARK=false
+    MARK_REASON="${MARK_REASON:+$MARK_REASON; }Outcome reported 0 Gemini analyses"
 fi
 
 if $SHOULD_MARK; then
