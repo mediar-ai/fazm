@@ -94,7 +94,7 @@ if [ "$NEEDS_GEMINI" = "True" ]; then
     log "Gemini analysis complete."
 else
     log "All chunks already analyzed. Fetching existing analyses..."
-    ANALYSES_JSON=$(curl -s "${ORCHESTRATE_URL:-https://dash.m13v.com/api/session-recordings/orchestrate}?action=analyses&deviceId=$DEVICE_ID" \
+    ANALYSES_JSON=$(curl -s --connect-timeout 15 --max-time 60 "${ORCHESTRATE_URL:-https://dash.m13v.com/api/session-recordings/orchestrate}?action=analyses&deviceId=$DEVICE_ID" \
         -H "Authorization: Bearer ${CRON_SECRET}" 2>>"$LOG_FILE")
 fi
 
@@ -184,7 +184,7 @@ else
 fi
 
 # Check if all chunks are analyzed
-FINAL_STATUS=$(curl -s "https://dash.m13v.com/api/session-recordings/orchestrate?action=status&deviceId=$DEVICE_ID" \
+FINAL_STATUS=$(curl -s --connect-timeout 15 --max-time 60 "https://dash.m13v.com/api/session-recordings/orchestrate?action=status&deviceId=$DEVICE_ID" \
     -H "Authorization: Bearer ${CRON_SECRET}" 2>/dev/null)
 FINAL_UNANALYZED=$(echo "$FINAL_STATUS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('unanalyzedChunks', 0))" 2>/dev/null || echo "0")
 
