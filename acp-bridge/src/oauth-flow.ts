@@ -90,8 +90,8 @@ export async function startOAuthFlow(logErr: (msg: string) => void): Promise<OAu
   const state = generateState();
 
   // Start local callback server on a random port
-  const { server, port } = await startCallbackServer();
-  logErr(`OAuth callback server listening on port ${port}`);
+  const { servers, port } = await startCallbackServer();
+  logErr(`OAuth callback server listening on port ${port} (${servers.length === 2 ? "IPv4+IPv6" : "IPv4 only"})`);
 
   const redirectUri = `http://localhost:${port}/callback`;
 
@@ -113,7 +113,7 @@ export async function startOAuthFlow(logErr: (msg: string) => void): Promise<OAu
     cancelReject = reject;
 
     // Wait for the callback
-    waitForCallback(server, state, logErr)
+    waitForCallback(servers, state, logErr)
       .then(async (code) => {
         if (cancelled) return;
         logErr("OAuth callback received, exchanging code for token...");
@@ -130,7 +130,7 @@ export async function startOAuthFlow(logErr: (msg: string) => void): Promise<OAu
         if (!cancelled) reject(err);
       })
       .finally(() => {
-        server.close();
+        closeServers(servers);
       });
   });
 
@@ -139,7 +139,7 @@ export async function startOAuthFlow(logErr: (msg: string) => void): Promise<OAu
     complete,
     cancel: () => {
       cancelled = true;
-      server.close();
+      closeServers(servers);
       cancelReject?.(new Error("OAuth flow cancelled"));
     },
   };
@@ -147,8 +147,14 @@ export async function startOAuthFlow(logErr: (msg: string) => void): Promise<OAu
 
 // --- Callback Server ---
 
-async function startCallbackServer(): Promise<{ server: Server; port: number }> {
-  return new Promise((resolve, reject) => {
+// The redirect URI uses `localhost`, which resolves to BOTH 127.0.0.1 (IPv4)
+// and ::1 (IPv6) on a typical /etc/hosts. Browsers using Happy Eyeballs often
+// try ::1 first, so binding only 127.0.0.1 produces ERR_CONNECTION_REFUSED for
+// users on IPv6-preferring stacks (and is aggravated by some VPN/DNS setups).
+// Bind both loopback families on the same port so whichever the browser picks
+// reaches us. IPv4 is required; IPv6 is best-effort (skipped if it can't bind).
+async function startCallbackServer(): Promise<{ servers: Server[]; port: number }> {
+  const port = await new Promise<{ server: Server; port: number }>((resolve, reject) => {
     const server = createServer();
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -160,20 +166,47 @@ async function startCallbackServer(): Promise<{ server: Server; port: number }> 
       resolve({ server, port: addr.port });
     });
   });
+
+  const servers = [port.server];
+
+  // Best-effort: also listen on the IPv6 loopback at the same port.
+  await new Promise<void>((resolve) => {
+    const server6 = createServer();
+    server6.once("error", () => {
+      server6.close();
+      resolve();
+    });
+    server6.listen(port.port, "::1", () => {
+      servers.push(server6);
+      resolve();
+    });
+  });
+
+  return { servers, port: port.port };
+}
+
+function closeServers(servers: Server[]): void {
+  for (const s of servers) {
+    try {
+      s.close();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function waitForCallback(
-  server: Server,
+  servers: Server[],
   expectedState: string,
   logErr: (msg: string) => void
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error("OAuth callback timed out (10 minutes)"));
-      server.close();
+      closeServers(servers);
     }, 10 * 60 * 1000); // 10 minutes
 
-    server.on("request", (req: IncomingMessage, res: ServerResponse) => {
+    const onRequest = (req: IncomingMessage, res: ServerResponse) => {
       const parsed = new URL(req.url || "", `http://localhost`);
 
       if (parsed.pathname !== "/callback") {
@@ -243,7 +276,11 @@ function waitForCallback(
 
       clearTimeout(timeout);
       resolve(code);
-    });
+    };
+
+    for (const server of servers) {
+      server.on("request", onRequest);
+    }
   });
 }
 
