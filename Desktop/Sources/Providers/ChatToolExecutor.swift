@@ -1087,6 +1087,16 @@ class ChatToolExecutor {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
                 log("speak_response: ElevenLabs API error \(status) (voice=\(voiceId), lang=\(languageCode)): \(errorBody)")
+                // Resilience: when the shared ElevenLabs key hits its quota (401
+                // quota_exceeded) or any other server-side failure, don't silence
+                // voice entirely. Every language we route to ElevenLabs (en/es/fr/de/
+                // it/nl/ja) also has a configured Deepgram Aura voice, so fall back to
+                // Deepgram (separate key/quota) before giving up. Observed live:
+                // aldo.kruger@gmail.com, 2026-06-07, fazm-tts-prod quota=0.
+                if let dgModel = VoiceLanguageRouter.deepgramVoices[languageCode] {
+                    log("speak_response: ElevenLabs \(status), falling back to Deepgram (model=\(dgModel), lang=\(languageCode))")
+                    return await speakViaDeepgram(text: text, model: dgModel, languageCode: languageCode, speed: speed)
+                }
                 return "Error: ElevenLabs TTS failed with status \(status)"
             }
             guard data.count > 1000 else {
@@ -1124,6 +1134,10 @@ class ChatToolExecutor {
             request.httpMethod = "POST"
             request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // Bound the request like the ElevenLabs path (was relying on the 60s
+            // URLSession default). Keeps the ElevenLabs→Deepgram fallback from
+            // introducing a new long hang on a stalled network.
+            request.timeoutInterval = 30
 
             let body = try JSONSerialization.data(withJSONObject: ["text": text])
             request.httpBody = body
