@@ -3141,6 +3141,20 @@ interface WarmupResult {
  */
 const WARMUP_TOTAL_TIMEOUT_MS = 240_000;
 
+/**
+ * Shorter warmup ceiling when the user has a Custom API Endpoint configured
+ * (ANTHROPIC_BASE_URL pointed at LiteLLM, Ollama, OpenRouter, a corporate proxy,
+ * etc.). A misconfigured or unreachable endpoint (wrong base URL, model name the
+ * proxy doesn't know, server not listening) makes every warmed session's
+ * `session/new` hang until the ceiling — so with the 240s default the user stares
+ * at an empty window for four minutes before warmup gives up and falls back to
+ * "create on first query". Real users hit this repeatedly while experimenting
+ * with custom endpoints. Failing fast here just defers session creation to the
+ * first real query, which then surfaces the actual upstream error instead of a
+ * silent multi-minute hang.
+ */
+const CUSTOM_ENDPOINT_WARMUP_TIMEOUT_MS = 45_000;
+
 /** Reject if `p` doesn't settle within `ms`. The underlying promise keeps running. */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -3525,7 +3539,7 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
           logErr(`Pre-warm session '${cfg.key}' FAILED after ${Date.now() - sessionStartMs}ms: ${errMsg}`);
         }
       })
-    ), WARMUP_TOTAL_TIMEOUT_MS, "Warmup");
+    ), isCustomEndpointMode() ? CUSTOM_ENDPOINT_WARMUP_TIMEOUT_MS : WARMUP_TOTAL_TIMEOUT_MS, "Warmup");
   } catch (err) {
     // A throw here is the timeout (or initializeAcp failing) — the per-session
     // bodies above swallow their own errors, so this only fires for the hard
