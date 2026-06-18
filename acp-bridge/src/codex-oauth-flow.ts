@@ -83,8 +83,8 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
   const codeChallenge = generateCodeChallenge(codeVerifier);
   const state = generateState();
 
-  const { server, port } = await startCallbackServer();
-  logErr(`Codex OAuth callback server listening on port ${port}`);
+  const { servers, port } = await startCallbackServer();
+  logErr(`Codex OAuth callback server listening on port ${port} (${servers.length === 2 ? "IPv4+IPv6" : "IPv4 only"})`);
 
   const redirectUri = `http://localhost:${port}/auth/callback`;
 
@@ -106,7 +106,7 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
   const complete = new Promise<CodexOAuthResult>((resolve, reject) => {
     cancelReject = reject;
 
-    waitForCallback(server, state, logErr)
+    waitForCallback(servers, state, logErr)
       .then(async (code) => {
         if (cancelled) return;
         logErr("Codex OAuth callback received, exchanging code for tokens...");
@@ -118,7 +118,7 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
         if (!cancelled) reject(err);
       })
       .finally(() => {
-        server.close();
+        closeServers(servers);
       });
   });
 
@@ -127,7 +127,7 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
     complete,
     cancel: () => {
       cancelled = true;
-      server.close();
+      closeServers(servers);
       cancelReject?.(new Error("Codex OAuth flow cancelled"));
     },
   };
@@ -140,11 +140,27 @@ export async function startCodexOAuthFlow(logErr: (msg: string) => void): Promis
 const CALLBACK_PORT_DEFAULT = 1455;
 const CALLBACK_PORT_FALLBACK = 1457;
 
-async function startCallbackServer(): Promise<{ server: Server; port: number }> {
+async function startCallbackServer(): Promise<{ servers: Server[]; port: number }> {
   for (const port of [CALLBACK_PORT_DEFAULT, CALLBACK_PORT_FALLBACK]) {
     try {
-      const result = await tryBindPort(port);
-      return result;
+      const { server, port: boundPort } = await tryBindPort(port);
+      const servers = [server];
+      // The redirect URI uses `localhost`, which can resolve to ::1 on
+      // IPv6-preferring browsers (Happy Eyeballs). Binding only 127.0.0.1
+      // produces ERR_CONNECTION_REFUSED for those users. Also listen on the
+      // IPv6 loopback at the same port; best-effort, skipped if it can't bind.
+      await new Promise<void>((resolve) => {
+        const server6 = createServer();
+        server6.once("error", () => {
+          server6.close();
+          resolve();
+        });
+        server6.listen(boundPort, "::1", () => {
+          servers.push(server6);
+          resolve();
+        });
+      });
+      return { servers, port: boundPort };
     } catch {
       // Try next port
     }
@@ -170,18 +186,28 @@ function tryBindPort(port: number): Promise<{ server: Server; port: number }> {
   });
 }
 
+function closeServers(servers: Server[]): void {
+  for (const s of servers) {
+    try {
+      s.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
 function waitForCallback(
-  server: Server,
+  servers: Server[],
   expectedState: string,
   logErr: (msg: string) => void
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error("Codex OAuth callback timed out (10 minutes)"));
-      server.close();
+      closeServers(servers);
     }, 10 * 60 * 1000);
 
-    server.on("request", (req: IncomingMessage, res: ServerResponse) => {
+    const onRequest = (req: IncomingMessage, res: ServerResponse) => {
       const parsed = new URL(req.url || "", "http://localhost");
 
       if (parsed.pathname !== "/auth/callback") {
@@ -250,7 +276,11 @@ function waitForCallback(
 
       clearTimeout(timeout);
       resolve(code);
-    });
+    };
+
+    for (const server of servers) {
+      server.on("request", onRequest);
+    }
   });
 }
 
