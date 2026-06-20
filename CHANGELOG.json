@@ -6,7 +6,8 @@
     "Voice responses now fall back to Deepgram when the ElevenLabs TTS quota is exhausted, so spoken replies keep working during an ElevenLabs outage",
     "Fixed Claude and ChatGPT account connection failing with ERR_CONNECTION_REFUSED on some networks (OAuth callback now listens on both IPv4 and IPv6 loopback)",
     "Fixed a 4-minute hang when a Custom API Endpoint is unreachable or misconfigured (warmup now fails fast and falls back to creating the session on your first query)",
-    "Agent no longer thrashes when the browser extension drops mid-task: it hands off to you to reconnect, stops guessing at screen state it hasn't verified, and bails out of stuck browser loops instead of silently retrying"
+    "Agent no longer thrashes when the browser extension drops mid-task: it hands off to you to reconnect, stops guessing at screen state it hasn't verified, and bails out of stuck browser loops instead of silently retrying",
+    "Fixed a crash where pressing push-to-talk could freeze then quit the app on macOS 26 (Tahoe)"
   ],
   "releases": [
     {

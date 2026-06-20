@@ -852,7 +852,13 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let size = expanded
             ? NSSize(width: FloatingControlBarWindow.expandedWidth, height: FloatingControlBarWindow.expandedBarSize.height)
             : FloatingControlBarWindow.minBarSize
-        resizeAnchored(to: size, makeResizable: false, animated: true)
+        // animate:false — on macOS 26 (Tahoe) an animated setFrame can re-enter the
+        // window constraint cycle (NSTextView frame change → setNeedsUpdateConstraints →
+        // _postWindowNeedsUpdateConstraints), throwing an uncaught NSException that
+        // SentrySDK's NSApplicationCrashOnExceptions turns into an abort(). Pressing
+        // push-to-talk would freeze ~1-2s then crash. resizeForHover already uses
+        // animate:false for the same reason; keep PTT consistent.
+        resizeAnchored(to: size, makeResizable: false, animated: false)
     }
 
     private func resizeToResponseHeight(animated: Bool = false) {
