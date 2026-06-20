@@ -22,9 +22,23 @@ enum SentryNoiseGuard {
                     if exc.value.contains("SQLite error 19") { return "grdb-constraint" }
                     return "grdb-other"
                 }
+                // App Hang (ANR) events fire constantly on a busy main thread (LLM
+                // streaming, heavy SwiftUI layout). Cap per stack site per process so
+                // each distinct hang location still surfaces a few samples a day without
+                // any single user dumping dozens of identical 2s-hang events into quota.
+                if exc.type == "App Hanging" {
+                    let frames = exc.stacktrace?.frames
+                    let site = frames?.last(where: { $0.inApp?.boolValue == true })?.function
+                        ?? frames?.last?.function
+                        ?? "unknown"
+                    return "app-hang-\(site)"
+                }
             }
         }
         if message.contains("consecutive I/O errors") { return "rewind-io-loop" }
+        // ResourceMonitor's critical-memory alert is already cooldown-gated, but a
+        // long-lived process can still emit many; cap per process as a backstop.
+        if message.hasPrefix("Critical Memory Usage") { return "critical-memory" }
         return nil
     }
 
@@ -328,13 +342,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let urlTag = event.tags?["url"], urlTag.contains("m13v.com") {
                     return nil
                 }
-                // Filter out NSURLErrorCancelled (-999) — these are intentional cancellations
-                // (e.g. proactive assistants cancelling in-flight Gemini requests on context switch)
-                if let exceptions = event.exceptions, exceptions.contains(where: { exc in
-                    exc.type == "NSURLErrorDomain" && exc.value.contains("Code=-999") ||
-                    exc.type == "NSURLErrorDomain" && exc.value.contains("Code: -999")
-                }) {
-                    return nil
+                // Filter out transient NSURLError conditions — these reflect the user's
+                // network state (offline, timeout, dropped connection) or intentional
+                // cancellations, not bugs in the app. They previously flooded quota:
+                //   -999  cancelled (e.g. proactive assistants cancelling in-flight requests)
+                //   -1001 request timed out
+                //   -1003 cannot find host
+                //   -1004 cannot connect to host
+                //   -1005 network connection lost
+                //   -1009 not connected to the internet (offline)
+                //   -1020 data not allowed
+                if let exceptions = event.exceptions {
+                    let transientURLCodes = ["-999", "-1001", "-1003", "-1004", "-1005", "-1009", "-1020"]
+                    let isTransientURLError = exceptions.contains { exc in
+                        guard exc.type == "NSURLErrorDomain" else { return false }
+                        return transientURLCodes.contains { code in
+                            exc.value.contains("Code=\(code)") || exc.value.contains("Code: \(code)")
+                        }
+                    }
+                    if isTransientURLError { return nil }
                 }
                 // Filter out AuthError.notSignedIn — this is thrown when token refresh transiently
                 // fails (network blip, expired token mid-refresh). The user is still signed in per
