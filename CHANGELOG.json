@@ -8,7 +8,9 @@
     "Fixed a 4-minute hang when a Custom API Endpoint is unreachable or misconfigured (warmup now fails fast and falls back to creating the session on your first query)",
     "Agent no longer thrashes when the browser extension drops mid-task: it hands off to you to reconnect, stops guessing at screen state it hasn't verified, and bails out of stuck browser loops instead of silently retrying",
     "Fixed a crash where pressing push-to-talk could freeze then quit the app on macOS 26 (Tahoe)",
-    "Fixed the agent refusing to edit documents open in apps like Word, claiming it could only generate copy-paste text; it now actually applies the edits"
+    "Fixed the agent refusing to edit documents open in apps like Word, claiming it could only generate copy-paste text; it now actually applies the edits",
+    "Stopped the agent from saying it is safe to quit Docker (or similar) without checking what is running inside it",
+    "Fixed the agent suggesting you open a vnc:// screen-sharing link in Safari instead of Finder Connect to Server"
   ],
   "releases": [
     {
