@@ -274,10 +274,30 @@ const browserMode = (process.env.FAZM_BROWSER_MODE || "extension").toLowerCase()
 
 const TOOL_TIMEOUT_INTERNAL_MS = 30_000;   // ToolSearch and similar: 30s
 const TOOL_TIMEOUT_MCP_MS = 300_000;       // MCP tools: 5 min
+const TOOL_TIMEOUT_MCP_FAST_MS = 60_000;   // Lightweight read-only browser tools: 60s
 const TOOL_TIMEOUT_TASK_MS = 1_800_000;    // Task subagent: 30 min (sub-agents can legitimately run long)
 const TOOL_TIMEOUT_BASH_MS = 900_000;      // Bash: 15 min (deploys, builds)
 const TOOL_TIMEOUT_DEFAULT_MS = 600_000;   // Everything else: 10 min
 const TOOL_TIMEOUT_INTERACTIVE_MS = 1_800_000; // Tools that block on the user: 30 min
+
+// Lightweight, read-only Playwright tools that should respond in seconds. When
+// the Chrome extension loses its connection (a common, transient state in
+// `extension` browser mode), these calls hang until the watchdog fires. At the
+// generic 5-min MCP ceiling the user stares at a frozen spinner for the full
+// 300s before the agent can recover or tell them — observed repeatedly in
+// session recordings ("Открыть Privat24" → browser_tabs hung 5 min →
+// "interrupted before any text"). A 60s ceiling surfaces a dead connection fast
+// enough to recover while still tolerating a momentarily-busy-but-alive
+// extension. Navigation/interaction tools (browser_navigate, browser_click,
+// browser_wait_for, …) keep the full 5-min ceiling since slow pages (banking,
+// etc.) legitimately take longer.
+const FAST_MCP_TOOL_NAMES = new Set([
+  "mcp__playwright__browser_tabs",
+  "mcp__playwright__browser_snapshot",
+  "mcp__playwright__browser_take_screenshot",
+  "mcp__playwright__browser_console_messages",
+  "mcp__playwright__browser_network_requests",
+]);
 
 // Tools that block waiting for human input. The 300s MCP ceiling kills them
 // before the user gets a chance to answer — caused the silent "didn't ask
@@ -318,6 +338,9 @@ function getToolTimeoutMs(title: string, isInternal: boolean): number {
   if (title === "Task") return TOOL_TIMEOUT_TASK_MS;
   // Bash for deploys, builds, npm install on cold caches
   if (title === "Bash") return TOOL_TIMEOUT_BASH_MS;
+  // Lightweight read-only browser tools fail fast so a dead Chrome-extension
+  // connection surfaces in 60s instead of the generic 5-min MCP ceiling.
+  if (FAST_MCP_TOOL_NAMES.has(title)) return TOOL_TIMEOUT_MCP_FAST_MS;
   if (title.startsWith("mcp__")) return TOOL_TIMEOUT_MCP_MS;
   return TOOL_TIMEOUT_DEFAULT_MS;
 }
@@ -450,7 +473,7 @@ function clearAllToolTimers(): void {
 // success/error paths in handleQuery used to call clearAllToolTimers(), which
 // wiped watchdogs for every other session's in-flight tools. With multiple
 // detached pop-out chats open, ANY session ending its turn would nuke the
-// 120s tool watchdog for tools running on the others — Playwright browser_tabs
+// tool watchdog for tools running on the others — Playwright browser_tabs
 // in another pop-out would then hang forever instead of getting auto-cancelled
 // (May 11 2026 investigation: every long-hang pattern in /tmp/fazm.log traced
 // back to a peer session's success or error path firing clearAllToolTimers).
