@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed a rare startup crash when a routine row in the local database was corrupted"
+  ],
   "releases": [
     {
       "version": "2.9.71",

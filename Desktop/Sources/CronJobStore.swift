@@ -57,7 +57,7 @@ enum CronJobStore {
                     SELECT * FROM cron_jobs
                     ORDER BY enabled DESC, COALESCE(next_run_at, 9.0e15) ASC, name ASC
                 """)
-                return rows.map(parseJob)
+                return rows.compactMap(parseJob)
             }
         } catch {
             logError("CronJobStore: listJobs failed", error: error)
@@ -81,7 +81,7 @@ enum CronJobStore {
                       AND next_run_at <= ?
                     ORDER BY next_run_at ASC
                 """, arguments: [now.timeIntervalSince1970])
-                return rows.map(parseJob)
+                return rows.compactMap(parseJob)
             }
         } catch {
             logError("CronJobStore: dueJobs failed", error: error)
@@ -215,17 +215,26 @@ enum CronJobStore {
         }
     }
 
-    private static func parseJob(_ row: Row) -> CronJob {
-        CronJob(
-            id: row["id"],
-            name: row["name"],
-            prompt: row["prompt"],
-            schedule: row["schedule"],
-            timezone: row["timezone"],
+    /// Defensive parse: a malformed `cron_jobs` row (e.g. a NULL in a NOT NULL
+    /// column after the local DB gets corrupted — "database disk image is
+    /// malformed") must never crash the app. GRDB's forced `row["x"]` subscript
+    /// into a non-optional `String` traps with EXC_BREAKPOINT on a NULL/garbage
+    /// value, and that trap is a Swift fatalError, NOT a thrown error, so the
+    /// do/catch in the callers can't save it — the app hard-crashes on launch.
+    /// Read every required column as optional, skip the row if the primary key
+    /// is missing, and fall back to sane defaults for the rest.
+    private static func parseJob(_ row: Row) -> CronJob? {
+        guard let id: String = row["id"] else { return nil }
+        return CronJob(
+            id: id,
+            name: row["name"] as String? ?? "",
+            prompt: row["prompt"] as String? ?? "",
+            schedule: row["schedule"] as String? ?? "",
+            timezone: row["timezone"] as String? ?? "UTC",
             enabled: (row["enabled"] as Int? ?? 0) != 0,
             model: row["model"],
             workspace: row["workspace"],
-            sessionMode: row["session_mode"],
+            sessionMode: row["session_mode"] as String? ?? "new",
             acpSessionId: row["acp_session_id"],
             createdAt: dateFrom(row["created_at"]),
             updatedAt: dateFrom(row["updated_at"]),
