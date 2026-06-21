@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed a rare startup crash when a routine row in the local database was corrupted"
+    "Fixed a rare startup crash when a routine row in the local database was corrupted",
+    "Fixed browser actions hanging for up to 5 minutes when the Chrome connection dropped; they now recover within a minute"
   ],
   "releases": [
     {
