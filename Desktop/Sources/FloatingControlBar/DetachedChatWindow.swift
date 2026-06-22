@@ -443,6 +443,15 @@ class DetachedChatWindowController {
     /// chance to win the race first.
     private static let safetyWatchdogIntervalSeconds: UInt64 = 12
 
+    /// Absolute ceiling (expressed in re-arm counts at `safetyWatchdogIntervalSeconds`)
+    /// after which the watchdog force-stops the streaming animation even while the
+    /// session key is still in `sendingSessionKeys`. 30 arms × 12s = 360s, just
+    /// past the bridge's own 5-min MCP tool ceiling, so this only fires when the
+    /// bridge genuinely failed to deliver a terminal result (#630 finalization
+    /// stall / Claude OAuth timeout) rather than racing a legitimately long tool
+    /// call. Still visual-only — the query is never cancelled.
+    private static let safetyWatchdogStuckCeilingArms: Int = 30
+
     /// Read-only snapshot of open pop-out entries. Exposed so ChatProvider can route
     /// tool-hang cancel events to the right window state without exposing the mutable
     /// per-window storage. Returned as an array of value copies — the contained
@@ -1727,7 +1736,7 @@ class DetachedChatWindowController {
     /// never touched) and it is **visual-only** — it flips the local bubble's
     /// `isStreaming`/`isAILoading` to stop the animation but never interrupts or
     /// cancels the underlying query.
-    fileprivate func scheduleSafetyWatchdog(winId: ObjectIdentifier, isStreaming: Bool, messageId: String) {
+    fileprivate func scheduleSafetyWatchdog(winId: ObjectIdentifier, isStreaming: Bool, messageId: String, stuckArms: Int = 0) {
         // Any mutation resets the inactivity window.
         entries[winId]?.safetyWatchdog?.cancel()
         entries[winId]?.safetyWatchdog = nil
@@ -1750,19 +1759,40 @@ class DetachedChatWindowController {
             // `sendingSessionKeys`; never clear that.
             let key = entry.sessionKey
             let stillSending = FloatingControlBarManager.shared.chatProvider?.isSending(sessionKey: key) ?? false
-            guard !stillSending else {
+            if stillSending {
                 // Quiet-but-live stream: don't clear (that would kill a healthy
                 // long tool call). But DON'T give up either — the old code
                 // returned here and was never rescheduled (it only re-arms on a
                 // message mutation), so a turn that streamed, went silent, and
                 // stayed stuck in `sendingSessionKeys` (bridge finalization-idle
                 // / upstream #630) pinned the spinner forever. Re-arm so we keep
-                // re-checking; this is bounded because the bridge now emits a
+                // re-checking — normally bounded because the bridge emits a
                 // terminal `result` for that case (clearing `sendingSessionKeys`
-                // and flipping isStreaming off), after which the guard above
-                // bails. Visual-only backstop to the real bridge-side fix.
-                log("[DetachedChat] safety watchdog: session=\(key) still sending after \(interval)s quiet — re-arming (bridge should deliver a terminal result; see finalization-idle / #630)")
-                self.scheduleSafetyWatchdog(winId: winId, isStreaming: true, messageId: messageId)
+                // and flipping isStreaming off), after which the guard above bails.
+                //
+                // ABSOLUTE CEILING — when the bridge genuinely never finalizes
+                // (observed live 2026-06-21, device OI29zj3KNbZScizJh5RF7nS79Fm2,
+                // v2.9.71: a personal-mode pop-out turn hit "Connecting to your
+                // Claude account timed out", the next turn went silent, and this
+                // watchdog re-armed 3072 times over ~3.8h while thread-0 sat at
+                // 100% CPU — the `repeatForever` animation pegged the main thread
+                // the whole time). The "bounded" assumption above fails on Claude
+                // OAuth timeout / finalization-idle #630. Once we have waited past
+                // the bridge's own 5-min MCP ceiling (so it has already had every
+                // chance to deliver a terminal result and didn't), stop the
+                // animation anyway. Still visual-only: flips the local bubble out
+                // of streaming, never interrupts/cancels the query, so a late
+                // result can still land and update the message.
+                let nextArms = stuckArms + 1
+                let stuckCeilingArms = Self.safetyWatchdogStuckCeilingArms
+                if nextArms < stuckCeilingArms {
+                    log("[DetachedChat] safety watchdog: session=\(key) still sending after \(interval)s quiet — re-arming (\(nextArms)/\(stuckCeilingArms); bridge should deliver a terminal result; see finalization-idle / #630)")
+                    self.scheduleSafetyWatchdog(winId: winId, isStreaming: true, messageId: messageId, stuckArms: nextArms)
+                    return
+                }
+                log("[DetachedChat] safety watchdog: session=\(key) STILL sending after \(nextArms * Int(interval))s — bridge never finalized (#630), clearing stuck isStreaming msg=\(messageId) to stop runaway repeatForever CPU storm (visual-only, query not cancelled)")
+                state.streaming.currentAIMessage?.isStreaming = false
+                state.streaming.isAILoading = false
                 return
             }
             // Visual-only heal: stop the stuck repeatForever animation by flipping
