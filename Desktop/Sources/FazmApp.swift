@@ -800,6 +800,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     // Find and show main window
                     for window in NSApp.windows {
                         if window.title.hasPrefix("Fazm") {
+                            // Deminiaturize first, else a minimized window stays in the
+                            // Dock and the hotkey appears to do nothing (see openFazmFromMenu).
+                            if window.isMiniaturized {
+                                window.deminiaturize(nil)
+                            }
                             window.makeKeyAndOrderFront(nil)
                             break
                         }
@@ -1285,12 +1290,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Bring the app and main window to front after successful browser sign-in
             NSApp.activate(ignoringOtherApps: true)
             for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                if window.isMiniaturized { window.deminiaturize(nil) }
                 window.makeKeyAndOrderFront(nil)
             }
         case "auth-failed":
             // Bring the app and main window to front so user can retry
             NSApp.activate(ignoringOtherApps: true)
             for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                if window.isMiniaturized { window.deminiaturize(nil) }
                 window.makeKeyAndOrderFront(nil)
             }
         case "subscription":
@@ -1327,6 +1334,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Deep link to a specific settings page, e.g. fazm://settings/tool-timeouts
             NSApp.activate(ignoringOtherApps: true)
             for window in NSApp.windows where window.title.hasPrefix("Fazm") {
+                if window.isMiniaturized { window.deminiaturize(nil) }
                 window.makeKeyAndOrderFront(nil)
             }
             let settingPath = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
