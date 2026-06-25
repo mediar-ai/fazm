@@ -998,6 +998,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for window in NSApp.windows {
             if window.title.hasPrefix("Fazm") {
                 foundWindow = true
+                // Mirror applicationShouldHandleReopen: a minimized window must be
+                // deminiaturized first, otherwise makeKeyAndOrderFront leaves it in
+                // the Dock and nothing appears on screen — the user then clicks the
+                // menu item repeatedly thinking the app is unresponsive.
+                if window.isMiniaturized {
+                    window.deminiaturize(nil)
+                }
                 window.makeKeyAndOrderFront(nil)
             }
         }
