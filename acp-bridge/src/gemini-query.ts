@@ -265,7 +265,22 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
     await new Promise((r) => setTimeout(r, 150));
     const turnErr = provider.getRecentTurnError();
     logErr(`[gemini-query] session/prompt failed: ${rawMsg}${turnErr ? ` | turnError: ${turnErr}` : ""}`);
-    send({ type: "error", message: turnErr ?? `Gemini prompt failed: ${rawMsg}` });
+    // Gemini's Developer API geo-blocks several regions (e.g. Chile and other
+    // countries it doesn't serve). The raw 400 ("User location is not supported
+    // for the API use", FAILED_PRECONDITION) is opaque, and since Gemini Flash is
+    // the default model for new users, someone in an unsupported region otherwise
+    // hits an inscrutable wall on their first message. Surface a clear, actionable
+    // message pointing them at Claude instead of dumping the raw JSON error.
+    const combinedErr = `${rawMsg} ${turnErr ?? ""}`;
+    if (/location is not supported for the API/i.test(combinedErr)) {
+      send({
+        type: "error",
+        message:
+          "Gemini isn't available in your region yet. Switch to Claude in the model picker (or connect a personal Claude/ChatGPT account in Settings) to keep going.",
+      });
+    } else {
+      send({ type: "error", message: turnErr ?? `Gemini prompt failed: ${rawMsg}` });
+    }
   } finally {
     provider.endActivePrompt(sessionId);
   }

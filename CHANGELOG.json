@@ -5,7 +5,8 @@
     "Agent now opens authenticated sites (banking, dashboards) in your Chrome instead of the system default browser, so you stay logged in",
     "Fixed pop-out chat freezing at 100% CPU for hours when a query never finalized (Claude account timeout or bridge stall): the streaming animation now stops automatically instead of spinning forever",
     "Fixed menu bar Open Settings not restoring a minimized window, which made the app seem unresponsive",
-    "Fixed app appearing frozen when summoned via global hotkey or a deep link while its window was minimized"
+    "Fixed app appearing frozen when summoned via global hotkey or a deep link while its window was minimized",
+    "Show a clear message when Gemini is unavailable in your region instead of a raw API error"
   ],
   "releases": [
     {
