@@ -82,6 +82,18 @@ actor GeminiAnalysisService {
     /// Cooldown after failed analysis to avoid spamming the API.
     private var lastFailedAnalysis: Date?
     private let retryCooldown: TimeInterval = 300 // 5 minutes
+    /// Set once Gemini's Developer API geo-blocks this user's region (400 FAILED_PRECONDITION
+    /// "User location is not supported for the API use"). The block is stable for as long as
+    /// the user stays in that region, so once we see it we stop the every-5-min re-upload loop
+    /// for the rest of this session instead of retrying forever. In-memory only: it resets on
+    /// relaunch so the observer self-heals if the user moves to a supported region.
+    private var regionUnsupported = false
+
+    /// True if the response body is Gemini's region geo-block (mirrors the chat-path detection
+    /// in acp-bridge/src/gemini-query.ts).
+    private static func isRegionUnsupported(_ body: String) -> Bool {
+        return body.range(of: "location is not supported for the API", options: .caseInsensitive) != nil
+    }
 
     /// Stable directory for chunk video files (inside Application Support, survives restarts).
     private let chunksDir: URL
@@ -235,6 +247,12 @@ actor GeminiAnalysisService {
 
     /// Run analysis on the current buffer. Only clears buffer and deletes files on success.
     private func triggerAnalysis() async -> AnalysisResult? {
+        // Gemini geo-blocks this region — re-uploading video every 5 min would fail forever.
+        // Keep the buffer (capped at maxChunks, which drops the oldest) and skip the call.
+        if regionUnsupported {
+            log("GeminiAnalysis: skipping analysis — Gemini API not available in this region")
+            return nil
+        }
         let chunks = Array(chunkBuffer)
         let analyzedCount = chunks.count
         let result = await runAnalysis(chunks: chunks)
@@ -826,6 +844,10 @@ actor GeminiAnalysisService {
 
                 let bodyStr = String(data: data, encoding: .utf8) ?? ""
                 log("GeminiAnalysis: agentic turn \(turn) attempt \(attempt) failed (status=\(http.statusCode)): \(bodyStr.prefix(200))")
+                if Self.isRegionUnsupported(bodyStr) {
+                    handleRegionUnsupported()
+                    return (nil, totalToolCalls, turn, totalUsage)  // permanent — stop here
+                }
                 if attempt < 3 {
                     try? await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
                 }
@@ -1019,12 +1041,25 @@ actor GeminiAnalysisService {
             let bodyStr = String(data: data, encoding: .utf8) ?? ""
             log("GeminiAnalysis: generateContent attempt \(attempt) failed (status=\(http.statusCode)): \(bodyStr.prefix(200))")
 
+            if Self.isRegionUnsupported(bodyStr) {
+                handleRegionUnsupported()
+                return nil  // permanent — don't burn the remaining retries
+            }
+
             if attempt < 3 {
                 try? await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
             }
         }
 
         return nil
+    }
+
+    /// Record the geo-block once and disable further analysis attempts for this session.
+    private func handleRegionUnsupported() {
+        guard !regionUnsupported else { return }
+        regionUnsupported = true
+        log("GeminiAnalysis: Gemini API not available in this region — disabling screen analysis for this session")
+        PostHogSDK.shared.capture("gemini_analysis_region_unsupported")
     }
 
     // MARK: - Helpers
