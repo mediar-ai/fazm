@@ -335,7 +335,11 @@ actor GeminiAnalysisService {
         } else {
             // Failed — keep buffer intact, set cooldown before retry
             lastFailedAnalysis = Date()
-            PostHogSDK.shared.capture("gemini_analysis_failed", properties: ["chunks_count": analyzedCount])
+            PostHogSDK.shared.capture("gemini_analysis_failed", properties: [
+                "chunks_count": analyzedCount,
+                "failure_reason": lastFailureReason ?? "unknown",
+                "region_unsupported": regionUnsupported
+            ])
             log("GeminiAnalysis: analysis failed, keeping \(chunks.count) chunks for retry (cooldown \(Int(retryCooldown))s)")
         }
         return result
