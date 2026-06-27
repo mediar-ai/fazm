@@ -27,6 +27,27 @@ mkdir -p "$LOG_DIR"
 
 log() { echo "[$(date +%H:%M:%S)] $*" >> "$LOG_DIR/founder-chat.log"; }
 
+write_rotator_rejection_signal() {
+    local reason="${1:-rate_limit}"
+    local rotator_dir="$HOME/claude-account-rotator"
+    local signal_path="$rotator_dir/rejection.signal"
+    [ -d "$rotator_dir" ] || return 0
+
+    cat > "$signal_path" <<JSON
+{
+  "status": "rejected",
+  "rateLimitType": "five_hour",
+  "utilization": null,
+  "resetsAt": null,
+  "observedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "source": "fazm-founder-chat",
+  "reason": "$reason",
+  "pid": $$
+}
+JSON
+    echo "[$(date)] Wrote rotator rejection signal: $signal_path ($reason)" >> "$LOG_DIR/founder-chat.log"
+}
+
 # ---------------------------------------------------------------------------
 # Founder-chat instructions: Matt's email replies to "FAZM Chat:" reports.
 # When the founder-chat agent finishes a conversation it emails Matt a report.
@@ -114,6 +135,7 @@ INSTR_EOF
                 echo "[$(date)] WARNING: instruction session #$INSTR_EMAIL_ID exited with code $EXIT_CODE" >> "$LOG_DIR/founder-chat.log"
                 if grep -qi "hit your limit\|rate limit\|too many requests" "$INSTR_LOG" 2>/dev/null; then
                     echo "[$(date)] RATE LIMITED: not retrying instruction #$INSTR_EMAIL_ID until limit resets" >> "$LOG_DIR/founder-chat.log"
+                    write_rotator_rejection_signal "instruction_${INSTR_EMAIL_ID}_exit_${EXIT_CODE}"
                     echo "rate_limited $(date +%s)" > "/tmp/fazm-chat-ratelimit"
                 else
                     NEW_FAILS=$((INSTR_FAILS + 1))
@@ -232,6 +254,7 @@ PROMPT_EOF
             # Check if this is a rate limit error — don't retry, just wait for reset
             if grep -qi "hit your limit\|rate limit\|too many requests" "$SESSION_LOG" 2>/dev/null; then
                 echo "[$(date)] RATE LIMITED: Not retrying $EMAIL until limit resets" >> "$LOG_DIR/founder-chat.log"
+                write_rotator_rejection_signal "chat_${UID_VAL}_exit_${EXIT_CODE}"
                 # Leave chat claimed (don't unclaim) so it stops retrying
                 # Write a marker so the next poll knows to skip
                 echo "rate_limited $(date +%s)" > "/tmp/fazm-chat-ratelimit"
