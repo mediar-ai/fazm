@@ -93,6 +93,11 @@ actor GeminiAnalysisService {
     /// relaunch so the observer self-heals if the user moves to a supported region.
     private var regionUnsupported = false
 
+    /// Categorized reason for the most recent analysis failure, captured at each nil-return site
+    /// in `runAnalysis`/`callGenerateContentAgentic` and reported in the `gemini_analysis_failed`
+    /// PostHog event. Without this, every failure collapsed into a bare count with no diagnostics.
+    private var lastFailureReason: String?
+
     /// True if the response body is Gemini's region geo-block (mirrors the chat-path detection
     /// in acp-bridge/src/gemini-query.ts).
     private static func isRegionUnsupported(_ body: String) -> Bool {
@@ -367,6 +372,7 @@ actor GeminiAnalysisService {
     @discardableResult
     private func runAnalysis(chunks: [ChunkEntry]) async -> AnalysisResult? {
         isAnalyzing = true
+        lastFailureReason = nil
         publishResourceCounters()
         defer {
             isAnalyzing = false
@@ -375,6 +381,7 @@ actor GeminiAnalysisService {
 
         guard let apiKey = await resolveAPIKey() else {
             log("GeminiAnalysis: no Gemini API key available")
+            lastFailureReason = "no_api_key"
             return nil
         }
 
@@ -442,6 +449,7 @@ actor GeminiAnalysisService {
 
         guard let raw = result else {
             log("GeminiAnalysis: generateContent returned no result")
+            if lastFailureReason == nil { lastFailureReason = "no_result" }
             return nil
         }
 
@@ -808,12 +816,14 @@ actor GeminiAnalysisService {
         maxTurns: Int = 5
     ) async -> (text: String?, toolCallCount: Int, turnsUsed: Int, usage: UsageMetrics) {
         guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)") else {
+            lastFailureReason = "bad_url"
             return (nil, 0, 0, UsageMetrics())
         }
 
         var contents: [[String: Any]] = [["role": "user", "parts": initialParts]]
         var totalToolCalls = 0
         var totalUsage = UsageMetrics()
+        var lastStatus = 0
 
         for turn in 1...maxTurns {
             let body: [String: Any] = [
@@ -843,11 +853,13 @@ actor GeminiAnalysisService {
             for attempt in 1...3 {
                 guard let (data, resp) = try? await URLSession.shared.data(for: req),
                       let http = resp as? HTTPURLResponse else {
+                    lastStatus = 0  // network error / timeout (no HTTP response)
                     if attempt < 3 {
                         try? await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt)) * 1_000_000_000))
                     }
                     continue
                 }
+                lastStatus = http.statusCode
 
                 if (200...299).contains(http.statusCode),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -865,6 +877,7 @@ actor GeminiAnalysisService {
                 log("GeminiAnalysis: agentic turn \(turn) attempt \(attempt) failed (status=\(http.statusCode)): \(bodyStr.prefix(200))")
                 if Self.isRegionUnsupported(bodyStr) {
                     handleRegionUnsupported()
+                    lastFailureReason = "region_unsupported"
                     return (nil, totalToolCalls, turn, totalUsage)  // permanent — stop here
                 }
                 if attempt < 3 {
@@ -874,6 +887,7 @@ actor GeminiAnalysisService {
 
             guard let parts = responseParts else {
                 log("GeminiAnalysis: agentic turn \(turn) failed after retries")
+                lastFailureReason = lastStatus == 0 ? "network_error" : "http_\(lastStatus)"
                 return (nil, totalToolCalls, turn, totalUsage)
             }
 
@@ -898,6 +912,7 @@ actor GeminiAnalysisService {
             if functionCalls.isEmpty {
                 let finalText = textParts.joined(separator: "\n")
                 log("GeminiAnalysis: agentic loop completed in \(turn) turn(s), \(totalToolCalls) tool call(s)")
+                if finalText.isEmpty { lastFailureReason = "empty_response" }
                 return (finalText.isEmpty ? nil : finalText, totalToolCalls, turn, totalUsage)
             }
 
@@ -923,6 +938,7 @@ actor GeminiAnalysisService {
         }
 
         log("GeminiAnalysis: exhausted \(maxTurns) agentic turns")
+        lastFailureReason = "max_turns_exhausted"
         return (nil, totalToolCalls, maxTurns, totalUsage)
     }
 
