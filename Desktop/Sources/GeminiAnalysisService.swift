@@ -73,6 +73,10 @@ actor GeminiAnalysisService {
     private let model = "gemini-pro-latest"
     private let maxChunks = 120  // Hard cap on buffered chunks (safety limit)
     private let targetDurationSeconds: TimeInterval = 3600  // Trigger analysis after 60 min of recordings
+    /// Hard ceiling on the number of chunks sent in a single analysis request,
+    /// independent of duration. Belt-and-suspenders in case chunk durations are
+    /// mis-measured (e.g. zero) and the duration-based slice never trips.
+    private let maxChunksPerAnalysis = 80
     /// Gemini File API: chunks above this size use resumable upload; smaller ones use inline base64.
     private let inlineSizeLimit = 1_500_000 // 1.5 MB
 
@@ -253,7 +257,22 @@ actor GeminiAnalysisService {
             log("GeminiAnalysis: skipping analysis — Gemini API not available in this region")
             return nil
         }
-        let chunks = Array(chunkBuffer)
+        // Bound each request to roughly the target window (~60 min) of the OLDEST
+        // chunks instead of the whole buffer. A heavy all-day user accumulates
+        // chunks faster than analysis runs; the buffer saturates at maxChunks
+        // (120 ≈ 104 min) and sending all of them overloads the Gemini File API:
+        // uploads fail and the request 400s with INVALID_ARGUMENT. Because the
+        // failure branch keeps the full buffer, every retry resubmits the same
+        // oversized batch → a permanent failure loop. Slicing the oldest target
+        // window keeps requests within limits and lets the buffer drain on each
+        // success (the success branch removes exactly the analyzed chunks).
+        var chunks: [ChunkEntry] = []
+        var accumulated: TimeInterval = 0
+        for entry in chunkBuffer {
+            chunks.append(entry)
+            accumulated += entry.endTimestamp.timeIntervalSince(entry.startTimestamp)
+            if accumulated >= targetDurationSeconds || chunks.count >= maxChunksPerAnalysis { break }
+        }
         let analyzedCount = chunks.count
         let result = await runAnalysis(chunks: chunks)
         if let result {
