@@ -42,6 +42,7 @@ INBOX_DIR="$HOME/fazm/inbox"
 SCRIPTS_DIR="$INBOX_DIR/scripts"
 LOG_DIR="$INBOX_DIR/skill/logs"
 NODE_BIN="$HOME/.nvm/versions/node/v20.19.4/bin/node"
+CLAUDE_BIN="${CLAUDE_BIN:-$HOME/claude-account-rotator/bin/claude}"
 
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/session-replay-$(date +%Y-%m-%d_%H%M%S).log"
@@ -172,7 +173,7 @@ log "  Outcome file: $OUTCOME_FILE"
 cd "$HOME/fazm"
 
 CLAUDE_EXIT=0
-gtimeout 2400 claude \
+gtimeout 2400 "$CLAUDE_BIN" \
     -p "$(cat "$PROMPT_FILE")" \
     --dangerously-skip-permissions \
     2>&1 | tee -a "$LOG_FILE" || CLAUDE_EXIT=$?
