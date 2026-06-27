@@ -133,7 +133,7 @@ INSTR_EOF
             echo "[$(date)] Claude exited with code $EXIT_CODE" >> "$INSTR_LOG"
             if [ $EXIT_CODE -ne 0 ]; then
                 echo "[$(date)] WARNING: instruction session #$INSTR_EMAIL_ID exited with code $EXIT_CODE" >> "$LOG_DIR/founder-chat.log"
-                if grep -qi "hit your limit\|rate limit\|too many requests" "$INSTR_LOG" 2>/dev/null; then
+                if grep -Eqi "hit your session limit|hit your limit|rate limit|too many requests" "$INSTR_LOG" 2>/dev/null; then
                     echo "[$(date)] RATE LIMITED: not retrying instruction #$INSTR_EMAIL_ID until limit resets" >> "$LOG_DIR/founder-chat.log"
                     write_rotator_rejection_signal "instruction_${INSTR_EMAIL_ID}_exit_${EXIT_CODE}"
                     echo "rate_limited $(date +%s)" > "/tmp/fazm-chat-ratelimit"
@@ -252,7 +252,7 @@ PROMPT_EOF
             echo "[$(date)] WARNING: Claude session for $EMAIL exited with code $EXIT_CODE" >> "$LOG_DIR/founder-chat.log"
 
             # Check if this is a rate limit error — don't retry, just wait for reset
-            if grep -qi "hit your limit\|rate limit\|too many requests" "$SESSION_LOG" 2>/dev/null; then
+            if grep -Eqi "hit your session limit|hit your limit|rate limit|too many requests" "$SESSION_LOG" 2>/dev/null; then
                 echo "[$(date)] RATE LIMITED: Not retrying $EMAIL until limit resets" >> "$LOG_DIR/founder-chat.log"
                 write_rotator_rejection_signal "chat_${UID_VAL}_exit_${EXIT_CODE}"
                 # Leave chat claimed (don't unclaim) so it stops retrying
