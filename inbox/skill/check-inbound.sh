@@ -22,11 +22,33 @@ INBOX_DIR="$HOME/fazm/inbox"
 SCRIPTS_DIR="$INBOX_DIR/scripts"
 LOG_DIR="$INBOX_DIR/skill/logs"
 NODE_BIN="$HOME/.nvm/versions/node/v20.19.4/bin/node"
+CLAUDE_BIN="${CLAUDE_BIN:-$HOME/claude-account-rotator/bin/claude}"
 
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/check-inbound-$(date +%Y-%m-%d_%H%M%S).log"
 
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG_FILE"; }
+
+write_rotator_rejection_signal() {
+    local reason="${1:-rate_limit}"
+    local rotator_dir="$HOME/claude-account-rotator"
+    local signal_path="$rotator_dir/rejection.signal"
+    [ -d "$rotator_dir" ] || return 0
+
+    cat > "$signal_path" <<JSON
+{
+  "status": "rejected",
+  "rateLimitType": "five_hour",
+  "utilization": null,
+  "resetsAt": null,
+  "observedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "source": "fazm-inbound",
+  "reason": "$reason",
+  "pid": $$
+}
+JSON
+    log "Wrote rotator rejection signal: $signal_path ($reason)"
+}
 
 log "=== FAZM Inbox Check: $(date) ==="
 
@@ -70,7 +92,7 @@ PROMPT_EOF
 log "Spawning Claude Code session..."
 cd "$HOME/fazm"
 set +e
-gtimeout 1800 claude \
+gtimeout 1800 "$CLAUDE_BIN" \
     -p "$(cat "$PROMPT_FILE")" \
     --dangerously-skip-permissions \
     2>&1 | tee -a "$LOG_FILE"
@@ -87,10 +109,14 @@ SAFE_TO_MARK=1
 if [ "$CLAUDE_EXIT" -ne 0 ]; then
     log "WARNING: Claude exited with code $CLAUDE_EXIT — leaving emails [#$EMAIL_IDS] unprocessed for retry"
     SAFE_TO_MARK=0
+    if grep -Eqi "hit your session limit|hit your limit|rate limit|too many requests|Claude AI usage limit reached|You're out of extra usage|You've hit your org's monthly usage limit" "$LOG_FILE"; then
+        write_rotator_rejection_signal "claude_exit_${CLAUDE_EXIT}"
+    fi
 fi
-if grep -qE "^(You're out of extra usage|You've hit your org's monthly usage limit|Claude AI usage limit reached)" "$LOG_FILE"; then
+if grep -qE "^(You're out of extra usage|You've hit your org's monthly usage limit|Claude AI usage limit reached|You've hit your session limit)" "$LOG_FILE"; then
     log "WARNING: Anthropic usage-cap message in run log — leaving emails [#$EMAIL_IDS] unprocessed for retry"
     SAFE_TO_MARK=0
+    write_rotator_rejection_signal "usage_cap_message"
 fi
 
 if [ "$SAFE_TO_MARK" -eq 1 ]; then
