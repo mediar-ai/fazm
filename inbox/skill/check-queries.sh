@@ -33,6 +33,27 @@ LOG_FILE="$LOG_DIR/queries-$(date +%Y-%m-%d_%H%M%S).log"
 
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG_FILE"; }
 
+write_rotator_rejection_signal() {
+    local reason="${1:-rate_limit}"
+    local rotator_dir="$HOME/claude-account-rotator"
+    local signal_path="$rotator_dir/rejection.signal"
+    [ -d "$rotator_dir" ] || return 0
+
+    cat > "$signal_path" <<JSON
+{
+  "status": "rejected",
+  "rateLimitType": "five_hour",
+  "utilization": null,
+  "resetsAt": null,
+  "observedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "source": "fazm-query-analysis",
+  "reason": "$reason",
+  "pid": $$
+}
+JSON
+    log "Wrote rotator rejection signal: $signal_path ($reason)"
+}
+
 log "=== User Queries Analysis: $(date) ==="
 
 # Step 1: Fetch queries since last analysis
@@ -92,6 +113,9 @@ if [ $CLAUDE_EXIT -eq 124 ]; then
     log "ERROR: Claude Code timed out after 30 minutes"
 elif [ $CLAUDE_EXIT -ne 0 ]; then
     log "WARNING: Claude Code exited with code $CLAUDE_EXIT"
+    if grep -Eqi "hit your session limit|hit your limit|rate limit|too many requests" "$LOG_FILE" 2>/dev/null; then
+        write_rotator_rejection_signal "claude_exit_${CLAUDE_EXIT}"
+    fi
 fi
 
 # Step 3: Validate outcome and mark as analyzed
