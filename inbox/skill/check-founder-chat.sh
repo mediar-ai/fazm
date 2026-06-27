@@ -22,6 +22,7 @@ NODE_BIN="$HOME/.nvm/versions/node/v20.19.4/bin/node"
 INBOX_DIR="$HOME/fazm/inbox"
 SCRIPTS_DIR="$INBOX_DIR/scripts"
 LOG_DIR="$INBOX_DIR/skill/logs"
+CLAUDE_BIN="${CLAUDE_BIN:-$HOME/claude-account-rotator/bin/claude}"
 
 mkdir -p "$LOG_DIR"
 
@@ -125,7 +126,7 @@ INSTR_EOF
             set +e  # Don't exit on error — cleanup must run
             cd "$HOME/fazm"
             echo "[$(date)] Starting instruction session for email #$INSTR_EMAIL_ID ($INSTR_TARGET)" >> "$INSTR_LOG"
-            gtimeout 1200 claude \
+            gtimeout 1200 "$CLAUDE_BIN" \
                 -p "$(cat "$INSTR_PROMPT_FILE")" \
                 --dangerously-skip-permissions \
                 >> "$INSTR_LOG" 2>&1
@@ -242,7 +243,7 @@ PROMPT_EOF
         set +e  # Don't exit on error — we need cleanup to run
         cd "$HOME/fazm"
         echo "[$(date)] Starting Claude session for $EMAIL" >> "$SESSION_LOG"
-        gtimeout 1200 claude \
+        gtimeout 1200 "$CLAUDE_BIN" \
             -p "$(cat "$PROMPT_FILE")" \
             --dangerously-skip-permissions \
             >> "$SESSION_LOG" 2>&1
