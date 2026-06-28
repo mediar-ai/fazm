@@ -222,6 +222,11 @@ FINAL_STATUS=$(curl -s --connect-timeout 15 --max-time 60 "https://dash.m13v.com
     -H "Authorization: Bearer ${CRON_SECRET}" 2>/dev/null)
 FINAL_UNANALYZED=$(echo "$FINAL_STATUS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('unanalyzedChunks', 0))" 2>/dev/null || echo "0")
 
+# Per-session emails were removed: findings are recorded to the DB/dashboard and a
+# weekly digest email is sent instead. Gate marking on the investigation actually
+# completing (a valid outcome file with >=1 Gemini analysis), not on any email.
+GEMINI_ANALYSIS_COUNT=$(python3 -c "import json; d=json.load(open('$OUTCOME_FILE')); print(d.get('geminiAnalysisCount', 0))" 2>/dev/null || echo "0")
+
 # Decide whether to mark as investigated
 SHOULD_MARK=true
 MARK_REASON=""
@@ -229,12 +234,23 @@ MARK_REASON=""
 if [ "$FINAL_UNANALYZED" -gt 0 ] 2>/dev/null; then
     SHOULD_MARK=false
     MARK_REASON="Device still has $FINAL_UNANALYZED unanalyzed chunks"
+
+    # Stuck-chunk safeguard: a few chunks permanently fail Gemini observer analysis
+    # (see ~87% global observer failure rate), so unanalyzedChunks never reaches 0 and
+    # this device gets re-investigated forever, burning credits (one device hit 80+
+    # outcome files). Genuine mid-drain devices are deferred BEFORE investigation
+    # (the REMAINING check above Step 3), so they never accumulate outcome files.
+    # Multiple outcome files therefore mean: investigation keeps running but marking
+    # keeps failing on stuck chunks. After enough such runs, accept the partial
+    # analysis and mark it so the loop ends.
+    PRIOR_OUTCOMES=$(ls "$LOG_DIR"/outcome-"${DEVICE_ID}"-*.json 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${PRIOR_OUTCOMES:-0}" -ge 3 ] 2>/dev/null && [ "$GEMINI_ANALYSIS_COUNT" -ge 1 ] 2>/dev/null; then
+        SHOULD_MARK=true
+        MARK_REASON=""
+        log "Stuck-chunk safeguard: device has $PRIOR_OUTCOMES prior investigations and $FINAL_UNANALYZED permanently-unanalyzed chunks; marking on partial analysis to break the re-investigation loop."
+    fi
 fi
 
-# Per-session emails were removed: findings are recorded to the DB/dashboard and a
-# weekly digest email is sent instead. Gate marking on the investigation actually
-# completing (a valid outcome file with >=1 Gemini analysis), not on any email.
-GEMINI_ANALYSIS_COUNT=$(python3 -c "import json; d=json.load(open('$OUTCOME_FILE')); print(d.get('geminiAnalysisCount', 0))" 2>/dev/null || echo "0")
 if [ ! -f "$OUTCOME_FILE" ]; then
     SHOULD_MARK=false
     MARK_REASON="${MARK_REASON:+$MARK_REASON; }No outcome file produced"
