@@ -224,26 +224,50 @@ enum CronJobStore {
     /// Read every required column as optional, skip the row if the primary key
     /// is missing, and fall back to sane defaults for the rest.
     private static func parseJob(_ row: Row) -> CronJob? {
-        guard let id: String = row["id"] else { return nil }
+        // GRDB's typed subscripts (`row["col"] as Int?`, `row["created_at"]` decoded as
+        // Double?, etc.) TRAP with EXC_BREAKPOINT when a non-NULL column value can't be
+        // converted to the requested type — e.g. text in a numeric column after schema
+        // drift or a manually-edited row. That trap is a `fatalError`, so the `try/catch`
+        // in listJobs/dueJobs can't absorb it, and a single malformed `cron_jobs` row
+        // crashes the whole app at launch (the RoutineScheduler reads jobs on startup).
+        // Decode through `DatabaseValue` + `fromDatabaseValue`, which returns nil on a
+        // type mismatch instead of trapping, so one bad row degrades gracefully.
+        guard let id = str(row, "id") else { return nil }
         return CronJob(
             id: id,
-            name: row["name"] as String? ?? "",
-            prompt: row["prompt"] as String? ?? "",
-            schedule: row["schedule"] as String? ?? "",
-            timezone: row["timezone"] as String? ?? "UTC",
-            enabled: (row["enabled"] as Int? ?? 0) != 0,
-            model: row["model"],
-            workspace: row["workspace"],
-            sessionMode: row["session_mode"] as String? ?? "new",
-            acpSessionId: row["acp_session_id"],
-            createdAt: dateFrom(row["created_at"]),
-            updatedAt: dateFrom(row["updated_at"]),
-            nextRunAt: optionalDate(row["next_run_at"]),
-            lastRunAt: optionalDate(row["last_run_at"]),
-            lastStatus: row["last_status"],
-            lastError: row["last_error"],
-            runCount: row["run_count"] ?? 0
+            name: str(row, "name") ?? "",
+            prompt: str(row, "prompt") ?? "",
+            schedule: str(row, "schedule") ?? "",
+            timezone: str(row, "timezone") ?? "UTC",
+            enabled: (int(row, "enabled") ?? 0) != 0,
+            model: str(row, "model"),
+            workspace: str(row, "workspace"),
+            sessionMode: str(row, "session_mode") ?? "new",
+            acpSessionId: str(row, "acp_session_id"),
+            createdAt: Date(timeIntervalSince1970: dbl(row, "created_at") ?? 0),
+            updatedAt: Date(timeIntervalSince1970: dbl(row, "updated_at") ?? 0),
+            nextRunAt: dbl(row, "next_run_at").map { Date(timeIntervalSince1970: $0) },
+            lastRunAt: dbl(row, "last_run_at").map { Date(timeIntervalSince1970: $0) },
+            lastStatus: str(row, "last_status"),
+            lastError: str(row, "last_error"),
+            runCount: int(row, "run_count") ?? 0
         )
+    }
+
+    /// Non-trapping column accessors. Unlike GRDB's typed subscripts, these read the raw
+    /// `DatabaseValue` (which never fails) and convert it, returning nil on NULL or a type
+    /// mismatch rather than calling `fatalError`. Used by `parseJob` so a corrupt row
+    /// can't crash the app at startup.
+    private static func str(_ row: Row, _ column: String) -> String? {
+        String.fromDatabaseValue(row[column])
+    }
+
+    private static func int(_ row: Row, _ column: String) -> Int? {
+        Int.fromDatabaseValue(row[column])
+    }
+
+    private static func dbl(_ row: Row, _ column: String) -> Double? {
+        Double.fromDatabaseValue(row[column])
     }
 
     private static func parseRun(_ row: Row) -> CronRun {
