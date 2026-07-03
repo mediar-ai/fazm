@@ -21,6 +21,7 @@ struct ConversationHistorySection: View {
     @State private var conversations: [ConversationSummary] = []
     @State private var isLoading = true
     @State private var loadingConversationId: String? = nil
+    @State private var pendingDelete: ConversationSummary? = nil
 
     /// Live count of detached chat windows currently open. Driven by
     /// `Notification.Name.detachedChatWindowsDidChange`, which the controller
@@ -100,7 +101,8 @@ struct ConversationHistorySection: View {
                         ForEach(conversations, id: \.id) { conversation in
                             ConversationRow(
                                 conversation: conversation,
-                                isLoading: loadingConversationId == conversation.id
+                                isLoading: loadingConversationId == conversation.id,
+                                onDelete: { pendingDelete = conversation }
                             )
                             .onTapGesture {
                                 guard loadingConversationId == nil else { return }
@@ -119,6 +121,18 @@ struct ConversationHistorySection: View {
         .onReceive(refreshTimer) { _ in loadConversations() }
         .onReceive(NotificationCenter.default.publisher(for: .detachedChatWindowsDidChange)) { _ in
             openWindowCount = DetachedChatWindowController.shared.openWindowCount
+        }
+        .alert("Delete this conversation?", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+            Button("Delete", role: .destructive) {
+                if let target = pendingDelete { deleteConversation(target) }
+                pendingDelete = nil
+            }
+        } message: {
+            Text("This permanently removes the conversation and its messages. This can't be undone.")
         }
     }
 
@@ -277,6 +291,21 @@ struct ConversationHistorySection: View {
         }
     }
 
+    /// Delete a conversation and all of its messages from the local DB, then
+    /// drop it from the list immediately so the row disappears without waiting
+    /// for the 10s refresh timer.
+    private func deleteConversation(_ conversation: ConversationSummary) {
+        // Optimistically remove from the visible list.
+        conversations.removeAll { $0.id == conversation.id }
+
+        Task {
+            await ChatMessageStore.clearMessages(context: conversation.id)
+            // Reload to reconcile with the DB (also fixes the list if the delete
+            // failed and the row should reappear).
+            loadConversations()
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadConversations() {
@@ -365,6 +394,7 @@ struct ConversationHistorySection: View {
 struct ConversationRow: View {
     let conversation: ConversationSummary
     var isLoading: Bool = false
+    var onDelete: (() -> Void)? = nil
 
     @State private var isHovered = false
 
@@ -402,6 +432,19 @@ struct ConversationRow: View {
             }
 
             Spacer()
+
+            // Delete button, revealed on hover so the row stays clean otherwise.
+            if isHovered && !isLoading, let onDelete = onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .scaledFont(size: 13)
+                        .foregroundColor(FazmColors.textTertiary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Delete this conversation")
+            }
 
             Image(systemName: "chevron.right")
                 .scaledFont(size: 11)
