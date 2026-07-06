@@ -3090,6 +3090,13 @@ function isUserMcpServer(name: string): boolean {
 
 /** Canonical latest Opus id we ship. Must match ShortcutSettings.defaultModels / normalizeModelId. */
 const LATEST_OPUS_MODEL_ID = "claude-opus-4-8";
+/** Canonical latest top-tier model (Fable 5 → the "Smartest" picker tier). The bundled
+ * Claude SDK's curated catalog only surfaces default/sonnet/haiku, so Fable never appears
+ * in the advertised list — but the connected account's live model catalog exposes it and it
+ * works when sent explicitly via session/set_model (same pattern as opus-4-8 and the gemini
+ * *-latest aliases). We inject it below so the picker can offer it. Keep in sync with
+ * ShortcutSettings.defaultModels / modelFamilyMap ("Smartest") / normalizeModelId. */
+const LATEST_FABLE_MODEL_ID = "claude-fable-5";
 
 function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: string; description?: string }>): void {
   logErr(`Raw models from ACP SDK: ${JSON.stringify(availableModels)}`);
@@ -3133,6 +3140,13 @@ function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: str
       seen.add(m.modelId);
       return true;
     });
+  // Inject the top-tier Fable model. The curated SDK catalog omits it (see
+  // LATEST_FABLE_MODEL_ID note), but it's valid for the connected account and passes
+  // through session/set_model. Only inject when real models came back, so a transient
+  // empty SDK response can't momentarily collapse the picker to Fable-only.
+  if (transformed.length > 0 && !seen.has(LATEST_FABLE_MODEL_ID)) {
+    transformed.push({ modelId: LATEST_FABLE_MODEL_ID, name: "Fable 5", description: "Claude Fable 5 · Most capable" });
+  }
   if (transformed.length === 0) return;
   const json = JSON.stringify(transformed);
   if (json === lastEmittedModelsJson) return;
