@@ -1,19 +1,24 @@
 {
-  "unreleased": [
-    "Fixed a rare startup crash when a routine row in the local database was corrupted",
-    "Fixed browser actions hanging for up to 5 minutes when the Chrome connection dropped; they now recover within a minute",
-    "Agent now opens authenticated sites (banking, dashboards) in your Chrome instead of the system default browser, so you stay logged in",
-    "Fixed pop-out chat freezing at 100% CPU for hours when a query never finalized (Claude account timeout or bridge stall): the streaming animation now stops automatically instead of spinning forever",
-    "Fixed menu bar Open Settings not restoring a minimized window, which made the app seem unresponsive",
-    "Fixed app appearing frozen when summoned via global hotkey or a deep link while its window was minimized",
-    "Show a clear message when Gemini is unavailable in your region instead of a raw API error",
-    "Stopped the screen observer from retrying Gemini every 5 minutes in regions where Gemini is geo-blocked",
-    "Fixed proactive screen observer silently failing for heavy all-day users (oversized Gemini analysis requests now bounded to the intended ~60 min window so the buffer drains instead of looping on failure)",
-    "Added a delete button to Conversation History so you can remove old chats (hover a conversation and click the trash icon)",
-    "Fixed founder chat showing the wrong timestamp on the founder's replies (all replies displayed the same time)",
-    "Added Fable as the new Smartest model tier in the picker, now grouped into divided sections by tier and provider"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.73",
+      "date": "2026-07-06",
+      "changes": [
+        "Fixed a rare startup crash when a routine row in the local database was corrupted",
+        "Fixed browser actions hanging for up to 5 minutes when the Chrome connection dropped; they now recover within a minute",
+        "Agent now opens authenticated sites (banking, dashboards) in your Chrome instead of the system default browser, so you stay logged in",
+        "Fixed pop-out chat freezing at 100% CPU for hours when a query never finalized (Claude account timeout or bridge stall): the streaming animation now stops automatically instead of spinning forever",
+        "Fixed menu bar Open Settings not restoring a minimized window, which made the app seem unresponsive",
+        "Fixed app appearing frozen when summoned via global hotkey or a deep link while its window was minimized",
+        "Show a clear message when Gemini is unavailable in your region instead of a raw API error",
+        "Stopped the screen observer from retrying Gemini every 5 minutes in regions where Gemini is geo-blocked",
+        "Fixed proactive screen observer silently failing for heavy all-day users (oversized Gemini analysis requests now bounded to the intended ~60 min window so the buffer drains instead of looping on failure)",
+        "Added a delete button to Conversation History so you can remove old chats (hover a conversation and click the trash icon)",
+        "Fixed founder chat showing the wrong timestamp on the founder's replies (all replies displayed the same time)",
+        "Added Fable as the new Smartest model tier in the picker, now grouped into divided sections by tier and provider"
+      ]
+    },
     {
       "version": "2.9.71",
       "date": "2026-06-21",
