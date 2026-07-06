@@ -186,6 +186,7 @@ class ShortcutSettings: ObservableObject {
         ModelOption(id: "haiku", label: "Scary (Haiku, latest)", shortLabel: "Scary"),
         ModelOption(id: "sonnet", label: "Fast (Sonnet, latest)", shortLabel: "Fast"),
         ModelOption(id: "claude-opus-4-8", label: "Smart (Opus, latest)", shortLabel: "Smart"),
+        ModelOption(id: "claude-fable-5", label: "Smartest (Fable, latest)", shortLabel: "Smartest"),
     ]
 
     /// Mapping from model family substring to user-friendly labels and ordering.
@@ -194,6 +195,7 @@ class ShortcutSettings: ObservableObject {
         ("haiku", "Scary", "Haiku", 0),
         ("sonnet", "Fast", "Sonnet", 1),
         ("opus", "Smart", "Opus", 2),
+        ("fable", "Smartest", "Fable", 3),
     ]
 
     /// Available models for Ask Fazm. Updated dynamically from ACP SDK; falls back to defaults.
@@ -239,6 +241,10 @@ class ShortcutSettings: ObservableObject {
             .map { String(modelId[$0]) } ?? ""
         if modelId.contains("haiku") { return "haiku" + bracketSuffix }
         if modelId.contains("sonnet") { return "sonnet" + bracketSuffix }
+        // Smartest picker — canonical Fable 5. Kept ahead of the opus/default branch
+        // because a fable id never contains "opus"/"default"; this just migrates any
+        // future pinned fable variant back to the canonical id.
+        if modelId.contains("fable") { return "claude-fable-5" + bracketSuffix }
         // Smart picker — canonical Opus 4.8. Migrates the legacy "default" alias and
         // prior-pinned Opus versions (e.g. claude-opus-4-5, claude-opus-4-7) to the current canonical id.
         if modelId.contains("opus") || modelId.contains("default") {
