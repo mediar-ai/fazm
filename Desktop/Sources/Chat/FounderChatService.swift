@@ -486,8 +486,8 @@ class FounderChatService: ObservableObject {
                 let timestampStr = (fields["created_at"] as? [String: Any])?["timestampValue"] as? String
 
                 let createdAt: Date
-                if let ts = timestampStr {
-                    createdAt = ISO8601DateFormatter().date(from: ts) ?? Date()
+                if let ts = timestampStr, let parsed = Self.parseFirestoreTimestamp(ts) {
+                    createdAt = parsed
                 } else {
                     createdAt = Date()
                 }
@@ -524,6 +524,37 @@ class FounderChatService: ObservableObject {
         } catch {
             log("FounderChatService: fetchMessages failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Timestamp Parsing
+
+    /// Parse a Firestore REST `timestampValue`. Firestore emits RFC3339 with up
+    /// to nine fractional-second digits (e.g. `2026-07-03T16:56:21.245000000Z`),
+    /// but `ISO8601DateFormatter` only parses stamps with zero or exactly three
+    /// fractional digits. Founder replies (written by the inbox pipeline with
+    /// `Timestamp.now()`) always carry sub-second precision, so the plain parser
+    /// returned nil and every founder bubble fell back to `Date()` — showing the
+    /// current time instead of when the message was actually sent. User messages
+    /// (written whole-second by the app) parsed fine, so only founder timestamps
+    /// looked wrong. Normalize the fraction to milliseconds, then parse.
+    static func parseFirestoreTimestamp(_ ts: String) -> Date? {
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        if let d = plain.date(from: ts) { return d } // whole-second stamps (user msgs)
+
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = withFraction.date(from: ts) { return d } // exactly-3-digit fraction
+
+        // Normalize >3 or <3 fractional digits to exactly 3, then retry.
+        if let dotRange = ts.range(of: #"\.\d+"#, options: .regularExpression) {
+            let digits = ts[ts.index(after: dotRange.lowerBound)..<dotRange.upperBound]
+            var frac = String(digits.prefix(3))
+            while frac.count < 3 { frac += "0" }
+            let normalized = ts.replacingCharacters(in: dotRange, with: "." + frac)
+            if let d = withFraction.date(from: normalized) { return d }
+        }
+        return nil
     }
 
     // MARK: - Unread Count
