@@ -9,7 +9,8 @@
     "Show a clear message when Gemini is unavailable in your region instead of a raw API error",
     "Stopped the screen observer from retrying Gemini every 5 minutes in regions where Gemini is geo-blocked",
     "Fixed proactive screen observer silently failing for heavy all-day users (oversized Gemini analysis requests now bounded to the intended ~60 min window so the buffer drains instead of looping on failure)",
-    "Added a delete button to Conversation History so you can remove old chats (hover a conversation and click the trash icon)"
+    "Added a delete button to Conversation History so you can remove old chats (hover a conversation and click the trash icon)",
+    "Fixed founder chat showing the wrong timestamp on the founder's replies (all replies displayed the same time)"
   ],
   "releases": [
     {
