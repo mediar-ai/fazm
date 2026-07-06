@@ -1997,9 +1997,27 @@ struct ModelToggleButton: View {
         return false
     }
 
+    /// Groups models into divided sections in the picker. Lower numbers render first;
+    /// a Divider is inserted whenever the section changes between two consecutive rows.
+    ///   0 = everyday Claude (Scary/Fast)   1 = premium Claude (Smart/Smartest, incl. Fable)
+    ///   2 = ChatGPT (Codex)                3 = Gemini
+    /// Splitting the premium tier out keeps the top models (Opus "Smart" + Fable
+    /// "Smartest") visibly grouped even when Codex/Gemini are off and Claude is the
+    /// only backend, so the menu still reads as "divided".
+    private func menuSection(_ id: String) -> Int {
+        if id.hasPrefix("gpt-") { return 2 }
+        if id.hasPrefix("gemini-") { return 3 }
+        if id.contains("opus") || id.contains("fable") { return 1 }
+        return 0
+    }
+
     var body: some View {
         Menu {
-            ForEach(shortcutSettings.availableModels) { model in
+            let models = shortcutSettings.availableModels
+            ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
+                if index > 0 && menuSection(model.id) != menuSection(models[index - 1].id) {
+                    Divider()
+                }
                 Button {
                     let needsCodexAuth = model.id.hasPrefix("gpt-") && codexBackend.authMode == "none"
                     if needsCodexAuth {
