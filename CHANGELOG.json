@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed the final answer sometimes being swallowed when quick-reply buttons were shown right after tool work"
+  ],
   "releases": [
     {
       "version": "2.9.73",
