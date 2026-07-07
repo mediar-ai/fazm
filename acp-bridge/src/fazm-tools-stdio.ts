@@ -449,7 +449,8 @@ This is the ONLY way to see what's on the user's desktop. Do NOT use playwright'
     name: "ask_followup",
     description: `Present a question with quick-reply buttons to the user. The UI renders clickable buttons.
 Use in Step 4 (follow-up question after file discoveries) and Step 5 (permission grant buttons).
-The user can click a button OR type their own reply. Wait for their response before continuing.`,
+The user can click a button OR type their own reply. Wait for their response before continuing.
+ORDERING: if your turn produced results the user needs to see (you ran tools, investigated, fixed something), write your final answer as normal message text BEFORE calling this tool. The question parameter is only a short follow-up prompt, never a substitute for your answer.`,
     inputSchema: {
       type: "object" as const,
       properties: {
