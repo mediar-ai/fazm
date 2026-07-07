@@ -879,7 +879,15 @@ class ChatToolExecutor {
             onQuickReplyOptions?(question, options)
         }
 
-        return "Buttons shown to user. Your turn is DONE. Do NOT generate any more text, tool calls, or content after this. The user will respond by clicking a button or typing."
+        // NOTE on wording: this used to be an unconditional "Your turn is DONE. Do
+        // NOT generate any more text". That caused a "swallowed answer" bug: when
+        // the model called ask_followup right after a run of other tools (before
+        // writing its summary of the results), the hard stop meant the final answer
+        // was never generated at all — the user saw only tool blocks and buttons.
+        // The result is now conditional: done if the answer is already in the
+        // message text, otherwise write the missing answer first (it renders above
+        // the buttons), then stop.
+        return "Buttons shown to user. If your final answer for this turn is already written as message text above, your turn is DONE — do not generate any more text or tool calls. BUT if you called this right after running other tools and have NOT yet reported the results to the user, write your final answer text NOW (it renders above the buttons), then stop. Never leave a turn with only tool calls and buttons. Do not repeat the question — it is already displayed. The user will respond by clicking a button or typing."
     }
 
 
