@@ -184,7 +184,7 @@ class ShortcutSettings: ObservableObject {
     /// so set_model receives an unambiguous model that matches what the bridge advertises.
     static let defaultModels: [ModelOption] = [
         ModelOption(id: "haiku", label: "Scary (Haiku, latest)", shortLabel: "Scary"),
-        ModelOption(id: "sonnet", label: "Fast (Sonnet, latest)", shortLabel: "Fast"),
+        ModelOption(id: "claude-sonnet-5", label: "Fast (Sonnet, latest)", shortLabel: "Fast"),
         ModelOption(id: "claude-opus-4-8", label: "Smart (Opus, latest)", shortLabel: "Smart"),
         ModelOption(id: "claude-fable-5", label: "Smartest (Fable, latest)", shortLabel: "Smartest"),
     ]
@@ -230,17 +230,21 @@ class ShortcutSettings: ObservableObject {
     ]
 
     /// Normalize a model ID so the bridge receives an unambiguous canonical id.
-    /// Haiku/Sonnet stay as short aliases (the SDK's substring resolver handles those
-    /// fine); Smart resolves to the canonical Opus 4.8 id because the legacy "default"
-    /// alias is no longer in the bridge's advertised model list and gets silently
-    /// resolved to whatever the SDK considers a fallback — not necessarily Opus.
+    /// Haiku stays a short alias (the SDK's substring resolver handles it fine);
+    /// Sonnet resolves to the canonical Sonnet 5 id because the bundled SDK's
+    /// "sonnet" alias still resolves to claude-sonnet-4-6; Smart resolves to the
+    /// canonical Opus 4.8 id because the legacy "default" alias is no longer in
+    /// the bridge's advertised model list and gets silently resolved to whatever
+    /// the SDK considers a fallback — not necessarily Opus.
     static func normalizeModelId(_ modelId: String) -> String {
         // Preserve bracket annotations like "[1m]" so context variants (e.g. sonnet[1m])
         // don't get collapsed into the plain alias.
         let bracketSuffix = modelId.range(of: #"\[[^\]]+\]"#, options: .regularExpression)
             .map { String(modelId[$0]) } ?? ""
         if modelId.contains("haiku") { return "haiku" + bracketSuffix }
-        if modelId.contains("sonnet") { return "sonnet" + bracketSuffix }
+        // Fast picker — canonical Sonnet 5. Migrates the legacy "sonnet" alias and
+        // prior-pinned Sonnet versions (e.g. claude-sonnet-4-6) to the current canonical id.
+        if modelId.contains("sonnet") { return "claude-sonnet-5" + bracketSuffix }
         // Smartest picker — canonical Fable 5. Kept ahead of the opus/default branch
         // because a fable id never contains "opus"/"default"; this just migrates any
         // future pinned fable variant back to the canonical id.
