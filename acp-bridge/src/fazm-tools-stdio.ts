@@ -557,7 +557,7 @@ The agent should turn natural-language ("every weekday morning at 9") into the r
         name: { type: "string" as const, description: "Short human-readable name, e.g. 'Morning email digest'" },
         prompt: { type: "string" as const, description: "The prompt to send the agent on each fire — phrase it as if the user typed it" },
         schedule: { type: "string" as const, description: "Schedule string: 'cron:<expr>' | 'every:<seconds>' | 'at:<ISO 8601>'" },
-        model: { type: "string" as const, description: "Optional model id (e.g. 'claude-sonnet-4-6'); omit for default" },
+        model: { type: "string" as const, description: "Optional model id (e.g. 'claude-sonnet-5'); omit for default" },
         workspace: { type: "string" as const, description: "Optional working directory for the run; omit for $HOME" },
         session_mode: { type: "string" as const, enum: ["new", "resume"], description: "'new' (default) or 'resume' to keep ACP session memory across runs" },
       },
