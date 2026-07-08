@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed the final answer sometimes being swallowed when quick-reply buttons were shown right after tool work"
+    "Fixed the final answer sometimes being swallowed when quick-reply buttons were shown right after tool work",
+    "Fixed source builds without a Firebase API key looping token refresh every 30 seconds and flooding error reporting"
   ],
   "releases": [
     {
