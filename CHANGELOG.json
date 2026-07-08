@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Fixed the final answer sometimes being swallowed when quick-reply buttons were shown right after tool work",
-    "Fixed source builds without a Firebase API key looping token refresh every 30 seconds and flooding error reporting"
+    "Fixed source builds without a Firebase API key looping token refresh every 30 seconds and flooding error reporting",
+    "Upgraded the Fast model to Claude Sonnet 5"
   ],
   "releases": [
     {
