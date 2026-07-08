@@ -3394,11 +3394,12 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
   }
 
   // Build the list of sessions to warm: new format (sessionConfigs) takes priority over legacy (models array)
-  const toWarm: WarmupSessionConfig[] = sessionConfigs && sessionConfigs.length > 0
+  const toWarm: WarmupSessionConfig[] = (sessionConfigs && sessionConfigs.length > 0
     ? sessionConfigs.filter((s) => !sessions.has(s.key))
     : (models && models.length > 0 ? models : [DEFAULT_MODEL, SONNET_MODEL])
         .filter((m) => !sessions.has(m))
-        .map((m) => ({ key: m, model: m }));
+        .map((m) => ({ key: m, model: m }))
+  ).map((s) => ({ ...s, model: canonicalizeClaudeModel(s.model) }));
 
   if (toWarm.length === 0) {
     logErr("All requested sessions already pre-warmed");
