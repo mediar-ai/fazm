@@ -3095,6 +3095,16 @@ const LATEST_OPUS_MODEL_ID = "claude-opus-4-8";
  * session/set_model, same pattern as opus-4-8). Keep in sync with
  * ShortcutSettings.normalizeModelId. */
 const LATEST_SONNET_MODEL_ID = "claude-sonnet-5";
+
+/** Pin any Sonnet alias or stale pinned id to the canonical latest Sonnet before it
+ * reaches session/set_model. The SDK's substring resolver maps the bare "sonnet"
+ * alias to claude-sonnet-4-6, so forwarding the alias silently downgrades. A
+ * "sonnet[1m]" variant is pinned too (dropping the 1M annotation is deliberate —
+ * see the 1M credit-gate note in emitModelsIfChanged). */
+function canonicalizeClaudeModel(model: string): string {
+  if (/^(sonnet($|\[)|claude-sonnet-4)/.test(model)) return LATEST_SONNET_MODEL_ID;
+  return model;
+}
 /** Canonical latest top-tier model (Fable 5 → the "Smartest" picker tier). The bundled
  * Claude SDK's curated catalog only surfaces default/sonnet/haiku, so Fable never appears
  * in the advertised list — but the connected account's live model catalog exposes it and it
@@ -3133,9 +3143,10 @@ function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: str
       // the latest so the picker option carries opus-4-8 (else selecting "Smart" silently
       // downgrades). Bump alongside ShortcutSettings on the next opus.
       let modelId = stripped === "claude-opus-4-7" ? LATEST_OPUS_MODEL_ID : stripped;
-      // Same for Sonnet: the stale catalog advertises claude-sonnet-4-x; bump to the
-      // latest so picking "Fast" doesn't silently downgrade.
-      if (/^claude-sonnet-4/.test(modelId)) modelId = LATEST_SONNET_MODEL_ID;
+      // Same for Sonnet: the catalog advertises the bare "sonnet" alias (which the
+      // SDK resolves to claude-sonnet-4-6); pin to the latest so picking "Fast"
+      // doesn't silently downgrade.
+      modelId = canonicalizeClaudeModel(modelId);
       return {
         ...m,
         modelId,
@@ -3730,8 +3741,11 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
     logErr(`Query mode: ${mode}`);
 
     // Compute session key early so we can decide whether to wait for pre-warm
-    const requestedModel = msg.model || DEFAULT_MODEL;
-    const sessionKey = msg.sessionKey ?? requestedModel;
+    const rawRequestedModel = msg.model || DEFAULT_MODEL;
+    const requestedModel = canonicalizeClaudeModel(rawRequestedModel);
+    // Keyed on the RAW model so legacy callers (no sessionKey) still hit the
+    // warmup sessions that were registered under the un-canonicalized string.
+    const sessionKey = msg.sessionKey ?? rawRequestedModel;
 
     // Wait for pre-warm only if the session we need is being warmed.
     // After OAuth restart, warmup runs in the background for main/floating/observer —
