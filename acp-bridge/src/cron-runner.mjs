@@ -218,7 +218,7 @@ function runBridge(job, timeoutSec) {
             cwd: job.workspace || homedir(),
             sessions: [{
               key: warmupKey,
-              model: job.model || "claude-sonnet-4-6",
+              model: job.model || "claude-sonnet-5",
               systemPrompt: undefined,
               resume: job.session_mode === "resume" ? (job.acp_session_id || undefined) : undefined,
             }],
@@ -233,7 +233,7 @@ function runBridge(job, timeoutSec) {
             sessionKey: warmupKey,
             cwd: job.workspace || homedir(),
             mode: "act",
-            model: job.model || "claude-sonnet-4-6",
+            model: job.model || "claude-sonnet-5",
           };
           proc.stdin.write(JSON.stringify(query) + "\n");
         } else if (msg.type === "result") {
