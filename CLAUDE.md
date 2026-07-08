@@ -151,7 +151,7 @@ When both builds are running, ALWAYS read the bundle-scoped output file (`-deskt
 | `getState` | Writes full state JSON to `/tmp/fazm-control-state.json` AND `/tmp/fazm-control-state-<scope>.json` (e.g. `-desktop-dev.json`). Read the scoped file when both builds are running. |
 | `newChat` | Starts a new chat session |
 | `popOut` | Pops conversation out to a detached window |
-| `setModel:<id>` | Sets AI model (e.g. `setModel:claude-sonnet-4-6` or `setModel:claude-opus-4-6`) |
+| `setModel:<id>` | Sets AI model (e.g. `setModel:claude-sonnet-5` or `setModel:claude-opus-4-8`) |
 | `toggleVoice` | Toggles voice response (TTS) on/off |
 | `setVoice:on` / `setVoice:off` | Explicitly sets voice response |
 | `setBrowserMode:extension` / `setBrowserMode:managed` / `setBrowserMode:off` | Sets browser automation mode. `extension` = user's real Chrome via Playwright extension; `managed` = Fazm's bundled browser-harness driving its own Chrome; `off` = no browser MCP registered (pair with `assrtEnabled` for an Assrt-only browsing surface). Auto-restarts the ACP bridge so `FAZM_BROWSER_MODE` takes effect on the next query. |
