@@ -3057,8 +3057,8 @@ async function flushChatObserverBatch(): Promise<void> {
 
 // --- Session pre-warming ---
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
-const SONNET_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
+const SONNET_MODEL = "claude-sonnet-5";
 
 // --- Dynamic model list from ACP SDK ---
 let lastEmittedModelsJson = "";
@@ -3090,6 +3090,11 @@ function isUserMcpServer(name: string): boolean {
 
 /** Canonical latest Opus id we ship. Must match ShortcutSettings.defaultModels / normalizeModelId. */
 const LATEST_OPUS_MODEL_ID = "claude-opus-4-8";
+/** Canonical latest Sonnet id. The bundled SDK's "sonnet" alias and advertised catalog
+ * still resolve to claude-sonnet-4-6, so we pin the explicit id (accepted via
+ * session/set_model, same pattern as opus-4-8). Keep in sync with
+ * ShortcutSettings.normalizeModelId. */
+const LATEST_SONNET_MODEL_ID = "claude-sonnet-5";
 /** Canonical latest top-tier model (Fable 5 → the "Smartest" picker tier). The bundled
  * Claude SDK's curated catalog only surfaces default/sonnet/haiku, so Fable never appears
  * in the advertised list — but the connected account's live model catalog exposes it and it
@@ -3127,7 +3132,10 @@ function emitModelsIfChanged(availableModels: Array<{ modelId: string; name: str
       // Legacy path: when the catalog DID expose a standalone claude-opus-4-7, bump it to
       // the latest so the picker option carries opus-4-8 (else selecting "Smart" silently
       // downgrades). Bump alongside ShortcutSettings on the next opus.
-      const modelId = stripped === "claude-opus-4-7" ? LATEST_OPUS_MODEL_ID : stripped;
+      let modelId = stripped === "claude-opus-4-7" ? LATEST_OPUS_MODEL_ID : stripped;
+      // Same for Sonnet: the stale catalog advertises claude-sonnet-4-x; bump to the
+      // latest so picking "Fast" doesn't silently downgrade.
+      if (/^claude-sonnet-4/.test(modelId)) modelId = LATEST_SONNET_MODEL_ID;
       return {
         ...m,
         modelId,
