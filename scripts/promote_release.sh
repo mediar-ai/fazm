@@ -12,6 +12,20 @@
 
 set -e
 
+# Ensure gcloud is on PATH regardless of the invoking shell's profile state.
+# ~/google-cloud-sdk/path.zsh.inc resolves its bin dir via zsh's `${0:A:h}`,
+# which only points at the SDK dir when $0 reflects the sourced file itself.
+# That doesn't hold in every invocation context (non-interactive shells,
+# Claude Code's bash tool, cron, CI), so `. path.zsh.inc` can silently no-op
+# and leave gcloud unresolved even though PATH setup "ran". Fall back to the
+# known install locations directly so this script never depends on shell
+# profile quirks.
+for gcloud_dir in "$HOME/google-cloud-sdk/bin" /usr/local/google-cloud-sdk/bin /opt/homebrew/share/google-cloud-sdk/bin; do
+    if [ -d "$gcloud_dir" ] && [[ ":$PATH:" != *":$gcloud_dir:"* ]]; then
+        export PATH="$gcloud_dir:$PATH"
+    fi
+done
+
 # Load .env if available
 if [ -f ".env" ]; then
     set -a
