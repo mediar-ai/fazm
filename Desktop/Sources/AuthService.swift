@@ -1031,6 +1031,16 @@ class AuthService: NSObject {
                 signOut()
                 throw AuthError.tokenRefreshFailed("revoked")
             }
+            if statusCode == 403 {
+                // Misconfigured build (e.g. source build without FIREBASE_API_KEY):
+                // Google Secure Token rejects with "unregistered callers". Retrying
+                // can never succeed, so stop the background timer instead of looping
+                // every 30s and flooding Sentry (FAZM-170). Local log only.
+                log("AuthService: token refresh rejected with 403 (missing/invalid API key); stopping refresh timer")
+                tokenRefreshTimer?.invalidate()
+                tokenRefreshTimer = nil
+                throw AuthError.tokenRefreshFailed("misconfigured_api_key")
+            }
             logError("AuthService: Token refresh failed (status \(statusCode)): \(responseBody)")
             throw AuthError.tokenRefreshFailed("Status \(statusCode)")
         }
