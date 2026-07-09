@@ -73,9 +73,7 @@ class AnalyticsManager {
             Task { @MainActor [weak self] in
                 guard let self = self, let start = self.sessionStartTime else { return }
                 let sessionMinutes = Int(Date().timeIntervalSince(start) / 60)
-                PostHogManager.shared.track("session_heartbeat", properties: [
-                    "session_duration_minutes": sessionMinutes
-                ])
+                PostHogManager.shared.trackSessionHeartbeat(durationMinutes: sessionMinutes)
             }
         }
     }
