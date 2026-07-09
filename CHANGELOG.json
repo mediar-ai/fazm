@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Reduced rare UI hangs caused by analytics session heartbeats"
+    "Reduced rare UI hangs caused by analytics session heartbeats",
+    "Fixed Conversation History freezing with large chat histories by loading older conversations incrementally"
   ],
   "releases": [
     {
