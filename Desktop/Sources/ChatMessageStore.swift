@@ -1,6 +1,12 @@
 import Foundation
 import GRDB
 
+extension Notification.Name {
+    /// Posted after persisted chat history changes, so conversation-history views
+    /// can refresh on demand instead of polling the database.
+    static let chatMessagesDidChange = Notification.Name("chatMessagesDidChange")
+}
+
 /// Generic persistence layer for chat messages stored in the local SQLite database.
 /// Uses the `chat_messages` table (renamed from `task_chat_messages` in V3 migration).
 enum ChatMessageStore {
@@ -24,14 +30,23 @@ enum ChatMessageStore {
             try await dbQueue.write { db in
                 try db.execute(
                     sql: """
-                        INSERT OR REPLACE INTO chat_messages
+                        INSERT INTO chat_messages
                         (taskId, messageId, sender, messageText, createdAt, updatedAt, backendSynced, session_id)
                         VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                        ON CONFLICT(messageId) DO UPDATE SET
+                            taskId = excluded.taskId,
+                            sender = excluded.sender,
+                            messageText = excluded.messageText,
+                            createdAt = excluded.createdAt,
+                            updatedAt = excluded.updatedAt,
+                            backendSynced = excluded.backendSynced,
+                            session_id = excluded.session_id
                     """,
                     arguments: [context, message.id, sender, storedText, message.createdAt, now, sessionId]
                 )
             }
             await AppDatabase.shared.reportQuerySuccess()
+            postHistoryDidChange(context: context)
         } catch {
             logError("ChatMessageStore: Failed to save message", error: error)
             await AppDatabase.shared.reportQueryError(error)
@@ -40,14 +55,21 @@ enum ChatMessageStore {
 
     static func updateMessage(id: String, text: String) async {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
+        var context: String?
         do {
             try await dbQueue.write { db in
+                context = try String.fetchOne(
+                    db,
+                    sql: "SELECT taskId FROM chat_messages WHERE messageId = ?",
+                    arguments: [id]
+                )
                 try db.execute(
                     sql: "UPDATE chat_messages SET messageText = ?, updatedAt = ? WHERE messageId = ?",
                     arguments: [text, Date(), id]
                 )
             }
             await AppDatabase.shared.reportQuerySuccess()
+            postHistoryDidChange(context: context)
         } catch {
             logError("ChatMessageStore: Failed to update message", error: error)
             await AppDatabase.shared.reportQueryError(error)
@@ -178,8 +200,13 @@ enum ChatMessageStore {
                     sql: "DELETE FROM chat_messages WHERE taskId = ?",
                     arguments: [context]
                 )
+                try db.execute(
+                    sql: "DELETE FROM conversation_summaries WHERE taskId = ?",
+                    arguments: [context]
+                )
             }
             await AppDatabase.shared.reportQuerySuccess()
+            postHistoryDidChange(context: context)
         } catch {
             logError("ChatMessageStore: Failed to clear messages", error: error)
             await AppDatabase.shared.reportQueryError(error)
@@ -197,11 +224,62 @@ enum ChatMessageStore {
                     sql: "DELETE FROM chat_messages WHERE taskId = ? AND createdAt >= ?",
                     arguments: [context, cutoff]
                 )
+                try rebuildConversationSummary(in: db, context: context)
             }
             await AppDatabase.shared.reportQuerySuccess()
+            postHistoryDidChange(context: context)
         } catch {
             logError("ChatMessageStore: Failed to delete messages from timestamp", error: error)
             await AppDatabase.shared.reportQueryError(error)
+        }
+    }
+
+    private static func rebuildConversationSummary(in db: Database, context: String) throws {
+        try db.execute(
+            sql: "DELETE FROM conversation_summaries WHERE taskId = ?",
+            arguments: [context]
+        )
+        try db.execute(sql: """
+            INSERT INTO conversation_summaries
+                (taskId, firstUserMessage, firstUserCreatedAt, lastMessageDate, messageCount, acpSessionId, updatedAt)
+            SELECT
+                cm.taskId,
+                COALESCE(
+                    (SELECT SUBSTR(sub.messageText, 1, 300)
+                     FROM chat_messages sub
+                     WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                     ORDER BY sub.createdAt ASC LIMIT 1),
+                    'New conversation'
+                ) AS firstUserMessage,
+                (SELECT sub.createdAt
+                 FROM chat_messages sub
+                 WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                 ORDER BY sub.createdAt ASC LIMIT 1) AS firstUserCreatedAt,
+                MAX(cm.createdAt) AS lastMessageDate,
+                COUNT(*) AS messageCount,
+                (SELECT sub2.session_id
+                 FROM chat_messages sub2
+                 WHERE sub2.taskId = cm.taskId AND sub2.session_id IS NOT NULL AND sub2.session_id != ''
+                 ORDER BY sub2.createdAt DESC LIMIT 1) AS acpSessionId,
+                MAX(cm.updatedAt) AS updatedAt
+            FROM chat_messages cm
+            WHERE cm.taskId = ?
+            GROUP BY cm.taskId
+        """, arguments: [context])
+    }
+
+    private static func postHistoryDidChange(context: String?) {
+        guard context != "__onboarding__" else { return }
+        DispatchQueue.main.async {
+            var userInfo: [String: Any]? = nil
+            if let context {
+                userInfo = ["context": context]
+            }
+            NotificationCenter.default.post(
+                name: .chatMessagesDidChange,
+                object: nil,
+                userInfo: userInfo
+            )
         }
     }
 }
