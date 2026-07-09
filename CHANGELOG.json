@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Reduced rare UI hangs caused by analytics session heartbeats"
+  ],
   "releases": [
     {
       "version": "2.9.74",
