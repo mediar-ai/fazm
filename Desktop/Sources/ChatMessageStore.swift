@@ -55,10 +55,9 @@ enum ChatMessageStore {
 
     static func updateMessage(id: String, text: String) async {
         guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
-        var context: String?
         do {
-            try await dbQueue.write { db in
-                context = try String.fetchOne(
+            let context = try await dbQueue.write { db -> String? in
+                let messageContext = try String.fetchOne(
                     db,
                     sql: "SELECT taskId FROM chat_messages WHERE messageId = ?",
                     arguments: [id]
@@ -67,6 +66,7 @@ enum ChatMessageStore {
                     sql: "UPDATE chat_messages SET messageText = ?, updatedAt = ? WHERE messageId = ?",
                     arguments: [text, Date(), id]
                 )
+                return messageContext
             }
             await AppDatabase.shared.reportQuerySuccess()
             postHistoryDidChange(context: context)
