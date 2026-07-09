@@ -14,6 +14,7 @@ class PostHogManager {
     }
 
     private var isInitialized = false
+    private static let heartbeatCaptureQueue = DispatchQueue(label: "com.fazm.posthog.heartbeat", qos: .utility)
 
     // PostHog configuration
     private let apiKey = "phc_TWwTa7D5GcjE4PprY55tJVfPKBC7kmLGiFUDZxBbYRQ"
@@ -154,6 +155,21 @@ class PostHogManager {
         guard isInitialized else { return }
         PostHogSDK.shared.capture(eventName, properties: properties)
         log("PostHog: Tracked event '\(eventName)'")
+    }
+
+    /// Track the periodic session heartbeat away from the main actor.
+    ///
+    /// PostHog's capture path synchronously reads disk-backed group and super-property
+    /// storage before enqueueing an event. The heartbeat runs every minute, so keep that
+    /// low-value recurring IO off the UI thread.
+    func trackSessionHeartbeat(durationMinutes: Int) {
+        guard isInitialized else { return }
+        Self.heartbeatCaptureQueue.async {
+            PostHogSDK.shared.capture("session_heartbeat", properties: [
+                "session_duration_minutes": durationMinutes
+            ])
+            log("PostHog: Tracked event 'session_heartbeat' on background queue")
+        }
     }
 
     // MARK: - Screen Tracking
