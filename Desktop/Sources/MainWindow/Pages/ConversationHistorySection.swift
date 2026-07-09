@@ -387,6 +387,7 @@ struct ConversationHistorySection: View {
 
         loadGeneration += 1
         let generation = loadGeneration
+        let pageSize = Self.pageSize
 
         Task {
             guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
@@ -402,7 +403,7 @@ struct ConversationHistorySection: View {
 
             do {
                 let page = try await dbQueue.read { db -> ConversationSummaryPage in
-                    let requestLimit = Self.pageSize + 1
+                    let requestLimit = pageSize + 1
                     let rows = try Row.fetchAll(db, sql: """
                         SELECT
                             taskId,
@@ -415,8 +416,8 @@ struct ConversationHistorySection: View {
                         LIMIT ? OFFSET ?
                     """, arguments: [requestLimit, offset])
 
-                    let hasMore = rows.count > Self.pageSize
-                    let visibleRows = rows.prefix(Self.pageSize)
+                    let hasMore = rows.count > pageSize
+                    let visibleRows = rows.prefix(pageSize)
 
                     let summaries = visibleRows.compactMap { row -> ConversationSummary? in
                         guard let taskId = row["taskId"] as String?,
