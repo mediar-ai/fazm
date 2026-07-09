@@ -10,9 +10,23 @@ struct ConversationSummary: Identifiable, Equatable {
     let acpSessionId: String? // ACP session ID for resuming
 }
 
+private struct ConversationSummaryPage {
+    let conversations: [ConversationSummary]
+    let hasMore: Bool
+}
+
+private enum ConversationLoadMode {
+    case initial
+    case refresh
+    case more
+}
+
 /// Conversation History tab: scrollable list of past conversations with a
 /// "New Chat Window" button and a live count of currently open chat windows.
 struct ConversationHistorySection: View {
+    private static let pageSize = 50
+    private static let minimumRefreshInterval: TimeInterval = 2
+
     var chatProvider: ChatProvider? = nil
     var appState: AppState? = nil
 
@@ -20,6 +34,11 @@ struct ConversationHistorySection: View {
 
     @State private var conversations: [ConversationSummary] = []
     @State private var isLoading = true
+    @State private var isRefreshing = false
+    @State private var isLoadingMore = false
+    @State private var hasMoreConversations = false
+    @State private var loadGeneration = 0
+    @State private var lastHistoryRefreshAt = Date.distantPast
     @State private var loadingConversationId: String? = nil
     @State private var pendingDelete: ConversationSummary? = nil
 
@@ -30,11 +49,6 @@ struct ConversationHistorySection: View {
 
     // Onboarding skipped state
     @AppStorage("onboardingWasSkipped") private var onboardingWasSkipped = false
-
-    // @State so the timer publisher initializes exactly once across the view's lifetime.
-    // A `let` stored property is recreated on every parent invalidation, which produces
-    // overlapping autoconnect subscriptions and storms the list with refreshes.
-    @State private var refreshTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -109,16 +123,22 @@ struct ConversationHistorySection: View {
                                 openConversation(conversation)
                             }
                         }
+                        if hasMoreConversations {
+                            loadMoreFooter
+                                .onAppear { loadMoreConversations() }
+                        }
                     }
                 }
             }
         }
         .onAppear {
-            loadConversations()
+            loadConversations(mode: conversations.isEmpty ? .initial : .refresh)
             // Sync the badge in case windows were opened/closed while this view was off-screen.
             openWindowCount = DetachedChatWindowController.shared.openWindowCount
         }
-        .onReceive(refreshTimer) { _ in loadConversations() }
+        .onReceive(NotificationCenter.default.publisher(for: .chatMessagesDidChange)) { _ in
+            refreshFromHistoryChange()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .detachedChatWindowsDidChange)) { _ in
             openWindowCount = DetachedChatWindowController.shared.openWindowCount
         }
@@ -134,6 +154,34 @@ struct ConversationHistorySection: View {
         } message: {
             Text("This permanently removes the conversation and its messages. This can't be undone.")
         }
+    }
+
+    private var loadMoreFooter: some View {
+        HStack {
+            Spacer()
+            if isLoadingMore {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading older conversations")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+                }
+            } else {
+                Button(action: loadMoreConversations) {
+                    Text("Load older conversations")
+                        .scaledFont(size: 12, weight: .medium)
+                        .foregroundColor(FazmColors.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(FazmColors.backgroundTertiary.opacity(0.6))
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 10)
     }
 
     // MARK: - Complete Setup Banner
@@ -297,60 +345,71 @@ struct ConversationHistorySection: View {
     private func deleteConversation(_ conversation: ConversationSummary) {
         // Optimistically remove from the visible list.
         conversations.removeAll { $0.id == conversation.id }
+        hasMoreConversations = hasMoreConversations || conversations.count >= Self.pageSize
 
         Task {
             await ChatMessageStore.clearMessages(context: conversation.id)
             // Reload to reconcile with the DB (also fixes the list if the delete
             // failed and the row should reappear).
-            loadConversations()
+            loadConversations(mode: .refresh)
         }
     }
 
     // MARK: - Data Loading
 
-    private func loadConversations() {
+    private func refreshFromHistoryChange() {
+        let now = Date()
+        guard now.timeIntervalSince(lastHistoryRefreshAt) >= Self.minimumRefreshInterval else { return }
+        lastHistoryRefreshAt = now
+        loadConversations(mode: conversations.isEmpty ? .initial : .refresh)
+    }
+
+    private func loadMoreConversations() {
+        guard hasMoreConversations, !isLoading, !isRefreshing, !isLoadingMore else { return }
+        loadConversations(mode: .more)
+    }
+
+    private func loadConversations(mode: ConversationLoadMode) {
+        guard !isRefreshing, !isLoadingMore else { return }
+
+        let offset: Int
+        switch mode {
+        case .initial:
+            offset = 0
+            isLoading = conversations.isEmpty
+        case .refresh:
+            offset = 0
+            isRefreshing = true
+        case .more:
+            offset = conversations.count
+            isLoadingMore = true
+        }
+
+        loadGeneration += 1
+        let generation = loadGeneration
+
         Task {
             guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
 
             do {
-                let results = try await dbQueue.read { db -> [ConversationSummary] in
-                    // PERF FIX 2026-05-28: SUBSTR truncates `firstUserMessage`
-                    // in SQLite to ~300 chars. Users paste entire conversations
-                    // (40 KB+) into their prompts; without this truncation,
-                    // SwiftUI's `Text` in the ConversationRow MEASURES the full
-                    // string before `.lineLimit(2)` truncates the display, and
-                    // doing that across 90+ conversation rows pegged the main
-                    // thread continuously in `ResolvedStyledText.modifyTransition`.
-                    // Confirmed by bisect: removing all chat_messages > 1KB
-                    // dropped the storm to 0 samples.
+                let page = try await dbQueue.read { db -> ConversationSummaryPage in
+                    let requestLimit = Self.pageSize + 1
                     let rows = try Row.fetchAll(db, sql: """
                         SELECT
-                            cm.taskId,
-                            (SELECT SUBSTR(sub.messageText, 1, 300) FROM chat_messages sub
-                             WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
-                             ORDER BY sub.createdAt ASC LIMIT 1) as firstUserMessage,
-                            MAX(cm.createdAt) as lastMessageDate,
-                            COUNT(*) as messageCount,
-                            (SELECT sub2.session_id FROM chat_messages sub2
-                             WHERE sub2.taskId = cm.taskId AND sub2.session_id IS NOT NULL AND sub2.session_id != ''
-                             ORDER BY sub2.createdAt DESC LIMIT 1) as acpSessionId
-                        FROM chat_messages cm
-                        WHERE cm.taskId NOT IN ('__onboarding__')
-                        GROUP BY cm.taskId
-                        HAVING messageCount > 0
-                        ORDER BY lastMessageDate DESC
-                        LIMIT 500
-                    """)
-                    // 2026-06-15: bumped from LIMIT 20 -> 500. The 20 cap (added
-                    // 2026-05-28 alongside the SUBSTR perf fix) silently hid older
-                    // conversations from power users with no search/pagination to
-                    // reach them (reported by Farid Mammadov). The actual perf
-                    // storm was string LENGTH (40KB pasted prompts), already fixed
-                    // by SUBSTR(...,1,300); row count is cheap because the list is
-                    // a LazyVStack that only renders visible rows. 500 keeps a sane
-                    // upper bound until proper search/pagination lands.
+                            taskId,
+                            firstUserMessage,
+                            lastMessageDate,
+                            messageCount,
+                            acpSessionId
+                        FROM conversation_summaries
+                        ORDER BY lastMessageDate DESC, taskId DESC
+                        LIMIT ? OFFSET ?
+                    """, arguments: [requestLimit, offset])
 
-                    return rows.compactMap { row -> ConversationSummary? in
+                    let hasMore = rows.count > Self.pageSize
+                    let visibleRows = rows.prefix(Self.pageSize)
+
+                    let summaries = visibleRows.compactMap { row -> ConversationSummary? in
                         guard let taskId = row["taskId"] as String?,
                               let lastDate = row["lastMessageDate"] as Date? else { return nil }
 
@@ -366,24 +425,50 @@ struct ConversationHistorySection: View {
                             acpSessionId: sessionId
                         )
                     }
+
+                    return ConversationSummaryPage(conversations: summaries, hasMore: hasMore)
                 }
 
                 await AppDatabase.shared.reportQuerySuccess()
                 await MainActor.run {
-                    // Only reassign if contents differ. Otherwise the array gets a fresh
-                    // identity every 10s and ForEach re-diffs the entire list, churning
-                    // row closures and LazyVStack placements.
-                    if conversations != results {
-                        conversations = results
+                    guard generation == loadGeneration else { return }
+
+                    switch mode {
+                    case .initial:
+                        conversations = page.conversations
+                        hasMoreConversations = page.hasMore
+                    case .refresh:
+                        let refreshedIds = Set(page.conversations.map(\.id))
+                        let olderLoadedPages = conversations.count > Self.pageSize
+                        let retained = conversations.filter { !refreshedIds.contains($0.id) }
+                        let refreshed = page.conversations + retained
+                        if conversations != refreshed {
+                            conversations = refreshed
+                        }
+                        hasMoreConversations = olderLoadedPages ? hasMoreConversations : page.hasMore
+                    case .more:
+                        let existingIds = Set(conversations.map(\.id))
+                        let newConversations = page.conversations.filter { !existingIds.contains($0.id) }
+                        conversations.append(contentsOf: newConversations)
+                        hasMoreConversations = page.hasMore
                     }
+
                     if isLoading {
                         isLoading = false
                     }
+                    isRefreshing = false
+                    isLoadingMore = false
                 }
             } catch {
                 logError("ConversationHistorySection: Failed to load conversations", error: error)
                 await AppDatabase.shared.reportQueryError(error)
-                await MainActor.run { isLoading = false }
+                await MainActor.run {
+                    if generation == loadGeneration {
+                        isLoading = false
+                        isRefreshing = false
+                        isLoadingMore = false
+                    }
+                }
             }
         }
     }
