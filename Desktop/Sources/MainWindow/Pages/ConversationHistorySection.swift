@@ -389,7 +389,16 @@ struct ConversationHistorySection: View {
         let generation = loadGeneration
 
         Task {
-            guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
+            guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else {
+                await MainActor.run {
+                    if generation == loadGeneration {
+                        isLoading = false
+                        isRefreshing = false
+                        isLoadingMore = false
+                    }
+                }
+                return
+            }
 
             do {
                 let page = try await dbQueue.read { db -> ConversationSummaryPage in
