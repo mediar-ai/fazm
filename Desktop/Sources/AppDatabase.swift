@@ -1090,6 +1090,174 @@ actor AppDatabase {
                           on: "cron_runs", columns: ["job_id", "started_at"])
         }
 
+        // V8: Materialized conversation summaries for the main-window history page.
+        // The page reads one compact row per conversation instead of grouping the
+        // entire chat_messages table every time the settings window appears.
+        migrator.registerMigration("fazmV8") { db in
+            try db.create(table: "conversation_summaries") { t in
+                t.column("taskId", .text).primaryKey()
+                t.column("firstUserMessage", .text).notNull()
+                t.column("firstUserCreatedAt", .datetime)
+                t.column("lastMessageDate", .datetime).notNull()
+                t.column("messageCount", .integer).notNull()
+                t.column("acpSessionId", .text)
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.execute(sql: """
+                CREATE INDEX idx_conversation_summaries_last
+                ON conversation_summaries(lastMessageDate DESC, taskId DESC)
+            """)
+            try db.execute(sql: """
+                CREATE INDEX idx_chat_messages_task_created
+                ON chat_messages(taskId, createdAt)
+            """)
+            try db.execute(sql: """
+                CREATE INDEX idx_chat_messages_task_sender_created
+                ON chat_messages(taskId, sender, createdAt)
+            """)
+            try db.execute(sql: """
+                CREATE INDEX idx_chat_messages_task_session_created
+                ON chat_messages(taskId, session_id, createdAt)
+            """)
+
+            try db.execute(sql: """
+                INSERT INTO conversation_summaries
+                    (taskId, firstUserMessage, firstUserCreatedAt, lastMessageDate, messageCount, acpSessionId, updatedAt)
+                SELECT
+                    cm.taskId,
+                    COALESCE(
+                        (SELECT SUBSTR(sub.messageText, 1, 300)
+                         FROM chat_messages sub
+                         WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                         ORDER BY sub.createdAt ASC LIMIT 1),
+                        'New conversation'
+                    ) AS firstUserMessage,
+                    (SELECT sub.createdAt
+                     FROM chat_messages sub
+                     WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                     ORDER BY sub.createdAt ASC LIMIT 1) AS firstUserCreatedAt,
+                    MAX(cm.createdAt) AS lastMessageDate,
+                    COUNT(*) AS messageCount,
+                    (SELECT sub2.session_id
+                     FROM chat_messages sub2
+                     WHERE sub2.taskId = cm.taskId AND sub2.session_id IS NOT NULL AND sub2.session_id != ''
+                     ORDER BY sub2.createdAt DESC LIMIT 1) AS acpSessionId,
+                    MAX(cm.updatedAt) AS updatedAt
+                FROM chat_messages cm
+                WHERE cm.taskId != '__onboarding__'
+                GROUP BY cm.taskId
+            """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER conversation_summaries_insert
+                AFTER INSERT ON chat_messages
+                WHEN new.taskId != '__onboarding__'
+                BEGIN
+                    INSERT INTO conversation_summaries
+                        (taskId, firstUserMessage, firstUserCreatedAt, lastMessageDate, messageCount, acpSessionId, updatedAt)
+                    VALUES (
+                        new.taskId,
+                        CASE WHEN new.sender = 'user' THEN SUBSTR(new.messageText, 1, 300) ELSE 'New conversation' END,
+                        CASE WHEN new.sender = 'user' THEN new.createdAt ELSE NULL END,
+                        new.createdAt,
+                        1,
+                        CASE WHEN new.session_id IS NOT NULL AND new.session_id != '' THEN new.session_id ELSE NULL END,
+                        new.updatedAt
+                    )
+                    ON CONFLICT(taskId) DO UPDATE SET
+                        firstUserMessage = CASE
+                            WHEN new.sender = 'user'
+                             AND (conversation_summaries.firstUserCreatedAt IS NULL
+                                  OR new.createdAt < conversation_summaries.firstUserCreatedAt)
+                            THEN SUBSTR(new.messageText, 1, 300)
+                            ELSE conversation_summaries.firstUserMessage
+                        END,
+                        firstUserCreatedAt = CASE
+                            WHEN new.sender = 'user'
+                             AND (conversation_summaries.firstUserCreatedAt IS NULL
+                                  OR new.createdAt < conversation_summaries.firstUserCreatedAt)
+                            THEN new.createdAt
+                            ELSE conversation_summaries.firstUserCreatedAt
+                        END,
+                        lastMessageDate = CASE
+                            WHEN new.createdAt > conversation_summaries.lastMessageDate
+                            THEN new.createdAt
+                            ELSE conversation_summaries.lastMessageDate
+                        END,
+                        messageCount = conversation_summaries.messageCount + 1,
+                        acpSessionId = CASE
+                            WHEN new.session_id IS NOT NULL
+                             AND new.session_id != ''
+                             AND new.createdAt >= conversation_summaries.lastMessageDate
+                            THEN new.session_id
+                            ELSE conversation_summaries.acpSessionId
+                        END,
+                        updatedAt = new.updatedAt;
+                END
+            """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER conversation_summaries_update
+                AFTER UPDATE OF taskId, sender, messageText, createdAt, updatedAt, session_id ON chat_messages
+                BEGIN
+                    DELETE FROM conversation_summaries WHERE taskId IN (old.taskId, new.taskId);
+
+                    INSERT OR REPLACE INTO conversation_summaries
+                        (taskId, firstUserMessage, firstUserCreatedAt, lastMessageDate, messageCount, acpSessionId, updatedAt)
+                    SELECT
+                        cm.taskId,
+                        COALESCE(
+                            (SELECT SUBSTR(sub.messageText, 1, 300)
+                             FROM chat_messages sub
+                             WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                             ORDER BY sub.createdAt ASC LIMIT 1),
+                            'New conversation'
+                        ) AS firstUserMessage,
+                        (SELECT sub.createdAt
+                         FROM chat_messages sub
+                         WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                         ORDER BY sub.createdAt ASC LIMIT 1) AS firstUserCreatedAt,
+                        MAX(cm.createdAt) AS lastMessageDate,
+                        COUNT(*) AS messageCount,
+                        (SELECT sub2.session_id
+                         FROM chat_messages sub2
+                         WHERE sub2.taskId = cm.taskId AND sub2.session_id IS NOT NULL AND sub2.session_id != ''
+                         ORDER BY sub2.createdAt DESC LIMIT 1) AS acpSessionId,
+                        MAX(cm.updatedAt) AS updatedAt
+                    FROM chat_messages cm
+                    WHERE cm.taskId = old.taskId AND cm.taskId != '__onboarding__'
+                    GROUP BY cm.taskId;
+
+                    INSERT OR REPLACE INTO conversation_summaries
+                        (taskId, firstUserMessage, firstUserCreatedAt, lastMessageDate, messageCount, acpSessionId, updatedAt)
+                    SELECT
+                        cm.taskId,
+                        COALESCE(
+                            (SELECT SUBSTR(sub.messageText, 1, 300)
+                             FROM chat_messages sub
+                             WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                             ORDER BY sub.createdAt ASC LIMIT 1),
+                            'New conversation'
+                        ) AS firstUserMessage,
+                        (SELECT sub.createdAt
+                         FROM chat_messages sub
+                         WHERE sub.taskId = cm.taskId AND sub.sender = 'user'
+                         ORDER BY sub.createdAt ASC LIMIT 1) AS firstUserCreatedAt,
+                        MAX(cm.createdAt) AS lastMessageDate,
+                        COUNT(*) AS messageCount,
+                        (SELECT sub2.session_id
+                         FROM chat_messages sub2
+                         WHERE sub2.taskId = cm.taskId AND sub2.session_id IS NOT NULL AND sub2.session_id != ''
+                         ORDER BY sub2.createdAt DESC LIMIT 1) AS acpSessionId,
+                        MAX(cm.updatedAt) AS updatedAt
+                    FROM chat_messages cm
+                    WHERE cm.taskId = new.taskId AND cm.taskId != '__onboarding__'
+                    GROUP BY cm.taskId;
+                END
+            """)
+        }
+
         try migrator.migrate(queue)
     }
 
