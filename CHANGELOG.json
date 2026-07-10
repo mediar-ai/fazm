@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "Reduced rare UI hangs caused by analytics session heartbeats",
-    "Fixed Conversation History freezing with large chat histories by loading older conversations incrementally"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.75",
+      "date": "2026-07-10",
+      "changes": [
+        "Reduced rare UI hangs caused by analytics session heartbeats",
+        "Fixed Conversation History freezing with large chat histories by loading older conversations incrementally"
+      ]
+    },
     {
       "version": "2.9.74",
       "date": "2026-07-08",
