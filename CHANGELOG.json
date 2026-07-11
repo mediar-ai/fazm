@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "Added a Keychain-backed API key field for Custom API Endpoint gateways that require bearer authentication",
-    "Fixed Conversation History still loading every older conversation when the main window measured the history list"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.76",
+      "date": "2026-07-11",
+      "changes": [
+        "Added a Keychain-backed API key field for Custom API Endpoint gateways that require bearer authentication",
+        "Fixed Conversation History still loading every older conversation when the main window measured the history list"
+      ]
+    },
     {
       "version": "2.9.75",
       "date": "2026-07-10",
