@@ -24,7 +24,7 @@ private enum ConversationLoadMode {
 /// Conversation History tab: scrollable list of past conversations with a
 /// "New Chat Window" button and a live count of currently open chat windows.
 struct ConversationHistorySection: View {
-    private static let pageSize = 50
+    private static let pageSize = 25
     private static let minimumRefreshInterval: TimeInterval = 2
 
     var chatProvider: ChatProvider? = nil
@@ -110,23 +110,20 @@ struct ConversationHistorySection: View {
             } else if conversations.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(conversations, id: \.id) { conversation in
-                            ConversationRow(
-                                conversation: conversation,
-                                isLoading: loadingConversationId == conversation.id,
-                                onDelete: { pendingDelete = conversation }
-                            )
-                            .onTapGesture {
-                                guard loadingConversationId == nil else { return }
-                                openConversation(conversation)
-                            }
+                LazyVStack(spacing: 8) {
+                    ForEach(conversations, id: \.id) { conversation in
+                        ConversationRow(
+                            conversation: conversation,
+                            isLoading: loadingConversationId == conversation.id,
+                            onDelete: { pendingDelete = conversation }
+                        )
+                        .onTapGesture {
+                            guard loadingConversationId == nil else { return }
+                            openConversation(conversation)
                         }
-                        if hasMoreConversations {
-                            loadMoreFooter
-                                .onAppear { loadMoreConversations() }
-                        }
+                    }
+                    if hasMoreConversations {
+                        loadMoreFooter
                     }
                 }
             }
