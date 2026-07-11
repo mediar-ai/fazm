@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Added a Keychain-backed API key field for Custom API Endpoint gateways that require bearer authentication"
+  ],
   "releases": [
     {
       "version": "2.9.75",
