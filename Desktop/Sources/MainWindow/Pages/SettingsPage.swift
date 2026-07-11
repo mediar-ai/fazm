@@ -918,6 +918,9 @@ struct SettingsContentView: View {
     @AppStorage("bridgeMode") private var bridgeMode: String = "builtin"
     @AppStorage("customApiEndpoint") private var customApiEndpoint: String = ""
     @State private var showCustomEndpoint: Bool = false
+    @State private var customApiEndpointAPIKey: String = ""
+    @State private var customApiEndpointAPIKeySaved: Bool = false
+    @State private var customApiEndpointAPIKeyDirty: Bool = false
 
     private var aiChatAccountStatusText: String {
         if ACPBridge.validCustomAPIEndpoint(customApiEndpoint) != nil {
@@ -1052,6 +1055,7 @@ struct SettingsContentView: View {
                                 showCustomEndpoint = newValue
                                 if !newValue {
                                     customApiEndpoint = ""
+                                    clearCustomEndpointAPIKey(restartBridge: false)
                                     Task { await chatProvider?.restartBridgeForEndpointChange() }
                                 }
                             }
@@ -1068,6 +1072,54 @@ struct SettingsContentView: View {
                             .onSubmit {
                                 Task { await chatProvider?.restartBridgeForEndpointChange() }
                             }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            SecureField("Optional API key or bearer token", text: Binding(
+                                get: { customApiEndpointAPIKey },
+                                set: { newValue in
+                                    customApiEndpointAPIKey = newValue
+                                    customApiEndpointAPIKeyDirty = true
+                                }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            .scaledFont(size: 13)
+                            .onSubmit {
+                                saveCustomEndpointAPIKey()
+                            }
+
+                            HStack(spacing: 8) {
+                                Image(systemName: customApiEndpointAPIKeySaved ? "key.fill" : "key")
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(customApiEndpointAPIKeySaved ? .green : FazmColors.textTertiary)
+
+                                Text(customApiEndpointAPIKeySaved ? "Stored in Keychain" : "Leave empty for local gateways that accept any key")
+                                    .scaledFont(size: 11)
+                                    .foregroundColor(FazmColors.textTertiary)
+
+                                Spacer()
+
+                                Button(action: {
+                                    saveCustomEndpointAPIKey()
+                                }) {
+                                    Label("Apply", systemImage: "checkmark")
+                                        .scaledFont(size: 12)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(!customApiEndpointAPIKeyDirty)
+
+                                if customApiEndpointAPIKeySaved || !customApiEndpointAPIKey.isEmpty {
+                                    Button(action: {
+                                        clearCustomEndpointAPIKey()
+                                    }) {
+                                        Label("Clear", systemImage: "xmark")
+                                            .scaledFont(size: 12)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
 
                         Text("Route API calls through an Anthropic-API-compatible endpoint (e.g. local LLM bridge, corporate proxy, or GitHub Copilot bridge). The endpoint must speak the Anthropic API format; a raw Gemini or OpenAI key will not work here. Fazm will not send its built-in Anthropic key or count this usage against built-in credits.")
                             .scaledFont(size: 12)
@@ -1966,6 +2018,7 @@ struct SettingsContentView: View {
             refreshAIChatConfig()
             playwrightExtensionToken = UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? ""
             showCustomEndpoint = !customApiEndpoint.isEmpty
+            loadCustomEndpointAPIKey()
         }
         .sheet(isPresented: $showFileViewer) {
             fileViewerSheet
@@ -2417,6 +2470,27 @@ struct SettingsContentView: View {
            let json = String(data: data, encoding: .utf8) {
             UserDefaults.standard.set(json, forKey: "disabledSkillsJSON")
         }
+    }
+
+    private func loadCustomEndpointAPIKey() {
+        let storedKey = CustomAPIEndpointCredentials.storedAPIKey() ?? ""
+        customApiEndpointAPIKey = storedKey
+        customApiEndpointAPIKeySaved = !storedKey.isEmpty
+        customApiEndpointAPIKeyDirty = false
+    }
+
+    private func saveCustomEndpointAPIKey(restartBridge: Bool = true) {
+        CustomAPIEndpointCredentials.setStoredAPIKey(customApiEndpointAPIKey)
+        loadCustomEndpointAPIKey()
+        guard restartBridge else { return }
+        Task { await chatProvider?.restartBridgeForEndpointChange() }
+    }
+
+    private func clearCustomEndpointAPIKey(restartBridge: Bool = true) {
+        CustomAPIEndpointCredentials.deleteStoredAPIKey()
+        loadCustomEndpointAPIKey()
+        guard restartBridge else { return }
+        Task { await chatProvider?.restartBridgeForEndpointChange() }
     }
 
     // MARK: - Dictionary Section
