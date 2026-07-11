@@ -2426,11 +2426,16 @@ actor ACPBridge {
         env["ANTHROPIC_BASE_URL"] = customEndpoint
         env["FAZM_CUSTOM_API_ENDPOINT"] = "true"
         // A custom endpoint means the user is routing their own model/provider.
-        // Never send Fazm's bundled Anthropic key to that proxy. Keep a harmless
-        // placeholder key so Anthropic-compatible local gateways that accept any
-        // API key stay on the API-key path instead of triggering Claude OAuth.
-        env["ANTHROPIC_API_KEY"] = "sk-fazm-custom-endpoint"
-        log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled")
+        // Never send Fazm's bundled Anthropic key to that proxy. If the user did
+        // not configure a gateway token, keep a harmless placeholder so local
+        // Anthropic-compatible gateways that accept any API key stay on the
+        // API-key path instead of triggering Claude OAuth.
+        let customEndpointAPIKey = CustomAPIEndpointCredentials.resolvedAPIKey()
+        env["ANTHROPIC_API_KEY"] = customEndpointAPIKey
+        let authMode = customEndpointAPIKey == CustomAPIEndpointCredentials.placeholderAPIKey
+          ? "placeholder key"
+          : "user-provided key"
+        log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled (\(authMode))")
       } else {
         log(
           "ACPBridge: ignoring malformed customApiEndpoint '\(rawCustomEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
