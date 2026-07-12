@@ -685,6 +685,10 @@ xattr -cr "$APP_BUNDLE" 2>/dev/null || true
 step "Installing to /Applications/..."
 # Install to /Applications/ so "Quit & Reopen" (after granting screen recording
 # permission) launches the correct binary instead of a stale copy elsewhere.
+# Remove the old install first: ditto MERGES into an existing bundle, so stale
+# files (e.g. old venv dist-info dirs) survive and break the codesign seal
+# ("a sealed resource is missing or invalid" -> Launchd job spawn failed).
+rm -rf "$APP_PATH"
 ditto "$APP_BUNDLE" "$APP_PATH"
 substep "Installed to $APP_PATH"
 
