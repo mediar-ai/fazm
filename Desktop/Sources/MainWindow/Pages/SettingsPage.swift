@@ -145,6 +145,11 @@ struct SettingsContentView: View {
     // bundled browser-harness MCP, optionally seeded via ai-browser-profile).
     @AppStorage("browserMode") private var browserMode: String = "extension"
 
+    // Inherit MCP servers from ~/.claude.json (Claude Code's global config).
+    // ON by default (historical behavior); the bridge maps OFF to
+    // FAZM_DISABLE_CLAUDE_CODE_MCP=true at spawn time (ACPBridge.swift).
+    @AppStorage("claudeCodeMcpEnabled") private var claudeCodeMcpEnabled: Bool = true
+
     // Assrt QA testing MCP (beta) — sibling MCP that adds assrt_test / assrt_plan /
     // assrt_diagnose tools plus assrt_seed_* cookie/IDB seeders and Phase 3 browser
     // control (assrt_open_session / assrt_navigate / assrt_screenshot / assrt_close_session).
@@ -1361,6 +1366,41 @@ struct SettingsContentView: View {
                             }
                         }
                     }
+                }
+            }
+
+            // Claude Code MCP servers card
+            settingsCard(settingId: "aichat.claudecodemcp") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "server.rack")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textTertiary)
+                        Text("Claude Code MCP Servers")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Spacer()
+                        Toggle("", isOn: $claudeCodeMcpEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .onChange(of: claudeCodeMcpEnabled) { _, newValue in
+                                AnalyticsManager.shared.settingToggled(setting: "claude_code_mcp", enabled: newValue)
+                                // Read at ACP bridge spawn time; restart the bridge
+                                // (bundle-scoped) so the change takes effect on the
+                                // next query, same pattern as the browser mode picker.
+                                DistributedNotificationCenter.default().postNotificationName(
+                                    NSNotification.Name("com.fazm.\(AppPaths.bundleScope).control"),
+                                    object: nil,
+                                    userInfo: ["command": "restartBridge"],
+                                    deliverImmediately: true
+                                )
+                            }
+                    }
+
+                    Text("Include MCP servers from ~/.claude.json (Claude Code's global config) in Fazm chats. Turning this off shrinks the tool list sent with every request, which lowers cost and can speed up responses.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
                 }
             }
 
