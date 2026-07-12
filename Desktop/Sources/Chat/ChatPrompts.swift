@@ -17,7 +17,7 @@ struct ChatPrompts {
     </assistant_role>
 
     <user_context>
-    Current date/time in {user_name}'s timezone ({tz}): {current_datetime_str}
+    Current date in {user_name}'s timezone ({tz}): {current_datetime_str} (may be stale if the app has been running for days; run `date` in Bash when you need the exact current date/time)
     Python: {bundled_python_path} (bundled — never use bare python3/pip3, user may not have Python installed)
     {goal_section}{tasks_section}{ai_profile_section}
     </user_context>
@@ -236,7 +236,7 @@ struct ChatPrompts {
     - First name: {user_given_name}
     - Email: {user_email}
     - Timezone: {tz}
-    - Current time: {current_datetime_str}
+    - Current date: {current_datetime_str}
 
     YOUR GOAL: Create a "wow" moment. Show the user that Fazm is smart and useful BEFORE asking for permissions.
 
@@ -747,8 +747,12 @@ struct ChatPromptBuilder {
         pluginInfo: String = "",
         citedInstruction: String = ""
     ) -> String {
+        // Day resolution ONLY. A second-resolution timestamp here busts the
+        // prompt-cache prefix on every bridge restart (system prompt + ~190
+        // tool schemas re-written to cache), and goes stale anyway when the
+        // app runs for days. The model runs `date` when it needs exact time.
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        dateFormatter.dateFormat = "yyyy-MM-dd"
         dateFormatter.timeZone = TimeZone.current
 
         let isoFormatter = ISO8601DateFormatter()
