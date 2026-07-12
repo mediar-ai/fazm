@@ -2367,6 +2367,16 @@ actor ACPBridge {
     let browserMode = defaults.string(forKey: "browserMode") ?? "extension"
     env["FAZM_BROWSER_MODE"] = browserMode
 
+    // Inherit MCP servers from ~/.claude.json (Claude Code's global config).
+    // Defaults to ON for backwards compatibility, but power users with many
+    // Claude Code MCP servers pay for every extra tool schema on every
+    // request, so Settings > Advanced exposes a toggle. Stored as an
+    // "enabled" bool (default true); the bridge env var is the inverse.
+    if defaults.object(forKey: "claudeCodeMcpEnabled") != nil,
+       !defaults.bool(forKey: "claudeCodeMcpEnabled") {
+      env["FAZM_DISABLE_CLAUDE_CODE_MCP"] = "true"
+    }
+
     // Assrt QA testing MCP (beta) — additive to whichever browser mode is active.
     // When enabled, the bridge registers @assrt-ai/assrt as a sibling MCP server
     // exposing assrt_test / assrt_plan / assrt_diagnose plus seed_* cookie/IDB
