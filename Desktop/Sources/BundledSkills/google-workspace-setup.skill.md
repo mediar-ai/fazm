@@ -108,6 +108,8 @@ mv ~/Downloads/client_secret_*.json ~/google_workspace_mcp/client_secret.json
 
 ### Step 7: First OAuth login
 
+Note: the Google Workspace MCP server only loads once `client_secret.json` exists, and the tool list is rebuilt on each new chat. If `mcp__google-workspace__*` tools are missing in this session, tell the user to start a new chat to finish this step there.
+
 Now trigger any Google Workspace tool (e.g., `search_gmail_messages` with query "is:inbox") to initiate the OAuth flow. The MCP server will open a browser window for the user to authorize. Tell the user to complete the sign-in.
 
 After authorization, tokens are cached at `~/google_workspace_mcp/auth/` and subsequent calls work silently.
