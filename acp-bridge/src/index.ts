@@ -2750,9 +2750,21 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
   }
 
   // Google Workspace MCP (Python, stdio transport)
-  if (existsSync(googleWorkspaceMcpPython) && existsSync(googleWorkspaceMcpMain)) {
-    const homeDir = process.env.HOME || "~";
-    const gwsCredsDir = join(homeDir, "google_workspace_mcp");
+  //
+  // Registered ONLY when the user has actually set up Google Workspace
+  // (client_secret.json from the google-workspace-setup skill, or cached
+  // OAuth credentials). The server exposes 100+ tool schemas, which is over
+  // half of the default tool surface; loading it for every user purely
+  // because the bundle exists on disk bloated the prompt prefix (and cost)
+  // for users who never connected a Google account. buildMcpServers runs on
+  // every session/new, so tools appear on the next chat after setup.
+  const gwsHomeDir = process.env.HOME || "~";
+  const gwsCredsDir = join(gwsHomeDir, "google_workspace_mcp");
+  const gwsConnected =
+    existsSync(join(gwsCredsDir, "client_secret.json")) ||
+    existsSync(join(gwsHomeDir, ".google_workspace_mcp", "credentials"));
+  if (existsSync(googleWorkspaceMcpPython) && existsSync(googleWorkspaceMcpMain) && gwsConnected) {
+    const homeDir = gwsHomeDir;
     servers.push({
       name: "google-workspace",
       command: googleWorkspaceMcpPython,
