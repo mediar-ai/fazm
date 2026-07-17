@@ -5613,7 +5613,7 @@ class ChatProvider: ObservableObject {
             hadError = true
 
             // On timeout, cancel the stuck ACP session so it's not left dangling
-            if let bridgeError = error as? BridgeError, case .timeout = bridgeError {
+            if let bridgeError = error as? BridgeError, bridgeError.isTimeout {
                 log("ChatProvider: ACP query timed out, sending interrupt to cancel stuck session=\(effectiveKey)")
                 if effectiveKey != "__default__" {
                     await acpBridge.interrupt(sessionKey: effectiveKey)
@@ -5725,6 +5725,7 @@ class ChatProvider: ObservableObject {
                 case .notRunning: return "not_running"
                 case .encodingError: return "encoding_error"
                 case .timeout: return "timeout"
+                case .customEndpointTimeout: return "custom_endpoint_timeout"
                 case .processExited: return "process_exited"
                 case .outOfMemory: return "out_of_memory"
                 case .stopped: return "stopped"
