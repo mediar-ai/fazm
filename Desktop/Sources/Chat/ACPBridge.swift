@@ -311,6 +311,14 @@ actor ACPBridge {
     return endpoint
   }
 
+  /// Max seconds to wait for ANY message from a Custom API Endpoint before
+  /// treating the query as stalled. Generous on purpose: a slow local model's
+  /// first token should not be cut off, so this only trips when an unreachable
+  /// or misconfigured endpoint returns nothing at all. Reset on every inbound
+  /// message, so a working-but-slow endpoint that keeps streaming never hits it.
+  /// Mirrors the warmup-side CUSTOM_ENDPOINT_WARMUP_TIMEOUT_MS guard in the bridge.
+  static let customEndpointQueryInactivityTimeout: TimeInterval = 120
+
   let mode: BridgeMode
 
   /// Persistent auth handler called whenever auth_required arrives (even outside query)
@@ -1129,6 +1137,18 @@ actor ACPBridge {
     // bridge subprocess dies the JSON-RPC pipe closes and we see processExited.
     // The previous 600s cap was hurting slow models (Gemini Pro queries hit
     // exactly 600s with no output activity even when the model was working).
+    //
+    // EXCEPTION: a Custom API Endpoint has no upstream health signal — an
+    // unreachable/misconfigured ANTHROPIC_BASE_URL (wrong host, unknown model,
+    // server down) just returns nothing, and the loop below would spin forever
+    // (observed in the wild: a design partner lost two weeks to a silent
+    // spinner). So when, and ONLY when, a custom endpoint is configured, bound
+    // each wait with an inactivity timeout. It resets on every message, so a
+    // slow-but-working endpoint is fine; a total stall surfaces an actionable
+    // error. First-party models (Gemini Pro etc.) are never custom endpoints,
+    // so the old global-600s-cap regression cannot recur here.
+    let customEndpointInactivityTimeout: TimeInterval? =
+      Self.validCustomAPIEndpoint() != nil ? Self.customEndpointQueryInactivityTimeout : nil
     var messageCount = 0
     var lastMessageTime = Date()
     // Tracks whether the model called speak_response during this turn. If voice
@@ -1137,9 +1157,15 @@ actor ACPBridge {
     // regardless of provider, so this catches Claude / codex / gemini uniformly.
     var spokeThisTurn = false
     while true {
-      let message = try await (sessionKey != nil
-        ? waitForMessage(sessionKey: sessionKey!)
-        : waitForMessage())
+      let message: InboundMessage
+      do {
+        message = try await (sessionKey != nil
+          ? waitForMessage(sessionKey: sessionKey!, timeout: customEndpointInactivityTimeout)
+          : waitForMessage(timeout: customEndpointInactivityTimeout))
+      } catch BridgeError.timeout where customEndpointInactivityTimeout != nil {
+        log("ACPBridge: custom API endpoint produced no output within \(Self.customEndpointQueryInactivityTimeout)s — treating as unreachable")
+        throw BridgeError.customEndpointTimeout
+      }
       messageCount += 1
       let gapMs = Int(Date().timeIntervalSince(lastMessageTime) * 1000)
       lastMessageTime = Date()
@@ -2640,6 +2666,10 @@ enum BridgeError: LocalizedError {
   case notRunning
   case encodingError
   case timeout
+  /// A Custom API Endpoint (ANTHROPIC_BASE_URL) returned nothing within the
+  /// inactivity window — almost always an unreachable or misconfigured endpoint.
+  /// Distinct from `.timeout` so we can show the user an endpoint-specific fix.
+  case customEndpointTimeout
   case processExited
   case outOfMemory
   case stopped
@@ -2658,6 +2688,14 @@ enum BridgeError: LocalizedError {
   var isCreditOrRateLimitError: Bool {
     if case .creditExhausted = self { return true }
     return false
+  }
+
+  /// Timeout-family errors that should trigger stuck-session cleanup.
+  var isTimeout: Bool {
+    switch self {
+    case .timeout, .customEndpointTimeout: return true
+    default: return false
+    }
   }
 
   /// True when credit exhaustion is a temporary rate limit (has a resets-at timestamp).
@@ -2679,6 +2717,8 @@ enum BridgeError: LocalizedError {
       return "Failed to encode message"
     case .timeout:
       return "AI took too long to respond. Try again."
+    case .customEndpointTimeout:
+      return "Your Custom API Endpoint didn't respond. Check the endpoint in Settings > Advanced, or clear it to use built-in Claude."
     case .processExited:
       return "AI stopped unexpectedly. Try sending your message again."
     case .outOfMemory:
