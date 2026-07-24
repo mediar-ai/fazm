@@ -52,9 +52,10 @@ xcuserdata/
 
 # Local scripts and data (untracked)
 local/
-scripts/
+scripts/*
 !scripts/generate-appcast.sh
 !scripts/deploy-appcast.sh
+!scripts/fazm-lock.sh
 !scripts/macstadium/install-fazm.sh
 !acp-bridge/scripts/
 
