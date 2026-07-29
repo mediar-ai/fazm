@@ -845,6 +845,13 @@ struct BrowserExtensionSetup: View {
                         AnalyticsManager.shared.browserExtensionConnectionTested(success: false, error: "not_connected")
                     }
                 }
+            } catch BridgeError.timeout {
+                await MainActor.run {
+                    isVerifying = false
+                    verifyError = "Connection timed out. Make sure Chrome is running with a regular webpage open in the active tab, the extension is installed, then try again."
+                    log("BrowserExtensionSetup: Connection test timed out")
+                    AnalyticsManager.shared.browserExtensionConnectionTested(success: false, error: "connection_test_timeout")
+                }
             } catch {
                 await MainActor.run {
                     isVerifying = false
