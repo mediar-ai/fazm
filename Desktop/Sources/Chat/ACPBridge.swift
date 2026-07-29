@@ -2591,6 +2591,12 @@ actor ACPBridge {
 
   // MARK: - Playwright Connection Test
 
+  /// Browser setup must never leave its modal UI spinning indefinitely. This is
+  /// intentionally separate from the normal query timeout policy: an extension
+  /// snapshot should complete quickly, while a real agent task may legitimately
+  /// take much longer.
+  private static let playwrightConnectionTestTimeout: TimeInterval = 45
+
   /// Test that the Playwright Chrome extension is connected and working.
   /// Sends a minimal query that triggers a browser_snapshot tool call.
   /// Returns true if the extension responds successfully.
@@ -2599,27 +2605,49 @@ actor ACPBridge {
       throw BridgeError.notRunning
     }
 
-    log("ACPBridge: Testing Playwright connection...")
-    let result = try await query(
-      prompt:
-        "Call browser_snapshot to verify the extension is connected. Only call that one tool, then report success or failure.",
-      systemPrompt:
-        "You are a connection test agent. Call the browser_snapshot tool exactly once. If it succeeds, respond with exactly 'CONNECTED'. If it fails, respond with 'FAILED' followed by the error.",
-      sessionKey: "connection-test",
-      mode: "ask",
-      onTextDelta: { _ in },
-      onToolCall: { _, _, _ in "" },
-      onToolActivity: { name, status, _, _ in
-        log("ACPBridge: test tool activity: \(name) \(status)")
-      },
-      onThinkingDelta: { _ in },
-      onToolResultDisplay: { _, name, output in
-        log("ACPBridge: test tool result: \(name) -> \(output.prefix(200))")
+    log("ACPBridge: Testing Playwright connection (deadline=\(Int(Self.playwrightConnectionTestTimeout))s)...")
+    do {
+      return try await withThrowingTaskGroup(of: Bool.self) { group in
+        group.addTask { [self] in
+          let result = try await query(
+            prompt:
+              "Call browser_snapshot to verify the extension is connected. Only call that one tool, then report success or failure.",
+            systemPrompt:
+              "You are a connection test agent. Call the browser_snapshot tool exactly once. If it succeeds, respond with exactly 'CONNECTED'. If it fails, respond with 'FAILED' followed by the error.",
+            sessionKey: "connection-test",
+            mode: "ask",
+            onTextDelta: { _ in },
+            onToolCall: { _, _, _ in "" },
+            onToolActivity: { name, status, _, _ in
+              log("ACPBridge: test tool activity: \(name) \(status)")
+            },
+            onThinkingDelta: { _ in },
+            onToolResultDisplay: { _, name, output in
+              log("ACPBridge: test tool result: \(name) -> \(output.prefix(200))")
+            }
+          )
+          let connected = result.text.contains("CONNECTED")
+          log("ACPBridge: Playwright test response: \(result.text.prefix(300)), connected=\(connected)")
+          return connected
+        }
+        group.addTask {
+          try await Task.sleep(nanoseconds: UInt64(Self.playwrightConnectionTestTimeout * 1_000_000_000))
+          throw BridgeError.timeout
+        }
+        defer { group.cancelAll() }
+        guard let connected = try await group.next() else {
+          throw BridgeError.timeout
+        }
+        return connected
       }
-    )
-    let connected = result.text.contains("CONNECTED")
-    log("ACPBridge: Playwright test response: \(result.text.prefix(300)), connected=\(connected)")
-    return connected
+    } catch BridgeError.timeout {
+      // `query()` deliberately has no general timeout for normal agent work.
+      // This disposable setup session is different: cancel it so a late MCP or
+      // model response cannot keep the extension setup UI blocked.
+      interrupt(sessionKey: "connection-test")
+      log("ACPBridge: Playwright connection test timed out after \(Int(Self.playwrightConnectionTestTimeout))s; interrupted test session")
+      throw BridgeError.timeout
+    }
   }
 
   static func findBridgeScript() -> String? {
