@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed browser extension setup getting stuck on Testing connection; it now times out and lets you retry"
+  ],
   "releases": [
     {
       "version": "2.9.78",
