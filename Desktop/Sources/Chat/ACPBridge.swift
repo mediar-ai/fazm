@@ -2472,6 +2472,23 @@ actor ACPBridge {
           ? "placeholder key"
           : "user-provided key"
         log("ACPBridge: using custom API endpoint '\(customEndpoint)' with bundled API key disabled (\(authMode))")
+        // The main-turn model is already pinned via session/set_model, but the
+        // Claude Agent SDK still fires its background / "small-fast" calls (title
+        // and summary generation, quota pings, etc.) at Haiku by default. A custom
+        // endpoint / proxy (LiteLLM, OpenRouter, opusmax, a corporate gateway) often
+        // serves ONLY the user's chosen model and rejects Haiku, so every one of
+        // those background calls fails ("dropping to haiku" / empty turns) even
+        // though the picked model works. Pin the SDK's Haiku / small-fast slots to
+        // the user's selected model so background calls route to something the proxy
+        // actually serves. Set both the current (ANTHROPIC_DEFAULT_HAIKU_MODEL) and
+        // legacy (ANTHROPIC_SMALL_FAST_MODEL) env names for compatibility.
+        let backgroundModel = defaults.string(forKey: "shortcut_selectedModel")?
+          .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !backgroundModel.isEmpty {
+          env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = backgroundModel
+          env["ANTHROPIC_SMALL_FAST_MODEL"] = backgroundModel
+          log("ACPBridge: custom endpoint — pinning background/small-fast model to '\(backgroundModel)' so SDK background calls don't hit a Haiku the proxy rejects")
+        }
       } else {
         log(
           "ACPBridge: ignoring malformed customApiEndpoint '\(rawCustomEndpoint)' (expected an http(s) URL with a host); falling back to default Anthropic endpoint"
