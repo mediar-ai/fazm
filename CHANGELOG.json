@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Fixed browser extension setup getting stuck on Testing connection; it now times out and lets you retry"
+    "Fixed browser extension setup getting stuck on Testing connection; it now times out and lets you retry",
+    "Fixed custom API endpoint chat failing with Haiku fallback errors when the proxy only serves the selected model"
   ],
   "releases": [
     {
