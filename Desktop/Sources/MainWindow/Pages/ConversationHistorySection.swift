@@ -569,17 +569,30 @@ struct ConversationRow: View {
 
             Spacer()
 
-            // Delete button, revealed on hover so the row stays clean otherwise.
-            if isHovered && !isLoading, let onDelete = onDelete {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .scaledFont(size: 13)
-                        .foregroundColor(FazmColors.textTertiary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
+            // Rename + delete buttons, revealed on hover so the row stays clean otherwise.
+            if isHovered && !isLoading {
+                if let onRename = onRename {
+                    Button(action: onRename) {
+                        Image(systemName: "pencil")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textTertiary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rename this conversation")
                 }
-                .buttonStyle(.plain)
-                .help("Delete this conversation")
+                if let onDelete = onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .scaledFont(size: 13)
+                            .foregroundColor(FazmColors.textTertiary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Delete this conversation")
+                }
             }
 
             Image(systemName: "chevron.right")
