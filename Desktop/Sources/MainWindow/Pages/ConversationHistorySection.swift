@@ -8,6 +8,13 @@ struct ConversationSummary: Identifiable, Equatable {
     let lastMessageDate: Date
     let messageCount: Int
     let acpSessionId: String? // ACP session ID for resuming
+    var customTitle: String? = nil // User-assigned title; overrides firstMessage when set
+
+    /// What the row shows: the user's custom title if set, else the first-message preview.
+    var displayTitle: String {
+        if let customTitle, !customTitle.isEmpty { return customTitle }
+        return firstMessage
+    }
 }
 
 private struct ConversationSummaryPage {
@@ -41,6 +48,8 @@ struct ConversationHistorySection: View {
     @State private var lastHistoryRefreshAt = Date.distantPast
     @State private var loadingConversationId: String? = nil
     @State private var pendingDelete: ConversationSummary? = nil
+    @State private var pendingRename: ConversationSummary? = nil
+    @State private var renameText: String = ""
 
     /// Live count of detached chat windows currently open. Driven by
     /// `Notification.Name.detachedChatWindowsDidChange`, which the controller
@@ -115,7 +124,11 @@ struct ConversationHistorySection: View {
                         ConversationRow(
                             conversation: conversation,
                             isLoading: loadingConversationId == conversation.id,
-                            onDelete: { pendingDelete = conversation }
+                            onDelete: { pendingDelete = conversation },
+                            onRename: {
+                                renameText = conversation.customTitle ?? ""
+                                pendingRename = conversation
+                            }
                         )
                         .onTapGesture {
                             guard loadingConversationId == nil else { return }
@@ -150,6 +163,19 @@ struct ConversationHistorySection: View {
             }
         } message: {
             Text("This permanently removes the conversation and its messages. This can't be undone.")
+        }
+        .alert("Rename conversation", isPresented: Binding(
+            get: { pendingRename != nil },
+            set: { if !$0 { pendingRename = nil } }
+        )) {
+            TextField("Conversation name", text: $renameText)
+            Button("Cancel", role: .cancel) { pendingRename = nil }
+            Button("Save") {
+                if let target = pendingRename { renameConversation(target, to: renameText) }
+                pendingRename = nil
+            }
+        } message: {
+            Text("Give this conversation a custom name. Leave it empty to go back to the message preview.")
         }
     }
 
@@ -339,6 +365,19 @@ struct ConversationHistorySection: View {
     /// Delete a conversation and all of its messages from the local DB, then
     /// drop it from the list immediately so the row disappears without waiting
     /// for the 10s refresh timer.
+    /// Apply a user-assigned custom title. Optimistically updates the visible row,
+    /// then persists to the standalone conversation_titles table. An empty string
+    /// clears the title, reverting to the first-message preview.
+    private func renameConversation(_ conversation: ConversationSummary, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let idx = conversations.firstIndex(where: { $0.id == conversation.id }) {
+            conversations[idx].customTitle = trimmed.isEmpty ? nil : trimmed
+        }
+        Task {
+            await ChatMessageStore.setCustomTitle(context: conversation.id, title: trimmed)
+        }
+    }
+
     private func deleteConversation(_ conversation: ConversationSummary) {
         // Optimistically remove from the visible list.
         conversations.removeAll { $0.id == conversation.id }
@@ -403,13 +442,15 @@ struct ConversationHistorySection: View {
                     let requestLimit = pageSize + 1
                     let rows = try Row.fetchAll(db, sql: """
                         SELECT
-                            taskId,
-                            firstUserMessage,
-                            lastMessageDate,
-                            messageCount,
-                            acpSessionId
-                        FROM conversation_summaries
-                        ORDER BY lastMessageDate DESC, taskId DESC
+                            cs.taskId,
+                            cs.firstUserMessage,
+                            cs.lastMessageDate,
+                            cs.messageCount,
+                            cs.acpSessionId,
+                            ct.title AS customTitle
+                        FROM conversation_summaries cs
+                        LEFT JOIN conversation_titles ct ON ct.taskId = cs.taskId
+                        ORDER BY cs.lastMessageDate DESC, cs.taskId DESC
                         LIMIT ? OFFSET ?
                     """, arguments: [requestLimit, offset])
 
@@ -423,13 +464,15 @@ struct ConversationHistorySection: View {
                         let firstMsg = (row["firstUserMessage"] as String?) ?? "New conversation"
                         let count = (row["messageCount"] as Int?) ?? 0
                         let sessionId = row["acpSessionId"] as? String
+                        let customTitle = row["customTitle"] as? String
 
                         return ConversationSummary(
                             id: taskId,
                             firstMessage: firstMsg,
                             lastMessageDate: lastDate,
                             messageCount: count,
-                            acpSessionId: sessionId
+                            acpSessionId: sessionId,
+                            customTitle: customTitle
                         )
                     }
 
@@ -487,6 +530,7 @@ struct ConversationRow: View {
     let conversation: ConversationSummary
     var isLoading: Bool = false
     var onDelete: (() -> Void)? = nil
+    var onRename: (() -> Void)? = nil
 
     @State private var isHovered = false
 
@@ -506,7 +550,7 @@ struct ConversationRow: View {
 
             // Content
             VStack(alignment: .leading, spacing: 4) {
-                Text(conversation.firstMessage)
+                Text(conversation.displayTitle)
                     .scaledFont(size: 13, weight: .medium)
                     .foregroundColor(FazmColors.textPrimary)
                     .lineLimit(2)
