@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "Fixed browser extension setup getting stuck on Testing connection; it now times out and lets you retry",
-    "Fixed custom API endpoint chat failing with Haiku fallback errors when the proxy only serves the selected model"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.79",
+      "date": "2026-08-03",
+      "changes": [
+        "Fixed browser extension setup getting stuck on Testing connection; it now times out and lets you retry",
+        "Fixed custom API endpoint chat failing with Haiku fallback errors when the proxy only serves the selected model"
+      ]
+    },
     {
       "version": "2.9.78",
       "date": "2026-07-17",
