@@ -1258,6 +1258,18 @@ actor AppDatabase {
             """)
         }
 
+        // User-assigned custom titles for conversations. Kept in a SEPARATE table
+        // (not a column on conversation_summaries) because the summary triggers
+        // DELETE + re-INSERT that row on every message change, which would wipe a
+        // custom title. Keyed by taskId; absence means "use the first-message preview".
+        migrator.registerMigration("fazmV9") { db in
+            try db.create(table: "conversation_titles") { t in
+                t.column("taskId", .text).primaryKey()
+                t.column("title", .text).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
