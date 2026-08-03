@@ -204,11 +204,48 @@ enum ChatMessageStore {
                     sql: "DELETE FROM conversation_summaries WHERE taskId = ?",
                     arguments: [context]
                 )
+                try db.execute(
+                    sql: "DELETE FROM conversation_titles WHERE taskId = ?",
+                    arguments: [context]
+                )
             }
             await AppDatabase.shared.reportQuerySuccess()
             postHistoryDidChange(context: context)
         } catch {
             logError("ChatMessageStore: Failed to clear messages", error: error)
+            await AppDatabase.shared.reportQueryError(error)
+        }
+    }
+
+    /// Set (or update) a user-assigned custom title for a conversation. Passing an
+    /// empty/whitespace-only title clears it, reverting the row to its first-message
+    /// preview. Stored in the standalone `conversation_titles` table so the summary
+    /// triggers never overwrite it.
+    static func setCustomTitle(context: String, title: String) async {
+        guard let dbQueue = await AppDatabase.shared.getDatabaseQueue() else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await dbQueue.write { db in
+                if trimmed.isEmpty {
+                    try db.execute(
+                        sql: "DELETE FROM conversation_titles WHERE taskId = ?",
+                        arguments: [context]
+                    )
+                } else {
+                    try db.execute(
+                        sql: """
+                            INSERT INTO conversation_titles (taskId, title, updatedAt)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT(taskId) DO UPDATE SET title = excluded.title, updatedAt = excluded.updatedAt
+                        """,
+                        arguments: [context, String(trimmed.prefix(200)), Date()]
+                    )
+                }
+            }
+            await AppDatabase.shared.reportQuerySuccess()
+            postHistoryDidChange(context: context)
+        } catch {
+            logError("ChatMessageStore: Failed to set custom title", error: error)
             await AppDatabase.shared.reportQueryError(error)
         }
     }
