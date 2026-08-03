@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Added the ability to rename conversations in Conversation History"
+  ],
   "releases": [
     {
       "version": "2.9.79",
