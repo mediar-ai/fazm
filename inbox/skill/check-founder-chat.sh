@@ -28,6 +28,16 @@ mkdir -p "$LOG_DIR"
 
 log() { echo "[$(date +%H:%M:%S)] $*" >> "$LOG_DIR/founder-chat.log"; }
 
+# Rate-limit / hard-stop detection. Mirror of social-autoposter's
+# check-web-chats.sh PAUSE_PATTERNS (2026-08-04 fix): the old pattern here
+# ("hit your session limit|hit your limit|rate limit|too many requests")
+# did NOT match "You've hit your weekly limit", so weekly-limit exhaustion
+# was misclassified as an ordinary transient failure. That caused retry
+# storms (3 rapid back-to-back spawns every ~5-6min for hours) instead of
+# a clean 1h pause + account-rotator failover signal. Confirmed in logs on
+# 2026-06-28, 2026-07-05 (36x), 2026-07-11 (15x), 2026-08-03 (35x).
+PAUSE_PATTERNS='hit your session limit|hit your limit|rate limit|rate.limited|too many requests|usage limit|weekly limit|5.hour limit|credit balance|out of credit|insufficient (credit|funds|balance)|payment required|billing|quota exceeded|api[- ]?key|unauthori[sz]ed|forbidden|account.{0,30}(suspend|disabled)|HTTP 401|HTTP 403|HTTP 429|invalid.*x.api.key'
+
 write_rotator_rejection_signal() {
     local reason="${1:-rate_limit}"
     local rotator_dir="$HOME/claude-account-rotator"
@@ -134,7 +144,7 @@ INSTR_EOF
             echo "[$(date)] Claude exited with code $EXIT_CODE" >> "$INSTR_LOG"
             if [ $EXIT_CODE -ne 0 ]; then
                 echo "[$(date)] WARNING: instruction session #$INSTR_EMAIL_ID exited with code $EXIT_CODE" >> "$LOG_DIR/founder-chat.log"
-                if grep -Eqi "hit your session limit|hit your limit|rate limit|too many requests" "$INSTR_LOG" 2>/dev/null; then
+                if grep -Eqi "$PAUSE_PATTERNS" "$INSTR_LOG" 2>/dev/null; then
                     echo "[$(date)] RATE LIMITED: not retrying instruction #$INSTR_EMAIL_ID until limit resets" >> "$LOG_DIR/founder-chat.log"
                     write_rotator_rejection_signal "instruction_${INSTR_EMAIL_ID}_exit_${EXIT_CODE}"
                     echo "rate_limited $(date +%s)" > "/tmp/fazm-chat-ratelimit"
@@ -253,7 +263,7 @@ PROMPT_EOF
             echo "[$(date)] WARNING: Claude session for $EMAIL exited with code $EXIT_CODE" >> "$LOG_DIR/founder-chat.log"
 
             # Check if this is a rate limit error — don't retry, just wait for reset
-            if grep -Eqi "hit your session limit|hit your limit|rate limit|too many requests" "$SESSION_LOG" 2>/dev/null; then
+            if grep -Eqi "$PAUSE_PATTERNS" "$SESSION_LOG" 2>/dev/null; then
                 echo "[$(date)] RATE LIMITED: Not retrying $EMAIL until limit resets" >> "$LOG_DIR/founder-chat.log"
                 write_rotator_rejection_signal "chat_${UID_VAL}_exit_${EXIT_CODE}"
                 # Leave chat claimed (don't unclaim) so it stops retrying
