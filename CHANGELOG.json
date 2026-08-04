@@ -1,7 +1,8 @@
 {
   "unreleased": [
     "Added the ability to rename conversations in Conversation History",
-    "Fixed duplicate chat windows stacking on top of each other when popping out or starting a new chat quickly"
+    "Fixed duplicate chat windows stacking on top of each other when popping out or starting a new chat quickly",
+    "Added a confirmation before the paywall 'sign in with a different account' link so it can no longer sign you out with a single accidental tap"
   ],
   "releases": [
     {
