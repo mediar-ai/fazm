@@ -1069,9 +1069,17 @@ class FloatingControlBarManager {
     /// File URL of a pre-captured screenshot, taken when the bar opens (PTT or keyboard).
     private var pendingScreenshotPath: URL?
 
-    /// Wall-clock time of the last popOutNewChat invocation (uptime seconds).
-    /// Used to debounce duplicate creations from rapid global-shortcut presses.
-    private var lastPopOutNewChatTime: TimeInterval = 0
+    /// Wall-clock time of the last detached-window creation (uptime seconds),
+    /// shared across ALL pop-out paths: popOutToWindow, popOutNewChat, and the
+    /// fork-chat handler. Used to debounce duplicate window creation from rapid
+    /// clicks / key-repeat / impatient retaps. Without a single shared timestamp,
+    /// tapping two different pop-out affordances in quick succession (or spamming
+    /// one) stacks multiple identical windows on top of each other.
+    private var lastPopOutTime: TimeInterval = 0
+
+    /// Minimum gap between two detached-window creations. Any pop-out request
+    /// inside this window after a prior one is treated as an accidental repeat.
+    private static let popOutDebounceInterval: TimeInterval = 1.0
 
     /// Whether the user has enabled the Ask Fazm bar (persisted across launches).
     /// Defaults to true for new users.
@@ -2520,11 +2528,11 @@ class FloatingControlBarManager {
         // repeat or impatient retap). Without this, two pop-outs are created
         // side-by-side with the same chatHistory snapshot.
         let now = ProcessInfo.processInfo.systemUptime
-        if (now - lastPopOutNewChatTime) < 1.0 {
-            log("FloatingControlBarManager: Ignored duplicate pop-out shortcut (\(Int((now - lastPopOutNewChatTime) * 1000))ms since last)")
+        if (now - lastPopOutTime) < Self.popOutDebounceInterval {
+            log("FloatingControlBarManager: Ignored duplicate pop-out shortcut (\(Int((now - lastPopOutTime) * 1000))ms since last)")
             return
         }
-        lastPopOutNewChatTime = now
+        lastPopOutTime = now
 
         log("FloatingControlBarManager: Creating new pop-out chat window via global shortcut")
         AnalyticsManager.shared.floatingBarChatPoppedOut(historyCount: 0)
