@@ -1,6 +1,7 @@
 {
   "unreleased": [
-    "Added the ability to rename conversations in Conversation History"
+    "Added the ability to rename conversations in Conversation History",
+    "Fixed duplicate chat windows stacking on top of each other when popping out or starting a new chat quickly"
   ],
   "releases": [
     {
