@@ -1300,8 +1300,18 @@ class FloatingControlBarManager {
             }
         }
 
-        barWindow.onForkChat = { [weak barWindow, weak chatProvider] in
-            guard let bar = barWindow, let provider = chatProvider else { return }
+        barWindow.onForkChat = { [weak self, weak barWindow, weak chatProvider] in
+            guard let self, let bar = barWindow, let provider = chatProvider else { return }
+
+            // Debounce duplicate fork/pop-out creation, sharing the timestamp
+            // with popOutToWindow / popOutNewChat so rapid taps across any of the
+            // pop-out affordances can't stack identical windows on top of each other.
+            let forkNow = ProcessInfo.processInfo.systemUptime
+            if (forkNow - self.lastPopOutTime) < Self.popOutDebounceInterval {
+                log("FloatingControlBarManager: Ignored duplicate forkChat (\(Int((forkNow - self.lastPopOutTime) * 1000))ms since last)")
+                return
+            }
+            self.lastPopOutTime = forkNow
 
             // Snapshot the floating bar's visible conversation. The new
             // pop-out gets its own copy so the source branch stays rendered
@@ -2460,6 +2470,19 @@ class FloatingControlBarManager {
     /// Pop the current conversation out into a separate, normal macOS window.
     func popOutToWindow() {
         guard let window = window, let provider = chatProvider else { return }
+
+        // Debounce duplicate window creation. Rapid taps / key-repeat on the
+        // pop-out affordance would otherwise transfer the session and spawn a
+        // second identical window stacked on the first. Guard BEFORE any side
+        // effect (the session transfer below is destructive to the "floating"
+        // key), sharing the timestamp with popOutNewChat / forkChat.
+        let now = ProcessInfo.processInfo.systemUptime
+        if (now - lastPopOutTime) < Self.popOutDebounceInterval {
+            log("FloatingControlBarManager: Ignored duplicate popOut (\(Int((now - lastPopOutTime) * 1000))ms since last)")
+            return
+        }
+        lastPopOutTime = now
+
         let state = window.state
 
         let inFlight = provider.isSending(sessionKey: "floating")
