@@ -15,6 +15,12 @@ struct PaywallSheet: View {
     @State private var isLoadingReferral = false
     @State private var linkCopied = false
     @State private var referralCredit: Int = 0  // dollars of earned credit
+    // Guards the destructive "sign in with a different account" action. That
+    // button used to call signOut() on the first tap with no confirmation, so
+    // trial users who tapped it hoping to fix their access got booted straight
+    // to the sign-in screen (looked like "the update logged me out"). Require
+    // an explicit confirm before signing out.
+    @State private var showingSwitchAccountConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -222,7 +228,7 @@ struct PaywallSheet: View {
                 }
                 Button(action: {
                     PostHogManager.shared.track("paywall_switch_account_tapped", properties: ["source": "paywall"])
-                    onSwitchAccount()
+                    showingSwitchAccountConfirm = true
                 }) {
                     Text("Already subscribed? Sign in with a different account")
                         .scaledFont(size: 12, weight: .medium)
@@ -230,6 +236,16 @@ struct PaywallSheet: View {
                         .multilineTextAlignment(.center)
                 }
                 .buttonStyle(.plain)
+                .confirmationDialog(
+                    "Sign out of this account?",
+                    isPresented: $showingSwitchAccountConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Sign Out", role: .destructive) { onSwitchAccount() }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("This signs you out of Fazm. Only continue if you already pay under a different account.")
+                }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 10)
