@@ -1,11 +1,16 @@
 {
-  "unreleased": [
-    "Added the ability to rename conversations in Conversation History",
-    "Fixed duplicate chat windows stacking on top of each other when popping out or starting a new chat quickly",
-    "Added a confirmation before the paywall 'sign in with a different account' link so it can no longer sign you out with a single accidental tap",
-    "Fixed duplicate chat windows appearing when reopening the main window from the dock while a pop-out chat was still open"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.83",
+      "date": "2026-08-05",
+      "changes": [
+        "Added the ability to rename conversations in Conversation History",
+        "Fixed duplicate chat windows stacking on top of each other when popping out or starting a new chat quickly",
+        "Added a confirmation before the paywall 'sign in with a different account' link so it can no longer sign you out with a single accidental tap",
+        "Fixed duplicate chat windows appearing when reopening the main window from the dock while a pop-out chat was still open"
+      ]
+    },
     {
       "version": "2.9.79",
       "date": "2026-08-03",
