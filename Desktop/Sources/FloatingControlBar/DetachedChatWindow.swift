@@ -907,6 +907,17 @@ class DetachedChatWindowController {
 
         for snapshot in snapshots {
             let sessionKey = snapshot.sessionKey
+
+            // Skip if a window for this session is already on screen. restoreWindows()
+            // is called from DesktopHomeView.onAppear, which fires every time the main
+            // window appears — including when the user closes the main window (leaving a
+            // detached window up) and reopens it from the dock. Without this guard, each
+            // reopen stacks a duplicate detached window on top of the live one.
+            if self.entries.values.contains(where: { $0.sessionKey == sessionKey }) {
+                log("DetachedChatWindowController: window for \(sessionKey) already open — skipping restore to avoid duplicate")
+                continue
+            }
+
             let savedFrame = NSRect(
                 x: snapshot.x, y: snapshot.y,
                 width: snapshot.width, height: snapshot.height
