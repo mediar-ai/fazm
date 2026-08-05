@@ -369,78 +369,100 @@ pub(crate) async fn lookup_subscription_status(
     let firebase_email = auth.firebase_email.clone().unwrap_or_default();
     let client = reqwest::Client::new();
 
-    // Look up customer by Firebase UID metadata
-    let mut customer_id = find_customer(&client, stripe_secret, &firebase_uid)
+    // Gather ALL candidate customers, not just the first match. A single user can
+    // end up with duplicate Stripe customers under the same firebase_uid/email
+    // (e.g. one created by the website checkout, one by the desktop app). If we
+    // only checked the first match returned by Stripe search, we could land on an
+    // empty duplicate with no subscription and report `active: false` while the
+    // real subscription lives on the other customer, keeping a paying user locked
+    // behind the paywall.
+    let mut candidates = find_customers(&client, stripe_secret, &firebase_uid)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    // Fallback: search by email (e.g., customer created on website without Firebase UID)
-    if customer_id.is_none() && !firebase_email.is_empty() {
-        if let Some(cid) = find_customer_by_email(&client, stripe_secret, &firebase_email)
+    // Also search by email (e.g., customer created on website without Firebase UID)
+    // and auto-link any newly discovered customer so future UID lookups are fast.
+    if !firebase_email.is_empty() {
+        let email_matches = find_customers_by_email(&client, stripe_secret, &firebase_email)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
-        {
-            // Auto-link: add firebase_uid to this customer so future lookups are fast
-            let _ = client
-                .post(&format!("https://api.stripe.com/v1/customers/{cid}"))
-                .bearer_auth(stripe_secret)
-                .form(&[
-                    ("metadata[firebase_uid]", firebase_uid.as_str()),
-                    ("metadata[device_id]", &auth.device_id),
-                ])
-                .send()
-                .await;
-            tracing::info!(
-                customer = %cid,
-                firebase_uid = %firebase_uid,
-                email = %firebase_email,
-                "Auto-linked website Stripe customer to Firebase UID"
-            );
-            customer_id = Some(cid);
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        for cid in email_matches {
+            if !candidates.contains(&cid) {
+                let _ = client
+                    .post(&format!("https://api.stripe.com/v1/customers/{cid}"))
+                    .bearer_auth(stripe_secret)
+                    .form(&[
+                        ("metadata[firebase_uid]", firebase_uid.as_str()),
+                        ("metadata[device_id]", &auth.device_id),
+                    ])
+                    .send()
+                    .await;
+                tracing::info!(
+                    customer = %cid,
+                    firebase_uid = %firebase_uid,
+                    email = %firebase_email,
+                    "Auto-linked website Stripe customer to Firebase UID"
+                );
+                candidates.push(cid);
+            }
         }
     }
 
-    let Some(customer_id) = customer_id else {
+    if candidates.is_empty() {
         return Ok(SubscriptionStatusResponse {
             active: false,
             status: "none".to_string(),
             current_period_end: None,
         });
-    };
+    }
 
-    // List active subscriptions for this customer
-    let resp = client
-        .get("https://api.stripe.com/v1/subscriptions")
-        .bearer_auth(stripe_secret)
-        .query(&[("customer", &customer_id), ("limit", &"1".to_string())])
-        .send()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Stripe API error: {e}")))?;
+    // Check every candidate customer for a subscription. Return as soon as we find
+    // an active/trialing one; otherwise remember the first non-active status as a
+    // fallback so the response still reflects e.g. `canceled`/`past_due`.
+    let mut fallback: Option<SubscriptionStatusResponse> = None;
+    for customer_id in &candidates {
+        let resp = client
+            .get("https://api.stripe.com/v1/subscriptions")
+            .bearer_auth(stripe_secret)
+            .query(&[
+                ("customer", customer_id.as_str()),
+                ("status", "all"),
+                ("limit", "10"),
+            ])
+            .send()
+            .await
+            .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Stripe API error: {e}")))?;
 
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Stripe parse error: {e}")))?;
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Stripe parse error: {e}")))?;
 
-    let subs = body["data"].as_array();
-    if let Some(subs) = subs {
-        if let Some(sub) = subs.first() {
-            let status = sub["status"].as_str().unwrap_or("none").to_string();
-            let active = matches!(status.as_str(), "active" | "trialing");
-            let period_end = sub["current_period_end"].as_i64();
-            return Ok(SubscriptionStatusResponse {
-                active,
-                status,
-                current_period_end: period_end,
-            });
+        if let Some(subs) = body["data"].as_array() {
+            for sub in subs {
+                let status = sub["status"].as_str().unwrap_or("none").to_string();
+                let active = matches!(status.as_str(), "active" | "trialing");
+                let period_end = sub["current_period_end"].as_i64();
+                let candidate = SubscriptionStatusResponse {
+                    active,
+                    status,
+                    current_period_end: period_end,
+                };
+                if active {
+                    return Ok(candidate);
+                }
+                if fallback.is_none() {
+                    fallback = Some(candidate);
+                }
+            }
         }
     }
 
-    Ok(SubscriptionStatusResponse {
+    Ok(fallback.unwrap_or(SubscriptionStatusResponse {
         active: false,
         status: "none".to_string(),
         current_period_end: None,
-    })
+    }))
 }
 
 /// GET /api/stripe/subscription-status
@@ -627,11 +649,14 @@ async fn get_or_create_customer(
 }
 
 /// Find a Stripe customer by email address
-async fn find_customer_by_email(
+/// Find ALL Stripe customers matching an email. A user can have more than one
+/// (e.g. website checkout + desktop app), so we return every match and let the
+/// caller pick the one with a live subscription.
+async fn find_customers_by_email(
     client: &reqwest::Client,
     secret: &str,
     email: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Vec<String>, String> {
     let resp = client
         .get("https://api.stripe.com/v1/customers/search")
         .bearer_auth(secret)
@@ -647,17 +672,22 @@ async fn find_customer_by_email(
 
     Ok(body["data"]
         .as_array()
-        .and_then(|arr| arr.first())
-        .and_then(|c| c["id"].as_str())
-        .map(|s| s.to_string()))
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| c["id"].as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
-/// Find a Stripe customer by Firebase UID metadata
-async fn find_customer(
+/// Find ALL Stripe customers matching a Firebase UID metadata value. Returns
+/// every match (not just the first) so the caller can check each for an active
+/// subscription — a user can accumulate duplicate customers under one UID.
+async fn find_customers(
     client: &reqwest::Client,
     secret: &str,
     firebase_uid: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Vec<String>, String> {
     let resp = client
         .get("https://api.stripe.com/v1/customers/search")
         .bearer_auth(secret)
@@ -676,9 +706,12 @@ async fn find_customer(
 
     Ok(body["data"]
         .as_array()
-        .and_then(|arr| arr.first())
-        .and_then(|c| c["id"].as_str())
-        .map(|s| s.to_string()))
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| c["id"].as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// Verify Stripe webhook signature (v1 scheme)
