@@ -589,9 +589,9 @@ workflows:
             mkdir -p "$BH_BUNDLE"
             cp -f "$BH_MCP_SERVER" "$BH_BUNDLE/server.py"
             build_venv_for_arch "$BH_BUNDLE" arm64 \
-              "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" "/tmp/browser-harness"
+              "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow" "websockets==15.0.1" "/tmp/browser-harness"
             build_venv_for_arch "$BH_BUNDLE" x86_64 \
-              "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow==12.2.0" "websockets==15.0.1" "/tmp/browser-harness"
+              "mcp>=1.0.0" "cdp-use==1.4.5" "fetch-use==0.4.0" "pillow" "websockets==15.0.1" "/tmp/browser-harness"
           else
             echo "WARNING: browser-harness sources missing, skipping (server=$BH_MCP_SERVER, repo=/tmp/browser-harness)"
           fi
