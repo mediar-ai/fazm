@@ -499,15 +499,19 @@ pub async fn create_portal_session(
     let firebase_email = auth.firebase_email.clone().unwrap_or_default();
     let client = reqwest::Client::new();
 
-    // Find the Stripe customer
-    let mut customer_id = find_customer(&client, stripe_secret, &firebase_uid)
+    // Find the Stripe customer (first match by UID, falling back to email)
+    let mut customer_id = find_customers(&client, stripe_secret, &firebase_uid)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+        .into_iter()
+        .next();
 
     if customer_id.is_none() && !firebase_email.is_empty() {
-        customer_id = find_customer_by_email(&client, stripe_secret, &firebase_email)
+        customer_id = find_customers_by_email(&client, stripe_secret, &firebase_email)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+            .into_iter()
+            .next();
     }
 
     let Some(customer_id) = customer_id else {
@@ -613,8 +617,13 @@ async fn get_or_create_customer(
     device_id: &str,
     firebase_email: &str,
 ) -> Result<String, String> {
-    // Search for existing customer
-    if let Some(id) = find_customer(client, secret, firebase_uid).await? {
+    // Search for existing customer(s). Reuse the first match rather than creating
+    // a new customer, so we don't pile up duplicates under the same UID.
+    if let Some(id) = find_customers(client, secret, firebase_uid)
+        .await?
+        .into_iter()
+        .next()
+    {
         return Ok(id);
     }
 
