@@ -161,6 +161,18 @@ export interface CancelAuthMessage {
 }
 
 /**
+ * Swift's answer to a gated `permission_request` event (see approval-gate.ts).
+ * Either selects one of the offered options by id, or cancels the request
+ * (`cancelled: true` → the agent receives `{outcome: {outcome: "cancelled"}}`).
+ */
+export interface PermissionResponseMessage {
+  type: "permission_response";
+  id: string;
+  optionId?: string;
+  cancelled?: boolean;
+}
+
+/**
  * Fork the current ACP session. Creates a new session branched from the
  * end-of-conversation state of `fromSessionKey`. The upstream SDK
  * (`unstable_forkSession`) does not support mid-history anchors, so the
@@ -197,6 +209,7 @@ export type InboundMessage =
   | ResetSessionMessage
   | TransferSessionMessage
   | CancelAuthMessage
+  | PermissionResponseMessage
   | ForkSessionMessage
   | CodexInitProbeMessage
   | CodexLoginMessage
@@ -687,6 +700,38 @@ export interface SessionMetaUpdateMessage {
 }
 
 /**
+ * Emitted when the approval gate (FAZM_APPROVAL_MODE=destructive|always) parks
+ * a `session/request_permission` request pending an explicit user decision.
+ * Swift renders an approval card and answers with the `permission_response`
+ * stdin command. `id` is the gate id (opaque to Swift — echo it back verbatim).
+ */
+export interface PermissionRequestEventMessage {
+  type: "permission_request";
+  id: string;
+  toolCallId: string;
+  title: string;
+  /** ACP tool-call kind: edit | delete | move | execute | read | search | fetch | think | other */
+  kind: string;
+  options: Array<{ optionId: string; kind: string; name: string }>;
+  sessionId?: string;
+  sessionKey?: string;
+}
+
+/**
+ * A gated permission request was resolved WITHOUT a user decision: the 300s
+ * timeout fired, or an interrupt / close_session / bridge shutdown flushed it
+ * as cancelled. Swift clears the approval card for `id`.
+ */
+export interface PermissionTimeoutEventMessage {
+  type: "permission_timeout";
+  id: string;
+  /** "timeout" | "interrupted" | "session closed" | "bridge restarting" | ... */
+  reason?: string;
+  sessionId?: string;
+  sessionKey?: string;
+}
+
+/**
  * Emitted after a successful `session/fork` upstream call. Swift uses this
  * to pivot the UI: bank the new sessionId as the active conversation,
  * preserve the source sessionId as resumable, and present the forked thread
@@ -743,4 +788,6 @@ export type OutboundMessage =
   | WarmupCompleteMessage
   | AvailableCommandsUpdateMessage
   | SessionMetaUpdateMessage
+  | PermissionRequestEventMessage
+  | PermissionTimeoutEventMessage
   | SessionForkedMessage;
