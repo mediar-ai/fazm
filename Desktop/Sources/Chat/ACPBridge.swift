@@ -654,7 +654,7 @@ actor ACPBridge {
     // routine scheduler (RoutineScheduler) can spawn cron-runner.mjs — which spawns
     // its own headless bridge — with byte-identical auth/MCP env. A var added there
     // for interactive chat is then automatically inherited by routines.
-    proc.environment = await Self.makeBridgeEnvironment(mode: mode, nodePath: nodePath)
+    proc.environment = await Self.makeBridgeEnvironment(mode: mode, nodePath: nodePath, interactive: true)
 
     let stdin = Pipe()
     let stdout = Pipe()
@@ -2462,7 +2462,11 @@ actor ACPBridge {
   /// scheduler can spawn cron-runner.mjs (which spawns its own headless bridge) with
   /// identical auth/MCP env — otherwise the headless routine bridge silently drifts from
   /// the interactive one whenever a new var is added here.
-  static func makeBridgeEnvironment(mode: BridgeMode, nodePath: String) async -> [String: String] {
+  /// `interactive` distinguishes the app's own bridge (true — has a UI that can
+  /// answer approval prompts) from headless spawns (false — RoutineScheduler →
+  /// cron-runner.mjs). Only the interactive bridge ever gets FAZM_APPROVAL_MODE;
+  /// a headless bridge parked on a permission_request would hang forever.
+  static func makeBridgeEnvironment(mode: BridgeMode, nodePath: String, interactive: Bool) async -> [String: String] {
     var env = ProcessInfo.processInfo.environment
     env["NODE_NO_WARNINGS"] = "1"
     switch mode {
@@ -2495,6 +2499,19 @@ actor ACPBridge {
     // are mutually exclusive in acp-bridge to avoid dual-Chrome state confusion.
     let browserMode = defaults.string(forKey: "browserMode") ?? "extension"
     env["FAZM_BROWSER_MODE"] = browserMode
+
+    // Approval gate ("Ask before file edits & shell commands"): gate destructive
+    // agent tool actions behind an explicit user decision. Read at bridge spawn
+    // time like FAZM_BROWSER_MODE — toggling restarts the bridge. Never inherit
+    // a stray value from the app's own environment, and never set it for
+    // headless bridges (no UI to answer, must not hang).
+    env.removeValue(forKey: "FAZM_APPROVAL_MODE")
+    if interactive {
+      let approvalMode = defaults.string(forKey: "approvalMode") ?? "off"
+      if approvalMode == "destructive" || approvalMode == "always" {
+        env["FAZM_APPROVAL_MODE"] = approvalMode
+      }
+    }
 
     // Inherit MCP servers from ~/.claude.json (Claude Code's global config).
     // Defaults to ON for backwards compatibility, but power users with many
