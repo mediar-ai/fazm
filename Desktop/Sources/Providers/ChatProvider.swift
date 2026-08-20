@@ -1090,6 +1090,9 @@ class ChatProvider: ObservableObject {
             await acpBridge.setGlobalAuthHandlers(
                 onAuthRequired: { [weak self] methods, authUrl in
                     Task { @MainActor in
+                        // The bridge just proved the stored credentials don't work —
+                        // the connected badge must not stay green on keychain presence.
+                        self?.isClaudeConnected = false
                         self?.isClaudeAuthRequired = true
                         self?.claudeAuthMethods = methods
                         self?.claudeAuthUrl = authUrl
@@ -2565,8 +2568,23 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Check whether the user has Claude OAuth credentials stored in the macOS Keychain.
-    /// Our OAuth flow stores tokens under the "Claude Code-credentials" service name.
+    /// Returns true when the keychain credential JSON is actually usable: it must parse
+    /// and either carry a refresh token or an unexpired access token. A stale login
+    /// (revoked/expired with no refresh path) must NOT count as connected — showing a
+    /// green badge for a dead token strands the user in personal mode with every query
+    /// bouncing on auth (the Bob trap, Jul 2026).
+    nonisolated static func isClaudeCredentialUsable(_ data: Data) -> Bool {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = json["claudeAiOauth"] as? [String: Any] else { return false }
+        if let refresh = oauth["refreshToken"] as? String, !refresh.isEmpty { return true }
+        if let expiresAt = oauth["expiresAt"] as? Double {
+            return expiresAt / 1000 > Date().timeIntervalSince1970
+        }
+        return false
+    }
+
+    /// Check whether the user has *usable* Claude OAuth credentials stored in the macOS
+    /// Keychain. Our OAuth flow stores tokens under the "Claude Code-credentials" service name.
     ///
     /// - Parameter autoSwitchToPersonal: When true (used at init), automatically switches
     ///   to personal mode if credentials are found and we're not already in personal mode.
@@ -2574,14 +2592,17 @@ class ChatProvider: ObservableObject {
         Task.detached { [weak self] in
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-            proc.arguments = ["find-generic-password", "-s", "Claude Code-credentials"]
-            proc.standardOutput = FileHandle.nullDevice
+            proc.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
+            let stdout = Pipe()
+            proc.standardOutput = stdout
             proc.standardError = FileHandle.nullDevice
             do {
                 try proc.run()
+                let credentialData = stdout.fileHandleForReading.readDataToEndOfFile()
                 proc.waitUntilExit()
-                let hasCredentials = proc.terminationStatus == 0
-                log("ChatProvider: Keychain Claude credentials → \(hasCredentials ? "found" : "not found")")
+                let found = proc.terminationStatus == 0
+                let hasCredentials = found && Self.isClaudeCredentialUsable(credentialData)
+                log("ChatProvider: Keychain Claude credentials → \(found ? (hasCredentials ? "found (usable)" : "found (STALE — treating as disconnected)") : "not found")")
                 let capturedSelf = self
                 await MainActor.run {
                     guard let capturedSelf else { return }
