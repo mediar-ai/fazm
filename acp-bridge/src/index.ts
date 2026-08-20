@@ -50,6 +50,8 @@ import {
   interruptAllCodexSessions,
   codexSessionCount,
   clearCodexSessions,
+  codexSessionKeyForId,
+  codexSessionIdForKey,
 } from "./codex-query.js";
 import { GeminiProvider } from "./gemini-provider.js";
 import {
@@ -61,8 +63,11 @@ import {
   interruptAllGeminiSessions,
   geminiSessionCount,
   clearGeminiSessions,
+  geminiSessionKeyForId,
+  geminiSessionIdForKey,
 } from "./gemini-query.js";
 import { classifyApiFailure } from "./api-failure.js";
+import { ApprovalGate } from "./approval-gate.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1207,6 +1212,26 @@ function killAcpProcessTree(): void {
   acpProcess = null;
 }
 
+// --- Approval gate ("cage mode") ---
+// Gates session/request_permission behind an explicit user decision when
+// FAZM_APPROVAL_MODE is "destructive" or "always" (default "off" keeps the
+// historical blanket auto-approve). Shared across all three providers.
+// Headless runners (cron-runner.mjs, founder-chat) never set the env var,
+// so they can never park on a gate. See approval-gate.ts.
+const approvalGate = new ApprovalGate({
+  emit: (msg, sessionId) => {
+    if (sessionId) {
+      const sessionKey = sessionIdToKey.get(sessionId)
+        ?? codexSessionKeyForId(sessionId)
+        ?? geminiSessionKeyForId(sessionId);
+      send({ ...msg, sessionId, ...(sessionKey && { sessionKey }) } as unknown as OutboundMessage);
+    } else {
+      send(msg as unknown as OutboundMessage);
+    }
+  },
+  logErr,
+});
+
 // --- Codex provider (Phase 2.1) ---
 // Lazily instantiated; only spawned when first needed (probe or codex-prefixed
 // model query). Until then, zero impact on the existing Claude-only flow.
@@ -1614,18 +1639,13 @@ function startAcpProcess(): void {
         const method = msg.method as string;
 
         if (method === "session/request_permission") {
-          // Auto-approve all tool permissions (matches agent-bridge's bypassPermissions behavior)
-          const params = msg.params as Record<string, unknown> | undefined;
-          const options = (params?.options as Array<{ kind: string; optionId: string }>) ?? [];
-          const allowAlways = options.find((o) => o.kind === "allow_always");
-          const allowOnce = options.find((o) => o.kind === "allow_once");
-          const optionId = allowAlways?.optionId ?? allowOnce?.optionId ?? "allow";
-          logErr(`Auto-approving permission for tool (id=${id})`);
-          acpStdinWriter?.(JSON.stringify({
-            jsonrpc: "2.0",
-            id,
-            result: { outcome: { outcome: "selected", optionId } },
-          }));
+          // Approval gate: auto-approve (FAZM_APPROVAL_MODE=off, the default —
+          // matches agent-bridge's bypassPermissions behavior) or park the
+          // reply behind a permission_request/permission_response round-trip
+          // with Swift. See approval-gate.ts.
+          approvalGate.handleRequest("claude", id, msg.params, (result) => {
+            acpStdinWriter?.(JSON.stringify({ jsonrpc: "2.0", id, result }));
+          });
         } else if (method === "session/update") {
           // session/update can also arrive as a request (with id) — handle and ack
           if (acpNotificationHandler) {
