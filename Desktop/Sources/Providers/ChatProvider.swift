@@ -821,6 +821,17 @@ class ChatProvider: ObservableObject {
     /// Cumulative tokens used in the current session
     @Published var sessionTokensUsed: Int = 0
 
+    // MARK: - Approval Gate ("Ask before file edits & shell commands")
+
+    /// The tool-permission request currently parked by the bridge's approval
+    /// gate, awaiting an explicit user decision (Allow / Always allow / Deny).
+    /// Set when the bridge emits `permission_request`; cleared by
+    /// `approvePermission` / `denyPermission`, on `permission_timeout`, on new
+    /// chat (session reset), and on bridge stop/restart. Mirrored into the
+    /// owning window's `StreamingResponseState.pendingPermissionRequest` so
+    /// AIResponseView renders the approval card in the right conversation.
+    @Published var pendingPermissionRequest: ACPBridge.PermissionRequest?
+
     // MARK: - Built-in API Key Usage Cap ($10)
     //
     // POLICY — DO NOT CHANGE WITHOUT EXPLICIT OWNER (matt) APPROVAL.
@@ -1136,7 +1147,105 @@ class ChatProvider: ObservableObject {
                     }
                 }
             )
+            await self.registerPermissionHandlers()
         }
+    }
+
+    /// Register the approval-gate handlers on the current bridge. Called from
+    /// `setupBridgeAuthHandlers` and from `ensureBridgeStarted` (which
+    /// re-creates the bridge without going through setup) so every bridge
+    /// instance routes permission_request / permission_timeout events here.
+    private func registerPermissionHandlers() async {
+        await acpBridge.setPermissionHandlers(
+            onRequest: { [weak self] sessionKey, request in
+                Task { @MainActor in
+                    self?.handlePermissionRequest(sessionKey: sessionKey, request: request)
+                }
+            },
+            onTimeout: { [weak self] id in
+                Task { @MainActor in
+                    self?.handlePermissionTimeout(id: id)
+                }
+            }
+        )
+    }
+
+    /// A gated permission request arrived: publish it and mirror it into the
+    /// owning window's streaming state so the approval card renders inline.
+    private func handlePermissionRequest(sessionKey: String?, request: ACPBridge.PermissionRequest) {
+        log("ChatProvider: permission_request id=\(request.id) kind=\(request.kind) title='\(request.title.prefix(80))' session=\(sessionKey ?? "nil")")
+        pendingPermissionRequest = request
+        if let key = sessionKey, key.hasPrefix("detached-") {
+            for entry in DetachedChatWindowController.shared.entriesSnapshot() where entry.sessionKey == key {
+                entry.window.state.streaming.pendingPermissionRequest = request
+            }
+        } else if let barState = FloatingControlBarManager.shared.barState {
+            // floating / nil / onboarding — the floating bar is the default surface.
+            barState.streaming.pendingPermissionRequest = request
+        }
+    }
+
+    /// The bridge resolved a gated request without a user decision (300s
+    /// timeout, interrupt, session close, or shutdown flush) — clear the card.
+    private func handlePermissionTimeout(id: String) {
+        log("ChatProvider: permission_timeout id=\(id)")
+        // Only clear if the timed-out request is the one still pending; a
+        // stale timeout must not wipe a newer request's card.
+        if pendingPermissionRequest?.id == id {
+            clearPendingPermission()
+        } else {
+            // Defensive: clear any window still showing this specific card.
+            if let barState = FloatingControlBarManager.shared.barState,
+               barState.streaming.pendingPermissionRequest?.id == id {
+                barState.streaming.pendingPermissionRequest = nil
+            }
+            for entry in DetachedChatWindowController.shared.entriesSnapshot()
+                where entry.window.state.streaming.pendingPermissionRequest?.id == id {
+                entry.window.state.streaming.pendingPermissionRequest = nil
+            }
+        }
+    }
+
+    /// Clear the pending permission request everywhere (provider + all windows).
+    func clearPendingPermission() {
+        pendingPermissionRequest = nil
+        if let barState = FloatingControlBarManager.shared.barState {
+            barState.streaming.pendingPermissionRequest = nil
+        }
+        for entry in DetachedChatWindowController.shared.entriesSnapshot() {
+            entry.window.state.streaming.pendingPermissionRequest = nil
+        }
+    }
+
+    /// Approve the pending gated permission. `optionId` selects a specific
+    /// option (e.g. the allow_always one); nil picks allow_once, falling back
+    /// to the first offered option.
+    func approvePermission(optionId: String? = nil) {
+        guard let request = pendingPermissionRequest else {
+            log("ChatProvider: approvePermission with no pending request — ignoring")
+            return
+        }
+        let chosen = optionId
+            ?? request.allowOnceOption?.optionId
+            ?? request.options.first?.optionId
+        log("ChatProvider: approving permission id=\(request.id) option=\(chosen ?? "<none>")")
+        let id = request.id
+        Task { await acpBridge.sendPermissionResponse(id: id, optionId: chosen) }
+        clearPendingPermission()
+    }
+
+    /// Deny the pending gated permission: select a reject option when the
+    /// agent offered one, otherwise cancel the request outright.
+    func denyPermission() {
+        guard let request = pendingPermissionRequest else {
+            log("ChatProvider: denyPermission with no pending request — ignoring")
+            return
+        }
+        let reject = request.rejectOption?.optionId
+        log("ChatProvider: denying permission id=\(request.id) via \(reject ?? "cancelled")")
+        let id = request.id
+        Task { await acpBridge.sendPermissionResponse(id: id, optionId: reject) }
+        clearPendingPermission()
     }
 
     // MARK: - Cross-Platform Message Polling
