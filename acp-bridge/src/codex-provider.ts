@@ -15,6 +15,7 @@ import { createInterface } from "readline";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import type { PermissionReply } from "./approval-gate.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -317,6 +318,13 @@ export class CodexProvider {
 
   private handleServerRequest(id: number, method: string, params: unknown): void {
     if (method === "session/request_permission") {
+      if (this.onPermissionGate) {
+        // Approval gate owns the reply (may defer it pending a user decision).
+        this.onPermissionGate(id, params, (result) => {
+          this.stdinWriter?.(JSON.stringify({ jsonrpc: "2.0", id, result }));
+        });
+        return;
+      }
       const optionId = this.onPermissionRequest(params);
       this.stdinWriter?.(JSON.stringify({
         jsonrpc: "2.0",
