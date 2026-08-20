@@ -151,6 +151,7 @@ export class GeminiProvider {
   private readonly onExitHook?: (code: number | null) => void;
   private readonly onNotificationHook?: NotificationHandler;
   private readonly onPermissionRequest: (params: unknown) => string;
+  private readonly onPermissionGate?: GeminiProviderOptions["onPermissionGate"];
 
   constructor(opts: GeminiProviderOptions = {}) {
     this.entryPath = opts.entryPath ?? GeminiProvider.resolveDefaultEntry();
@@ -159,6 +160,7 @@ export class GeminiProvider {
     this.onExitHook = opts.onExit;
     this.onNotificationHook = opts.onNotification;
     this.onPermissionRequest = opts.onPermissionRequest ?? GeminiProvider.defaultPermissionResolver;
+    this.onPermissionGate = opts.onPermissionGate;
   }
 
   static resolveDefaultEntry(): string {
@@ -419,6 +421,13 @@ export class GeminiProvider {
 
   private handleServerRequest(id: number, method: string, params: unknown): void {
     if (method === "session/request_permission") {
+      if (this.onPermissionGate) {
+        // Approval gate owns the reply (may defer it pending a user decision).
+        this.onPermissionGate(id, params, (result) => {
+          this.stdinWriter?.(JSON.stringify({ jsonrpc: "2.0", id, result }));
+        });
+        return;
+      }
       const optionId = this.onPermissionRequest(params);
       this.stdinWriter?.(JSON.stringify({
         jsonrpc: "2.0",
