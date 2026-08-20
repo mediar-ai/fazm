@@ -89,7 +89,9 @@ final class RoutineScheduler {
             return
         }
 
-        var env = await ACPBridge.makeBridgeEnvironment(mode: ACPBridge.currentMode(), nodePath: node)
+        // interactive: false — routines run headless (no UI to answer approval
+        // prompts), so the approval gate env var is never injected here.
+        var env = await ACPBridge.makeBridgeEnvironment(mode: ACPBridge.currentMode(), nodePath: node, interactive: false)
         // Keep routine logs out of users' home dirs: cron-runner honors this and writes
         // routines.log here instead of creating ~/fazm/inbox/skill/logs.
         let logDir = AppPaths.supportRoot.appendingPathComponent("routine-logs", isDirectory: true)
