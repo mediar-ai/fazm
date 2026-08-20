@@ -277,6 +277,20 @@ struct AIResponseView: View {
                                     ))
                             }
 
+                            // Approval gate card: the agent wants to run a
+                            // destructive tool action (file edit, shell command,
+                            // delete, move) and "Ask before file edits & shell
+                            // commands" is on. The turn is parked until the user
+                            // decides (or the bridge's 300s timeout cancels it).
+                            if let permission = streaming.pendingPermissionRequest {
+                                permissionApprovalCard(permission)
+                                    .id("permission-\(permission.id)")
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                        removal: .opacity
+                                    ))
+                            }
+
                             // Anchor for explicit scroll-to-bottom calls (new exchanges, etc.)
                             Color.clear.frame(height: 1).id("bottom")
                         }
@@ -1364,6 +1378,91 @@ struct AIResponseView: View {
                 onSendFollowUp?(reply, [])
             }
         )
+    }
+
+    // MARK: - Approval Gate Card
+
+    /// Human-readable label for an ACP tool-call kind on the approval card.
+    private static func permissionKindLabel(_ kind: String) -> String {
+        switch kind {
+        case "execute": return "Shell command"
+        case "edit": return "File edit"
+        case "delete": return "Delete"
+        case "move": return "Move"
+        default: return kind.isEmpty ? "Tool action" : kind.capitalized
+        }
+    }
+
+    /// Compact inline card asking the user to approve or deny a gated tool
+    /// action. Buttons mirror the quick-reply pill styling. Decisions route
+    /// through ChatProvider (approvePermission / denyPermission), which
+    /// answers the bridge and clears this card everywhere.
+    private func permissionApprovalCard(_ permission: ACPBridge.PermissionRequest) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "hand.raised.fill")
+                    .scaledFont(size: 11)
+                    .foregroundColor(FazmColors.purplePrimary)
+                Text("\(Self.permissionKindLabel(permission.kind)) — approval required")
+                    .scaledFont(size: 11, weight: .semibold)
+                    .foregroundColor(FazmColors.overlayForeground.opacity(0.7))
+                Spacer()
+            }
+
+            if !permission.title.isEmpty {
+                Text(permission.title)
+                    .scaledFont(size: 12)
+                    .foregroundColor(FazmColors.overlayForeground.opacity(0.9))
+                    .lineLimit(4)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+            }
+
+            WrappingHStack(spacing: 8) {
+                permissionButton("Allow", filled: true) {
+                    FloatingControlBarManager.shared.chatProvider?.approvePermission()
+                }
+                if let always = permission.allowAlwaysOption {
+                    permissionButton("Always allow", filled: false) {
+                        FloatingControlBarManager.shared.chatProvider?.approvePermission(optionId: always.optionId)
+                    }
+                }
+                permissionButton("Deny", filled: false, destructive: true) {
+                    FloatingControlBarManager.shared.chatProvider?.denyPermission()
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(FazmColors.purplePrimary.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(FazmColors.purplePrimary.opacity(0.25), lineWidth: 1)
+                )
+        )
+    }
+
+    /// Pill button matching QuickReplyButtonsView styling.
+    private func permissionButton(_ label: String, filled: Bool, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        let tint: Color = destructive ? .red : FazmColors.purplePrimary
+        return Button(action: action) {
+            Text(label)
+                .scaledFont(size: 13, weight: .medium)
+                .foregroundColor(filled ? .white : tint)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(filled ? tint : tint.opacity(0.1))
+                .cornerRadius(20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(tint.opacity(0.3), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(label)
     }
 
     // MARK: - Chat Observer Thinking Indicator
