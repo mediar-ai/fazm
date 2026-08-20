@@ -323,6 +323,16 @@ export function interruptAllCodexSessions(provider: CodexProvider): number {
   return keys.length;
 }
 
+/** Reverse lookup: sessionKey for a live codex sessionId (approval-gate event routing). */
+export function codexSessionKeyForId(sessionId: string): string | undefined {
+  return codexSessionIdToKey.get(sessionId);
+}
+
+/** Forward lookup: live codex sessionId for a sessionKey (approval-gate interrupt flush). */
+export function codexSessionIdForKey(sessionKey: string): string | undefined {
+  return codexSessions.get(sessionKey)?.sessionId;
+}
+
 /** Diagnostic — number of live codex sessions. Used by index.ts logging. */
 export function codexSessionCount(): number {
   return codexSessions.size;
