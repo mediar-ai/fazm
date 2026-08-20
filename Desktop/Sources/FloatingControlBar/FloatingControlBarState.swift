@@ -96,6 +96,13 @@ final class StreamingResponseState: ObservableObject {
     @Published var stalledToolUseId: String? = nil
     @Published var stalledSince: Date? = nil
 
+    /// Set when the bridge's approval gate parks a tool-permission request for
+    /// this window's session ("Ask before file edits & shell commands").
+    /// AIResponseView renders an inline approval card (Allow / Always allow /
+    /// Deny). Mirrored from `ChatProvider.pendingPermissionRequest` — cleared
+    /// on decision, timeout, interrupt, new chat, and bridge restart.
+    @Published var pendingPermissionRequest: ACPBridge.PermissionRequest? = nil
+
     /// Debug-only counter ticked by the `simulateIdleScrollStorm` control
     /// command at 60Hz to deterministically reproduce the idle scroll-anchor
     /// storm. AIResponseView observes it and calls scrollToBottom on each tick,
