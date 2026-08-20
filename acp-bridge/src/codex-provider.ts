@@ -43,6 +43,9 @@ export interface CodexProviderOptions {
   onExit?: (code: number | null) => void;
   onNotification?: NotificationHandler;
   onPermissionRequest?: (params: unknown) => string;
+  /** When set, fully owns replying to session/request_permission (may defer
+   *  the reply — approval gate). Takes precedence over onPermissionRequest. */
+  onPermissionGate?: (rpcId: number, params: unknown, reply: (result: PermissionReply) => void) => void;
 }
 
 export interface CodexInitResult {
@@ -90,6 +93,7 @@ export class CodexProvider {
   private readonly onExitHook?: (code: number | null) => void;
   private readonly onNotificationHook?: NotificationHandler;
   private readonly onPermissionRequest: (params: unknown) => string;
+  private readonly onPermissionGate?: CodexProviderOptions["onPermissionGate"];
 
   constructor(opts: CodexProviderOptions = {}) {
     this.binaryPath = opts.binaryPath ?? CodexProvider.resolveDefaultBinary();
@@ -98,6 +102,7 @@ export class CodexProvider {
     this.onExitHook = opts.onExit;
     this.onNotificationHook = opts.onNotification;
     this.onPermissionRequest = opts.onPermissionRequest ?? CodexProvider.defaultPermissionResolver;
+    this.onPermissionGate = opts.onPermissionGate;
   }
 
   static resolveDefaultBinary(): string {
