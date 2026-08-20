@@ -1669,6 +1669,9 @@ class FloatingControlBarManager {
         //   toggleVoice                         — toggles voice response (TTS) on/off
         //   setVoice:on|off                     — explicitly sets voice response
         //   setBrowserMode:extension|managed|off — sets browser automation mode; "off" disables both Playwright and browser-harness (auto-restarts the ACP bridge so FAZM_BROWSER_MODE takes effect)
+        //   setApprovalMode:off|destructive|always — sets the approval gate ("ask before file edits & shell commands"); auto-restarts the ACP bridge so FAZM_APPROVAL_MODE takes effect
+        //   approvePermission                   — approve the pending gated tool permission (allow_once)
+        //   denyPermission                      — deny the pending gated tool permission (reject/cancel)
         //   show                                — shows the floating bar
         //   hide                                — hides the floating bar
         //   toggle                              — toggles floating bar visibility
@@ -1744,6 +1747,31 @@ class FloatingControlBarManager {
                     } else {
                         log("FloatingControlBarManager: setBrowserMode invalid value: '\(mode)' (expected 'extension', 'managed', or 'off')")
                     }
+                } else if command.hasPrefix("setApprovalMode:") {
+                    let mode = String(command.dropFirst("setApprovalMode:".count))
+                    if mode == "off" || mode == "destructive" || mode == "always" {
+                        let previous = UserDefaults.standard.string(forKey: "approvalMode") ?? "off"
+                        UserDefaults.standard.set(mode, forKey: "approvalMode")
+                        log("FloatingControlBarManager: approvalMode set to \(mode) (was \(previous))")
+                        AnalyticsManager.shared.settingToggled(setting: "approval_mode_\(mode)", enabled: mode != "off")
+                        // FAZM_APPROVAL_MODE is read at bridge spawn time, so restart
+                        // the ACP bridge for the new mode to take effect (same graceful
+                        // SIGHUP mechanism as setBrowserMode).
+                        if previous != mode {
+                            self.restartBridgeSubprocess()
+                        }
+                        self.writeControlState()
+                    } else {
+                        log("FloatingControlBarManager: setApprovalMode invalid value: '\(mode)' (expected 'off', 'destructive', or 'always')")
+                    }
+                } else if command == "approvePermission" {
+                    self.chatProvider?.approvePermission()
+                    log("FloatingControlBarManager: approvePermission invoked via control")
+                    self.writeControlState()
+                } else if command == "denyPermission" {
+                    self.chatProvider?.denyPermission()
+                    log("FloatingControlBarManager: denyPermission invoked via control")
+                    self.writeControlState()
                 } else if command == "stopAgent" {
                     self.chatProvider?.stopAgent()
                     log("FloatingControlBarManager: stopAgent invoked via control")
@@ -2001,6 +2029,8 @@ class FloatingControlBarManager {
             "isClaudeConnected": isClaudeConnected,
             "isClaudeAuthRequired": isClaudeAuthRequired,
             "codexAuthMode": codexAuthMode,
+            "approvalMode": UserDefaults.standard.string(forKey: "approvalMode") ?? "off",
+            "pendingPermissionTitle": chatProvider?.pendingPermissionRequest?.title ?? "",
             "availableModels": ShortcutSettings.shared.availableModels.map { ["id": $0.id, "label": $0.label, "shortLabel": $0.shortLabel] },
             "pickerOptions": pickerOptions
         ]
