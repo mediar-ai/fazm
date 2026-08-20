@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Added an optional approval gate: turn on \"Ask before file edits & shell commands\" in Settings and the AI pauses for your approval before editing files, running shell commands, or deleting anything"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.84",
+      "date": "2026-08-20",
+      "changes": [
+        "Added an optional approval gate: turn on \"Ask before file edits & shell commands\" in Settings and the AI pauses for your approval before editing files, running shell commands, or deleting anything"
+      ]
+    },
     {
       "version": "2.9.83",
       "date": "2026-08-05",
