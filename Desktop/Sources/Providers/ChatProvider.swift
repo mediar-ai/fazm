@@ -1796,6 +1796,10 @@ class ChatProvider: ObservableObject {
                     }
                 }
             )
+            // Approval-gate handlers (permission_request / permission_timeout) —
+            // must be registered on every fresh bridge instance, including the
+            // re-created one from the wrong-mode path above.
+            await registerPermissionHandlers()
             // Set up chat observer poll handler — when the chat observer finishes a batch,
             // poll observer_activity for new pending cards, auto-accept them, and inject into chat
             await acpBridge.setChatObserverPollHandler { [weak self] in
@@ -2197,6 +2201,10 @@ class ChatProvider: ObservableObject {
     /// This is the "New Chat" path — full reset including the session-id chain so the
     /// next query's priorContext doesn't accidentally replay the old conversation.
     func resetSession(key: String) async {
+        // New chat abandons the turn — drop any approval card immediately.
+        // The bridge-side gate flushes the parked request as cancelled when it
+        // processes the resetSession message.
+        clearPendingPermission()
         await acpBridge.resetSession(key: key)
         if key == "main" {
             Self.clearSessionId(storageKey: mainSessionIdKey)
@@ -3682,6 +3690,8 @@ class ChatProvider: ObservableObject {
     /// Stop the ACP bridge and all its child processes (MCP servers).
     /// Called during app termination to prevent orphaned processes.
     func stopBridge() {
+        // A pending approval card can't be answered once the bridge is gone.
+        clearPendingPermission()
         Task { await acpBridge.stop() }
     }
 
