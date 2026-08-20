@@ -67,7 +67,7 @@ import {
   geminiSessionIdForKey,
 } from "./gemini-query.js";
 import { classifyApiFailure } from "./api-failure.js";
-import { ApprovalGate } from "./approval-gate.js";
+import { ApprovalGate, currentApprovalMode } from "./approval-gate.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1932,6 +1932,23 @@ function registerSession(sessionKey: string, entry: { sessionId: string; cwd: st
   // original cwd to the Claude Agent SDK (it uses cwd to locate the JSONL).
   recordPersistedSession(sessionKey, entry.sessionId, entry.cwd, entry.model);
   logErr(`[SESSIONS] registered key=${sessionKey} sid=${entry.sessionId.slice(0, 8)} provider=${entry.provider} total=${sessions.size}`);
+  if (entry.provider === "claude") {
+    enforceApprovalSessionMode(entry.sessionId);
+  }
+}
+
+/** Approval gate: force a claude session out of bypassPermissions so the SDK
+ *  actually issues session/request_permission for destructive tools. The
+ *  adapter derives its initial permission mode from the user's Claude Code
+ *  settings (`permissions.defaultMode` — often bypassPermissions on dev
+ *  machines), which would silently allow everything and starve the gate.
+ *  Fire-and-forget: the set_mode round-trip completes long before the first
+ *  tool call of a turn streams in. No-op when the gate is off. */
+function enforceApprovalSessionMode(sessionId: string): void {
+  if (currentApprovalMode() === "off") return;
+  acpRequest("session/set_mode", { sessionId, modeId: "default" })
+    .then(() => logErr(`[approval-gate] session ${sessionId.slice(0, 8)} forced to default permission mode`))
+    .catch((err) => logErr(`[approval-gate] session/set_mode failed for ${sessionId.slice(0, 8)}: ${err}`));
 }
 
 /** Unregister a session. Keeps the sessionId→sessionKey reverse mapping so
@@ -2986,17 +3003,35 @@ const FAZM_DISALLOWED_TOOLS: readonly string[] = [
 ];
 
 function buildMeta(systemPrompt?: string, sessionKey?: string): Record<string, unknown> {
+  const options: Record<string, unknown> = {
+    disallowedTools: [...FAZM_DISALLOWED_TOOLS],
+  };
+  // Approval gate: with the gate on, the user's own Claude Code settings
+  // (~/.claude/settings.json) must not be able to silently allow destructive
+  // tools — a `permissions.allow: ["Bash"]` rule or
+  // `defaultMode: bypassPermissions` would starve the gate of
+  // session/request_permission entirely. Dropping settingSources removes those
+  // rules for gated sessions only; `registerSession` additionally forces the
+  // session's mode to "default" (see enforceApprovalSessionMode).
+  if (currentApprovalMode() !== "off") {
+    options.settingSources = [];
+  }
   const meta: Record<string, unknown> = {
-    claudeCode: {
-      options: {
-        disallowedTools: [...FAZM_DISALLOWED_TOOLS],
-      },
-    },
+    claudeCode: { options },
   };
   if (systemPrompt) {
     meta.systemPrompt = systemPrompt;
   }
   return { _meta: meta };
+}
+
+/** Extra `_meta` for `session/resume` when the approval gate is on — same
+ *  settingSources suppression as `buildMeta`. Returns {} when the gate is off
+ *  so resume params stay byte-identical to the historical shape (the adapter
+ *  fingerprints session params and tears down/recreates on any change). */
+function gateResumeMeta(): Record<string, unknown> {
+  if (currentApprovalMode() === "off") return {};
+  return { _meta: { claudeCode: { options: { settingSources: [] } } } };
 }
 
 // --- Chat observer session: conversation batching ---
@@ -3540,6 +3575,7 @@ async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig
                 sessionId: cfg.resume,
                 cwd: warmResumeCwd,
                 mcpServers: buildMcpServers("act", warmResumeCwd, cfg.key, cfg.model),
+                ...gateResumeMeta(),
               });
               sessionId = cfg.resume;
               logErr(`Pre-warm resumed session: ${sessionId} (key=${cfg.key}, model=${cfg.model}, cwd=${warmResumeCwd}, jsonl=${resumeJsonlPath})`);
@@ -3972,6 +4008,7 @@ async function handleQuery(msg: QueryMessage, _retryDepth = 0): Promise<void> {
           sessionId: msg.resume,
           cwd: resolvedResumeCwd,
           mcpServers: buildMcpServers(mode, resolvedResumeCwd, sessionKey, requestedModel),
+          ...gateResumeMeta(),
         });
         sessionId = msg.resume;
         // Track Swift's requestedCwd in the live sessions Map (it drives the
