@@ -270,6 +270,14 @@ actor ACPBridge {
     case availableCommandsUpdate(commands: [AvailableCommand])
     /// Confirmation that `session/fork` succeeded upstream.
     case sessionForked(fromSessionId: String, toSessionId: String, fromSessionKey: String, toSessionKey: String)
+    /// Approval gate parked a tool-permission request pending a user decision
+    /// (FAZM_APPROVAL_MODE=destructive|always). Answer with
+    /// `sendPermissionResponse(id:optionId:)`.
+    case permissionRequest(request: PermissionRequest)
+    /// A gated permission request resolved WITHOUT a user decision (300s
+    /// timeout, interrupt, session close, or bridge shutdown flushed it as
+    /// cancelled). The UI clears the approval card for `id`.
+    case permissionTimeout(id: String, reason: String)
     /// Bridge auto-fell-back off a model variant the user's account lacks the
     /// entitlement for (e.g. `[1m]` 1M-context requires the paid Claude add-on).
     /// Triggers a sticky-hide of those variants in `ShortcutSettings`.
@@ -363,6 +371,13 @@ actor ACPBridge {
   /// branch so the UI can pivot to the new session while keeping the source
   /// session resumable.
   var onSessionForked: ((_ fromSessionId: String, _ toSessionId: String, _ fromSessionKey: String, _ toSessionKey: String) -> Void)?
+  /// Called when the bridge's approval gate parks a tool-permission request
+  /// pending a user decision (permission_request event). Fires regardless of
+  /// whether a query continuation is active — the card must render mid-turn.
+  var onPermissionRequestGlobal: ((_ sessionKey: String?, _ request: PermissionRequest) -> Void)?
+  /// Called when a gated permission request resolved without a user decision
+  /// (timeout / interrupt / session close / bridge shutdown). Clears the card.
+  var onPermissionTimeoutGlobal: ((_ id: String) -> Void)?
 
   /// Safety-net: called when a `.result` arrives for a sessionKey that has no
   /// active continuation AND no live-transfer alias pointing to it. Two
@@ -378,6 +393,33 @@ actor ACPBridge {
   /// `text` carries the final assistant payload so the handler can salvage
   /// it into the matching chat surface rather than just clearing flags.
   var onOrphanedResult: ((_ sessionKey: String?, _ sessionId: String, _ interrupted: Bool, _ text: String) -> Void)?
+
+  /// One selectable option of a gated tool-permission request (ACP
+  /// `PermissionOption`): allow_once / allow_always / reject_once / reject_always.
+  struct PermissionOption: Equatable, Sendable {
+    let optionId: String
+    let kind: String
+    let name: String
+  }
+
+  /// A gated tool-permission request forwarded by the bridge's approval gate
+  /// (FAZM_APPROVAL_MODE=destructive|always — "Ask before file edits & shell
+  /// commands"). The UI renders an approval card and answers via
+  /// `sendPermissionResponse(id:optionId:)`. `id` is the bridge's gate id —
+  /// opaque to Swift, echo it back verbatim.
+  struct PermissionRequest: Equatable, Sendable, Identifiable {
+    let id: String
+    let toolCallId: String
+    /// Human-readable tool description, e.g. "Run `ls /tmp`".
+    let title: String
+    /// ACP tool-call kind: edit | delete | move | execute | read | search | fetch | think | other
+    let kind: String
+    let options: [PermissionOption]
+
+    var allowAlwaysOption: PermissionOption? { options.first { $0.kind == "allow_always" } }
+    var allowOnceOption: PermissionOption? { options.first { $0.kind == "allow_once" } }
+    var rejectOption: PermissionOption? { options.first { $0.kind.hasPrefix("reject") } }
+  }
 
   /// A slash command advertised by the agent. Mirrors ACP's `AvailableCommand`
   /// schema. Rendered in the input-field popover when the user types `/`.
@@ -453,6 +495,17 @@ actor ACPBridge {
     self.onAuthSuccessGlobal = onAuthSuccess
     self.onAuthTimeoutGlobal = onAuthTimeout
     self.onAuthFailedGlobal = onAuthFailed
+  }
+
+  /// Register the approval-gate handlers (permission_request / permission_timeout).
+  /// Mirrors `setGlobalAuthHandlers` — ChatProvider re-registers these whenever
+  /// it (re)creates a bridge.
+  func setPermissionHandlers(
+    onRequest: ((_ sessionKey: String?, _ request: PermissionRequest) -> Void)?,
+    onTimeout: ((_ id: String) -> Void)?
+  ) {
+    self.onPermissionRequestGlobal = onRequest
+    self.onPermissionTimeoutGlobal = onTimeout
   }
 
   init(mode: BridgeMode = .personalOAuth) {
@@ -1530,6 +1583,23 @@ actor ACPBridge {
     sendLine("{\"type\":\"codex_logout\"}")
   }
 
+  /// Answer a gated tool-permission request (approval gate). Pass an
+  /// `optionId` to select one of the request's options, or nil to cancel
+  /// (the agent receives `outcome: cancelled`).
+  func sendPermissionResponse(id: String, optionId: String?) {
+    guard isRunning else { return }
+    var dict: [String: Any] = ["type": "permission_response", "id": id]
+    if let optionId, !optionId.isEmpty {
+      dict["optionId"] = optionId
+    } else {
+      dict["cancelled"] = true
+    }
+    if let data = try? JSONSerialization.data(withJSONObject: dict),
+       let json = String(data: data, encoding: .utf8) {
+      sendLine(json)
+    }
+  }
+
   // MARK: - Private
 
   private func sendLine(_ line: String) {
@@ -1848,6 +1918,31 @@ actor ACPBridge {
       let toKey = dict["toSessionKey"] as? String ?? ""
       return .sessionForked(fromSessionId: fromSid, toSessionId: toSid, fromSessionKey: fromKey, toSessionKey: toKey)
 
+    case "permission_request":
+      guard let id = dict["id"] as? String, !id.isEmpty else {
+        logError("ACPBridge: permission_request missing id — dropping")
+        return nil
+      }
+      let rawOptions = dict["options"] as? [[String: Any]] ?? []
+      let options: [PermissionOption] = rawOptions.compactMap { entry in
+        guard let optionId = entry["optionId"] as? String, !optionId.isEmpty else { return nil }
+        return PermissionOption(
+          optionId: optionId,
+          kind: entry["kind"] as? String ?? "",
+          name: entry["name"] as? String ?? "")
+      }
+      return .permissionRequest(request: PermissionRequest(
+        id: id,
+        toolCallId: dict["toolCallId"] as? String ?? "",
+        title: dict["title"] as? String ?? "",
+        kind: dict["kind"] as? String ?? "other",
+        options: options))
+
+    case "permission_timeout":
+      let id = dict["id"] as? String ?? ""
+      let reason = dict["reason"] as? String ?? "timeout"
+      return .permissionTimeout(id: id, reason: reason)
+
     default:
       log("ACPBridge: unknown message type: \(type)")
       return nil
@@ -2008,6 +2103,14 @@ actor ACPBridge {
     case .availableCommandsUpdate(let commands):
       log("ACPBridge: received available_commands_update sessionKey=\(sessionKey ?? "nil") count=\(commands.count)")
       onAvailableCommandsUpdate?(sessionKey, commands)
+      return
+    case .permissionRequest(let request):
+      log("ACPBridge: received permission_request id=\(request.id) kind=\(request.kind) title='\(request.title.prefix(60))' sessionKey=\(sessionKey ?? "nil")")
+      onPermissionRequestGlobal?(sessionKey, request)
+      return
+    case .permissionTimeout(let id, let reason):
+      log("ACPBridge: received permission_timeout id=\(id) reason=\(reason)")
+      onPermissionTimeoutGlobal?(id)
       return
     case .sessionForked(let fromSid, let toSid, let fromKey, let toKey):
       log("ACPBridge: received session_forked \(fromSid) -> \(toSid) (key \(fromKey) -> \(toKey))")
