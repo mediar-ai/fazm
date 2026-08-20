@@ -145,6 +145,14 @@ struct SettingsContentView: View {
     // bundled browser-harness MCP, optionally seeded via ai-browser-profile).
     @AppStorage("browserMode") private var browserMode: String = "extension"
 
+    /// Approval gate ("cage mode"): "off" (default) auto-approves every agent
+    /// tool action; "destructive" pauses for approval before file edits, shell
+    /// commands, deletes, and moves; "always" gates everything (settable via
+    /// the `setApprovalMode:` control command — the Settings toggle maps
+    /// on → "destructive", off → "off"). Read at ACP bridge spawn time as
+    /// FAZM_APPROVAL_MODE, so flipping it restarts the bridge.
+    @AppStorage("approvalMode") private var approvalMode: String = "off"
+
     // Inherit MCP servers from ~/.claude.json (Claude Code's global config).
     // ON by default (historical behavior); the bridge maps OFF to
     // FAZM_DISABLE_CLAUDE_CODE_MCP=true at spawn time (ACPBridge.swift).
@@ -1600,6 +1608,44 @@ struct SettingsContentView: View {
                         )
                     }
                 }
+            }
+
+            // Approval gate — ask before destructive agent tool actions
+            settingsCard(settingId: "aichat.approvalgate") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "hand.raised")
+                            .scaledFont(size: 16)
+                            .foregroundColor(FazmColors.textTertiary)
+                        Text("Ask before file edits & shell commands")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(FazmColors.textPrimary)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { approvalMode != "off" },
+                            set: { approvalMode = $0 ? "destructive" : "off" }
+                        ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                    }
+
+                    Text("When on, the AI pauses and asks for your approval before editing files, running shell commands, or deleting and moving things. Reading and searching stay automatic.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(FazmColors.textTertiary)
+                }
+            }
+            .onChange(of: approvalMode) { _, newValue in
+                AnalyticsManager.shared.settingToggled(setting: "approval_mode_\(newValue)", enabled: newValue != "off")
+                // FAZM_APPROVAL_MODE is read at ACP bridge spawn time, so the
+                // toggle has no effect until the bridge restarts. Same graceful
+                // SIGHUP restart mechanism as the browser-mode picker above.
+                // Bundle-scoped: restart only THIS build's bridge.
+                DistributedNotificationCenter.default().postNotificationName(
+                    NSNotification.Name("com.fazm.\(AppPaths.bundleScope).control"),
+                    object: nil,
+                    userInfo: ["command": "restartBridge"],
+                    deliverImmediately: true
+                )
             }
 
             // Managed Browser card (visible when browserMode == "managed")
