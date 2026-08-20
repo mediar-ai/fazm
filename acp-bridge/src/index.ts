@@ -1241,6 +1241,7 @@ function getCodexProvider(): CodexProvider {
   if (!codexProvider) {
     codexProvider = new CodexProvider({
       logErr: (m) => logErr(`[codex] ${m}`),
+      onPermissionGate: (rpcId, params, reply) => approvalGate.handleRequest("codex", rpcId, params, reply),
       onNotification: (method, params) => {
         // Phase 2.1: log unrouted codex notifications. Per-session routing is
         // wired in Phase 2.3 when query handlers register their own handlers.
@@ -1357,6 +1358,7 @@ function getGeminiProvider(): GeminiProvider | null {
   if (!geminiProvider) {
     geminiProvider = new GeminiProvider({
       logErr: (m) => logErr(`[gemini] ${m}`),
+      onPermissionGate: (rpcId, params, reply) => approvalGate.handleRequest("gemini", rpcId, params, reply),
       onNotification: (method, params) => {
         const p = params as Record<string, unknown> | undefined;
         const sid = (p?.sessionId as string | undefined)
@@ -6655,8 +6657,34 @@ async function main(): Promise<void> {
         resolveToolCall(msg);
         break;
 
+      case "permission_response": {
+        // Swift's answer to a gated permission_request (approval gate).
+        const pm = msg as { id?: string; optionId?: string; cancelled?: boolean };
+        if (typeof pm.id === "string") {
+          approvalGate.handleResponse(pm.id, pm.optionId, pm.cancelled);
+        } else {
+          logErr("permission_response: missing id");
+        }
+        break;
+      }
+
       case "interrupt": {
         const targetKey = (msg as { sessionKey?: string }).sessionKey;
+        // Flush any gated permission requests parked under this key's session
+        // BEFORE cancelling — a pending gate would otherwise hold the turn
+        // open until the 300s approval timeout. The same key may map to a
+        // claude, codex, or gemini session depending on the selected model.
+        if (targetKey) {
+          for (const sid of [
+            activeQueries.get(targetKey)?.sessionId,
+            codexSessionIdForKey(targetKey),
+            geminiSessionIdForKey(targetKey),
+          ]) {
+            if (sid) approvalGate.cancelForSession(sid, "interrupted");
+          }
+        } else {
+          approvalGate.cancelAll("interrupted");
+        }
         if (targetKey) {
           // Per-session interrupt: only abort the targeted session
           const ctx = activeQueries.get(targetKey);
@@ -6736,6 +6764,8 @@ async function main(): Promise<void> {
         let stalledToolName = "";
         let stalledToolUseId = "";
         if (ctx) {
+          // Flush gated permission requests first — same rationale as "interrupt".
+          approvalGate.cancelForSession(ctx.sessionId, "force interrupted");
           for (const [callId, tool] of inFlightTools) {
             if (tool.sessionId === ctx.sessionId && tool.title.startsWith("mcp__")) {
               stalledToolName = tool.title;
@@ -6787,6 +6817,12 @@ async function main(): Promise<void> {
         }
         const entry = sessions.get(closeKey);
         const ctx = activeQueries.get(closeKey);
+        // Flush gated permission requests parked under this session — the
+        // window is going away, so no one can ever answer them.
+        for (const sid of new Set([entry?.sessionId, ctx?.sessionId,
+          codexSessionIdForKey(closeKey), geminiSessionIdForKey(closeKey)])) {
+          if (sid) approvalGate.cancelForSession(sid, "session closed");
+        }
         if (ctx && !ctx.abortController.signal.aborted) {
           logErr(`close_session: aborting in-flight query for key=${closeKey} sessionId=${ctx.sessionId.slice(0, 8)}`);
           ctx.interruptRequested = true;
