@@ -171,6 +171,11 @@ function runBridge(job, timeoutSec) {
 
     const env = { ...process.env };
     delete env.CLAUDECODE; // Same as Swift does — avoid nested-session guard
+    // Headless runs have no UI to answer approval prompts — force the approval
+    // gate off so a routine can never park on a permission_request and hang.
+    // (The interactive Swift app injects FAZM_APPROVAL_MODE only into its own
+    // bridge, but strip it anyway in case it leaked into our environment.)
+    delete env.FAZM_APPROVAL_MODE;
     env.NODE_NO_WARNINGS = "1";
     // Tell fazm-tools-stdio that this is a headless cron run, not a UI session.
     // Used by tools that would otherwise pop up a UI confirm (cron has no UI).
