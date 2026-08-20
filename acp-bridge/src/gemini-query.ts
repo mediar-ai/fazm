@@ -417,6 +417,16 @@ export function interruptAllGeminiSessions(provider: GeminiProvider): number {
   return keys.length;
 }
 
+/** Reverse lookup: sessionKey for a live gemini sessionId (approval-gate event routing). */
+export function geminiSessionKeyForId(sessionId: string): string | undefined {
+  return geminiSessionIdToKey.get(sessionId);
+}
+
+/** Forward lookup: live gemini sessionId for a sessionKey (approval-gate interrupt flush). */
+export function geminiSessionIdForKey(sessionKey: string): string | undefined {
+  return geminiSessions.get(sessionKey)?.sessionId;
+}
+
 export function geminiSessionCount(): number {
   return geminiSessions.size;
 }
