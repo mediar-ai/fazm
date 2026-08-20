@@ -374,10 +374,10 @@ actor ACPBridge {
   /// Called when the bridge's approval gate parks a tool-permission request
   /// pending a user decision (permission_request event). Fires regardless of
   /// whether a query continuation is active — the card must render mid-turn.
-  var onPermissionRequestGlobal: ((_ sessionKey: String?, _ request: PermissionRequest) -> Void)?
+  var onPermissionRequestGlobal: (@Sendable (_ sessionKey: String?, _ request: PermissionRequest) -> Void)?
   /// Called when a gated permission request resolved without a user decision
   /// (timeout / interrupt / session close / bridge shutdown). Clears the card.
-  var onPermissionTimeoutGlobal: ((_ id: String) -> Void)?
+  var onPermissionTimeoutGlobal: (@Sendable (_ id: String) -> Void)?
 
   /// Safety-net: called when a `.result` arrives for a sessionKey that has no
   /// active continuation AND no live-transfer alias pointing to it. Two
@@ -501,8 +501,8 @@ actor ACPBridge {
   /// Mirrors `setGlobalAuthHandlers` — ChatProvider re-registers these whenever
   /// it (re)creates a bridge.
   func setPermissionHandlers(
-    onRequest: ((_ sessionKey: String?, _ request: PermissionRequest) -> Void)?,
-    onTimeout: ((_ id: String) -> Void)?
+    onRequest: (@Sendable (_ sessionKey: String?, _ request: PermissionRequest) -> Void)?,
+    onTimeout: (@Sendable (_ id: String) -> Void)?
   ) {
     self.onPermissionRequestGlobal = onRequest
     self.onPermissionTimeoutGlobal = onTimeout
