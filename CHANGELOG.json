@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Added an optional approval gate: turn on \"Ask before file edits & shell commands\" in Settings and the AI pauses for your approval before editing files, running shell commands, or deleting anything"
+  ],
   "releases": [
     {
       "version": "2.9.83",
