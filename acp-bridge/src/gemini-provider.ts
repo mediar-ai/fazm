@@ -20,6 +20,7 @@ import { createInterface } from "readline";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import type { PermissionReply } from "./approval-gate.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,9 @@ export interface GeminiProviderOptions {
   onExit?: (code: number | null) => void;
   onNotification?: NotificationHandler;
   onPermissionRequest?: (params: unknown) => string;
+  /** When set, fully owns replying to session/request_permission (may defer
+   *  the reply — approval gate). Takes precedence over onPermissionRequest. */
+  onPermissionGate?: (rpcId: number, params: unknown, reply: (result: PermissionReply) => void) => void;
 }
 
 export interface GeminiInitResult {
