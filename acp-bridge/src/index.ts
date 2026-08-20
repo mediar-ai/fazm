@@ -6320,6 +6320,10 @@ process.on("SIGHUP", () => {
   const startedAt = Date.now();
   const MAX_WAIT_MS = 5 * 60 * 1000;
   logErr(`[CONTROL] SIGHUP: graceful restart requested (activeQueries=${activeQueries.size}, sessions=${sessions.size})`);
+  // Flush gated permission requests as cancelled up front: a parked
+  // session/request_permission keeps its query in-flight, which would hold
+  // the drain loop open for up to the full 300s approval timeout.
+  approvalGate.cancelAll("bridge restarting");
   const poll = setInterval(() => {
     if (activeQueries.size === 0) {
       clearInterval(poll);
@@ -6937,6 +6941,18 @@ async function main(): Promise<void> {
 
       case "resetSession": {
         const key = (msg as any).sessionKey;
+        // Flush gated permission requests parked under this key's session —
+        // "new chat" abandons the turn, so a pending gate must not hang it.
+        if (key) {
+          for (const sid of [
+            sessions.get(key)?.sessionId,
+            activeQueries.get(key)?.sessionId,
+            codexSessionIdForKey(key),
+            geminiSessionIdForKey(key),
+          ]) {
+            if (sid) approvalGate.cancelForSession(sid, "session reset");
+          }
+        }
         // Drop any codex or gemini session under this key first — the same
         // key can map to any provider depending on the user's selected model.
         if (key && codexProvider) {
@@ -6993,6 +7009,7 @@ async function main(): Promise<void> {
 
       case "stop":
         logErr("Received stop signal, exiting");
+        approvalGate.cancelAll("bridge stopping");
         if (activeAbort) activeAbort.abort();
         killAcpProcessTree();
         if (codexProvider?.isRunning()) {
