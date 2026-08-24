@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed browser automation failing to connect after a Chrome extension auto-update, which left the agent hanging on browser tool calls instead of reporting an error"
+  ],
   "releases": [
     {
       "version": "2.9.84",
