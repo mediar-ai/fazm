@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed browser automation failing to connect after a Chrome extension auto-update, which left the agent hanging on browser tool calls instead of reporting an error"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.85",
+      "date": "2026-08-24",
+      "changes": [
+        "Fixed browser automation failing to connect after a Chrome extension auto-update, which left the agent hanging on browser tool calls instead of reporting an error"
+      ]
+    },
     {
       "version": "2.9.84",
       "date": "2026-08-20",
