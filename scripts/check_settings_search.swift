@@ -312,8 +312,18 @@ var failed = false
 var missing: [(title: String, file: String, line: Int)] = []
 for setting in uniqueSettings {
     if ignoredTitles.contains(setting.title) { continue }
+    // Case-insensitive: search-item names are written in Title Case while the
+    // UI labels they point at are sentence case (e.g. "Ask Before File Edits &
+    // Shell Commands" vs "Ask before file edits & shell commands"). Comparing
+    // case-sensitively here reported those as missing from search even though
+    // they were indexed, with a matching settingId. The rest of this script
+    // already lowercases before matching.
+    let settingTitleLower = setting.title.lowercased()
     let found = searchNames.contains(where: { name in
-        name == setting.title || name.contains(setting.title) || setting.title.contains(name)
+        let nameLower = name.lowercased()
+        return nameLower == settingTitleLower
+            || nameLower.contains(settingTitleLower)
+            || settingTitleLower.contains(nameLower)
     })
     if !found {
         missing.append((setting.title, setting.file, setting.line))
