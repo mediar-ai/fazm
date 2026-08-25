@@ -2607,8 +2607,15 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
   if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
     playwrightArgs.push("--extension");
   }
-  // Save snapshots to files and strip inline base64 screenshots to reduce context size
-  playwrightArgs.push("--output-mode", "file", "--image-responses", "omit", "--output-dir", "/tmp/playwright-mcp");
+  // Save snapshots to files and strip inline base64 screenshots to reduce context size.
+  //
+  // NOTE: --output-mode was REMOVED upstream in @playwright/mcp 0.0.79 (it is gone
+  // from both the CLI and the config schema; file output is now implied by
+  // --output-dir). Passing it makes the CLI exit immediately with
+  // "error: unknown option '--output-mode'", which presents to the user as
+  // "The playwright server disconnected" and a silent fallback to whatever other
+  // browser MCP happens to be registered. Verify `cli.js --help` after any bump.
+  playwrightArgs.push("--image-responses", "omit", "--output-dir", "/tmp/playwright-mcp");
   // Inject visual overlay on every page to indicate browser is controlled by Fazm.
   // This depends on THREE things being present at runtime:
   //   1. browser-overlay-init-page.cjs       (passed via Playwright --init-page)
