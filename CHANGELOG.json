@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed browser automation failing to connect after a Chrome extension auto-update; browser tools now work again instead of hanging"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.86",
+      "date": "2026-08-25",
+      "changes": [
+        "Fixed browser automation failing to connect after a Chrome extension auto-update; browser tools now work again instead of hanging"
+      ]
+    },
     {
       "version": "2.9.85",
       "date": "2026-08-24",
