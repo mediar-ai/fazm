@@ -2661,32 +2661,19 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
       value: process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN,
     });
   }
-  // Extension relay protocol version. We pin @playwright/mcp, but the Chrome
-  // Web Store extension auto-updates on Microsoft's schedule — so the two drift
-  // apart on their own and every install breaks at once, regardless of which
-  // Fazm build the user is on.
+  // Extension relay protocol version is negotiated by playwright-core itself.
+  // We pin @playwright/mcp, but the Chrome Web Store extension auto-updates on
+  // Microsoft's schedule, so the two drift apart on their own and every install
+  // breaks at once regardless of which Fazm build the user is on. The fix is to
+  // keep the pinned MCP new enough to speak the extension's protocol, NOT to
+  // override the version here.
   //
-  // Pinned 0.0.73 defaults to protocol 1 (DEFAULT_VERSION = 1 in playwright-core).
-  // Extension v0.3.0+ hardcodes SUPPORTED_PROTOCOL_VERSION = 2 and rejects
-  // anything lower in connect.html:
-  //   "The client uses an unsupported protocol version. Update Playwright MCP
-  //    or CLI to the latest version."
-  // That rejection never comes back over the relay, so on our side it presents
-  // as a silent hang until the tool watchdog fires, not as an error.
-  //
-  // 0.0.73 already ships the complete ExtensionProtocolV2 handler and selects it
-  // purely on this env var, so forcing 2 fixes the handshake with no dependency
-  // bump. Verified against extension 0.3.0: navigate/tabs/snapshot/screenshot/
-  // console/network/evaluate all pass, and the Fazm overlay + __fazmPing hook
-  // still inject under the V2 handler.
-  //
-  // Overridable so a future extension bump (protocol 3) can be tested without a
-  // rebuild. Note @playwright/mcp 0.0.79+ dropped V1 entirely (VERSION = 2,
-  // unconditional ExtensionProtocolV2), so this is a one-way door upstream.
-  playwrightEnv.push({
-    name: "PLAYWRIGHT_EXTENSION_PROTOCOL",
-    value: process.env.PLAYWRIGHT_EXTENSION_PROTOCOL ?? "2",
-  });
+  // Do NOT reintroduce PLAYWRIGHT_EXTENSION_PROTOCOL=2 as a shortcut. Forcing
+  // the version on an older MCP makes the handshake succeed against a protocol
+  // the bundled relay cannot actually speak: the extension reports "connected"
+  // and then every browser_* call hangs until the 5-min tool watchdog fires.
+  // That is strictly worse than the honest fast failure. Tried in v2.9.85,
+  // reverted here.
   servers.push({
     name: "playwright",
     command: process.execPath,
@@ -6486,7 +6473,7 @@ async function main(): Promise<void> {
   }, 5 * 60 * 1000).unref();
 
   logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}, browser-harness=${existsSync(browserHarnessMcpPython) ? "bundled" : "missing"}, ai-browser-profile=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, assrt=${existsSync(assrtMcpEntry) ? "bundled" : "missing"}, browserMode=${browserMode}, assrtEnabled=${assrtEnabled}`);
-  logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, extensionProtocol=${process.env.PLAYWRIGHT_EXTENSION_PROTOCOL ?? "2"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
+  logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
 
   // Check Google Workspace MCP availability (venv bundled in app)
   logErr(`Google Workspace MCP: ${existsSync(googleWorkspaceMcpPython) ? "ready" : "not available"}`);
