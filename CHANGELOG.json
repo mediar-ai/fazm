@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed browser automation failing to connect after a Chrome extension auto-update; browser tools now work again instead of hanging"
+  ],
   "releases": [
     {
       "version": "2.9.85",
