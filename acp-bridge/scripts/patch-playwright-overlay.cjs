@@ -64,104 +64,107 @@ if (code.includes("_fazmPingHook")) {
 }
 
 // Original Playwright CLI factory create() block (unpatched state).
+// Shape as of playwright-core 1.63 (@playwright/mcp 0.0.79): 10-space indent and
+// a FOURTH constructor argument (an async teardown callback) that spans multiple
+// lines. Pre-1.63 this was an 8-space, 3-argument, single-line return; the v1
+// upgrade path that handled that older shape has been dropped because it can no
+// longer match. If this FATALs after a Playwright bump, re-extract the block from
+// node_modules/playwright-core/lib/coreBundle.js and update OLD_BLOCK/V2_NEW_BLOCK.
 const OLD_BLOCK =
-  '        const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];\n' +
-  '        return new BrowserBackend(config, browserContext, tools);\n' +
-  '      },';
-
-// v1 patched block — overlay injection only, used to detect a stale v1 patch
-// and upgrade it in place to v2.
-const V1_NEW_BLOCK =
-  '        const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];\n' +
-  '        // Fazm: inject overlay on every page in extension mode.\n' +
-  '        // addInitScript does NOT work on CDP-connected contexts (extension mode\n' +
-  '        // uses connectOverCDP), so we hook page load events + inject immediately\n' +
-  '        // into already-loaded pages. Guard with config.extension so this is a\n' +
-  '        // no-op in isolated/persistent/CDP modes.\n' +
-  '        if (config.extension) {\n' +
-  '          try {\n' +
-  '            const _fazmFs = require("fs");\n' +
-  '            const _fazmPath = require("path");\n' +
-  '            const _fazmOverlayPath = _fazmPath.join(__dirname, "..", "..", "..", "browser-overlay-init.js");\n' +
-  '            if (_fazmFs.existsSync(_fazmOverlayPath)) {\n' +
-  '              const _fazmOverlayScript = _fazmFs.readFileSync(_fazmOverlayPath, "utf-8");\n' +
-  '              const _injectOverlay = async (p) => { try { await p.evaluate(_fazmOverlayScript); } catch (e) {} };\n' +
-  '              const _setupPage = (p) => {\n' +
-  '                p.on("load", () => _injectOverlay(p));\n' +
-  '                p.on("domcontentloaded", () => _injectOverlay(p));\n' +
-  '                _injectOverlay(p);\n' +
-  '              };\n' +
-  '              for (const p of browserContext.pages()) _setupPage(p);\n' +
-  '              browserContext.on("page", (p) => _setupPage(p));\n' +
+  '          const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];\n' +
+  '          return new BrowserBackend(config, browserContext, tools, async () => {\n' +
+  '            clientCount--;\n' +
+  '            if (sharedBrowserPromise && clientCount > 0) {\n' +
+  '              if (config.browser.isolated) {\n' +
+  '                testDebug3("close context");\n' +
+  '                await browserContext.close().catch(() => {\n' +
+  '                });\n' +
+  '              }\n' +
+  '              return;\n' +
   '            }\n' +
-  '          } catch (e) { /* overlay is optional, never break Playwright */ }\n' +
-  '        }\n' +
-  '        return new BrowserBackend(config, browserContext, tools);\n' +
-  '      },';
+  '            testDebug3("close browser");\n' +
+  '            if (sharedBrowserPromise === promise)\n' +
+  '              sharedBrowserPromise = void 0;\n' +
+  '            await browserContext.close().catch(() => {\n' +
+  '            });\n' +
+  '            await browser.close().catch(() => {\n' +
+  '            });\n' +
+  '          });\n';
 
 // v2 patched block — overlay injection + tool-call ping hook (_fazmPingHook).
-// After every BrowserBackend.callTool() invocation, we ping each page so the
-// overlay resets its 5s auto-hide timer / fades back in if currently faded out.
+// The BrowserBackend construction (including the teardown callback) is preserved
+// verbatim; we only bind it to a local so callTool can be wrapped before return.
 const V2_NEW_BLOCK =
-  '        const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];\n' +
-  '        // Fazm: extension-mode overlay + tool-call ping hook (_fazmPingHook).\n' +
-  '        // addInitScript does NOT work on CDP-connected contexts (extension mode\n' +
-  '        // uses connectOverCDP), so we hook page load events + inject immediately\n' +
-  '        // into already-loaded pages. We then wrap BrowserBackend.callTool so each\n' +
-  '        // tool execution calls window.__fazmPing() on every page (resets the 5s\n' +
-  '        // overlay-hide timer and fades it back in if currently faded out).\n' +
-  '        // Guard with config.extension so this is a no-op in isolated/persistent modes.\n' +
-  '        let _fazmPingAllPages = () => {};\n' +
-  '        if (config.extension) {\n' +
-  '          try {\n' +
-  '            const _fazmFs = require("fs");\n' +
-  '            const _fazmPath = require("path");\n' +
-  '            const _fazmOverlayPath = _fazmPath.join(__dirname, "..", "..", "..", "browser-overlay-init.js");\n' +
-  '            if (_fazmFs.existsSync(_fazmOverlayPath)) {\n' +
-  '              const _fazmOverlayScript = _fazmFs.readFileSync(_fazmOverlayPath, "utf-8");\n' +
-  '              const _injectOverlay = async (p) => { try { await p.evaluate(_fazmOverlayScript); } catch (e) {} };\n' +
-  '              const _setupPage = (p) => {\n' +
-  '                p.on("load", () => _injectOverlay(p));\n' +
-  '                p.on("domcontentloaded", () => _injectOverlay(p));\n' +
-  '                _injectOverlay(p);\n' +
-  '              };\n' +
-  '              for (const p of browserContext.pages()) _setupPage(p);\n' +
-  '              browserContext.on("page", (p) => _setupPage(p));\n' +
-  '              _fazmPingAllPages = () => {\n' +
-  '                try {\n' +
-  '                  for (const p of browserContext.pages()) {\n' +
-  '                    p.evaluate(() => { try { if (typeof window.__fazmPing === "function") window.__fazmPing(); } catch (e) {} }).catch(() => {});\n' +
-  '                  }\n' +
-  '                } catch (e) {}\n' +
-  '              };\n' +
-  '            }\n' +
-  '          } catch (e) { /* overlay is optional, never break Playwright */ }\n' +
-  '        }\n' +
-  '        const _fazmBackend = new BrowserBackend(config, browserContext, tools);\n' +
-  '        try {\n' +
-  '          const _fazmOrigCallTool = _fazmBackend.callTool.bind(_fazmBackend);\n' +
-  '          _fazmBackend.callTool = async function (name, rawArguments, signal) {\n' +
+  '          const browserContext = config.browser.isolated ? await browser.newContext(config.browser.contextOptions) : browser.contexts()[0];\n' +
+  '          // Fazm: extension-mode overlay + tool-call ping hook (_fazmPingHook).\n' +
+  '          // addInitScript does NOT work on CDP-connected contexts (extension mode\n' +
+  '          // uses connectOverCDP), so we hook page load events + inject immediately\n' +
+  '          // into already-loaded pages. We then wrap BrowserBackend.callTool so each\n' +
+  '          // tool execution calls window.__fazmPing() on every page (resets the 5s\n' +
+  '          // overlay-hide timer and fades it back in if currently faded out).\n' +
+  '          // Guard with config.extension so this is a no-op in isolated/persistent modes.\n' +
+  '          let _fazmPingAllPages = () => {};\n' +
+  '          if (config.extension) {\n' +
   '            try {\n' +
-  '              return await _fazmOrigCallTool(name, rawArguments, signal);\n' +
-  '            } finally {\n' +
-  '              _fazmPingAllPages();\n' +
+  '              const _fazmFs = require("fs");\n' +
+  '              const _fazmPath = require("path");\n' +
+  '              const _fazmOverlayPath = _fazmPath.join(__dirname, "..", "..", "..", "browser-overlay-init.js");\n' +
+  '              if (_fazmFs.existsSync(_fazmOverlayPath)) {\n' +
+  '                const _fazmOverlayScript = _fazmFs.readFileSync(_fazmOverlayPath, "utf-8");\n' +
+  '                const _injectOverlay = async (p) => { try { await p.evaluate(_fazmOverlayScript); } catch (e) {} };\n' +
+  '                const _setupPage = (p) => {\n' +
+  '                  p.on("load", () => _injectOverlay(p));\n' +
+  '                  p.on("domcontentloaded", () => _injectOverlay(p));\n' +
+  '                  _injectOverlay(p);\n' +
+  '                };\n' +
+  '                for (const p of browserContext.pages()) _setupPage(p);\n' +
+  '                browserContext.on("page", (p) => _setupPage(p));\n' +
+  '                _fazmPingAllPages = () => {\n' +
+  '                  try {\n' +
+  '                    for (const p of browserContext.pages()) {\n' +
+  '                      p.evaluate(() => { try { if (typeof window.__fazmPing === "function") window.__fazmPing(); } catch (e) {} }).catch(() => {});\n' +
+  '                    }\n' +
+  '                  } catch (e) {}\n' +
+  '                };\n' +
+  '              }\n' +
+  '            } catch (e) { /* overlay is optional, never break Playwright */ }\n' +
+  '          }\n' +
+  '          const _fazmBackend = new BrowserBackend(config, browserContext, tools, async () => {\n' +
+  '            clientCount--;\n' +
+  '            if (sharedBrowserPromise && clientCount > 0) {\n' +
+  '              if (config.browser.isolated) {\n' +
+  '                testDebug3("close context");\n' +
+  '                await browserContext.close().catch(() => {\n' +
+  '                });\n' +
+  '              }\n' +
+  '              return;\n' +
   '            }\n' +
-  '          };\n' +
-  '        } catch (e) { /* _fazmPingHook is optional, never break Playwright */ }\n' +
-  '        return _fazmBackend;\n' +
-  '      },';
+  '            testDebug3("close browser");\n' +
+  '            if (sharedBrowserPromise === promise)\n' +
+  '              sharedBrowserPromise = void 0;\n' +
+  '            await browserContext.close().catch(() => {\n' +
+  '            });\n' +
+  '            await browser.close().catch(() => {\n' +
+  '            });\n' +
+  '          });\n' +
+  '          try {\n' +
+  '            const _fazmOrigCallTool = _fazmBackend.callTool.bind(_fazmBackend);\n' +
+  '            _fazmBackend.callTool = async function (name, rawArguments, signal) {\n' +
+  '              try {\n' +
+  '                return await _fazmOrigCallTool(name, rawArguments, signal);\n' +
+  '              } finally {\n' +
+  '                _fazmPingAllPages();\n' +
+  '              }\n' +
+  '            };\n' +
+  '          } catch (e) { /* _fazmPingHook is optional, never break Playwright */ }\n' +
+  '          return _fazmBackend;\n';
 
 let patchedFrom;
-if (code.includes("_fazmOverlayScript") && code.includes(V1_NEW_BLOCK)) {
-  // Upgrade v1 → v2 in place.
-  code = code.replace(V1_NEW_BLOCK, V2_NEW_BLOCK);
-  patchedFrom = "v1 (upgrade)";
-} else if (code.includes(OLD_BLOCK)) {
-  // Fresh install.
+if (code.includes(OLD_BLOCK)) {
   code = code.replace(OLD_BLOCK, V2_NEW_BLOCK);
   patchedFrom = "unpatched";
 } else {
-  console.error("[patch-overlay] FATAL: neither OLD_BLOCK nor V1_NEW_BLOCK matched coreBundle.js.");
+  console.error("[patch-overlay] FATAL: OLD_BLOCK did not match coreBundle.js.");
   console.error("[patch-overlay] Playwright MCP internals likely changed. See comments at top of this file.");
   if (process.env.FAZM_ALLOW_MISSING_OVERLAY === "1") {
     console.error("[patch-overlay] FAZM_ALLOW_MISSING_OVERLAY=1 set — continuing without patch.");
