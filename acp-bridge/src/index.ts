@@ -6480,7 +6480,7 @@ async function main(): Promise<void> {
   }, 5 * 60 * 1000).unref();
 
   logErr(`MCP versions: playwright=${playwrightVersion}, macos-use=${existsSync(macosUseBinary) ? "bundled" : "missing"}, whatsapp=${existsSync(whatsappMcpBinary) ? "bundled" : "missing"}, google-workspace=${existsSync(googleWorkspaceMcpPython) ? "bundled" : "missing"}, browser-harness=${existsSync(browserHarnessMcpPython) ? "bundled" : "missing"}, ai-browser-profile=${existsSync(aiBrowserProfilePython) ? "bundled" : "missing"}, assrt=${existsSync(assrtMcpEntry) ? "bundled" : "missing"}, browserMode=${browserMode}, assrtEnabled=${assrtEnabled}`);
-  logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, outputMode=file, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
+  logErr(`Playwright MCP config: extension=${process.env.PLAYWRIGHT_USE_EXTENSION ?? "false"}, token=${process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN ? "set" : "unset"}, imageResponses=omit, outputDir=/tmp/playwright-mcp`);
 
   // Check Google Workspace MCP availability (venv bundled in app)
   logErr(`Google Workspace MCP: ${existsSync(googleWorkspaceMcpPython) ? "ready" : "not available"}`);
