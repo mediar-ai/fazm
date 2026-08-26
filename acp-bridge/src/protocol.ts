@@ -293,6 +293,10 @@ export interface ErrorMessage {
   type: "error";
   message: string;
   sessionId?: string;
+  /** Routes the error to the waiting per-session query loop. Without it Swift
+   *  falls back to the legacy sessionless queue, which no in-flight query is
+   *  reading, and the caller spins forever instead of seeing the failure. */
+  sessionKey?: string;
 }
 
 /** Sent when ACP requires user authentication (OAuth) */
