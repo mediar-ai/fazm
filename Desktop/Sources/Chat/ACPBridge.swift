@@ -329,6 +329,14 @@ actor ACPBridge {
 
   let mode: BridgeMode
 
+  /// Whether the running bridge process was spawned with `GEMINI_API_KEY` in its
+  /// environment. `makeBridgeEnvironment` reads `KeyService.geminiAPIKey`
+  /// synchronously, so a bridge that wins the race against the backend key fetch
+  /// starts keyless and every Gemini query then fails auth for the life of that
+  /// process. ChatProvider checks this before serving a Gemini query and restarts
+  /// the bridge once the key has landed.
+  private(set) var spawnedWithGeminiKey: Bool = false
+
   /// Persistent auth handler called whenever auth_required arrives (even outside query)
   var onAuthRequiredGlobal: AuthRequiredHandler?
   /// Persistent auth success handler called whenever auth_success arrives (even outside query)
@@ -654,7 +662,12 @@ actor ACPBridge {
     // routine scheduler (RoutineScheduler) can spawn cron-runner.mjs — which spawns
     // its own headless bridge — with byte-identical auth/MCP env. A var added there
     // for interactive chat is then automatically inherited by routines.
-    proc.environment = await Self.makeBridgeEnvironment(mode: mode, nodePath: nodePath, interactive: true)
+    let bridgeEnv = await Self.makeBridgeEnvironment(mode: mode, nodePath: nodePath, interactive: true)
+    spawnedWithGeminiKey = !(bridgeEnv["GEMINI_API_KEY"] ?? "").isEmpty
+    if bridgeEnv["FAZM_GEMINI_ENABLED"] == "true" && !spawnedWithGeminiKey {
+      log("ACPBridge: WARNING starting bridge WITHOUT GEMINI_API_KEY — Gemini queries will fail auth until keys land and the bridge restarts")
+    }
+    proc.environment = bridgeEnv
 
     let stdin = Pipe()
     let stdout = Pipe()
@@ -1983,6 +1996,27 @@ actor ACPBridge {
       if let sid = sid, let recovered = sessionIdToKey[sid] {
         log("ACPBridge: deliverMessage recovered sessionKey=\(recovered) from sessionId=\(sid) (bridge dropped sessionKey field)")
         effectiveSessionKey = recovered
+      }
+
+      // Safety net for sessionless `.error`. An error raised BEFORE a session
+      // exists (e.g. gemini-cli auth failing at spawn) has neither sessionKey
+      // nor sessionId, so the sessionId lookup above cannot recover it. Without
+      // this it lands on the legacy sessionless queue that no in-flight query
+      // reads, and — because the query loop has no timeout — the caller spins
+      // forever with no error ever surfaced. That silently broke Gemini for 38
+      // users over 3 months.
+      //
+      // Rescue rule mirrors decideGeminiRoute's: only when EXACTLY ONE session
+      // is waiting, so we can never misattribute a failure across concurrent
+      // turns. With 0 or 2+ waiters we keep the legacy behaviour.
+      if effectiveSessionKey == nil, case .error = message {
+        let waiting = sessionContinuations.filter { $0.value.isPending }.map { $0.key }
+        if waiting.count == 1 {
+          log("ACPBridge: deliverMessage rescued sessionless error → sessionKey=\(waiting[0]) (sole waiter)")
+          effectiveSessionKey = waiting[0]
+        } else {
+          log("ACPBridge: sessionless error with \(waiting.count) waiters — leaving on legacy queue")
+        }
       }
     }
     let sessionKey = effectiveSessionKey
