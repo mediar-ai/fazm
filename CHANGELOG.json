@@ -1,5 +1,8 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed Gemini models silently failing to respond when the app started before your API keys finished loading",
+    "Gemini errors now show a message instead of leaving the assistant spinning forever"
+  ],
   "releases": [
     {
       "version": "2.9.86",
