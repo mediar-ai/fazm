@@ -96,7 +96,7 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
     await provider.authenticate();
   } catch (err) {
     logErr(`[gemini-query] init failed: ${err}`);
-    send({ type: "error", message: `Gemini unavailable: ${err instanceof Error ? err.message : String(err)}` });
+    send({ type: "error", sessionKey, message: `Gemini unavailable: ${err instanceof Error ? err.message : String(err)}` });
     return;
   }
 
@@ -173,7 +173,7 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
         }
       } catch (err) {
         logErr(`[gemini-query] session/new failed: ${err}`);
-        send({ type: "error", message: `Gemini session failed: ${err instanceof Error ? err.message : String(err)}` });
+        send({ type: "error", sessionKey, message: `Gemini session failed: ${err instanceof Error ? err.message : String(err)}` });
         return;
       }
     }
@@ -275,11 +275,12 @@ export async function handleGeminiQuery(msg: QueryMessage, deps: GeminiQueryDeps
     if (/location is not supported for the API/i.test(combinedErr)) {
       send({
         type: "error",
+        sessionKey,
         message:
           "Gemini isn't available in your region yet. Switch to Claude in the model picker (or connect a personal Claude/ChatGPT account in Settings) to keep going.",
       });
     } else {
-      send({ type: "error", message: turnErr ?? `Gemini prompt failed: ${rawMsg}` });
+      send({ type: "error", sessionKey, message: turnErr ?? `Gemini prompt failed: ${rawMsg}` });
     }
   } finally {
     provider.endActivePrompt(sessionId);
