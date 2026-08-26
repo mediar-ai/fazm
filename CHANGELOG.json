@@ -1,9 +1,14 @@
 {
-  "unreleased": [
-    "Fixed Gemini models silently failing to respond when the app started before your API keys finished loading",
-    "Gemini errors now show a message instead of leaving the assistant spinning forever"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.87",
+      "date": "2026-08-26",
+      "changes": [
+        "Fixed Gemini models silently failing to respond when the app started before your API keys finished loading",
+        "Gemini errors now show a message instead of leaving the assistant spinning forever"
+      ]
+    },
     {
       "version": "2.9.86",
       "date": "2026-08-25",
