@@ -1726,6 +1726,26 @@ class ChatProvider: ObservableObject {
             }
         }
 
+        // Same recovery, for Gemini. `makeBridgeEnvironment` reads
+        // `KeyService.geminiAPIKey` synchronously, and warmup fires so early in
+        // startup that it races the backend key fetch (which itself fails open —
+        // `_doFetch` bails immediately when auth hasn't restored yet). A bridge
+        // that loses that race starts with no GEMINI_API_KEY and every Gemini
+        // query fails auth for the life of the process, with no way back short
+        // of a lucky relaunch. Unlike the Claude arm above this is mode-agnostic:
+        // the Gemini key is forwarded in both builtin and personal mode.
+        if acpBridgeStarted,
+           !acpBridge.spawnedWithGeminiKey,
+           Self.isGeminiModelId(ShortcutSettings.shared.selectedModel) {
+            await KeyService.shared.ensureKeys()
+            if let key = KeyService.shared.geminiAPIKey, !key.isEmpty {
+                log("ChatProvider: Gemini key now available — restarting bridge (was spawned without GEMINI_API_KEY)")
+                await acpBridge.stop()
+                acpBridge = createBridge()
+                acpBridgeStarted = false
+            }
+        }
+
         guard !acpBridgeStarted else { return true }
 
         // Telemetry: bridge_warmup_started/_ready bracket the cold-start window
