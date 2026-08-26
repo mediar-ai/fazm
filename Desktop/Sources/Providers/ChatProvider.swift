@@ -1735,8 +1735,8 @@ class ChatProvider: ObservableObject {
         // of a lucky relaunch. Unlike the Claude arm above this is mode-agnostic:
         // the Gemini key is forwarded in both builtin and personal mode.
         if acpBridgeStarted,
-           !acpBridge.spawnedWithGeminiKey,
-           Self.isGeminiModelId(ShortcutSettings.shared.selectedModel) {
+           Self.isGeminiModelId(ShortcutSettings.shared.selectedModel),
+           !(await acpBridge.spawnedWithGeminiKey) {
             await KeyService.shared.ensureKeys()
             if let key = KeyService.shared.geminiAPIKey, !key.isEmpty {
                 log("ChatProvider: Gemini key now available — restarting bridge (was spawned without GEMINI_API_KEY)")
