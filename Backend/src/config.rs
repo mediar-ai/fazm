@@ -22,6 +22,14 @@ pub struct Config {
     pub deepgram_api_key: String,
     pub gemini_api_key: String,
     pub elevenlabs_api_key: String,
+    // Server-only ElevenLabs key used by the /v1/tts moderation proxy. Kept
+    // separate from `elevenlabs_api_key` (which is still handed to legacy
+    // clients via /v1/keys) so the proxy's traffic can be attributed and the
+    // client-shipped key revoked independently. Falls back to
+    // `elevenlabs_api_key` when unset.
+    pub elevenlabs_proxy_api_key: String,
+    // Model used to moderate TTS text before generation (Gemini AI Studio).
+    pub tts_moderation_model: String,
     // Mediar dashboard forwarding
     pub mediar_usage_ingest_url: String,
     pub mediar_usage_ingest_secret: String,
@@ -97,6 +105,22 @@ impl Config {
             deepgram_api_key: std::env::var("DEEPGRAM_API_KEY").unwrap_or_default(),
             gemini_api_key: std::env::var("GEMINI_API_KEY").unwrap_or_default(),
             elevenlabs_api_key: std::env::var("ELEVENLABS_API_KEY").unwrap_or_default(),
+            elevenlabs_proxy_api_key: {
+                let proxy = std::env::var("ELEVENLABS_PROXY_API_KEY")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if proxy.is_empty() {
+                    std::env::var("ELEVENLABS_API_KEY").unwrap_or_default()
+                } else {
+                    proxy
+                }
+            },
+            tts_moderation_model: std::env::var("TTS_MODERATION_MODEL")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "gemini-2.5-flash-lite".to_string()),
             mediar_usage_ingest_url: std::env::var("MEDIAR_USAGE_INGEST_URL").unwrap_or_default(),
             mediar_usage_ingest_secret: std::env::var("MEDIAR_USAGE_INGEST_SECRET")
                 .unwrap_or_default(),
