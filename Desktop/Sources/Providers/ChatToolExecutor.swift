@@ -1067,7 +1067,104 @@ class ChatToolExecutor {
         return capped.trimmingCharacters(in: .whitespaces) + "…"
     }
 
+    /// Speak via ElevenLabs, routed through the Fazm backend `/v1/tts` proxy.
+    ///
+    /// The proxy (Backend/src/routes/tts.rs) runs a fast Gemini safety
+    /// classifier before any audio is generated, then streams ElevenLabs audio
+    /// back using a server-only key. This replaces the old design where every
+    /// client got the shared ElevenLabs key from /v1/keys and called
+    /// api.elevenlabs.io directly (zero moderation — ElevenLabs flagged the
+    /// account for user-generated policy violations, 2026-08).
+    ///
+    /// Falls back to calling ElevenLabs directly only when no backend URL is
+    /// configured (dev/offline). A moderation block (HTTP 422) is terminal — we
+    /// do NOT fall back to Deepgram, since the intent is to refuse the content.
     private static func speakViaElevenLabs(text: String, voiceId: String, languageCode: String, speed: Double) async -> String {
+        let backendUrl = (getenv("FAZM_BACKEND_URL").flatMap { String(validatingUTF8: $0) } ?? "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/ \n"))
+
+        // No backend configured (dev/offline): fall back to the direct call so
+        // local voice keeps working. Prod always has FAZM_BACKEND_URL set.
+        guard !backendUrl.isEmpty, await AuthService.shared.isSignedIn else {
+            log("speak_response: no backend url / not signed in — direct ElevenLabs fallback")
+            return await speakViaElevenLabsDirect(text: text, voiceId: voiceId, languageCode: languageCode, speed: speed)
+        }
+
+        do {
+            let token = try await AuthService.shared.getIdToken(forceRefresh: false)
+            let url = URL(string: "\(backendUrl)/v1/tts")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+            request.timeoutInterval = 30
+
+            // The proxy uses ElevenLabs' streaming endpoint server-side
+            // (optimize_streaming_latency) for lower time-to-first-byte.
+            let body: [String: Any] = [
+                "text": text,
+                "voice_id": voiceId,
+                "model_id": VoiceLanguageRouter.elevenLabsModelId,
+                "optimize_streaming_latency": 3,
+                "voice_settings": [
+                    "stability": 0.5,
+                    "similarity_boost": 0.75,
+                    "style": 0.0,
+                    "use_speaker_boost": true,
+                ],
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+            if status == 422 {
+                // Moderation blocked the text. Terminal — do not fall back.
+                let errorBody = String(data: data, encoding: .utf8) ?? ""
+                log("speak_response: TTS proxy blocked by moderation (422): \(errorBody)")
+                return "OK: response not spoken (content policy)"
+            }
+
+            guard status == 200 else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+                log("speak_response: TTS proxy error \(status) (voice=\(voiceId), lang=\(languageCode)): \(errorBody)")
+                // Transient/server failure: keep voice alive via Deepgram
+                // (separate key/quota) exactly like the legacy path did.
+                if let dgModel = VoiceLanguageRouter.deepgramVoices[languageCode] {
+                    log("speak_response: TTS proxy \(status), falling back to Deepgram (model=\(dgModel), lang=\(languageCode))")
+                    return await speakViaDeepgram(text: text, model: dgModel, languageCode: languageCode, speed: speed)
+                }
+                return "Error: TTS proxy failed with status \(status)"
+            }
+            guard data.count > 1000 else {
+                log("speak_response: TTS proxy returned suspiciously small payload (\(data.count) bytes)")
+                return "Error: TTS proxy returned empty audio"
+            }
+
+            log("speak_response: received \(data.count) bytes (tts-proxy, lang=\(languageCode), voice=\(voiceId)), playing at speed \(speed)...")
+
+            let player = try AVAudioPlayer(data: data)
+            player.enableRate = true
+            player.rate = Float(speed)
+            ttsAudioPlayer = player
+            player.play()
+
+            return "OK: speaking \(text.count) chars (tts-proxy, \(languageCode))"
+        } catch {
+            log("speak_response: tts-proxy error: \(error)")
+            // Network error reaching the proxy — fall back to Deepgram so voice
+            // isn't silenced entirely.
+            if let dgModel = VoiceLanguageRouter.deepgramVoices[languageCode] {
+                return await speakViaDeepgram(text: text, model: dgModel, languageCode: languageCode, speed: speed)
+            }
+            return "Error: \(error.localizedDescription)"
+        }
+    }
+
+    /// Legacy direct-to-ElevenLabs path. Used only when no backend URL is
+    /// configured (dev/offline). Prod always routes through the moderated proxy.
+    private static func speakViaElevenLabsDirect(text: String, voiceId: String, languageCode: String, speed: Double) async -> String {
         do {
             let apiKey = try await KeyService.resolveElevenLabsKey()
             let url = URL(string: "https://api.elevenlabs.io/v1/text-to-speech/\(voiceId)")!
@@ -1095,12 +1192,6 @@ class ChatToolExecutor {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
                 log("speak_response: ElevenLabs API error \(status) (voice=\(voiceId), lang=\(languageCode)): \(errorBody)")
-                // Resilience: when the shared ElevenLabs key hits its quota (401
-                // quota_exceeded) or any other server-side failure, don't silence
-                // voice entirely. Every language we route to ElevenLabs (en/es/fr/de/
-                // it/nl/ja) also has a configured Deepgram Aura voice, so fall back to
-                // Deepgram (separate key/quota) before giving up. Observed live:
-                // aldo.kruger@gmail.com, 2026-06-07, fazm-tts-prod quota=0.
                 if let dgModel = VoiceLanguageRouter.deepgramVoices[languageCode] {
                     log("speak_response: ElevenLabs \(status), falling back to Deepgram (model=\(dgModel), lang=\(languageCode))")
                     return await speakViaDeepgram(text: text, model: dgModel, languageCode: languageCode, speed: speed)
@@ -1112,7 +1203,7 @@ class ChatToolExecutor {
                 return "Error: ElevenLabs returned empty audio"
             }
 
-            log("speak_response: received \(data.count) bytes (elevenlabs, lang=\(languageCode), voice=\(voiceId)), playing at speed \(speed)...")
+            log("speak_response: received \(data.count) bytes (elevenlabs-direct, lang=\(languageCode), voice=\(voiceId)), playing at speed \(speed)...")
 
             let player = try AVAudioPlayer(data: data)
             player.enableRate = true
@@ -1120,9 +1211,9 @@ class ChatToolExecutor {
             ttsAudioPlayer = player
             player.play()
 
-            return "OK: speaking \(text.count) chars (elevenlabs, \(languageCode))"
+            return "OK: speaking \(text.count) chars (elevenlabs-direct, \(languageCode))"
         } catch {
-            log("speak_response: elevenlabs error: \(error)")
+            log("speak_response: elevenlabs-direct error: \(error)")
             return "Error: \(error.localizedDescription)"
         }
     }
