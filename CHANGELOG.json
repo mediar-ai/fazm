@@ -2,6 +2,13 @@
   "unreleased": [],
   "releases": [
     {
+      "version": "2.9.88",
+      "date": "2026-09-01",
+      "changes": [
+        "Improved spoken voice responses: text-to-speech now streams through Fazm for faster playback and more reliable audio"
+      ]
+    },
+    {
       "version": "2.9.87",
       "date": "2026-08-26",
       "changes": [
