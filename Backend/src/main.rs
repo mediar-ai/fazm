@@ -47,6 +47,7 @@ async fn main() {
             axum::routing::post(routes::chat_attachment::get_attachment_upload_url),
         )
         .route("/v1/keys", axum::routing::post(routes::keys::get_keys))
+        .route("/v1/tts", axum::routing::post(routes::tts::synthesize))
         .route(
             "/v1/llm-usage/mediar-forward",
             axum::routing::post(routes::llm_usage::forward_to_mediar),
