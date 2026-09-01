@@ -28,8 +28,9 @@ hex = "0.4"
 hmac = "0.12"
 url = "2"
 
-# HTTP client (for IAM signBlob API)
-reqwest = { version = "0.12", features = ["json"] }
+# HTTP client (for IAM signBlob API). `stream` enables Response::bytes_stream()
+# for the /v1/tts audio passthrough (true streaming, no full-buffer).
+reqwest = { version = "0.12", features = ["json", "stream"] }
 
 # Lightweight regex (no_std compatible, for appcast parsing)
 regex-lite = "0.1"
