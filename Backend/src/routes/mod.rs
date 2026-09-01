@@ -9,4 +9,5 @@ pub mod relay;
 pub mod releases;
 pub mod session_recording;
 pub mod stripe;
+pub mod tts;
 pub mod vertex;
