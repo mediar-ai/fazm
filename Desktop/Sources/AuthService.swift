@@ -1026,8 +1026,21 @@ class AuthService: NSObject {
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
             let responseBody = String(data: data, encoding: .utf8) ?? ""
-            if Self.isPermanentRefreshFailure(statusCode: statusCode, body: responseBody) {
-                log("AuthService: refresh token revoked (status \(statusCode)); signing out for re-auth")
+            if Self.isRecoverableAuthFailure(statusCode: statusCode, body: responseBody) {
+                // Soft path: the refresh token expired but the account is fine.
+                // Preserve ALL local state (subscription cache, trial, identity,
+                // names) and just ask the user to sign back in. The old code
+                // called the destructive signOut() here, which wiped paying
+                // users' cached `isActive` flag and made them look unpaid until
+                // a backend round-trip — that's the Abbey kick-out bug.
+                log("AuthService: refresh token expired (status \(statusCode)); entering soft re-auth, local state preserved")
+                markNeedsReauth()
+                throw AuthError.tokenRefreshFailed("needs_reauth")
+            }
+            if Self.isHardAuthFailure(statusCode: statusCode, body: responseBody) {
+                // Hard path: account disabled/deleted or the refresh token was
+                // explicitly revoked. A full destructive sign-out is correct.
+                log("AuthService: refresh token revoked / account invalid (status \(statusCode)); signing out")
                 signOut()
                 throw AuthError.tokenRefreshFailed("revoked")
             }
@@ -1065,17 +1078,30 @@ class AuthService: NSObject {
         log("AuthService: Token refreshed successfully")
     }
 
-    /// A refresh-token failure that will never recover without the user re-authenticating.
-    /// Firebase returns 400 with messages like TOKEN_EXPIRED or INVALID_REFRESH_TOKEN
-    /// when the refresh token is revoked; OAuth peers use `invalid_grant`.
-    private static func isPermanentRefreshFailure(statusCode: Int, body: String) -> Bool {
+    /// A recoverable refresh failure: the refresh token is no longer valid, but the
+    /// account itself is fine, so re-authenticating restores the session. We keep all
+    /// local state (subscription cache, trial, identity, names) and show a soft
+    /// "session expired, sign back in" screen instead of destroying the session.
+    /// Firebase returns 400 TOKEN_EXPIRED when a refresh token ages out, and
+    /// CREDENTIAL_TOO_OLD_LOGIN_AGAIN when a sensitive change requires a fresh login.
+    private static func isRecoverableAuthFailure(statusCode: Int, body: String) -> Bool {
         guard statusCode == 400 || statusCode == 401 else { return false }
         let markers = [
             "TOKEN_EXPIRED",
+            "CREDENTIAL_TOO_OLD_LOGIN_AGAIN",
+        ]
+        return markers.contains(where: { body.contains($0) })
+    }
+
+    /// A hard failure where the account is gone/disabled or the refresh token was
+    /// explicitly revoked. There is nothing local worth keeping, so a full
+    /// destructive sign-out is correct. OAuth peers use `invalid_grant`.
+    private static func isHardAuthFailure(statusCode: Int, body: String) -> Bool {
+        guard statusCode == 400 || statusCode == 401 else { return false }
+        let markers = [
             "INVALID_REFRESH_TOKEN",
             "USER_DISABLED",
             "USER_NOT_FOUND",
-            "CREDENTIAL_TOO_OLD_LOGIN_AGAIN",
             "invalid_grant",
         ]
         return markers.contains(where: { body.contains($0) })
@@ -1099,6 +1125,53 @@ class AuthService: NSObject {
                 }
             }
         }
+    }
+
+    // MARK: - Soft Re-Auth (session expired)
+
+    /// Enter the non-destructive "session expired" state.
+    ///
+    /// Clears ONLY the dead tokens (so `getIdToken()` fails fast with
+    /// `notSignedIn` instead of looping on a doomed refresh), but PRESERVES the
+    /// user's identity, cached subscription state, trial start, display names,
+    /// and analytics identity. The UI shows a "your session expired, sign back
+    /// in" screen; a successful re-auth restores the full session with paid
+    /// status intact.
+    ///
+    /// This is deliberately different from `signOut()`: a paying user whose
+    /// refresh token simply aged out must never be demoted to "unpaid" or lose
+    /// their local data just to re-enter a password.
+    func markNeedsReauth() {
+        log("AuthService: marking session as needs-reauth (soft, local state preserved)")
+
+        // Stop the refresh timer — the refresh token is dead, retrying loops.
+        tokenRefreshTimer?.invalidate()
+        tokenRefreshTimer = nil
+
+        // Clear only the tokens. Keep userId/userEmail in memory for
+        // subscription attribution and to prefill the re-auth screen.
+        idToken = nil
+        refreshToken = nil
+        tokenExpiry = nil
+
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: Self.kIdToken)
+        defaults.removeObject(forKey: Self.kRefreshToken)
+        defaults.removeObject(forKey: Self.kTokenExpiry)
+        // Intentionally KEEP: kTokenUserId, kUserEmail, names, kIsAnonymous,
+        // the SubscriptionService cache, and the trial start date.
+
+        AuthState.shared.setNeedsReauth(true, userEmail: userEmail)
+
+        // Let any listeners (floating bar, etc.) react.
+        DistributedNotificationCenter.default().postNotificationName(
+            .init("com.fazm.desktop.needsReauth"),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+
+        log("AuthService: needs-reauth state set (userId kept: \(userId ?? "nil"))")
     }
 
     // MARK: - Sign Out
@@ -1151,6 +1224,9 @@ class AuthService: NSObject {
         // between signOut and the next identify aliases to the previous user.
         PostHogManager.shared.reset()
         log("AuthService: PostHog identity reset on sign-out")
+
+        // Drop any soft "session expired" flag — this is a full sign-out.
+        AuthState.shared.setNeedsReauth(false)
 
         // Update AuthState
         updateAuthState()
@@ -1233,6 +1309,12 @@ class AuthService: NSObject {
     /// so any token-using button silently fails (e.g. Upgrade in Settings).
     /// Triggered at launch (deferred), on foreground, and on AuthError.notSignedIn at call sites.
     func reconcileAuthState() {
+        // Soft re-auth is an intentional tokens-missing state; don't let the
+        // desync guard escalate it into a destructive sign-out.
+        guard !AuthState.shared.needsReauth else {
+            log("AuthService: reconcile skipped — soft re-auth in progress")
+            return
+        }
         let stored = UserDefaults.standard.bool(forKey: "auth_isSignedIn")
         guard stored && !isSignedIn else { return }
         log("AuthService: auth state desync detected (stored=true, tokens missing); signing out")
