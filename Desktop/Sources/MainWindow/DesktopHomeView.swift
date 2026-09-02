@@ -19,7 +19,12 @@ struct DesktopHomeView: View {
 
     var body: some View {
         Group {
-            if !signInGateDecided && !authState.isSignedIn {
+            if authState.needsReauth {
+                // Soft "session expired" — the user is known and their local
+                // state (subscription, trial) is intact; they just need to sign
+                // back in. Skip the anonymous sign-in gate entirely.
+                SignInView(authState: authState, reauthEmail: authState.userEmail)
+            } else if !signInGateDecided && !authState.isSignedIn {
                 signInGateLoadingView
                     .task { await evaluateSignInGate() }
             } else if !authState.isSignedIn {
