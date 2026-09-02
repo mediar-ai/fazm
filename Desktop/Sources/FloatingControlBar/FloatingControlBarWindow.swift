@@ -1641,6 +1641,21 @@ class FloatingControlBarManager {
             }
         }
 
+        // Debug: force the soft "session expired" (needs re-auth) state without
+        // waiting for a real refresh-token expiry. Verifies the non-destructive
+        // path: local state (subscription cache, identity) is preserved and the
+        // main window shows the re-auth screen. Reverse with a real sign-in.
+        // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testNeedsReauth"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
+        // Bundle-scoped: replace `com.fazm.testNeedsReauth` with `com.fazm.desktop-dev.testNeedsReauth` or `com.fazm.app.testNeedsReauth`.
+        DistributedNotificationCenter.default().addFazmObserver(
+            "testNeedsReauth"
+        ) { _ in
+            Task { @MainActor in
+                log("FloatingControlBarManager: Test needs-reauth triggered")
+                AuthService.shared.markNeedsReauth()
+            }
+        }
+
         // Debug: show the paywall popup
         // Trigger (legacy, every build): xcrun swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.fazm.testPaywall"), object: nil, userInfo: nil, deliverImmediately: true); RunLoop.current.run(until: Date(timeIntervalSinceNow: 1.0))'
         // Bundle-scoped: replace `com.fazm.testPaywall` with `com.fazm.desktop-dev.testPaywall` or `com.fazm.app.testPaywall`.
