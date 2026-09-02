@@ -27,6 +27,10 @@ private enum MagicLinkStep {
 
 struct SignInView: View {
     @ObservedObject var authState: AuthState
+    /// When non-nil, this screen is a soft re-auth ("session expired") for a
+    /// known user rather than a first-time sign-in. Changes the copy so a
+    /// returning user isn't greeted with "Welcome to Fazm".
+    var reauthEmail: String? = nil
     @State private var isHoveringGoogle = false
     @State private var isHoveringEmail = false
     @State private var isHoveringPrimary = false
@@ -160,6 +164,13 @@ struct SignInView: View {
             .padding(.horizontal, 40)
         }
         .frame(minWidth: 400, minHeight: 540)
+        .onAppear {
+            // Prefill the known email for a returning (re-auth) user so the
+            // magic-link path is one tap away.
+            if let e = reauthEmail, !e.isEmpty, emailInput.isEmpty {
+                emailInput = e
+            }
+        }
         .sheet(isPresented: $showPrivacySheet) {
             OnboardingPrivacySheet(isPresented: $showPrivacySheet)
         }
@@ -364,9 +375,11 @@ struct SignInView: View {
 
     // MARK: - Subview helpers
 
+    private var isReauth: Bool { reauthEmail != nil }
+
     private var titleText: String {
         switch magicLinkStep {
-        case .idle:       return "Welcome to Fazm"
+        case .idle:       return isReauth ? "Session expired" : "Welcome to Fazm"
         case .emailEntry: return "Sign in with email"
         case .codeEntry:  return "Check your email"
         }
@@ -374,7 +387,12 @@ struct SignInView: View {
 
     private var subtitleText: String {
         switch magicLinkStep {
-        case .idle:       return "Sign in to get started"
+        case .idle:
+            if isReauth {
+                let who = (reauthEmail?.isEmpty == false) ? reauthEmail! : "your account"
+                return "Sign back in to \(who) to keep going. Your data and subscription are safe."
+            }
+            return "Sign in to get started"
         case .emailEntry: return "We'll send you a 6-digit code to sign in"
         case .codeEntry:  return "We sent a 6-digit code to \(emailInput.isEmpty ? "your email" : emailInput)"
         }
