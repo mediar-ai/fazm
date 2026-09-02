@@ -84,11 +84,17 @@ class AuthState: ObservableObject {
     private static let kAuthUserId = "auth_tokenUserId"
     private static let kAuthIsSignedIn = "auth_isSignedIn"
     private static let kAuthIsAnonymous = "auth_isAnonymous"
+    private static let kAuthNeedsReauth = "auth_needsReauth"
 
     @Published var isSignedIn: Bool = false
     @Published var isLoading: Bool = false
     @Published var error: String?
     @Published var userEmail: String?
+    /// True when the session expired (refresh token aged out) but the account is
+    /// fine. Drives a soft "session expired, sign back in" screen that preserves
+    /// all local state — subscription cache, trial, identity — instead of a
+    /// destructive sign-out. Cleared on a successful re-auth or a full sign-out.
+    @Published var needsReauth: Bool = false
     /// True when the current Firebase user was created via signInAnonymously.
     /// Drives UI branches: the paywall shows a "Sign in to subscribe" step
     /// instead of going straight to Stripe, and Settings shows a "Save your
@@ -101,6 +107,7 @@ class AuthState: ObservableObject {
         self.isSignedIn = savedSignedIn
         self.userEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
         self.isAnonymous = UserDefaults.standard.bool(forKey: Self.kAuthIsAnonymous)
+        self.needsReauth = UserDefaults.standard.bool(forKey: Self.kAuthNeedsReauth)
 
         NSLog("FazmApp AuthState: Initialized, savedSignedIn=%@, isAnonymous=%@, email=%@, userId=%@",
               savedSignedIn ? "true" : "false",
@@ -117,6 +124,23 @@ class AuthState: ObservableObject {
         }
         self.isAnonymous = isAnonymous
         UserDefaults.standard.set(isAnonymous, forKey: Self.kAuthIsAnonymous)
+        // A successful sign-in always clears any pending soft re-auth.
+        if isSignedIn {
+            self.needsReauth = false
+            UserDefaults.standard.set(false, forKey: Self.kAuthNeedsReauth)
+        }
+    }
+
+    /// Set (or clear) the soft "session expired" state. Persisted so a relaunch
+    /// while the session is expired still shows the re-auth screen rather than
+    /// silently retrying a dead token. Passing an email keeps it for prefill.
+    func setNeedsReauth(_ value: Bool, userEmail: String? = nil) {
+        self.needsReauth = value
+        UserDefaults.standard.set(value, forKey: Self.kAuthNeedsReauth)
+        if let email = userEmail {
+            self.userEmail = email
+            UserDefaults.standard.set(email, forKey: Self.kAuthUserEmail)
+        }
     }
 
     /// Get the user's UID from UserDefaults (set by AuthService on sign-in)
