@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed a bug where an expired session could log you out and hide your subscription; now it keeps your data and just asks you to sign back in"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.89",
+      "date": "2026-09-02",
+      "changes": [
+        "Fixed a bug where an expired session could log you out and hide your subscription; now it keeps your data and just asks you to sign back in"
+      ]
+    },
     {
       "version": "2.9.88",
       "date": "2026-09-01",
