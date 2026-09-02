@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed a bug where an expired session could log you out and hide your subscription; now it keeps your data and just asks you to sign back in"
+  ],
   "releases": [
     {
       "version": "2.9.88",
