@@ -499,20 +499,52 @@ pub async fn create_portal_session(
     let firebase_email = auth.firebase_email.clone().unwrap_or_default();
     let client = reqwest::Client::new();
 
-    // Find the Stripe customer (first match by UID, falling back to email)
-    let mut customer_id = find_customers(&client, stripe_secret, &firebase_uid)
+    // Gather every candidate customer (by UID, then email). A user can have
+    // duplicate customers (website checkout + desktop app), and Stripe search
+    // returns the newest first, which is often an empty duplicate. Opening the
+    // portal for that one shows no subscription and no way to cancel, so prefer
+    // the customer that actually holds a live subscription.
+    let mut candidates = find_customers(&client, stripe_secret, &firebase_uid)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
-        .into_iter()
-        .next();
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
-    if customer_id.is_none() && !firebase_email.is_empty() {
-        customer_id = find_customers_by_email(&client, stripe_secret, &firebase_email)
+    if !firebase_email.is_empty() {
+        let email_matches = find_customers_by_email(&client, stripe_secret, &firebase_email)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
-            .into_iter()
-            .next();
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        for cid in email_matches {
+            if !candidates.contains(&cid) {
+                candidates.push(cid);
+            }
+        }
     }
+
+    let mut customer_id = None;
+    for cid in &candidates {
+        let subs: serde_json::Value = match client
+            .get("https://api.stripe.com/v1/subscriptions")
+            .bearer_auth(stripe_secret)
+            .query(&[("customer", cid.as_str()), ("status", "all"), ("limit", "10")])
+            .send()
+            .await
+        {
+            Ok(r) => r.json().await.unwrap_or_default(),
+            Err(_) => continue,
+        };
+        let has_live = subs["data"].as_array().map_or(false, |arr| {
+            arr.iter().any(|s| {
+                matches!(
+                    s["status"].as_str(),
+                    Some("active" | "trialing" | "past_due" | "unpaid")
+                )
+            })
+        });
+        if has_live {
+            customer_id = Some(cid.clone());
+            break;
+        }
+    }
+    let customer_id = customer_id.or_else(|| candidates.into_iter().next());
 
     let Some(customer_id) = customer_id else {
         return Err((
