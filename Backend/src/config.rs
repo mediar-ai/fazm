@@ -21,6 +21,14 @@ pub struct Config {
     // loads or serves it.
     pub deepgram_api_key: String,
     pub gemini_api_key: String,
+    // Abuse controls for the authed routes (see auth.rs and routes/keys.rs).
+    // Comma-separated env vars so a block can ship with `gcloud run services
+    // update --update-env-vars` and no rebuild.
+    pub blocked_ips: Vec<String>,
+    pub blocked_uids: Vec<String>,
+    // Max /v1/keys fetches per hour, per Firebase UID and per client IP.
+    pub keys_rate_limit_per_uid: u32,
+    pub keys_rate_limit_per_ip: u32,
     pub elevenlabs_api_key: String,
     // Server-only ElevenLabs key used by the /v1/tts moderation proxy. Kept
     // separate from `elevenlabs_api_key` (which is still handed to legacy
@@ -104,6 +112,16 @@ impl Config {
             posthog_personal_api_key: std::env::var("POSTHOG_PERSONAL_API_KEY").unwrap_or_default(),
             deepgram_api_key: std::env::var("DEEPGRAM_API_KEY").unwrap_or_default(),
             gemini_api_key: std::env::var("GEMINI_API_KEY").unwrap_or_default(),
+            blocked_ips: csv_env("BLOCKED_IPS"),
+            blocked_uids: csv_env("BLOCKED_UIDS"),
+            keys_rate_limit_per_uid: std::env::var("KEYS_RATE_LIMIT_PER_UID")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(12),
+            keys_rate_limit_per_ip: std::env::var("KEYS_RATE_LIMIT_PER_IP")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(30),
             elevenlabs_api_key: std::env::var("ELEVENLABS_API_KEY").unwrap_or_default(),
             elevenlabs_proxy_api_key: {
                 let proxy = std::env::var("ELEVENLABS_PROXY_API_KEY")
@@ -150,4 +168,14 @@ impl Config {
                 .unwrap_or_default(),
         }
     }
+}
+
+/// Parse a comma-separated env var into trimmed, non-empty entries.
+fn csv_env(name: &str) -> Vec<String> {
+    std::env::var(name)
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }

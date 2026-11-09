@@ -35,6 +35,21 @@ pub struct AuthDevice {
     pub device_id: String,
     pub firebase_uid: Option<String>,
     pub firebase_email: Option<String>,
+    /// Client IP as seen by Cloud Run's front end ("unknown" if absent).
+    pub client_ip: String,
+}
+
+/// Client IP from `X-Forwarded-For`. Cloud Run appends the address it saw to
+/// whatever the caller sent, so only the LAST entry is trustworthy; earlier
+/// entries are caller-controlled and must not be used for blocking.
+pub fn client_ip(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.rsplit(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Firebase JWT claims we care about
@@ -192,6 +207,12 @@ pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, S
 
     let token = &auth_header[7..];
 
+    let client_ip = client_ip(request.headers());
+    if config.blocked_ips.iter().any(|ip| ip == &client_ip) {
+        tracing::warn!("Blocked request from blocklisted ip={}", client_ip);
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     // Extract device ID (used for both auth paths)
     let device_id = request
         .headers()
@@ -209,10 +230,19 @@ pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, S
                     identity.email,
                     device_id
                 );
+                if config.blocked_uids.iter().any(|u| u == &identity.uid) {
+                    tracing::warn!(
+                        "Blocked request from blocklisted uid={} ip={}",
+                        identity.uid,
+                        client_ip
+                    );
+                    return Err(StatusCode::FORBIDDEN);
+                }
                 AuthDevice {
                     device_id,
                     firebase_uid: Some(identity.uid),
                     firebase_email: identity.email,
+                    client_ip,
                 }
             }
             Err(e) => {
