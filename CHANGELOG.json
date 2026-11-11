@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Fixed new Gemini and Codex chats stalling for over a minute when a connected MCP server is unreachable"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.90",
+      "date": "2026-11-11",
+      "changes": [
+        "Fixed new Gemini and Codex chats stalling for over a minute when a connected MCP server is unreachable"
+      ]
+    },
     {
       "version": "2.9.89",
       "date": "2026-09-02",
