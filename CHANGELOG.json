@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Fixed new Gemini and Codex chats stalling for over a minute when a connected MCP server is unreachable"
+  ],
   "releases": [
     {
       "version": "2.9.89",
