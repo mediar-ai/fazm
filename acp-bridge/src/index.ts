@@ -55,6 +55,12 @@ import {
 } from "./codex-query.js";
 import { GeminiProvider } from "./gemini-provider.js";
 import {
+  awaitInheritedMcpProbes,
+  isInheritedMcpUsable,
+  primeInheritedMcpProbes,
+  setMcpHealthLogger,
+} from "./mcp-health.js";
+import {
   handleGeminiQuery,
   prewarmGeminiSession,
   isGeminiModel,
@@ -2913,12 +2919,12 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
             envArr.push({ name: k, value: String(v) });
           }
         }
-        servers.push({
-          name,
-          command: cfg.command,
-          args: cfg.args || [],
-          env: envArr,
-        });
+        const userSpec = { name, command: cfg.command, args: cfg.args || [], env: envArr };
+        if (!isInheritedMcpUsable(userSpec)) {
+          logErr(`User MCP server "${name}" skipped: not healthy yet (see [mcp-health])`);
+          continue;
+        }
+        servers.push(userSpec);
         logErr(`User MCP server loaded: ${name} (${cfg.command})`);
       }
     }
@@ -2985,12 +2991,12 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
                 envArr.push({ name: k, value: String(v) });
               }
             }
-            servers.push({
-              name,
-              command: cfg.command,
-              args: cfg.args || [],
-              env: envArr,
-            });
+            const inheritedSpec = { name, command: cfg.command, args: cfg.args || [], env: envArr };
+            if (!isInheritedMcpUsable(inheritedSpec)) {
+              logErr(`Claude Code MCP server "${name}" skipped: not healthy yet (see [mcp-health])`);
+              continue;
+            }
+            servers.push(inheritedSpec);
             existingNames.add(name);
             logErr(`Claude Code MCP server loaded (stdio): ${name} (${cfg.command})`);
           }
@@ -6624,6 +6630,10 @@ async function main(): Promise<void> {
   logErr("ACP Bridge started, waiting for queries...");
 
   // 4. Read JSON lines from Swift
+  // Probe inherited MCP servers now so results are in before the first warmup.
+  setMcpHealthLogger(logErr);
+  primeInheritedMcpProbes();
+
   const rl = createInterface({ input: process.stdin, terminal: false });
 
   rl.on("line", (line: string) => {
@@ -6639,7 +6649,9 @@ async function main(): Promise<void> {
 
     switch (msg.type) {
       case "query":
-        handleQuery(msg).catch((err) => {
+        // Let inherited-MCP health probes land (capped) so the session this
+        // query creates neither blocks on a dead server nor misses a live one.
+        awaitInheritedMcpProbes().then(() => handleQuery(msg)).catch((err) => {
           logErr(`Unhandled query error: ${err}`);
           send({ type: "error", message: String(err) });
         });
@@ -6656,12 +6668,12 @@ async function main(): Promise<void> {
           : (wm.models ?? (wm.model ? [wm.model] : []));
         if (wm.sessions && wm.sessions.length > 0) {
           logErr(`Warmup requested (cwd=${wm.cwd || "default"}, sessions=${sessionKeys.join(", ")})`);
-          preWarmPromise = preWarmSession(wm.cwd, wm.sessions);
+          preWarmPromise = awaitInheritedMcpProbes().then(() => preWarmSession(wm.cwd, wm.sessions));
         } else {
           // Backward compat: models array or single model
           const models = wm.models ?? (wm.model ? [wm.model] : undefined);
           logErr(`Warmup requested (cwd=${wm.cwd || "default"}, models=${JSON.stringify(models) || "default"})`);
-          preWarmPromise = preWarmSession(wm.cwd, undefined, models);
+          preWarmPromise = awaitInheritedMcpProbes().then(() => preWarmSession(wm.cwd, undefined, models));
         }
         // Fire-and-forget: do not await here; let the main message loop continue.
         // The warmup_complete event reports total duration + outcome so Swift
