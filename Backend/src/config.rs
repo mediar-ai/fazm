@@ -29,6 +29,18 @@ pub struct Config {
     // Max /v1/keys fetches per hour, per Firebase UID and per client IP.
     pub keys_rate_limit_per_uid: u32,
     pub keys_rate_limit_per_ip: u32,
+    // Gemini proxy (routes/gemini_proxy.rs). The secret signs per-user proxy
+    // tokens; when empty the proxy is off and clients fall back to the raw
+    // key from /v1/keys.
+    pub gemini_proxy_secret: String,
+    // Exact model ids or `prefix*` patterns the proxy will forward.
+    pub gemini_proxy_allowed_models: Vec<String>,
+    // Max proxied requests per minute per Firebase UID (per instance).
+    pub gemini_proxy_rpm_per_uid: u32,
+    // Whether /v1/keys still returns the raw Gemini key. Needed by app
+    // versions that predate the proxy; set SERVE_GEMINI_KEY=false once they
+    // have updated.
+    pub serve_gemini_key: bool,
     pub elevenlabs_api_key: String,
     // Server-only ElevenLabs key used by the /v1/tts moderation proxy. Kept
     // separate from `elevenlabs_api_key` (which is still handed to legacy
@@ -122,6 +134,36 @@ impl Config {
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(30),
+            gemini_proxy_secret: std::env::var("GEMINI_PROXY_SECRET")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            gemini_proxy_allowed_models: {
+                let configured = csv_env("GEMINI_PROXY_ALLOWED_MODELS");
+                if configured.is_empty() {
+                    [
+                        "gemini-flash-latest",
+                        "gemini-flash-lite-latest",
+                        "gemini-pro-latest",
+                        "gemini-2.5-*",
+                        "gemini-3*",
+                        "gemini-embedding-*",
+                        "text-embedding-*",
+                    ]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+                } else {
+                    configured
+                }
+            },
+            gemini_proxy_rpm_per_uid: std::env::var("GEMINI_PROXY_RPM_PER_UID")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(120),
+            serve_gemini_key: std::env::var("SERVE_GEMINI_KEY")
+                .map(|v| v.trim().to_lowercase() != "false")
+                .unwrap_or(true),
             elevenlabs_api_key: std::env::var("ELEVENLABS_API_KEY").unwrap_or_default(),
             elevenlabs_proxy_api_key: {
                 let proxy = std::env::var("ELEVENLABS_PROXY_API_KEY")
