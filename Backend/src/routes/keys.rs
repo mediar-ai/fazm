@@ -18,6 +18,10 @@ pub struct KeysResponse {
     pub deepgram_api_key: String,
     pub gemini_api_key: String,
     pub elevenlabs_api_key: String,
+    /// Per-user token for the Gemini proxy at `/v1/gemini`. Empty when the
+    /// proxy is not configured. Clients that understand it use it in place of
+    /// `gemini_api_key` and never see the real key.
+    pub gemini_proxy_token: String,
 }
 
 /// POST /v1/keys
@@ -82,8 +86,21 @@ pub async fn get_keys(
         // Bundled Claude key discontinued — always empty. See doc comment above.
         anthropic_api_key: String::new(),
         deepgram_api_key: config.deepgram_api_key.clone(),
-        gemini_api_key: config.gemini_api_key.clone(),
+        // Legacy raw key, only for app versions that predate the proxy.
+        gemini_api_key: if config.serve_gemini_key {
+            config.gemini_api_key.clone()
+        } else {
+            String::new()
+        },
         elevenlabs_api_key: config.elevenlabs_api_key.clone(),
+        gemini_proxy_token: match auth.firebase_uid.as_deref() {
+            Some(uid) => crate::routes::gemini_proxy::mint_token(
+                &config.gemini_proxy_secret,
+                uid,
+                chrono::Utc::now().timestamp(),
+            ),
+            None => String::new(),
+        },
     }))
 }
 
