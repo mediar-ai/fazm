@@ -819,7 +819,7 @@ actor GeminiAnalysisService {
         apiKey: String,
         maxTurns: Int = 5
     ) async -> (text: String?, toolCallCount: Int, turnsUsed: Int, usage: UsageMetrics) {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)") else {
+        guard let url = URL(string: "\(KeyService.shared.geminiBaseURL)/v1beta/models/\(model):generateContent?key=\(apiKey)") else {
             lastFailureReason = "bad_url"
             return (nil, 0, 0, UsageMetrics())
         }
@@ -955,7 +955,7 @@ actor GeminiAnalysisService {
 
     private func uploadToFileAPI(data: Data, name: String, apiKey: String) async -> FileInfo? {
         // Step 1: Start resumable upload
-        guard let startURL = URL(string: "https://generativelanguage.googleapis.com/upload/v1beta/files?key=\(apiKey)") else { return nil }
+        guard let startURL = URL(string: "\(KeyService.shared.geminiBaseURL)/upload/v1beta/files?key=\(apiKey)") else { return nil }
 
         var startReq = URLRequest(url: startURL)
         startReq.httpMethod = "POST"
@@ -1010,7 +1010,7 @@ actor GeminiAnalysisService {
         let deadline = Date().addingTimeInterval(maxWait)
 
         while Date() < deadline {
-            guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/\(fileName)?key=\(apiKey)"),
+            guard let url = URL(string: "\(KeyService.shared.geminiBaseURL)/v1beta/\(fileName)?key=\(apiKey)"),
                   let (data, _) = try? await URLSession.shared.data(from: url),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let state = json["state"] as? String else {
@@ -1027,7 +1027,7 @@ actor GeminiAnalysisService {
     }
 
     private func deleteFile(fileName: String, apiKey: String) async {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/\(fileName)?key=\(apiKey)") else { return }
+        guard let url = URL(string: "\(KeyService.shared.geminiBaseURL)/v1beta/\(fileName)?key=\(apiKey)") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
         _ = try? await URLSession.shared.data(for: req)
@@ -1036,7 +1036,7 @@ actor GeminiAnalysisService {
     // MARK: - Generate Content
 
     private func callGenerateContent(parts: [[String: Any]], apiKey: String) async -> String? {
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)") else { return nil }
+        guard let url = URL(string: "\(KeyService.shared.geminiBaseURL)/v1beta/models/\(model):generateContent?key=\(apiKey)") else { return nil }
 
         let body: [String: Any] = [
             "contents": [["parts": parts]],
