@@ -2727,6 +2727,11 @@ function buildMcpServers(mode: string, cwd?: string, sessionKey?: string, active
       // when ASSRT_PROVIDER=gemini, so the agent loop can authenticate.
       if (process.env.GEMINI_API_KEY) {
         assrtEnv.push({ name: "GEMINI_API_KEY", value: process.env.GEMINI_API_KEY });
+        // When the app routes Gemini through the Fazm backend proxy, the key
+        // above is a proxy token and only works against this base URL.
+        if (process.env.GOOGLE_GEMINI_BASE_URL) {
+          assrtEnv.push({ name: "GOOGLE_GEMINI_BASE_URL", value: process.env.GOOGLE_GEMINI_BASE_URL });
+        }
       }
 
       // Treat Assrt as a general-purpose browser agent (not just a QA tool):
