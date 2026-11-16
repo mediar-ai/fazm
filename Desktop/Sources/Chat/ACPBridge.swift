@@ -2590,6 +2590,11 @@ actor ACPBridge {
     // Gemini gating, and only when we actually hold a key.
     if env["FAZM_GEMINI_ENABLED"] == "true", let geminiKey = KeyService.shared.geminiAPIKey, !geminiKey.isEmpty {
       env["GEMINI_API_KEY"] = geminiKey
+      // With a proxy token, gemini-cli (and assrt's @google/genai) must talk
+      // to the Fazm backend proxy: the token is not a Google API key.
+      if KeyService.shared.geminiUsesProxy {
+        env["GOOGLE_GEMINI_BASE_URL"] = KeyService.shared.geminiBaseURL
+      }
     }
 
     // Playwright MCP extension mode — only meaningful when browserMode == "extension"
