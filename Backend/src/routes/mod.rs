@@ -1,6 +1,7 @@
 pub mod appcast;
 pub mod chat_attachment;
 pub mod composio;
+pub mod gemini_proxy;
 pub mod keys;
 pub mod llm_usage;
 pub mod magic_link;
