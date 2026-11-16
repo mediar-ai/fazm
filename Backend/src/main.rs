@@ -140,6 +140,12 @@ async fn main() {
             "/api/stripe/redirect",
             axum::routing::get(routes::stripe::checkout_redirect),
         )
+        // Gemini proxy authenticates with its own per-user token (see
+        // routes/gemini_proxy.rs), not the Firebase bearer middleware.
+        .route(
+            "/v1/gemini/*path",
+            axum::routing::any(routes::gemini_proxy::proxy),
+        )
         .route("/r/:code", axum::routing::get(routes::referral::landing_page))
         .route(
             "/api/referral/send-download",
