@@ -1,8 +1,13 @@
 {
-  "unreleased": [
-    "Gemini requests now go through the Fazm backend, so a leaked key can no longer take Gemini down for everyone"
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "2.9.92",
+      "date": "2026-11-16",
+      "changes": [
+        "Gemini requests now go through the Fazm backend, so a leaked key can no longer take Gemini down for everyone"
+      ]
+    },
     {
       "version": "2.9.90",
       "date": "2026-11-11",
