@@ -8,7 +8,20 @@ final class KeyService {
 
     private(set) var anthropicAPIKey: String?
     private(set) var deepgramAPIKey: String?
+    /// Credential for Gemini calls. When `geminiUsesProxy` is true this is a
+    /// per-user Fazm proxy token, not a Google API key, and is only valid
+    /// against `geminiBaseURL`. Use the two together, never one alone.
     private(set) var geminiAPIKey: String?
+    /// True when the backend issued a proxy token. The real Gemini key then
+    /// never reaches this machine (it was stolen from /v1/keys twice in
+    /// November 2026, which is why the proxy exists).
+    private(set) var geminiUsesProxy = false
+    /// Base URL (no trailing slash) for Gemini REST calls made with
+    /// `geminiAPIKey`: the backend proxy when a proxy token was issued,
+    /// Google directly for the legacy raw key.
+    var geminiBaseURL: String {
+        geminiUsesProxy ? "\(backendUrl)/v1/gemini" : "https://generativelanguage.googleapis.com"
+    }
     private(set) var elevenlabsAPIKey: String?
     private var hasFetched = false
 
@@ -168,6 +181,7 @@ final class KeyService {
                     let deepgram_api_key: String
                     let gemini_api_key: String?
                     let elevenlabs_api_key: String?
+                    let gemini_proxy_token: String?
                 }
 
                 let keys = try JSONDecoder().decode(KeysResponse.self, from: data)
@@ -177,14 +191,20 @@ final class KeyService {
                 if !keys.deepgram_api_key.isEmpty {
                     deepgramAPIKey = keys.deepgram_api_key
                 }
-                if let gemini = keys.gemini_api_key, !gemini.isEmpty {
+                if let proxyToken = keys.gemini_proxy_token, !proxyToken.isEmpty {
+                    // Prefer the proxy: the raw key (still sent for older app
+                    // versions) is ignored so it is never used from here.
+                    geminiAPIKey = proxyToken
+                    geminiUsesProxy = true
+                } else if let gemini = keys.gemini_api_key, !gemini.isEmpty {
                     geminiAPIKey = gemini
+                    geminiUsesProxy = false
                 }
                 if let elevenlabs = keys.elevenlabs_api_key, !elevenlabs.isEmpty {
                     elevenlabsAPIKey = elevenlabs
                 }
                 hasFetched = true
-                log("KeyService: fetched keys (anthropic=\(anthropicAPIKey != nil), deepgram=\(deepgramAPIKey != nil), gemini=\(geminiAPIKey != nil), elevenlabs=\(elevenlabsAPIKey != nil))")
+                log("KeyService: fetched keys (anthropic=\(anthropicAPIKey != nil), deepgram=\(deepgramAPIKey != nil), gemini=\(geminiAPIKey != nil), geminiProxy=\(geminiUsesProxy), elevenlabs=\(elevenlabsAPIKey != nil))")
                 return
             } catch {
                 if attempt < 2 {
