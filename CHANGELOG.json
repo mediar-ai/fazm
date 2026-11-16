@@ -1,5 +1,7 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    "Gemini requests now go through the Fazm backend, so a leaked key can no longer take Gemini down for everyone"
+  ],
   "releases": [
     {
       "version": "2.9.90",
